@@ -1,0 +1,22 @@
+# Rust
+/rust/target/
+**/target/
+# Cargo.lock: workspace resolves fresh per toolchain; bridge is app-like but we
+# intentionally don't pin here during early dev. (.gitignore has no inline comments —
+# the pattern must stand alone on its own line, or it matches nothing.)
+Cargo.lock
+
+# flutter_rust_bridge generated bindings (recreated by codegen)
+/rust/ply-bridge/src/frb_generated.rs
+/app/lib/src/rust/
+
+# Flutter / Dart
+/app/.dart_tool/
+/app/.flutter-plugins
+/app/.flutter-plugins-dependencies
+/app/build/
+/app/ios/Pods/
+/app/android/.gradle/
+.DS_Store
+.devloop
+CLAUDE.md

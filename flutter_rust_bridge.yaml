@@ -1,0 +1,5 @@
+# flutter_rust_bridge codegen config.
+# Regenerate Dart <-> Rust bindings with:  flutter_rust_bridge_codegen generate
+rust_input: crate::api
+rust_root: rust/ply-bridge
+dart_output: app/lib/src/rust

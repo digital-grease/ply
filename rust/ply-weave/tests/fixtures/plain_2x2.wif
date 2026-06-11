@@ -1,0 +1,29 @@
+[WIF]
+Version=1.1
+[WEAVING]
+Shafts=2
+Treadles=2
+Rising Shed=true
+[WARP]
+Threads=2
+Units=Inches
+[WEFT]
+Threads=2
+[COLOR TABLE]
+1=0,0,0
+2=255,255,255
+[THREADING]
+1=1
+2=2
+[TIEUP]
+1=1
+2=2
+[TREADLING]
+1=1
+2=2
+[WARP COLORS]
+1=1
+2=1
+[WEFT COLORS]
+1=2
+2=2

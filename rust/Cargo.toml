@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["ply-common", "ply-weave", "ply-bridge"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+ply-common = { path = "ply-common" }
+ply-weave = { path = "ply-weave" }

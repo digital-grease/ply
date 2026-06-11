@@ -1,0 +1,22 @@
+name: ply
+description: Pattern tool for weaving, knitting, and nalbinding (weaving first).
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # FFI bridge to the Rust engine (rust/ply-bridge). Generated bindings land in
+  # lib/src/rust via `flutter_rust_bridge_codegen generate`.
+  flutter_rust_bridge: 2.12.0
+  file_picker: ^8.0.0   # importing .wif files from device storage
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+  ffigen: ^11.0.0
+
+flutter:
+  uses-material-design: true
