@@ -12,6 +12,7 @@
 //! recreated by the command above, so it is intentionally not checked in.)
 
 pub mod api;
+pub mod dto;
 
 // frb emits this (git-ignored). It MUST sit below the crate's `//!` inner docs — frb's
 // codegen injects it at the very top by default, which makes the inner doc comments

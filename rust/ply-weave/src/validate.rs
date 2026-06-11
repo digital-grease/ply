@@ -90,5 +90,56 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
         }
     }
 
+    // Color references point at an existing palette entry. A dangling index is NOT a panic —
+    // `render_rgba` silently substitutes white (`palette.get(idx).unwrap_or(WHITE)`) — so the
+    // editor cannot otherwise tell the cloth is mis-rendering. Surface it as an Error.
+    let palette_len = draft.colors.palette.len();
+    for (i, &idx) in draft.colors.warp.iter().enumerate() {
+        if idx >= palette_len {
+            push(
+                &mut issues,
+                Severity::Error,
+                format!("warp end {} uses color {} outside palette 0..{}", i + 1, idx, palette_len),
+            );
+        }
+    }
+    for (p, &idx) in draft.colors.weft.iter().enumerate() {
+        if idx >= palette_len {
+            push(
+                &mut issues,
+                Severity::Error,
+                format!("pick {} uses color {} outside palette 0..{}", p + 1, idx, palette_len),
+            );
+        }
+    }
+
     issues
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::draft::*;
+
+    #[test]
+    fn flags_dangling_color_index() {
+        let mut d = Draft::blank(2, 2);
+        d.threading = Threading(vec![vec![ShaftId(1)]]); // 1 end so warp-count matches
+        d.colors.warp = vec![5]; // palette has 2 colors -> index 5 dangles
+        let issues = validate(&d);
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.severity == Severity::Error && i.message.contains("color")),
+            "expected a color-range Error, got {issues:?}"
+        );
+        // The clamp helper resolves it.
+        d.colors.clamp_to_palette();
+        assert!(
+            validate(&d)
+                .iter()
+                .all(|i| !(i.severity == Severity::Error && i.message.contains("color"))),
+            "color error should be gone after clamp"
+        );
+    }
 }

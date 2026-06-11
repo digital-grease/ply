@@ -13,7 +13,7 @@
 //!    yields the canonical "set of raised shafts per pick" the drawdown consumes.
 
 use serde::{Deserialize, Serialize};
-use ply_common::Unit;
+use ply_common::{Color, Unit};
 
 /// 1-based shaft (harness) identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -111,6 +111,26 @@ pub struct ColorPlan {
     pub weft: Vec<ColorIndex>,
 }
 
+impl ColorPlan {
+    /// Remap any warp/weft color index that points past the end of the palette back to 0.
+    /// Used after removing a palette color so no reference dangles — the renderer would
+    /// otherwise silently substitute white (`render_rgba` does `palette.get(idx)`), which
+    /// `validate()` historically did not catch. Returns how many indices were remapped.
+    /// (A precise "remove index k and shift the rest down" lives in the editor's remove
+    /// reducer; this is the safety net.)
+    pub fn clamp_to_palette(&mut self) -> usize {
+        let len = self.palette.len();
+        let mut remapped = 0;
+        for idx in self.warp.iter_mut().chain(self.weft.iter_mut()) {
+            if *idx >= len {
+                *idx = 0; // 0 is in range whenever the palette is non-empty
+                remapped += 1;
+            }
+        }
+        remapped
+    }
+}
+
 /// A complete weaving draft — the editable, round-trippable document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Draft {
@@ -126,6 +146,30 @@ pub struct Draft {
 }
 
 impl Draft {
+    /// A minimal, valid draft to start editing from scratch. Rising shed, inches, no warp
+    /// ends or picks yet, an empty tie-up sized to `treadles` (so the header matches), and a
+    /// 2-color palette (white, black) so the default color index 0 is always in range.
+    pub fn blank(shafts: u16, treadles: u16) -> Draft {
+        Draft {
+            name: String::new(),
+            shafts,
+            treadles,
+            shed: ShedType::Rising,
+            unit: Unit::Inches,
+            threading: Threading(Vec::new()),
+            drive: Drive::Treadled {
+                tieup: TieUp(vec![Vec::new(); treadles as usize]),
+                treadling: Treadling(Vec::new()),
+            },
+            colors: ColorPlan {
+                palette: vec![Color::WHITE, Color::BLACK],
+                warp: Vec::new(),
+                weft: Vec::new(),
+            },
+            notes: String::new(),
+        }
+    }
+
     pub fn ends(&self) -> usize {
         self.threading.ends()
     }
@@ -172,5 +216,42 @@ impl Draft {
     /// or for engines that only understand liftplans.
     pub fn to_liftplan(&self) -> Liftplan {
         Liftplan((0..self.picks()).map(|p| self.raised_shafts(p)).collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::validate::{validate, Severity};
+
+    #[test]
+    fn blank_is_valid_and_empty() {
+        let d = Draft::blank(4, 4);
+        assert_eq!(d.shafts, 4);
+        assert_eq!(d.treadles, 4);
+        assert_eq!(d.ends(), 0);
+        assert_eq!(d.picks(), 0);
+        assert_eq!(d.colors.palette.len(), 2);
+        // A blank draft must carry zero Error-severity issues so "new draft" opens clean.
+        let issues = validate(&d);
+        assert!(
+            issues.iter().all(|i| i.severity != Severity::Error),
+            "blank draft had errors: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn clamp_remaps_out_of_range_color_indices() {
+        let mut cp = ColorPlan {
+            palette: vec![Color::WHITE, Color::BLACK],
+            warp: vec![0, 5, 1],
+            weft: vec![9, 0],
+        };
+        let remapped = cp.clamp_to_palette();
+        assert_eq!(remapped, 2);
+        assert_eq!(cp.warp, vec![0, 0, 1]);
+        assert_eq!(cp.weft, vec![0, 0]);
+        // Idempotent: a second clamp finds nothing to fix.
+        assert_eq!(cp.clamp_to_palette(), 0);
     }
 }

@@ -15,6 +15,10 @@
 pub use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
 pub use ply_weave::{self as weave, Draft};
 
+// M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
+// them while scanning this module. See `dto.rs` for why an editor needs these.
+pub use crate::dto::{ColorDto, DraftDto, DriveDto, ShedKind, UnitKind};
+
 /// Parse WIF text into a `Draft`. Errors carry a human-readable message for the UI.
 pub fn parse_wif(text: String) -> Result<Draft, String> {
     weave::wif::parse(&text).map_err(|e| e.to_string())
@@ -39,6 +43,29 @@ pub struct PreviewImage {
 pub fn render_preview(draft: Draft, cell_px: u32) -> PreviewImage {
     let img = weave::render_rgba(&draft, cell_px);
     PreviewImage { width: img.width, height: img.height, rgba: img.pixels }
+}
+
+// ---------------------------------------------------------------------------
+// M2 editor surface (transparent DTO). Additive for the Phase-1 spike: the opaque-`Draft`
+// fns above stay so the M1 app keeps building until Phase 2 migrates the repository.
+// ---------------------------------------------------------------------------
+
+/// Parse WIF into the transparent editor `DraftDto`. Unlike `parse_wif` (which yields an
+/// opaque, single-use `Draft` handle), the returned value is a plain mirrored struct the
+/// editor can hold and pass to render/validate/write repeatedly.
+pub fn parse_wif_dto(text: String) -> Result<DraftDto, String> {
+    weave::wif::parse(&text)
+        .map(|d| DraftDto::from(&d))
+        .map_err(|e| e.to_string())
+}
+
+/// Render an editor `DraftDto` to an RGBA preview. Takes the DTO BY VALUE but, because it is
+/// a mirrored value (not an opaque handle), the Dart caller may render the SAME `DraftDto`
+/// repeatedly with no use-after-free — the M1 single-use trap is gone by construction.
+pub fn render_preview_dto(dto: DraftDto, cell_px: u32) -> Result<PreviewImage, String> {
+    let draft = Draft::try_from(dto)?;
+    let img = weave::render_rgba(&draft, cell_px);
+    Ok(PreviewImage { width: img.width, height: img.height, rgba: img.pixels })
 }
 
 /// Validate a draft; returns one formatted string per issue (empty = clean).

@@ -38,11 +38,18 @@ The Dart bindings are **generated**, not hand-written:
 
 ```bash
 flutter_rust_bridge_codegen generate   # reads flutter_rust_bridge.yaml
+# Data-carrying enum DTOs (e.g. DriveDto) are emitted as freezed sealed classes, so also:
+cd app && dart run build_runner build --delete-conflicting-outputs
 ```
 
 This reads `crate::api` from `rust/ply-bridge`, emits Dart into `app/lib/src/rust`, and
 (re)creates `rust/ply-bridge/src/frb_generated.rs`. Both generated locations are
 git-ignored; regenerate after every change to `api.rs`. Don't edit generated files by hand.
+
+A Rust **enum with associated data** (sum type) mirrors to Dart as a `freezed` sealed class
+(`part '<mod>.freezed.dart'`), so frb codegen requires `freezed`/`build_runner` in the app
+and a `build_runner build` pass to emit the `*.freezed.dart` part — without it the app won't
+compile. Fieldless enums (e.g. `ShedKind`) become plain Dart enums and need neither.
 
 ## Current surface (`ply-bridge/src/api.rs`)
 

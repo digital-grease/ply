@@ -16,6 +16,7 @@ dependencies:
   path_provider: ^2.1.5 # app documents dir for the on-device draft library
   path: ^1.9.0          # join() the drafts dir + id stems (no manual separators)
   uuid: ^4.5.3          # v4 ids for draft filenames (collision-free, rename-stable)
+  freezed_annotation: ^2.4.4 # frb mirrors the DriveDto sum-type as a freezed sealed class
   rust_lib_ply:
     path: rust_builder
 
@@ -26,6 +27,8 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^4.0.0
   ffigen: ^11.0.0
+  build_runner: ^2.4.13 # runs freezed codegen for the generated *.freezed.dart files
+  freezed: ^2.5.7
 
 flutter:
   uses-material-design: true
