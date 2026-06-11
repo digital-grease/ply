@@ -10,8 +10,10 @@
 //! frb v2 auto-discovers the `pub` functions in this module during codegen — no per-fn
 //! attribute is required.
 
-use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
-use ply_weave::{self as weave, Draft};
+// `pub use`, not `use`: the generated `frb_generated.rs` does `use crate::api::*` and
+// references these types unqualified, so they must be re-exported from this module.
+pub use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
+pub use ply_weave::{self as weave, Draft};
 
 /// Parse WIF text into a `Draft`. Errors carry a human-readable message for the UI.
 pub fn parse_wif(text: String) -> Result<Draft, String> {

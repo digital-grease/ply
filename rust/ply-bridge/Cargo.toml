@@ -1,5 +1,10 @@
 [package]
-name = "ply-bridge"
+# Underscore, not "ply-bridge": Cargokit looks up the built library as `lib<package
+# name>.so` WITHOUT normalizing hyphens (cargokit getArtifactNames), while cargo emits
+# `libply_bridge.so`. A hyphenated package name would make Cargokit miss the artifact and
+# bundle no .so. `ply_bridge` makes cargo output, the frb Dart loader stem, and Cargokit
+# all agree. The crate directory stays `ply-bridge`.
+name = "ply_bridge"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true

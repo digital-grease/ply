@@ -12,3 +12,8 @@
 //! recreated by the command above, so it is intentionally not checked in.)
 
 pub mod api;
+
+// frb emits this (git-ignored). It MUST sit below the crate's `//!` inner docs — frb's
+// codegen injects it at the very top by default, which makes the inner doc comments
+// illegal (E0753). frb detects this existing line on re-runs and won't re-inject.
+mod frb_generated;
