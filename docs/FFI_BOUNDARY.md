@@ -53,12 +53,26 @@ compile. Fieldless enums (e.g. `ShedKind`) become plain Dart enums and need neit
 
 ## Current surface (`ply-bridge/src/api.rs`)
 
+The M2 editor speaks the transparent `DraftDto` (see "DTO vs. direct types" above): a plain
+mirrored value the editor can hold and pass to render/validate/write repeatedly, with no
+single-use trap. Base conversions (1-based ids ↔ `u16`, 0-based color index ↔ `u32`) happen
+only in `dto.rs`.
+
 | Function | Purpose |
 |---|---|
-| `parse_wif(text) -> Result<Draft, String>` | Import a WIF document |
-| `write_wif(draft) -> String` | Export to WIF |
-| `render_preview(draft, cell_px) -> PreviewImage` | Whole-cloth RGBA buffer for live preview |
-| `validate_draft(draft) -> Vec<String>` | Structural issues (empty = clean) |
+| `parse_wif_dto(text) -> Result<DraftDto, String>` | Import a WIF document into the editor DTO |
+| `write_wif(dto) -> Result<String, String>` | Export the editor DTO to WIF (lossy header — see `WIF_MAPPING.md`) |
+| `render_preview_dto(dto, cell_px) -> Result<PreviewImage, String>` | Whole-cloth RGBA buffer for live preview |
+| `validate_draft(dto) -> Result<Vec<ValidationIssueDto>, String>` | Structural issues with `SeverityKind` (empty = clean) |
+| `blank_draft(shafts, treadles) -> DraftDto` | A blank, valid draft to start editing |
+| `to_liftplan_dto(dto) -> Result<DraftDto, String>` | Canonical Treadled→Liftplan conversion (drawdown unchanged) |
 | `suggest_sett(wpi, structure) -> f32` | Sett (EPI) suggestion |
+| `estimate_warp(plan) -> YarnEstimate` | Warp length + yarn estimate |
+| `estimate_weft(plan) -> WeftEstimate` | Weft yarn estimate |
+
+**Transitional (M1, opaque `Draft`):** `parse_wif(text) -> Result<Draft, String>` and
+`render_preview(draft, cell_px) -> PreviewImage` remain only until `DraftRepository` migrates
+to the DTO render path (plan Phase 2.3); they hand back the opaque, single-use `Draft` handle
+the DTO surface replaces. Do not build new callers on them.
 
 Add knitting/nalbinding entry points here as those engines come online.

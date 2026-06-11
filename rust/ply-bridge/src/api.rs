@@ -17,16 +17,25 @@ pub use ply_weave::{self as weave, Draft};
 
 // M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
 // them while scanning this module. See `dto.rs` for why an editor needs these.
-pub use crate::dto::{ColorDto, DraftDto, DriveDto, ShedKind, UnitKind};
+pub use crate::dto::{
+    ColorDto, DraftDto, DriveDto, SeverityKind, ShedKind, UnitKind, ValidationIssueDto,
+};
 
 /// Parse WIF text into a `Draft`. Errors carry a human-readable message for the UI.
 pub fn parse_wif(text: String) -> Result<Draft, String> {
     weave::wif::parse(&text).map_err(|e| e.to_string())
 }
 
-/// Serialize a `Draft` back to WIF text.
-pub fn write_wif(draft: Draft) -> String {
-    weave::wif::write(&draft)
+/// Serialize an editor `DraftDto` back to WIF text. Takes the mirrored DTO (not an opaque
+/// handle), so the editor's Save path can re-serialize the live document. `Err` if the DTO
+/// fails to convert back to a `Draft` (e.g. malformed ids); WIF writing itself is infallible.
+///
+/// NOTE: `write` is lossy at the WIF header (thickness/spacing/unknown sections are dropped) —
+/// the M2 editor keeps the original WIF verbatim until a structural edit dirties it, then
+/// re-serializes via this and warns. See `docs/WIF_MAPPING.md`.
+pub fn write_wif(dto: DraftDto) -> Result<String, String> {
+    let draft = Draft::try_from(dto)?;
+    Ok(weave::wif::write(&draft))
 }
 
 /// An RGBA preview buffer for the live cloth view.
@@ -68,12 +77,30 @@ pub fn render_preview_dto(dto: DraftDto, cell_px: u32) -> Result<PreviewImage, S
     Ok(PreviewImage { width: img.width, height: img.height, rgba: img.pixels })
 }
 
-/// Validate a draft; returns one formatted string per issue (empty = clean).
-pub fn validate_draft(draft: Draft) -> Vec<String> {
-    weave::validate::validate(&draft)
-        .into_iter()
-        .map(|i| format!("{:?}: {}", i.severity, i.message))
-        .collect()
+/// Validate an editor `DraftDto`; returns one structured issue per problem (empty = clean),
+/// each carrying its `SeverityKind` so the editor can color the gutter and gate Save on
+/// Errors. `Err` only if the DTO can't convert back to a `Draft`. Replaces M1's
+/// `Vec<String>` (which flattened `Severity` into the message).
+pub fn validate_draft(dto: DraftDto) -> Result<Vec<ValidationIssueDto>, String> {
+    let draft = Draft::try_from(dto)?;
+    Ok(weave::validate::validate(&draft)
+        .iter()
+        .map(ValidationIssueDto::from)
+        .collect())
+}
+
+/// Build a blank, valid draft to start editing from scratch (Rising shed, inches, empty
+/// threading/treadling, a tie-up sized to `treadles`, and a 2-color white/black palette).
+pub fn blank_draft(shafts: u16, treadles: u16) -> DraftDto {
+    DraftDto::from(&Draft::blank(shafts, treadles))
+}
+
+/// Convert any draft to a canonical liftplan-driven copy (raised shafts baked in, shed →
+/// Rising, tie-up dropped) for the editor's Treadled→Liftplan switch. The drawdown is
+/// unchanged. `Err` if the DTO can't convert back to a `Draft`. Reverse is deferred.
+pub fn to_liftplan_dto(dto: DraftDto) -> Result<DraftDto, String> {
+    let draft = Draft::try_from(dto)?;
+    Ok(DraftDto::from(&draft.to_liftplan_draft()))
 }
 
 /// Suggest a sett (ends per inch) from wraps-per-inch and a structure name

@@ -217,6 +217,20 @@ impl Draft {
     pub fn to_liftplan(&self) -> Liftplan {
         Liftplan((0..self.picks()).map(|p| self.raised_shafts(p)).collect())
     }
+
+    /// A canonical **liftplan-driven** copy of this draft. The drawdown is unchanged: the
+    /// raised-shaft set per pick is baked in via `to_liftplan` (so a sinking-shed tie-up is
+    /// already complemented). Because a liftplan names raised shafts *directly*, the shed
+    /// becomes `Rising` (no further inversion) and `treadles` drops to 0 (a liftplan carries
+    /// no tie-up). The reverse — factoring a liftplan back into a tie-up — is deferred.
+    pub fn to_liftplan_draft(&self) -> Draft {
+        Draft {
+            drive: Drive::Liftplan(self.to_liftplan()),
+            shed: ShedType::Rising,
+            treadles: 0,
+            ..self.clone()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -238,6 +252,39 @@ mod tests {
             issues.iter().all(|i| i.severity != Severity::Error),
             "blank draft had errors: {issues:?}"
         );
+    }
+
+    #[test]
+    fn to_liftplan_draft_preserves_raised_shafts() {
+        // A sinking-shed treadled draft is the interesting case: the tie-up names the shafts
+        // that sink, so `raised_shafts` complements them. The liftplan copy must render the
+        // SAME cloth — equal raised set per pick — while flipping to a Rising, tie-up-free form.
+        let d = Draft {
+            name: "t".into(),
+            shafts: 4,
+            treadles: 2,
+            shed: ShedType::Sinking,
+            unit: Unit::Inches,
+            threading: Threading(vec![vec![ShaftId(1)], vec![ShaftId(2)]]),
+            drive: Drive::Treadled {
+                tieup: TieUp(vec![vec![ShaftId(1), ShaftId(2)], vec![ShaftId(3)]]),
+                treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(2)], vec![]]),
+            },
+            colors: ColorPlan {
+                palette: vec![Color::WHITE, Color::BLACK],
+                warp: vec![0, 1],
+                weft: vec![1, 0, 1],
+            },
+            notes: String::new(),
+        };
+        let lp = d.to_liftplan_draft();
+        assert!(matches!(lp.drive, Drive::Liftplan(_)));
+        assert_eq!(lp.shed, ShedType::Rising);
+        assert_eq!(lp.treadles, 0);
+        assert_eq!(lp.picks(), d.picks());
+        for p in 0..d.picks() {
+            assert_eq!(lp.raised_shafts(p), d.raised_shafts(p), "pick {p} differs");
+        }
     }
 
     #[test]

@@ -17,6 +17,7 @@ use ply_common::{Color, Unit};
 use ply_weave::draft::{
     ColorPlan, Draft, Drive, Liftplan, ShaftId, ShedType, Threading, TieUp, TreadleId, Treadling,
 };
+use ply_weave::validate::{Severity, ValidationIssue};
 
 /// An sRGB color. No alpha — the engine/WIF `Color` is RGB only.
 pub struct ColorDto {
@@ -52,6 +53,20 @@ pub enum DriveDto {
     },
 }
 
+/// Severity of a validation issue. Flat C-like enum so frb mirrors it transparently; it
+/// preserves the engine `Severity` the M1 bridge flattened into a string.
+pub enum SeverityKind {
+    Error,
+    Warning,
+}
+
+/// One validation problem, with its severity preserved (not flattened into the message) so
+/// the editor can color Errors red vs Warnings amber and gate Save on Errors.
+pub struct ValidationIssueDto {
+    pub severity: SeverityKind,
+    pub message: String,
+}
+
 /// The whole editable document, mirrored transparently for the Dart editor.
 pub struct DraftDto {
     pub name: String,
@@ -85,6 +100,18 @@ fn shaft_rows_in(rows: &[Vec<u16>]) -> Vec<Vec<ShaftId>> {
 }
 fn treadle_rows_in(rows: &[Vec<u16>]) -> Vec<Vec<TreadleId>> {
     rows.iter().map(|r| r.iter().map(|&n| TreadleId(n)).collect()).collect()
+}
+
+impl From<&ValidationIssue> for ValidationIssueDto {
+    fn from(i: &ValidationIssue) -> Self {
+        ValidationIssueDto {
+            severity: match i.severity {
+                Severity::Error => SeverityKind::Error,
+                Severity::Warning => SeverityKind::Warning,
+            },
+            message: i.message.clone(),
+        }
+    }
 }
 
 impl From<&Draft> for DraftDto {
