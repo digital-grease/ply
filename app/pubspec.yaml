@@ -13,10 +13,17 @@ dependencies:
   # lib/src/rust via `flutter_rust_bridge_codegen generate`.
   flutter_rust_bridge: 2.12.0
   file_picker: ^8.0.0   # importing .wif files from device storage
+  path_provider: ^2.1.5 # app documents dir for the on-device draft library
+  path: ^1.9.0          # join() the drafts dir + id stems (no manual separators)
+  uuid: ^4.5.3          # v4 ids for draft filenames (collision-free, rename-stable)
   rust_lib_ply:
     path: rust_builder
 
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
   flutter_lints: ^4.0.0
   ffigen: ^11.0.0
 
