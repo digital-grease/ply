@@ -92,6 +92,14 @@ Future<(ProviderContainer, FakeResizeRepo)> pumpBar(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('the Colors chip reflects the palette length and updates live', (tester) async {
+    final (c, _) = await pumpBar(tester); // fixture has a 1-color palette
+    expect(find.text('Colors 1'), findsOneWidget);
+    c.read(draftEditorProvider.notifier).addPaletteColor(const DraftColor(r: 1, g: 2, b: 3));
+    await tester.pump();
+    expect(find.text('Colors 2'), findsOneWidget, reason: 'the chip count tracks the palette');
+  });
+
   testWidgets('More Ends resizes with ends+1, others unchanged, and commits', (tester) async {
     final (c, fake) = await pumpBar(tester);
     await tester.tap(find.byTooltip('More Ends'));

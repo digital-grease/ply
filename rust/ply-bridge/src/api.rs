@@ -117,6 +117,15 @@ pub fn resize_dto(
     ))
 }
 
+/// Remove palette color `index` and SAFELY remap every warp/weft reference so none dangles: a thread
+/// using the removed color falls back to color 0, threads past it renumber down by one. The result
+/// `validate()`s with no dangling-index issue. `Err` if `index` is out of range, the palette has only
+/// one color (a draft needs >= 1), or the DTO can't convert back to a `Draft`.
+pub fn remove_palette_color_dto(dto: DraftDto, index: u32) -> Result<DraftDto, String> {
+    let draft = Draft::try_from(dto)?;
+    Ok(DraftDto::from(&draft.with_color_removed(index as usize)?))
+}
+
 /// Suggest a sett (ends per inch) from wraps-per-inch and a structure name
 /// ("plain" | "twill" | "satin").
 pub fn suggest_sett(wpi: f32, structure: String) -> f32 {

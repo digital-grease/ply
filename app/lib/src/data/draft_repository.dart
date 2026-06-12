@@ -110,6 +110,14 @@ class DraftRepository {
   Future<DraftDoc> toLiftplanDoc(DraftDoc doc) async =>
       fromDto(await toLiftplanDto(dto: toDto(doc)));
 
+  /// Remove palette color [idx] via the engine, SAFELY remapping every warp/weft reference so none
+  /// dangles (a thread using the removed color falls back to color 0; threads past it renumber down
+  /// by one). The result `validate()`s clean. Throws (the engine `Err`, surfaced by frb) if [idx] is
+  /// out of range or the palette has only one color. (Named `removeColorDoc` to avoid colliding with
+  /// the generated `removePaletteColorDto`, as `resizeDoc`/`toLiftplanDoc` do.)
+  Future<DraftDoc> removeColorDoc(DraftDoc doc, int idx) async =>
+      fromDto(await removePaletteColorDto(dto: toDto(doc), index: idx));
+
   /// Decode an engine [PreviewImage] into a [ui.Image].
   ///
   /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is RGBA8,

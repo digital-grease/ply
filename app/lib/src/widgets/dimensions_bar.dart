@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import 'palette_sheet.dart';
 
 class DimensionsBar extends ConsumerStatefulWidget {
   const DimensionsBar({super.key});
@@ -52,8 +53,15 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
 
   @override
   Widget build(BuildContext context) {
-    final (ends, picks, shafts, treadles, isTreadled) = ref.watch(draftEditorProvider.select((s) =>
-        (s.draft.ends, s.draft.picks, s.draft.shafts, s.draft.treadles, s.draft.drive is DraftTreadled)));
+    final (ends, picks, shafts, treadles, isTreadled, colorCount) =
+        ref.watch(draftEditorProvider.select((s) => (
+              s.draft.ends,
+              s.draft.picks,
+              s.draft.shafts,
+              s.draft.treadles,
+              s.draft.drive is DraftTreadled,
+              s.draft.palette.length,
+            )));
     final enabled = !_resizing;
     return Material(
       elevation: 2,
@@ -64,6 +72,16 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
             children: [
+              // Opens the palette editor sheet. Leading the dimension steppers; the row already
+              // scrolls horizontally, so it never overflows.
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: ActionChip(
+                  avatar: const Icon(Icons.palette_outlined, size: 18),
+                  label: Text('Colors $colorCount'),
+                  onPressed: () => showPaletteSheet(context),
+                ),
+              ),
               _Stepper(
                   label: 'Ends',
                   value: ends,

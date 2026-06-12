@@ -34,6 +34,16 @@ class DraftEditorNotifier extends Notifier<EditorState> {
     state = state.toggleTieupCell(treadle, shaft);
   }
 
+  /// Replace palette entry [idx]'s RGB. See [EditorState.setPaletteColor]. Pure; no FFI.
+  void setPaletteColor(int idx, DraftColor color) {
+    state = state.setPaletteColor(idx, color);
+  }
+
+  /// Append a palette color. See [EditorState.addPaletteColor]. Pure; no FFI.
+  void addPaletteColor(DraftColor color) {
+    state = state.addPaletteColor(color);
+  }
+
   /// Restore the most recent pre-edit snapshot.
   void undo() => state = state.undoEdit();
 

@@ -145,6 +145,29 @@ class EditorState {
     );
   }
 
+  /// Replace palette entry [idx]'s RGB with [color], as ONE undo entry (pushes the pre-edit doc,
+  /// clears redo, marks dirty). A pure edit-in-place: it does NOT touch warpColors/weftColors, so no
+  /// index can dangle and validate() stays clean with no engine call. No-op (same identity) when the
+  /// swatch is already [color] (DraftColor has value `==`). Throws on an out-of-range [idx].
+  EditorState setPaletteColor(int idx, DraftColor color) {
+    if (idx < 0 || idx >= draft.palette.length) {
+      throw RangeError.range(idx, 0, draft.palette.length - 1, 'palette index');
+    }
+    final palette = List<DraftColor>.of(draft.palette)..[idx] = color;
+    final next = draft.copyWith(palette: palette);
+    if (next == draft) return this;
+    return copyWith(draft: next, undo: [...undo, draft], redo: const [], dirtyStructural: true);
+  }
+
+  /// Append [color] to the palette, as ONE undo entry. Appending a HIGHER index never shifts an
+  /// existing warp/weft reference, so nothing dangles and validate() stays clean with no engine call.
+  EditorState addPaletteColor(DraftColor color) {
+    final palette = List<DraftColor>.of(draft.palette)..add(color);
+    final next = draft.copyWith(palette: palette); // a longer palette never equals the old one
+    if (next == draft) return this; // kept for symmetry with the other reducers
+    return copyWith(draft: next, undo: [...undo, draft], redo: const [], dirtyStructural: true);
+  }
+
   /// Restore the most recent pre-edit snapshot, moving the current doc onto [redo]. No-op (same
   /// identity) when there is nothing to undo.
   EditorState undoEdit() {

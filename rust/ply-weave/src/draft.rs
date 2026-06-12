@@ -129,6 +129,45 @@ impl ColorPlan {
         }
         remapped
     }
+
+    /// A copy with palette entry `idx` removed and EVERY warp/weft reference remapped so none
+    /// dangles: an entry equal to `idx` falls back to `0` (the first remaining color), an entry past
+    /// `idx` shifts down by one (the palette renumbers behind it), an entry before `idx` is
+    /// unchanged. This is the PRECISE remove the `clamp_to_palette` safety net alluded to. `Err` if
+    /// `idx` is out of range, or if the palette has only one color (a draft needs >= 1 color).
+    pub fn with_color_removed(&self, idx: usize) -> Result<ColorPlan, String> {
+        if idx >= self.palette.len() {
+            return Err(format!(
+                "color index {} out of range 0..{}",
+                idx,
+                self.palette.len()
+            ));
+        }
+        if self.palette.len() <= 1 {
+            return Err("cannot remove the last palette color".to_string());
+        }
+        let remap = |e: ColorIndex| -> ColorIndex {
+            if e == idx {
+                0
+            } else if e > idx {
+                e - 1
+            } else {
+                e
+            }
+        };
+        let mut palette = self.palette.clone();
+        palette.remove(idx);
+        let mut out = ColorPlan {
+            palette,
+            warp: self.warp.iter().map(|&e| remap(e)).collect(),
+            weft: self.weft.iter().map(|&e| remap(e)).collect(),
+        };
+        // The remap fixes references to the REMOVED color, but a PRE-EXISTING dangling index (e.g. a
+        // malformed WIF import) merely decrements and would still dangle. Clamp so the result is
+        // UNCONDITIONALLY validate()-clean, not just "clean if the input was".
+        out.clamp_to_palette();
+        Ok(out)
+    }
 }
 
 /// A complete weaving draft — the editable, round-trippable document.
@@ -285,6 +324,17 @@ impl Draft {
             notes: self.notes.clone(),
         }
     }
+
+    /// A copy with palette color `idx` removed and all warp/weft references safely remapped (see
+    /// [`ColorPlan::with_color_removed`]), so the result `validate()`s with NO dangling-index issue.
+    /// The canonical, tested palette-remove the editor's remove reducer routes through. `Err` if
+    /// `idx` is out of range or the palette has only one color.
+    pub fn with_color_removed(&self, idx: usize) -> Result<Draft, String> {
+        Ok(Draft {
+            colors: self.colors.with_color_removed(idx)?,
+            ..self.clone()
+        })
+    }
 }
 
 /// First `len` of `rows`, padding with `pad()` when growing (truncating when shrinking).
@@ -371,6 +421,96 @@ mod tests {
         assert_eq!(cp.weft, vec![0, 0]);
         // Idempotent: a second clamp finds nothing to fix.
         assert_eq!(cp.clamp_to_palette(), 0);
+    }
+
+    /// Removing a REFERENCED middle color renumbers the survivors and falls the removed refs back to
+    /// 0, so nothing dangles and the cloth re-colors predictably.
+    #[test]
+    fn remove_color_renumbers_and_falls_back() {
+        let cp = ColorPlan {
+            palette: vec![Color::WHITE, Color::BLACK, Color::rgb(255, 0, 0)],
+            warp: vec![0, 1, 2], // white, black, red
+            weft: vec![2, 1, 0],
+        };
+        let out = cp.with_color_removed(1).unwrap(); // drop BLACK (idx 1)
+        assert_eq!(out.palette, vec![Color::WHITE, Color::rgb(255, 0, 0)]);
+        // 0 stays 0; 1 (removed) -> 0; 2 -> 1.
+        assert_eq!(out.warp, vec![0, 0, 1]);
+        assert_eq!(out.weft, vec![1, 0, 0]);
+    }
+
+    /// Removing index 0 (the fallback target) still renumbers correctly: removed AND next both land
+    /// on the new index 0.
+    #[test]
+    fn remove_first_color_is_safe() {
+        let cp = ColorPlan {
+            palette: vec![Color::WHITE, Color::BLACK, Color::rgb(255, 0, 0)],
+            warp: vec![0, 1, 2],
+            weft: vec![],
+        };
+        let out = cp.with_color_removed(0).unwrap();
+        assert_eq!(out.palette, vec![Color::BLACK, Color::rgb(255, 0, 0)]);
+        // 0 (removed) -> 0; 1 -> 0; 2 -> 1.
+        assert_eq!(out.warp, vec![0, 0, 1]);
+    }
+
+    /// A remove leaves NO dangling index — `validate()` reports no color Error afterward.
+    #[test]
+    fn remove_color_keeps_validate_clean() {
+        let d = Draft {
+            name: "c".into(),
+            shafts: 2,
+            treadles: 0,
+            shed: ShedType::Rising,
+            unit: Unit::Inches,
+            threading: Threading(vec![vec![ShaftId(1)], vec![ShaftId(2)]]),
+            drive: Drive::Liftplan(Liftplan(vec![vec![ShaftId(1)], vec![ShaftId(2)]])),
+            colors: ColorPlan {
+                palette: vec![Color::WHITE, Color::BLACK, Color::rgb(255, 0, 0)],
+                warp: vec![2, 1],
+                weft: vec![0, 2],
+            },
+            notes: String::new(),
+        };
+        let removed = d.with_color_removed(2).unwrap(); // drop RED (referenced by warp[0], weft[1])
+        assert_eq!(removed.colors.palette.len(), 2);
+        assert!(
+            crate::validate::validate(&removed)
+                .iter()
+                .all(|i| !i.message.contains("color")),
+            "no color issue after remove, got {:?}",
+            crate::validate::validate(&removed)
+        );
+    }
+
+    /// A PRE-EXISTING dangling index (a malformed import) is cleaned by the remove, not just left
+    /// decremented-but-still-dangling, so the result is unconditionally validate-clean.
+    #[test]
+    fn remove_color_clamps_a_preexisting_dangle() {
+        let cp = ColorPlan {
+            palette: vec![Color::WHITE, Color::BLACK, Color::rgb(255, 0, 0)],
+            warp: vec![9, 0], // index 9 already dangles (palette len 3)
+            weft: vec![2],
+        };
+        let out = cp.with_color_removed(0).unwrap(); // palette -> len 2
+        assert!(out.warp.iter().all(|&e| e < out.palette.len()), "no warp dangle: {:?}", out.warp);
+        assert!(out.weft.iter().all(|&e| e < out.palette.len()), "no weft dangle: {:?}", out.weft);
+    }
+
+    #[test]
+    fn remove_color_rejects_bad_index_and_last_color() {
+        let cp = ColorPlan {
+            palette: vec![Color::WHITE, Color::BLACK],
+            warp: vec![0, 1],
+            weft: vec![],
+        };
+        assert!(cp.with_color_removed(2).is_err(), "out-of-range index rejected");
+        let one = ColorPlan {
+            palette: vec![Color::WHITE],
+            warp: vec![0],
+            weft: vec![0],
+        };
+        assert!(one.with_color_removed(0).is_err(), "removing the last color rejected");
     }
 
     /// A 4-shaft, 4-treadle straight-draw treadled draft for resize tests.

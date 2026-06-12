@@ -33,6 +33,13 @@ enum EditorTool { pencil, hand }
 /// The current tool. Default is pencil so a freshly-opened draft is immediately editable.
 final editorToolProvider = StateProvider<EditorTool>((ref) => EditorTool.pencil);
 
+// 4.2: activePaletteColorProvider = StateProvider<int>((_) => 0) — the brush-color index for
+//      warp/weft painting (setWarpColor/setWeftColor). Ephemeral view chrome, NOT on EditorState
+//      (so it never poisons undo-dedup or the preview select), exactly like zoomCell/editorTool.
+//      MUST be remapped across a palette REMOVE by the same rule the engine uses
+//      (e == removed -> 0, e > removed -> e - 1) and clamped-on-read to 0..palette.length-1 after a
+//      smaller-palette load(), or the brush index will dangle / ring a removed swatch.
+
 /// Discrete on-screen cell sizes (logical px) the integrated view can zoom through. Discrete +
 /// integer so cells stay crisp and the tap math is scroll-/zoom-invariant.
 const List<int> zoomCellLevels = [8, 12, 16, 24, 32, 48];

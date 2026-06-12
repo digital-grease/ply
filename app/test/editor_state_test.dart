@@ -432,4 +432,44 @@ void main() {
       expect(identical(s0.commitEdit(s0.draft), s0), isTrue);
     });
   });
+
+  group('palette reducers', () {
+    // paintableTreadled has a 2-color palette (white, black) with warp[0,0,0,0]/weft[1,1,1,1]
+    // referencing both, so the "never shifts an index" claim is observable.
+    test('setPaletteColor edits in place, leaves warp/weft UNTOUCHED, one undo entry', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      final warp0 = s0.draft.warpColors;
+      final weft0 = s0.draft.weftColors;
+      final s1 = s0.setPaletteColor(1, const DraftColor(r: 10, g: 20, b: 30));
+      expect(s1.draft.palette[1], const DraftColor(r: 10, g: 20, b: 30));
+      expect(s1.draft.warpColors, warp0, reason: 'editing a swatch never shifts an index');
+      expect(s1.draft.weftColors, weft0);
+      expect(s1.undo.length, 1);
+      expect(s1.redo, isEmpty);
+      expect(s1.dirtyStructural, isTrue);
+      expect(s1.undoEdit().draft, equals(s0.draft), reason: 'one undo reverts the color');
+    });
+
+    test('setPaletteColor to the current RGB is a no-op (same identity)', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      expect(identical(s0.setPaletteColor(0, const DraftColor(r: 255, g: 255, b: 255)), s0), isTrue);
+    });
+
+    test('setPaletteColor throws on an out-of-range index', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      expect(() => s0.setPaletteColor(2, const DraftColor(r: 1, g: 1, b: 1)), throwsRangeError);
+      expect(() => s0.setPaletteColor(-1, const DraftColor(r: 1, g: 1, b: 1)), throwsRangeError);
+    });
+
+    test('addPaletteColor appends, leaves warp/weft untouched, one undo entry; undo shrinks it', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      final s1 = s0.addPaletteColor(const DraftColor(r: 1, g: 2, b: 3));
+      expect(s1.draft.palette.length, 3);
+      expect(s1.draft.palette.last, const DraftColor(r: 1, g: 2, b: 3));
+      expect(s1.draft.warpColors, s0.draft.warpColors, reason: 'appending never shifts an index');
+      expect(s1.draft.weftColors, s0.draft.weftColors);
+      expect(s1.undo.length, 1);
+      expect(s1.undoEdit().draft.palette.length, 2, reason: 'undo restores the shorter palette');
+    });
+  });
 }
