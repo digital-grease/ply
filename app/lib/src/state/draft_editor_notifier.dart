@@ -9,6 +9,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/draft_doc.dart';
+import '../models/draft_region.dart';
 import '../models/editor_state.dart';
 
 /// The single source of truth for the open draft and its undo history.
@@ -37,4 +38,40 @@ class DraftEditorNotifier extends Notifier<EditorState> {
 
   /// Re-apply the most recently undone snapshot.
   void redo() => state = state.redoEdit();
+
+  // --- Drag-paint stroke driver (Phase 3.1) ----------------------------------
+  // Transient gesture scratch kept off the immutable EditorState. A stroke paints a CONSTANT
+  // value (decided by inverting the first cell) across cells in its START region only; the whole
+  // stroke commits as one undo entry.
+
+  DraftRegion? _strokeRegion;
+  int? _paintValue; // 1 = fill, 0 = erase
+  DraftHit? _lastCell;
+
+  /// Begin a drag-paint stroke at [hit]. The paint value is the INVERSE of the first cell's state
+  /// (drag from a filled cell erases, from an empty cell fills), applied constant for the stroke.
+  void beginStroke(DraftHit hit) {
+    state = state.beginStroke();
+    _strokeRegion = hit.region;
+    final on = !state.isCellOn(hit);
+    _paintValue = on ? 1 : 0;
+    _lastCell = hit;
+    state = state.paintCell(hit, on: on);
+  }
+
+  /// Continue the stroke at [hit]. Ignores moves outside the start region and repeats of the last
+  /// cell (so a wiggle inside one cell does nothing).
+  void paintAt(DraftHit hit) {
+    if (_strokeRegion == null || hit.region != _strokeRegion || hit == _lastCell) return;
+    _lastCell = hit;
+    state = state.paintCell(hit, on: _paintValue == 1);
+  }
+
+  /// End the stroke, committing it as one undo entry (or nothing if it was a net no-op).
+  void endStroke() {
+    _strokeRegion = null;
+    _paintValue = null;
+    _lastCell = null;
+    state = state.endStroke();
+  }
 }

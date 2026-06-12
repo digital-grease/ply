@@ -19,6 +19,7 @@
 import 'package:collection/collection.dart';
 
 import 'draft_doc.dart';
+import 'draft_region.dart';
 
 /// Compares undo/redo snapshot stacks element-wise using each [DraftDoc]'s own deep `==`.
 const ListEquality<DraftDoc> _stackEq = ListEquality<DraftDoc>();
@@ -30,6 +31,7 @@ class EditorState {
     this.redo = const [],
     this.dirtyStructural = false,
     this.sourceWif,
+    this.strokeBase,
   });
 
   /// The live document currently shown and edited.
@@ -48,8 +50,20 @@ class EditorState {
   /// (lossless) save path while the draft is structurally unchanged.
   final String? sourceWif;
 
+  /// Transient: while a drag-paint stroke is OPEN, the document as it was at pointer-down (so the
+  /// whole stroke commits as ONE undo entry). Null when no stroke is in flight. This is UI
+  /// scaffolding, NOT document content: it is EXCLUDED from `==`/`hashCode` (so an in-flight
+  /// stroke never poisons preview-dedup or undo-snapshot equality) and the preview watches
+  /// `draft`, never this.
+  final DraftDoc? strokeBase;
+
   bool get canUndo => undo.isNotEmpty;
   bool get canRedo => redo.isNotEmpty;
+
+  /// "Leave unchanged" sentinel for [copyWith]'s nullable [strokeBase] (distinct from null, which
+  /// must mean "clear it"). The other fields keep the `?? this.x` idiom because they are never
+  /// legitimately set back to null.
+  static const Object _keep = Object();
 
   EditorState copyWith({
     DraftDoc? draft,
@@ -57,6 +71,7 @@ class EditorState {
     List<DraftDoc>? redo,
     bool? dirtyStructural,
     String? sourceWif,
+    Object? strokeBase = _keep,
   }) {
     return EditorState(
       draft: draft ?? this.draft,
@@ -66,6 +81,8 @@ class EditorState {
       // sourceWif is carried forward by every reducer; it is only (re)set via the constructor
       // on a fresh load, so the `?? this` "cannot clear" limitation never bites here.
       sourceWif: sourceWif ?? this.sourceWif,
+      // strokeBase CAN be cleared (endStroke passes null), so it uses the explicit sentinel.
+      strokeBase: identical(strokeBase, _keep) ? this.strokeBase : strokeBase as DraftDoc?,
     );
   }
 
@@ -150,6 +167,174 @@ class EditorState {
       undo: [...undo, draft],
       redo: redo.sublist(0, redo.length - 1),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Drag-paint value-setters + stroke coalescing (Phase 3.1).
+  //
+  // A drag-paint stroke (pointer-down..moves..pointer-up) paints many cells but commits as EXACTLY
+  // ONE undo entry. [beginStroke] captures the pre-edit doc into [strokeBase] and clears redo ONCE;
+  // each painted cell calls a PURE value-setter that mutates `draft` but NOT undo; [endStroke]
+  // pushes `strokeBase` as the single undo entry (or nothing if the net change is zero). The
+  // setters return `this` on a no-op (same identity), so re-entering a cell at the same value is
+  // free and an idempotent drag stays cheap. A plain TAP is begin -> one paint -> end = one entry.
+  // ---------------------------------------------------------------------------
+
+  /// Is the cell named by [hit] currently "on" (filled)? Used to decide a stroke's paint value
+  /// (a drag starting on a filled cell ERASES; on an empty cell FILLS).
+  bool isCellOn(DraftHit hit) {
+    final drive = draft.drive;
+    switch (hit.region) {
+      case DraftRegion.threading:
+        final end = hit.col;
+        return end >= 1 &&
+            end <= draft.threading.length &&
+            draft.threading[end - 1].contains(hit.row);
+      case DraftRegion.tieup:
+        if (drive is! DraftTreadled) return false;
+        final t = hit.col;
+        return t >= 1 && t <= drive.tieup.length && drive.tieup[t - 1].contains(hit.row);
+      case DraftRegion.right:
+        final pick = hit.row;
+        if (drive is DraftTreadled) {
+          return pick >= 0 &&
+              pick < drive.treadling.length &&
+              drive.treadling[pick].contains(hit.col);
+        }
+        if (drive is DraftLiftplan) {
+          return pick >= 0 &&
+              pick < drive.liftplan.length &&
+              drive.liftplan[pick].contains(hit.col);
+        }
+        return false;
+      case DraftRegion.drawdown:
+        return false;
+    }
+  }
+
+  /// Set warp [end]'s threading (1-based) to [shafts] (canonicalized ascending). Pads a short
+  /// threading. Pure draft-mutation: does NOT touch undo (the stroke owns that).
+  EditorState withThreadForEnd(int end, List<int> shafts) {
+    if (end < 1) throw RangeError.range(end, 1, null, 'end');
+    final len = draft.threading.length;
+    final rowCount = end > len ? end : len;
+    final threading = <List<int>>[
+      for (var e = 0; e < rowCount; e++)
+        if (e == end - 1)
+          (List<int>.of(shafts)..sort())
+        else
+          List<int>.of(e < len ? draft.threading[e] : const <int>[]),
+    ];
+    final next = draft.copyWith(threading: threading);
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// Force shaft [shaft] of treadle [treadle]'s tie-up (both 1-based) on/off (unlike
+  /// [toggleTieupCell], which toggles). Pads short tie-ups and preserves over-length rows like
+  /// [toggleTieupCell]. Pure draft-mutation; treadled drafts only.
+  EditorState withTieupCell(int treadle, int shaft, bool on) {
+    final drive = draft.drive;
+    if (drive is! DraftTreadled) {
+      throw StateError('withTieupCell requires a treadled drive, got ${drive.runtimeType}');
+    }
+    if (treadle < 1 || treadle > draft.treadles) {
+      throw RangeError.range(treadle, 1, draft.treadles, 'treadle');
+    }
+    if (shaft < 1 || shaft > draft.shafts) {
+      throw RangeError.range(shaft, 1, draft.shafts, 'shaft');
+    }
+    final rowCount =
+        draft.treadles > drive.tieup.length ? draft.treadles : drive.tieup.length;
+    final tieup = <List<int>>[
+      for (var t = 0; t < rowCount; t++)
+        List<int>.of(t < drive.tieup.length ? drive.tieup[t] : const <int>[]),
+    ];
+    final row = tieup[treadle - 1];
+    final has = row.contains(shaft);
+    if (on && !has) {
+      row
+        ..add(shaft)
+        ..sort();
+    } else if (!on && has) {
+      row.remove(shaft);
+    } else {
+      return this; // already at the requested value
+    }
+    final next = draft.copyWith(drive: drive.copyWith(tieup: tieup));
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// Set [pick] (0-based) to press [treadles] (treadled drafts). Pads a short treadling. Pure.
+  EditorState withTreadleForPick(int pick, List<int> treadles) {
+    final drive = draft.drive;
+    if (drive is! DraftTreadled) {
+      throw StateError('withTreadleForPick requires a treadled drive, got ${drive.runtimeType}');
+    }
+    if (pick < 0) throw RangeError.range(pick, 0, null, 'pick');
+    final newTreadling = _setRow(drive.treadling, pick, treadles);
+    final next = draft.copyWith(drive: drive.copyWith(treadling: newTreadling));
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// Set [pick] (0-based) to raise [shafts] (liftplan drafts). Pads a short liftplan. Pure.
+  EditorState withLiftForPick(int pick, List<int> shafts) {
+    final drive = draft.drive;
+    if (drive is! DraftLiftplan) {
+      throw StateError('withLiftForPick requires a liftplan drive, got ${drive.runtimeType}');
+    }
+    if (pick < 0) throw RangeError.range(pick, 0, null, 'pick');
+    final newLift = _setRow(drive.liftplan, pick, shafts);
+    final next = draft.copyWith(drive: DraftLiftplan(liftplan: newLift));
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// A fresh copy of [rows] with row [index] set to a canonical (ascending) copy of [value],
+  /// padding with empty rows up to [index] when the source is short.
+  static List<List<int>> _setRow(List<List<int>> rows, int index, List<int> value) {
+    final rowCount = index >= rows.length ? index + 1 : rows.length;
+    return [
+      for (var p = 0; p < rowCount; p++)
+        if (p == index)
+          (List<int>.of(value)..sort())
+        else
+          List<int>.of(p < rows.length ? rows[p] : const <int>[]),
+    ];
+  }
+
+  /// Apply a paint to the cell named by [hit], forcing it [on] or off, routing to the right
+  /// region's value-setter so tap and drag share identical semantics.
+  EditorState paintCell(DraftHit hit, {required bool on}) {
+    switch (hit.region) {
+      case DraftRegion.threading:
+        return withThreadForEnd(hit.col, on ? [hit.row] : const <int>[]);
+      case DraftRegion.tieup:
+        return withTieupCell(hit.col, hit.row, on);
+      case DraftRegion.right:
+        return draft.drive is DraftTreadled
+            ? withTreadleForPick(hit.row, on ? [hit.col] : const <int>[])
+            : withLiftForPick(hit.row, on ? [hit.col] : const <int>[]);
+      case DraftRegion.drawdown:
+        return this; // display-only
+    }
+  }
+
+  /// Open a stroke: capture the pre-edit doc into [strokeBase] and clear redo ONCE. Auto-seals a
+  /// stale open stroke first (so a widget torn down mid-drag cannot freeze the next capture).
+  EditorState beginStroke() {
+    final base = strokeBase == null ? this : endStroke();
+    return base.copyWith(strokeBase: base.draft, redo: const []);
+  }
+
+  /// Close a stroke: push [strokeBase] as the SINGLE undo entry for the whole stroke (or push
+  /// nothing if the net change is zero), clear [strokeBase], and mark structurally dirty. No-op
+  /// when no stroke is open.
+  EditorState endStroke() {
+    final base = strokeBase;
+    if (base == null) return this;
+    if (base == draft) {
+      return copyWith(strokeBase: null); // wander-out-and-back drag: push NOTHING
+    }
+    return copyWith(undo: [...undo, base], strokeBase: null, dirtyStructural: true);
   }
 
   @override

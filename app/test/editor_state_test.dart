@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/models/draft_doc.dart';
+import 'package:ply/src/models/draft_region.dart';
 import 'package:ply/src/models/editor_state.dart';
 
 // Pure-Dart tests for the editor's reducers. No FFI, no Riverpod container: the reducers live
@@ -71,6 +72,65 @@ DraftDoc overLengthTieupDraft() => DraftDoc(
       palette: const [DraftColor(r: 0, g: 0, b: 0)],
       warpColors: const <int>[],
       weftColors: const <int>[],
+      notes: '',
+    );
+
+/// A treadled draft WITH ends and picks (blank has neither), so threading/treadling/tie-up cells
+/// are paintable. threading [[1],[2],[3],[4]], treadling [[1],[2],[3],[4]], tieup straight.
+DraftDoc paintableTreadled() => DraftDoc(
+      name: 'p',
+      shafts: 4,
+      treadles: 4,
+      shed: Shed.rising,
+      unit: MeasureUnit.inches,
+      threading: const [
+        [1],
+        [2],
+        [3],
+        [4],
+      ],
+      drive: DraftTreadled(
+        tieup: const [
+          [1],
+          [2],
+          [3],
+          [4],
+        ],
+        treadling: const [
+          [1],
+          [2],
+          [3],
+          [4],
+        ],
+      ),
+      palette: const [DraftColor(r: 255, g: 255, b: 255), DraftColor(r: 0, g: 0, b: 0)],
+      warpColors: const [0, 0, 0, 0],
+      weftColors: const [1, 1, 1, 1],
+      notes: '',
+    );
+
+/// A liftplan draft with ends and picks for right-band paint tests.
+DraftDoc paintableLiftplan() => DraftDoc(
+      name: 'lp',
+      shafts: 4,
+      treadles: 0,
+      shed: Shed.rising,
+      unit: MeasureUnit.inches,
+      threading: const [
+        [1],
+        [2],
+        [3],
+        [4],
+      ],
+      drive: DraftLiftplan(liftplan: const [
+        [1],
+        [2],
+        [3],
+        [4],
+      ]),
+      palette: const [DraftColor(r: 0, g: 0, b: 0)],
+      warpColors: const [0, 0, 0, 0],
+      weftColors: const [0, 0, 0, 0],
       notes: '',
     );
 
@@ -225,6 +285,132 @@ void main() {
       final b = EditorState(draft: treadledDraft()).toggleTieupCell(1, 1);
       expect(a, equals(b));
       expect(a.hashCode, equals(b.hashCode));
+    });
+  });
+
+  group('EditorState drag-paint strokes', () {
+    test('a multi-cell stroke commits as exactly ONE undo entry', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      var s = s0.beginStroke();
+      s = s.paintCell(const DraftHit(DraftRegion.threading, 1, 2), on: true); // end1 -> shaft2
+      s = s.paintCell(const DraftHit(DraftRegion.threading, 2, 2), on: true); // end2 -> shaft2
+      s = s.paintCell(const DraftHit(DraftRegion.threading, 1, 2), on: true); // re-enter, idempotent
+      s = s.endStroke();
+      expect(s.undo.length, 1, reason: 'one entry for the whole stroke');
+      expect(s.undo.last, equals(s0.draft), reason: 'the pre-stroke doc');
+      expect(s.redo, isEmpty);
+      expect(s.strokeBase, isNull);
+      expect(s.dirtyStructural, isTrue);
+      expect(s.draft.threading[0], equals([2]));
+      expect(s.draft.threading[1], equals([2]));
+      expect(s.draft.threading[2], equals([3]), reason: 'untouched end unchanged');
+    });
+
+    test('a tap (begin + one paint + end) is one undo entry; tie-up adds (multi)', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      final s = s0
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.tieup, 1, 2), on: true)
+          .endStroke();
+      expect(s.undo.length, 1);
+      expect((s.draft.drive as DraftTreadled).tieup[0], equals([1, 2]),
+          reason: 'tie-up ADDS a shaft (multi), unlike threading/treadling replace');
+    });
+
+    test('a stroke whose cells were already at the painted value pushes NOTHING', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      // end1 is already on shaft1; painting it ON shaft1 changes nothing.
+      final s = s0
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.threading, 1, 1), on: true)
+          .endStroke();
+      expect(s.undo, isEmpty, reason: 'net no-op -> no undo entry');
+      expect(s.strokeBase, isNull);
+      expect(s.draft, equals(s0.draft));
+    });
+
+    test('beginStroke clears redo (a fresh edit invalidates the redo future)', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      final edited = s0
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.threading, 1, 2), on: true)
+          .endStroke();
+      final undone = edited.undoEdit();
+      expect(undone.redo.length, 1);
+      expect(undone.beginStroke().redo, isEmpty);
+    });
+
+    test('multiple strokes undo and redo in LIFO order', () {
+      var s = EditorState(draft: paintableTreadled());
+      final base = s.draft;
+      s = s
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.threading, 1, 2), on: true)
+          .endStroke();
+      final afterA = s.draft;
+      s = s
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.threading, 2, 1), on: true)
+          .endStroke();
+      final afterB = s.draft;
+      expect(s.undo.length, 2);
+      s = s.undoEdit();
+      expect(s.draft, equals(afterA));
+      s = s.undoEdit();
+      expect(s.draft, equals(base));
+      s = s.redoEdit();
+      expect(s.draft, equals(afterA));
+      s = s.redoEdit();
+      expect(s.draft, equals(afterB));
+    });
+
+    test('an interrupted (never-ended) stroke is auto-sealed by the next beginStroke', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      final open = s0
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.threading, 1, 2), on: true);
+      expect(open.strokeBase, isNotNull);
+      final next = open.beginStroke();
+      expect(next.undo.length, 1, reason: 'the stale stroke was committed');
+      expect(next.undo.last, equals(s0.draft));
+      expect(next.strokeBase, equals(next.draft), reason: 'a fresh stroke is open on the current doc');
+    });
+
+    test('a liftplan right-band stroke edits the liftplan (col=shaft, row=pick)', () {
+      final s0 = EditorState(draft: paintableLiftplan());
+      final s = s0
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.right, 2, 0), on: true)
+          .endStroke();
+      expect(s.undo.length, 1);
+      expect((s.draft.drive as DraftLiftplan).liftplan[0], equals([2]));
+    });
+
+    test('a treadled right-band stroke edits the treadling (col=treadle, row=pick)', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      final s = s0
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.right, 3, 0), on: true)
+          .endStroke();
+      expect((s.draft.drive as DraftTreadled).treadling[0], equals([3]));
+    });
+
+    test('strokeBase is EXCLUDED from == and hashCode', () {
+      final a = EditorState(draft: paintableTreadled());
+      final b = a.copyWith(strokeBase: a.draft);
+      expect(b.strokeBase, isNotNull);
+      expect(a, equals(b), reason: 'an in-flight stroke must not change document equality');
+      expect(a.hashCode, equals(b.hashCode));
+    });
+
+    test('copyWith keeps strokeBase by default, clears it with explicit null', () {
+      final a = EditorState(draft: paintableTreadled())
+          .copyWith(strokeBase: paintableTreadled());
+      expect(a.strokeBase, isNotNull);
+      expect(a.copyWith(dirtyStructural: true).strokeBase, isNotNull,
+          reason: 'default _keep sentinel preserves it');
+      expect(a.copyWith(strokeBase: null).strokeBase, isNull,
+          reason: 'explicit null clears it (the bug ?? this.x would hide)');
     });
   });
 }
