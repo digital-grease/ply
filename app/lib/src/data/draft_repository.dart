@@ -1,27 +1,34 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/draft_doc.dart';
+import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
 import '../rust/api.dart';
+import '../rust/dto.dart';
 
 /// The one place the app touches `dart:io` and the generated bridge symbols.
 ///
-/// Screens depend on this repository, never on `api.dart` directly. It owns:
-///   - the render path (WIF text -> decoded [ui.Image]) including the no-flip
-///     orientation contract,
+/// Screens and editor state depend on this repository, never on `api.dart`/`dto.dart`
+/// directly. It owns:
+///   - the render path (WIF text or [DraftDoc] -> decoded [ui.Image]) including the
+///     no-flip orientation contract,
+///   - the ONLY mapping between the domain [DraftDoc] and the wire `DraftDto` (so the
+///     generated symbols never leak into the model/UI/state layers),
 ///   - on-device persistence as a `<documents>/drafts/<id>.{wif,json,png}` triplet,
 ///   - the filesystem-as-index `list()` (no separate index.json).
 ///
-/// CONSTRAINT: the bridge `Draft` is an opaque, move-by-value, SINGLE-USE handle —
-/// the first call that takes it (here, `renderPreview`) consumes and frees it.
-/// So we never store or reuse a `Draft`; we carry the WIF *text* everywhere and
-/// `parseWif` fresh on every render. `parseWif` is microseconds.
+/// Since Phase 2.3 the editor speaks the transparent `DraftDto` end to end (no opaque,
+/// single-use `Draft` handle): a [DraftDoc] can be rendered, validated, and written
+/// repeatedly with no use-after-free.
 class DraftRepository {
   DraftRepository();
 
@@ -53,22 +60,32 @@ class DraftRepository {
   // ---------------------------------------------------------------------------
 
   /// Parse [wifText] and render it to a decoded [ui.Image] at [cellPx] pixels per
-  /// intersection.
+  /// intersection. Used by the Library/import path (which carries raw WIF text).
   ///
-  /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is
-  /// RGBA8, row-major, TOP-TO-BOTTOM — `render_rgba` (ply-weave) already applied
-  /// the vertical flip so pick 0 is the bottom row. So decode width x height as-is
-  /// and do NOT flip; alpha is always 255.
-  ///
-  /// Exactly ONE `parseWif` per call (the Draft is consumed by `renderPreview`).
   /// Errors (UTF-8/parse/engine) propagate to the caller, which renders them as a
   /// friendly SnackBar.
   Future<ui.Image> renderDrawdown(String wifText, {required int cellPx}) async {
-    final draft = await parseWif(text: wifText);
-    final preview = await renderPreview(draft: draft, cellPx: cellPx);
+    final dto = await parseWifDto(text: wifText);
+    final preview = await renderPreviewDto(dto: dto, cellPx: cellPx);
+    return _decodePreview(preview);
+  }
+
+  /// Render an editor [DraftDoc] to a decoded [ui.Image] at [cellPx] pixels per
+  /// intersection. The live editor calls this on every edit; recompute is microseconds.
+  Future<ui.Image> renderDto(DraftDoc doc, {required int cellPx}) async {
+    final preview = await renderPreviewDto(dto: toDto(doc), cellPx: cellPx);
+    return _decodePreview(preview);
+  }
+
+  /// Decode an engine [PreviewImage] into a [ui.Image].
+  ///
+  /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is RGBA8,
+  /// row-major, TOP-TO-BOTTOM — `render_rgba` (ply-weave) already applied the vertical
+  /// flip so pick 0 is the bottom row. So decode width x height as-is and do NOT flip;
+  /// alpha is always 255. frb maps the Rust `Vec<u8>` to a tightly-packed `Uint8List`
+  /// (stride = width*4), exactly what `decodeImageFromPixels` wants (no rowBytes).
+  Future<ui.Image> _decodePreview(PreviewImage preview) {
     final completer = Completer<ui.Image>();
-    // frb maps the Rust `Vec<u8>` to a Dart Uint8List, exactly what this wants.
-    // Tightly packed (stride = width*4); no rowBytes, no flip.
     ui.decodeImageFromPixels(
       preview.rgba,
       preview.width,
@@ -77,6 +94,13 @@ class DraftRepository {
       completer.complete,
     );
     return completer.future;
+  }
+
+  /// Validate an editor [DraftDoc], returning structured [DraftIssue]s (empty = clean) the
+  /// editor can color and gate Save on. Runs through the engine validator over the wire DTO.
+  Future<List<DraftIssue>> validateDto(DraftDoc doc) async {
+    final issues = await validateDraft(dto: toDto(doc));
+    return issues.map(_issueFromDto).toList();
   }
 
   // ---------------------------------------------------------------------------
@@ -110,6 +134,31 @@ class DraftRepository {
       throw Exception('Could not save the draft: ${e.message}');
     }
   }
+
+  /// Save an editor [DraftDoc] as the `<id>.{wif,json,png}` triplet, dual-path.
+  ///
+  /// If [sourceWif] is non-null the draft is persisted BYTE-IDENTICAL to it: the lossless path
+  /// the editor takes while the draft is only cosmetically changed. Otherwise the doc is
+  /// re-serialized via `write_wif`, which is lossy at the WIF header (thickness/spacing and
+  /// unrecognized sections are dropped, see docs/WIF_MAPPING.md). The editor chooses by passing
+  /// `sourceWif` only when its `dirtyStructural` flag is false (the "warn about loss" UI is
+  /// Phase 2.5). Returns the saved draft id.
+  Future<String> saveDto(
+    DraftDoc doc, {
+    required DraftMeta meta,
+    String? id,
+    String? sourceWif,
+  }) async {
+    return save(wifText: await resolveSaveWif(doc, sourceWif), meta: meta, id: id);
+  }
+
+  /// Resolve the WIF text [saveDto] will persist: the original [sourceWif] VERBATIM when present
+  /// (the lossless path), otherwise a fresh `write_wif(toDto(doc))` re-serialization (lossy at
+  /// the WIF header). Extracted so this load-bearing dual-path branch is host-testable: the
+  /// verbatim arm short-circuits the FFI `writeWif`, so it runs with no native lib.
+  @visibleForTesting
+  Future<String> resolveSaveWif(DraftDoc doc, String? sourceWif) async =>
+      sourceWif ?? await writeWif(dto: toDto(doc));
 
   /// Render a small PNG thumbnail next to the draft. Best-effort: a null PNG encode
   /// or any render error is swallowed (the Library re-renders lazily if it's missing).
@@ -242,4 +291,131 @@ class DraftRepository {
     await tmp.writeAsBytes(bytes, flush: true);
     await tmp.rename(target.path);
   }
+
+  // ---------------------------------------------------------------------------
+  // DTO mapping — the ONLY DraftDoc <-> DraftDto bridge.
+  //
+  // Pure type-shape translation (no FFI, no I/O): the 1-based id <-> 0-based and the u16/u32
+  // BASE conversions already happen inside the Rust bridge (dto.rs From/TryFrom), so HERE both
+  // sides carry 1-based plain ints. The two real jobs are (1) the typed-list <-> plain-list
+  // shape change, and (2) WIRE-RANGE reconciliation in [toDto], because DraftDoc holds 64-bit
+  // ints with no range invariant while the wire narrows to u8/u16/u32 and the FFI encoder would
+  // otherwise SILENTLY truncate (mod 2^bits) before the value reaches Rust. Two policies, by
+  // value kind: color channels CLAMP to 0..255 (a near-boundary slider value is plausible), but
+  // ids and palette indices THROW outside u16/u32 (a truncated id is a wrong id, never a
+  // near-boundary value). In-range-but-dangling ids/indices pass through and are caught by the
+  // engine's validate() instead.
+  // ---------------------------------------------------------------------------
+
+  /// Map a domain [DraftDoc] to the wire `DraftDto`. Color channels are clamped to 0..255.
+  DraftDto toDto(DraftDoc doc) {
+    return DraftDto(
+      name: doc.name,
+      shafts: doc.shafts,
+      treadles: doc.treadles,
+      shed: switch (doc.shed) {
+        Shed.rising => ShedKind.rising,
+        Shed.sinking => ShedKind.sinking,
+      },
+      unit: switch (doc.unit) {
+        MeasureUnit.inches => UnitKind.inches,
+        MeasureUnit.centimeters => UnitKind.centimeters,
+      },
+      threading: _rowsToU16(doc.threading),
+      drive: switch (doc.drive) {
+        DraftTreadled(:final tieup, :final treadling) => DriveDto.treadled(
+            tieup: _rowsToU16(tieup),
+            treadling: _rowsToU16(treadling),
+          ),
+        DraftLiftplan(:final liftplan) => DriveDto.liftplan(
+            liftplan: _rowsToU16(liftplan),
+          ),
+      },
+      palette: [
+        for (final c in doc.palette)
+          ColorDto(r: _clampChannel(c.r), g: _clampChannel(c.g), b: _clampChannel(c.b)),
+      ],
+      warpColors: _indicesToU32(doc.warpColors),
+      weftColors: _indicesToU32(doc.weftColors),
+      notes: doc.notes,
+    );
+  }
+
+  /// Map a wire `DraftDto` back to a domain [DraftDoc].
+  DraftDoc fromDto(DraftDto dto) {
+    return DraftDoc(
+      name: dto.name,
+      shafts: dto.shafts,
+      treadles: dto.treadles,
+      shed: switch (dto.shed) {
+        ShedKind.rising => Shed.rising,
+        ShedKind.sinking => Shed.sinking,
+      },
+      unit: switch (dto.unit) {
+        UnitKind.inches => MeasureUnit.inches,
+        UnitKind.centimeters => MeasureUnit.centimeters,
+      },
+      threading: _rowsFromU16(dto.threading),
+      drive: switch (dto.drive) {
+        DriveDto_Treadled(:final tieup, :final treadling) => DraftTreadled(
+            tieup: _rowsFromU16(tieup),
+            treadling: _rowsFromU16(treadling),
+          ),
+        DriveDto_Liftplan(:final liftplan) => DraftLiftplan(
+            liftplan: _rowsFromU16(liftplan),
+          ),
+      },
+      palette: [
+        for (final c in dto.palette) DraftColor(r: c.r, g: c.g, b: c.b),
+      ],
+      warpColors: List<int>.of(dto.warpColors),
+      weftColors: List<int>.of(dto.weftColors),
+      notes: dto.notes,
+    );
+  }
+
+  DraftIssue _issueFromDto(ValidationIssueDto issue) => DraftIssue(
+        severity: switch (issue.severity) {
+          SeverityKind.error => IssueSeverity.error,
+          SeverityKind.warning => IssueSeverity.warning,
+        },
+        message: issue.message,
+      );
+
+  /// Clamp a color channel to the wire's 0..255 (u8) range (see the mapping note above).
+  /// Channels CLAMP (not throw) because an out-of-range channel is a plausible near-boundary
+  /// editor value (a slider overshoot) where clamping is the right behavior.
+  static int _clampChannel(int v) => v < 0 ? 0 : (v > 255 ? 255 : v);
+
+  /// Plain `List<List<int>>` -> wire `List<Uint16List>` (one row per entry), guarding each id
+  /// against the u16 range. Ids THROW (not clamp): a shaft/treadle id outside 0..65535 is not a
+  /// near-boundary value but corruption, and `Uint16List.fromList` would otherwise silently
+  /// truncate it mod 65536 into a different, valid-looking id. (An in-range but semantically
+  /// dangling id, e.g. shaft 5 of a 2-shaft draft, is NOT caught here on purpose; it stays a
+  /// clean u16 and the engine's `validate()` reports it as an Error.)
+  static List<Uint16List> _rowsToU16(List<List<int>> rows) =>
+      [for (final r in rows) Uint16List.fromList([for (final v in r) _checkU16(v)])];
+
+  static int _checkU16(int v) {
+    if (v < 0 || v > 0xFFFF) {
+      throw RangeError.range(v, 0, 0xFFFF, 'shaft/treadle id');
+    }
+    return v;
+  }
+
+  /// Plain `List<int>` of palette indices -> wire `Uint32List`, guarding each against the u32
+  /// range for the same reason ids throw (a negative index would wrap to a huge positive). An
+  /// in-range index past the palette end stays valid here and is flagged by `validate()`.
+  static Uint32List _indicesToU32(List<int> indices) {
+    for (final v in indices) {
+      if (v < 0 || v > 0xFFFFFFFF) {
+        throw RangeError.range(v, 0, 0xFFFFFFFF, 'color index');
+      }
+    }
+    return Uint32List.fromList(indices);
+  }
+
+  /// Wire `List<Uint16List>` -> plain growable `List<List<int>>`.
+  static List<List<int>> _rowsFromU16(List<Uint16List> rows) =>
+      [for (final r in rows) List<int>.of(r)];
 }

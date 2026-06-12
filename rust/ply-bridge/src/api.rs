@@ -11,20 +11,24 @@
 //! attribute is required.
 
 // `pub use`, not `use`: the generated `frb_generated.rs` does `use crate::api::*` and
-// references these types unqualified, so they must be re-exported from this module.
+// references these types unqualified, so the types that appear in a bridge fn signature must
+// be re-exported from this module. The calc types still cross the boundary (estimate_* fns).
 pub use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
-pub use ply_weave::{self as weave, Draft};
+
+// `Draft` and the `weave` alias are now used ONLY inside fn bodies and the DTO conversions —
+// no bridge fn takes or returns the opaque `Draft` since Phase 2.3 dropped `parse_wif`/
+// `render_preview`. So this is a private `use`, NOT `pub use`: frb emits NO opaque-`Draft`
+// codec and no bridge fn references it, so the single-use handle is unreachable from Dart and
+// the editor speaks `DraftDto` end to end. (An inert `abstract class Draft {}` stub may still
+// appear in the generated, git-ignored `lib.dart` because `Draft` stays reachable through this
+// engine `use`; it is dead and harmless.)
+use ply_weave::{self as weave, Draft};
 
 // M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
     ColorDto, DraftDto, DriveDto, SeverityKind, ShedKind, UnitKind, ValidationIssueDto,
 };
-
-/// Parse WIF text into a `Draft`. Errors carry a human-readable message for the UI.
-pub fn parse_wif(text: String) -> Result<Draft, String> {
-    weave::wif::parse(&text).map_err(|e| e.to_string())
-}
 
 /// Serialize an editor `DraftDto` back to WIF text. Takes the mirrored DTO (not an opaque
 /// handle), so the editor's Save path can re-serialize the live document. `Err` if the DTO
@@ -46,22 +50,15 @@ pub struct PreviewImage {
     pub rgba: Vec<u8>,
 }
 
-/// Render the cloth to an RGBA buffer at `cell_px` pixels per intersection. This is the
-/// single call the preview widget makes; recompute is microseconds, so it is fine to call
-/// on every edit.
-pub fn render_preview(draft: Draft, cell_px: u32) -> PreviewImage {
-    let img = weave::render_rgba(&draft, cell_px);
-    PreviewImage { width: img.width, height: img.height, rgba: img.pixels }
-}
-
 // ---------------------------------------------------------------------------
-// M2 editor surface (transparent DTO). Additive for the Phase-1 spike: the opaque-`Draft`
-// fns above stay so the M1 app keeps building until Phase 2 migrates the repository.
+// M2 editor surface (transparent DTO). The opaque-`Draft` `parse_wif`/`render_preview` fns
+// were removed in Phase 2.3 once `DraftRepository` migrated to this DTO surface; the editor
+// now holds a mirrored value end to end, so the M1 single-use-handle trap is gone for good.
 // ---------------------------------------------------------------------------
 
-/// Parse WIF into the transparent editor `DraftDto`. Unlike `parse_wif` (which yields an
-/// opaque, single-use `Draft` handle), the returned value is a plain mirrored struct the
-/// editor can hold and pass to render/validate/write repeatedly.
+/// Parse WIF into the transparent editor `DraftDto`. The returned value is a plain mirrored
+/// struct the editor can hold and pass to render/validate/write repeatedly (no opaque,
+/// single-use `Draft` handle).
 pub fn parse_wif_dto(text: String) -> Result<DraftDto, String> {
     weave::wif::parse(&text)
         .map(|d| DraftDto::from(&d))
