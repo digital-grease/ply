@@ -169,6 +169,23 @@ class EditorState {
     );
   }
 
+  /// Replace the live draft with an externally-computed [next] (e.g. an engine resize or
+  /// Treadled->Liftplan switch produced via FFI) as a SINGLE undo entry: pushes the pre-edit doc
+  /// to [undo], clears [redo], marks dirty. No-op (same identity) when [next] equals the current
+  /// draft. The FFI happens in the caller; this is the pure undo-bookkeeping half.
+  EditorState commitEdit(DraftDoc next) {
+    if (next == draft) return this;
+    return copyWith(
+      draft: next,
+      undo: [...undo, draft],
+      redo: const [],
+      dirtyStructural: true,
+      // Belt-and-suspenders: clear any in-flight stroke base so a later endStroke can't push a
+      // stale pre-commit snapshot (the notifier also seals an open stroke before calling this).
+      strokeBase: null,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Drag-paint value-setters + stroke coalescing (Phase 3.1).
   //

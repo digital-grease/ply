@@ -1,0 +1,140 @@
+// A bottom bar of dimension steppers (ends / picks / shafts / treadles). Each +/- resizes the
+// draft through the engine (prune stale refs on shrink, pad blanks on grow) and commits the result
+// as ONE undo entry. Always visible (even on a blank draft) so a from-scratch draft can be grown
+// to a size the integrated grids can edit.
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../state/draft_editor_notifier.dart';
+import '../state/editor_providers.dart';
+
+class DimensionsBar extends ConsumerStatefulWidget {
+  const DimensionsBar({super.key});
+
+  @override
+  ConsumerState<DimensionsBar> createState() => _DimensionsBarState();
+}
+
+class _DimensionsBarState extends ConsumerState<DimensionsBar> {
+  /// A sane ceiling for the steppers (a hand loom never approaches this).
+  static const int _maxDim = 200;
+
+  /// True while a resize is in flight. Serializes resizes (a second stepper tap is ignored until
+  /// the first commits), so two fast taps can't both read the same pre-resize draft and lose one
+  /// axis's update across the async FFI hop.
+  bool _resizing = false;
+
+  Future<void> _resize({int? ends, int? picks, int? shafts, int? treadles}) async {
+    if (_resizing) return;
+    setState(() => _resizing = true);
+    try {
+      final repo = ref.read(repositoryProvider);
+      final d = ref.read(draftEditorProvider).draft;
+      final next = await repo.resizeDoc(
+        d,
+        ends: ends ?? d.ends,
+        picks: picks ?? d.picks,
+        shafts: shafts ?? d.shafts,
+        treadles: treadles ?? d.treadles,
+      );
+      ref.read(draftEditorProvider.notifier).commitEdit(next);
+    } finally {
+      if (mounted) setState(() => _resizing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (ends, picks, shafts, treadles) = ref.watch(draftEditorProvider.select(
+        (s) => (s.draft.ends, s.draft.picks, s.draft.shafts, s.draft.treadles)));
+    final enabled = !_resizing;
+    return Material(
+      elevation: 2,
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              _Stepper(
+                  label: 'Ends',
+                  value: ends,
+                  min: 0,
+                  max: _maxDim,
+                  enabled: enabled,
+                  onChange: (v) => _resize(ends: v)),
+              _Stepper(
+                  label: 'Picks',
+                  value: picks,
+                  min: 0,
+                  max: _maxDim,
+                  enabled: enabled,
+                  onChange: (v) => _resize(picks: v)),
+              _Stepper(
+                  label: 'Shafts',
+                  value: shafts,
+                  min: 1,
+                  max: _maxDim,
+                  enabled: enabled,
+                  onChange: (v) => _resize(shafts: v)),
+              _Stepper(
+                  label: 'Treadles',
+                  value: treadles,
+                  min: 0,
+                  max: _maxDim,
+                  enabled: enabled,
+                  onChange: (v) => _resize(treadles: v)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Stepper extends StatelessWidget {
+  const _Stepper({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.enabled,
+    required this.onChange,
+  });
+
+  final String label;
+  final int value;
+  final int min;
+  final int max;
+  final bool enabled;
+  final void Function(int) onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            iconSize: 20,
+            tooltip: 'Fewer $label',
+            onPressed: enabled && value > min ? () => onChange(value - 1) : null,
+            icon: const Icon(Icons.remove),
+          ),
+          Text('$label $value', style: Theme.of(context).textTheme.labelLarge),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            iconSize: 20,
+            tooltip: 'More $label',
+            onPressed: enabled && value < max ? () => onChange(value + 1) : null,
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
+    );
+  }
+}

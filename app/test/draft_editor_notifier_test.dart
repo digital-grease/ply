@@ -143,4 +143,26 @@ void main() {
     expect(read().draft, equals(DraftDoc.blank(shafts: 2, treadles: 2)),
         reason: 'the cleared scratch makes paintAt a no-op after a load');
   });
+
+  test('commitEdit mid-stroke seals the stroke first; undo history stays chronological', () {
+    notifier().load(paintableTreadled());
+    final n = notifier();
+    final d0 = read().draft;
+    n.beginStroke(const DraftHit(DraftRegion.threading, 1, 2)); // paint -> d1, stroke open
+    final d1 = read().draft;
+    expect(d1, isNot(equals(d0)));
+
+    // A resize commits mid-stroke (a second finger on the dimensions bar).
+    final d2 = d1.copyWith(shafts: 8);
+    n.commitEdit(d2);
+    expect(read().draft, equals(d2));
+    // The open stroke was sealed in order, so a later pointer-up can't push a stale snapshot.
+    n.endStroke();
+    expect(read().undo, equals([d0, d1]),
+        reason: 'oldest-first: the paint (d0->d1) then the resize (d1->d2); no reversed/stale push');
+    n.undo();
+    expect(read().draft, equals(d1));
+    n.undo();
+    expect(read().draft, equals(d0));
+  });
 }

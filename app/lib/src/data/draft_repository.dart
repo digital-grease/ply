@@ -82,6 +82,24 @@ class DraftRepository {
   Future<DraftDoc> parseDoc(String wifText) async =>
       fromDto(await parseWifDto(text: wifText));
 
+  /// Resize [doc] to the given dimensions via the engine (prunes stale shaft/treadle refs on a
+  /// shrink, pads blanks on a grow, keeps warp/weft coupled). The result never carries a dangling
+  /// reference. (Named `resizeDoc` to avoid colliding with the generated `resizeDto`.)
+  Future<DraftDoc> resizeDoc(
+    DraftDoc doc, {
+    required int ends,
+    required int picks,
+    required int shafts,
+    required int treadles,
+  }) async =>
+      fromDto(await resizeDto(
+        dto: toDto(doc),
+        ends: ends,
+        picks: picks,
+        shafts: shafts,
+        treadles: treadles,
+      ));
+
   /// Decode an engine [PreviewImage] into a [ui.Image].
   ///
   /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is RGBA8,

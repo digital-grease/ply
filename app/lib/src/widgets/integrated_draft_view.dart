@@ -64,12 +64,14 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       cell: cell.toDouble(),
     );
 
-    if (layout.ends == 0 && layout.picks == 0) {
+    if (layout.ends == 0 || layout.picks == 0) {
+      // ANY empty axis: a zero-area drawdown bitmap can't be decoded (the preview would hang), so
+      // show the placeholder until the draft has both warp ends and picks.
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'This draft has no warp ends or picks yet.\nResizing arrives in Phase 3.2.',
+            'This draft has no warp ends or picks yet.\nUse the steppers below to add ends and picks.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),

@@ -413,4 +413,23 @@ void main() {
           reason: 'explicit null clears it (the bug ?? this.x would hide)');
     });
   });
+
+  group('EditorState.commitEdit', () {
+    test('replaces the draft as ONE undo entry; undo restores', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      final next = paintableTreadled().copyWith(shafts: 8); // an externally-computed resize result
+      final s1 = s0.commitEdit(next);
+      expect(s1.draft, equals(next));
+      expect(s1.undo.length, 1);
+      expect(s1.undo.last, equals(s0.draft));
+      expect(s1.redo, isEmpty);
+      expect(s1.dirtyStructural, isTrue);
+      expect(s1.undoEdit().draft, equals(s0.draft), reason: 'one undo reverts the resize');
+    });
+
+    test('is a no-op (same identity) when the draft is unchanged', () {
+      final s0 = EditorState(draft: paintableTreadled());
+      expect(identical(s0.commitEdit(s0.draft), s0), isTrue);
+    });
+  });
 }

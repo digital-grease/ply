@@ -63,6 +63,19 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
                     format!("tie-up has {} treadles, header says {}", tieup.treadles(), draft.treadles),
                 );
             }
+            // Tie-up shafts within range. A dangling tie (shaft > header) renders white silently
+            // (like a dangling threading shaft), so surface it as an Error.
+            for (t, shafts) in tieup.0.iter().enumerate() {
+                for s in shafts {
+                    if s.0 == 0 || s.0 > draft.shafts {
+                        push(
+                            &mut issues,
+                            Severity::Error,
+                            format!("treadle {} ties shaft {} outside 1..={}", t + 1, s.0, draft.shafts),
+                        );
+                    }
+                }
+            }
             for (p, treadles) in treadling.0.iter().enumerate() {
                 for t in treadles {
                     if t.0 == 0 || t.0 as usize > tieup.treadles() {
@@ -140,6 +153,22 @@ mod tests {
                 .iter()
                 .all(|i| !(i.severity == Severity::Error && i.message.contains("color"))),
             "color error should be gone after clamp"
+        );
+    }
+
+    #[test]
+    fn flags_dangling_tieup_shaft() {
+        // A tie-up referencing a shaft beyond the header renders white silently; validate() must
+        // surface it as an Error (the blind spot a resize-prune regression would otherwise hide).
+        let mut d = Draft::blank(2, 2);
+        if let Drive::Treadled { tieup, .. } = &mut d.drive {
+            tieup.0[0] = vec![ShaftId(5)]; // treadle 1 ties shaft 5 of a 2-shaft draft
+        }
+        assert!(
+            validate(&d).iter().any(|i| i.severity == Severity::Error
+                && i.message.contains("treadle 1 ties shaft 5")),
+            "expected a tie-up shaft-range Error, got {:?}",
+            validate(&d)
         );
     }
 }

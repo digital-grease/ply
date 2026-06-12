@@ -40,6 +40,20 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   /// Re-apply the most recently undone snapshot.
   void redo() => state = state.redoEdit();
 
+  /// Commit an externally-computed draft (an engine resize / drive switch) as one undo entry.
+  ///
+  /// Seals any OPEN drag-paint stroke first (a resize can arrive mid-stroke via a second finger on
+  /// the dimensions bar): committing the in-flight stroke as its own undo entry keeps the history
+  /// chronological, instead of leaving `strokeBase` to push a stale pre-resize snapshot on the
+  /// later pointer-up. (`load()` defends the same way; this is its twin.)
+  void commitEdit(DraftDoc next) {
+    if (state.strokeBase != null) {
+      _clearStroke();
+      state = state.endStroke();
+    }
+    state = state.commitEdit(next);
+  }
+
   // --- Drag-paint stroke driver (Phase 3.1) ----------------------------------
   // Transient gesture scratch kept off the immutable EditorState. A stroke paints a CONSTANT
   // value (decided by inverting the first cell) across cells in its START region only; the whole

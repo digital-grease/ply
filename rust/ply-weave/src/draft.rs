@@ -231,6 +231,77 @@ impl Draft {
             ..self.clone()
         }
     }
+
+    /// A copy resized to the given dimensions. GROWING pads with blanks (empty threading / empty
+    /// picks / color index 0); SHRINKING truncates AND prunes every shaft/treadle reference the
+    /// new, smaller header no longer has, so a resize NEVER leaves a dangling reference the user
+    /// must hand-fix (the resized draft `validate()`s with no new `Error`). Warp/weft color
+    /// lengths stay coupled (`warp.len() == ends`, `weft.len() == picks`). The palette is
+    /// untouched. This is the canonical, tested resize the editor's resize reducer routes through.
+    pub fn resized(&self, ends: usize, picks: usize, shafts: u16, treadles: u16) -> Draft {
+        let threading = Threading(
+            resize_rows(&self.threading.0, ends, Vec::new)
+                .into_iter()
+                .map(|row| prune_shafts(row, shafts))
+                .collect(),
+        );
+
+        let drive = match &self.drive {
+            Drive::Treadled { tieup, treadling } => Drive::Treadled {
+                tieup: TieUp(
+                    resize_rows(&tieup.0, treadles as usize, Vec::new)
+                        .into_iter()
+                        .map(|row| prune_shafts(row, shafts))
+                        .collect(),
+                ),
+                treadling: Treadling(
+                    resize_rows(&treadling.0, picks, Vec::new)
+                        .into_iter()
+                        .map(|row| prune_treadles(row, treadles))
+                        .collect(),
+                ),
+            },
+            Drive::Liftplan(lp) => Drive::Liftplan(Liftplan(
+                resize_rows(&lp.0, picks, Vec::new)
+                    .into_iter()
+                    .map(|row| prune_shafts(row, shafts))
+                    .collect(),
+            )),
+        };
+
+        Draft {
+            name: self.name.clone(),
+            shafts,
+            treadles,
+            shed: self.shed,
+            unit: self.unit,
+            threading,
+            drive,
+            colors: ColorPlan {
+                palette: self.colors.palette.clone(),
+                warp: resize_rows(&self.colors.warp, ends, || 0),
+                weft: resize_rows(&self.colors.weft, picks, || 0),
+            },
+            notes: self.notes.clone(),
+        }
+    }
+}
+
+/// First `len` of `rows`, padding with `pad()` when growing (truncating when shrinking).
+fn resize_rows<T: Clone>(rows: &[T], len: usize, pad: impl FnMut() -> T) -> Vec<T> {
+    let mut out: Vec<T> = rows.iter().take(len).cloned().collect();
+    out.resize_with(len, pad);
+    out
+}
+
+/// Keep only shafts in `1..=shafts` (drops dangling references on a shrink).
+fn prune_shafts(row: Vec<ShaftId>, shafts: u16) -> Vec<ShaftId> {
+    row.into_iter().filter(|s| s.0 >= 1 && s.0 <= shafts).collect()
+}
+
+/// Keep only treadles in `1..=treadles`.
+fn prune_treadles(row: Vec<TreadleId>, treadles: u16) -> Vec<TreadleId> {
+    row.into_iter().filter(|t| t.0 >= 1 && t.0 <= treadles).collect()
 }
 
 #[cfg(test)]
@@ -300,5 +371,176 @@ mod tests {
         assert_eq!(cp.weft, vec![0, 0]);
         // Idempotent: a second clamp finds nothing to fix.
         assert_eq!(cp.clamp_to_palette(), 0);
+    }
+
+    /// A 4-shaft, 4-treadle straight-draw treadled draft for resize tests.
+    fn resize_fixture() -> Draft {
+        Draft {
+            name: "t".into(),
+            shafts: 4,
+            treadles: 4,
+            shed: ShedType::Rising,
+            unit: Unit::Inches,
+            threading: Threading(vec![
+                vec![ShaftId(1)],
+                vec![ShaftId(2)],
+                vec![ShaftId(3)],
+                vec![ShaftId(4)],
+            ]),
+            drive: Drive::Treadled {
+                tieup: TieUp(vec![
+                    vec![ShaftId(1)],
+                    vec![ShaftId(2)],
+                    vec![ShaftId(3)],
+                    vec![ShaftId(4)],
+                ]),
+                treadling: Treadling(vec![
+                    vec![TreadleId(1)],
+                    vec![TreadleId(2)],
+                    vec![TreadleId(3)],
+                    vec![TreadleId(4)],
+                ]),
+            },
+            colors: ColorPlan {
+                palette: vec![Color::WHITE, Color::BLACK],
+                warp: vec![0, 0, 0, 0],
+                weft: vec![1, 1, 1, 1],
+            },
+            notes: String::new(),
+        }
+    }
+
+    fn no_errors(d: &Draft) -> bool {
+        validate(d).iter().all(|i| i.severity != Severity::Error)
+    }
+
+    #[test]
+    fn resize_grows_ends_and_picks_padding_blanks() {
+        let d = resize_fixture().resized(6, 5, 4, 4);
+        assert_eq!(d.ends(), 6);
+        assert_eq!(d.picks(), 5);
+        assert_eq!(d.threading.0[5], Vec::<ShaftId>::new(), "new end is unthreaded");
+        assert_eq!(d.colors.warp.len(), 6);
+        assert_eq!(d.colors.warp[5], 0, "new warp color padded with index 0");
+        assert_eq!(d.colors.weft.len(), 5);
+        assert_eq!(d.colors.weft[4], 0);
+        assert!(no_errors(&d));
+    }
+
+    #[test]
+    fn resize_shrinks_shafts_prunes_dangling_refs_and_validates_clean() {
+        let d = resize_fixture().resized(4, 4, 2, 4); // shafts 4 -> 2
+        assert_eq!(d.shafts, 2);
+        // Ends 3,4 threaded shafts 3,4 -> pruned to unthreaded.
+        assert!(d.threading.0[2].is_empty());
+        assert!(d.threading.0[3].is_empty());
+        if let Drive::Treadled { tieup, .. } = &d.drive {
+            assert!(tieup.0[2].is_empty(), "treadle 3's tie to shaft 3 pruned");
+            assert!(tieup.0[3].is_empty());
+        } else {
+            panic!("expected treadled");
+        }
+        assert!(no_errors(&d), "a shrink must never leave a dangling-shaft Error: {:?}", validate(&d));
+    }
+
+    #[test]
+    fn resize_shrinks_treadles_prunes_treadling_and_truncates_tieup() {
+        let d = resize_fixture().resized(4, 4, 4, 2); // treadles 4 -> 2
+        assert_eq!(d.treadles, 2);
+        if let Drive::Treadled { tieup, treadling } = &d.drive {
+            assert_eq!(tieup.0.len(), 2, "tie-up truncated to the treadle count");
+            assert!(treadling.0[2].is_empty(), "pick 3's press of treadle 3 pruned");
+            assert!(treadling.0[3].is_empty());
+        } else {
+            panic!("expected treadled");
+        }
+        assert!(no_errors(&d));
+    }
+
+    #[test]
+    fn resize_keeps_warp_weft_lengths_coupled() {
+        let d = resize_fixture().resized(7, 3, 4, 4);
+        assert_eq!(d.colors.warp.len(), d.ends());
+        assert_eq!(d.colors.weft.len(), d.picks());
+    }
+
+    #[test]
+    fn resize_grows_a_blank_draft() {
+        let d = Draft::blank(4, 4).resized(3, 3, 4, 4);
+        assert_eq!(d.ends(), 3);
+        assert_eq!(d.picks(), 3);
+        assert!(no_errors(&d), "a grown blank draft is clean to start editing");
+    }
+
+    #[test]
+    fn resize_liftplan_prunes_shafts() {
+        let lp = Draft {
+            name: "lp".into(),
+            shafts: 4,
+            treadles: 0,
+            shed: ShedType::Rising,
+            unit: Unit::Inches,
+            threading: Threading(vec![vec![ShaftId(1)], vec![ShaftId(2)]]),
+            drive: Drive::Liftplan(Liftplan(vec![
+                vec![ShaftId(1), ShaftId(4)],
+                vec![ShaftId(3)],
+            ])),
+            colors: ColorPlan {
+                palette: vec![Color::BLACK],
+                warp: vec![0, 0],
+                weft: vec![0, 0],
+            },
+            notes: String::new(),
+        };
+        let d = lp.resized(2, 2, 2, 0); // shafts 4 -> 2
+        if let Drive::Liftplan(l) = &d.drive {
+            assert_eq!(l.0[0], vec![ShaftId(1)], "shaft 4 pruned from pick 0");
+            assert!(l.0[1].is_empty(), "shaft 3 pruned from pick 1");
+        } else {
+            panic!("expected liftplan");
+        }
+        assert!(no_errors(&d));
+    }
+
+    #[test]
+    fn resize_to_zero_on_every_axis_is_safe() {
+        // The empty-cloth placeholder depends on resize-to-0 producing a clean, panic-free draft.
+        let d = resize_fixture().resized(0, 0, 1, 0);
+        assert_eq!(d.ends(), 0);
+        assert_eq!(d.picks(), 0);
+        assert!(d.threading.0.is_empty());
+        assert!(d.colors.warp.is_empty());
+        assert!(d.colors.weft.is_empty());
+        if let Drive::Treadled { tieup, treadling } = &d.drive {
+            assert!(tieup.0.is_empty(), "tie-up truncated to 0 treadles");
+            assert!(treadling.0.is_empty(), "treadling truncated to 0 picks");
+        } else {
+            panic!("expected treadled");
+        }
+        assert!(no_errors(&d));
+    }
+
+    #[test]
+    fn resize_shrinks_each_axis_to_zero_independently() {
+        // ends -> 0: warp empties, coupling holds.
+        let e = resize_fixture().resized(0, 4, 4, 4);
+        assert_eq!(e.ends(), 0);
+        assert_eq!(e.colors.warp.len(), 0);
+        assert!(no_errors(&e));
+        // picks -> 0: weft empties.
+        let p = resize_fixture().resized(4, 0, 4, 4);
+        assert_eq!(p.picks(), 0);
+        assert_eq!(p.colors.weft.len(), 0);
+        assert!(no_errors(&p));
+        // treadles -> 0 on a treadled draft: tie-up truncated, every treadling press pruned.
+        let t = resize_fixture().resized(4, 4, 4, 0);
+        assert_eq!(t.treadles, 0);
+        if let Drive::Treadled { tieup, treadling } = &t.drive {
+            assert!(tieup.0.is_empty());
+            assert!(treadling.0.iter().all(|row| row.is_empty()), "all presses pruned");
+        } else {
+            panic!("expected treadled");
+        }
+        assert!(no_errors(&t));
     }
 }

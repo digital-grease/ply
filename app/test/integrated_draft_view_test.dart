@@ -9,6 +9,8 @@ import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/state/draft_editor_notifier.dart';
 import 'package:ply/src/state/editor_providers.dart';
+import 'package:ply/src/widgets/dimensions_bar.dart';
+import 'package:ply/src/widgets/draft_grids.dart';
 import 'package:ply/src/widgets/draft_layout.dart';
 import 'package:ply/src/widgets/integrated_draft_view.dart';
 
@@ -20,6 +22,35 @@ import 'package:ply/src/widgets/integrated_draft_view.dart';
 class FakeRepo extends DraftRepository {
   @override
   Future<ui.Image> renderDto(DraftDoc doc, {required int cellPx}) => _stubImage();
+
+  /// Builds a real grown/shrunk doc at the requested dims (empty cells) so a grow makes the
+  /// integrated grids appear. The engine's prune/pad is cargo-tested; here we only need the
+  /// dims to drive the placeholder<->grids transition.
+  @override
+  Future<DraftDoc> resizeDoc(
+    DraftDoc doc, {
+    required int ends,
+    required int picks,
+    required int shafts,
+    required int treadles,
+  }) async {
+    return DraftDoc(
+      name: doc.name,
+      shafts: shafts,
+      treadles: treadles,
+      shed: doc.shed,
+      unit: doc.unit,
+      threading: List.generate(ends, (_) => const <int>[]),
+      drive: DraftTreadled(
+        tieup: List.generate(treadles, (_) => const <int>[]),
+        treadling: List.generate(picks, (_) => const <int>[]),
+      ),
+      palette: doc.palette,
+      warpColors: List.filled(ends, 0),
+      weftColors: List.filled(picks, 0),
+      notes: doc.notes,
+    );
+  }
 }
 
 Future<ui.Image> _stubImage() {
@@ -258,5 +289,43 @@ void main() {
     c.read(editorToolProvider.notifier).state = EditorTool.hand;
     await tester.pump();
     expect(physics(), isNull, reason: 'HAND leaves the default physics so the draft pans');
+  });
+
+  testWidgets('blank draft shows the placeholder; growing BOTH axes reveals the editable grids',
+      (tester) async {
+    // The from-scratch flow: a blank draft (0 ends, 0 picks) can't render a zero-area drawdown, so
+    // the view shows a placeholder until BOTH axes are grown via the steppers. Pump the view above
+    // a real DimensionsBar (like the editor screen) and drive the transition with stepper taps.
+    final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(FakeRepo())]);
+    addTearDown(c.dispose);
+    c.read(zoomCellProvider.notifier).state = kCell;
+    c.read(draftEditorProvider.notifier).load(DraftDoc.blank()); // 0 ends, 0 picks
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: c,
+      child: const MaterialApp(
+        home: Scaffold(
+          body: Column(children: [Expanded(child: IntegratedDraftView()), DimensionsBar()]),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    // Blank: placeholder up, no grids.
+    expect(find.textContaining('no warp ends or picks'), findsOneWidget);
+    expect(find.byType(ThreadingGrid), findsNothing);
+
+    // Grow ends only -> ends>0 but picks==0 is still empty: the placeholder stays (no preview hang).
+    await tester.tap(find.byTooltip('More Ends'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('no warp ends or picks'), findsOneWidget,
+        reason: 'one empty axis still shows the placeholder');
+    expect(find.byType(ThreadingGrid), findsNothing);
+
+    // Grow picks -> both axes > 0 -> the grids appear and the placeholder is gone.
+    await tester.tap(find.byTooltip('More Picks'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('no warp ends or picks'), findsNothing);
+    expect(find.byType(ThreadingGrid), findsOneWidget, reason: 'the threading grid is now editable');
+    expect(find.byType(RightGrid), findsOneWidget);
   });
 }

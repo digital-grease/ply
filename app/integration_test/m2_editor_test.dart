@@ -174,4 +174,39 @@ void main() {
     expect(isWarp(px ~/ 2, px ~/ 2), isFalse, reason: 'top-left is weft (not vertically flipped)');
     img.dispose();
   });
+
+  testWidgets('resize round-trip: a shrink stays clean; a grow pads weft (real FFI)',
+      (tester) async {
+    final repo = DraftRepository();
+    final doc = plainWeave(); // ends 4, picks 4, shafts 2, treadles 2
+
+    // Shrink shafts 2 -> 1: references to shaft 2 must be pruned so validate() reports no Error.
+    final shrunk = await repo.resizeDoc(doc,
+        ends: doc.ends, picks: doc.picks, shafts: 1, treadles: doc.treadles);
+    expect(shrunk.shafts, 1);
+    final issues = await repo.validateDto(shrunk);
+    expect(issues.where((i) => i.isError), isEmpty,
+        reason: 'a shrink never leaves a dangling-reference Error to hand-fix');
+    // The prune actually happened on EVERY axis (not just that validate is clean): no surviving
+    // threading OR tie-up reference exceeds the new shaft count. A dangling tie-up shaft renders
+    // white silently, so this pins the blind spot validate() now also guards.
+    expect(shrunk.threading.expand((r) => r), everyElement(lessThanOrEqualTo(1)),
+        reason: 'threading shaft refs pruned to 1..=1');
+    final shrunkTie = (shrunk.drive as DraftTreadled).tieup;
+    expect(shrunkTie.expand((r) => r), everyElement(lessThanOrEqualTo(1)),
+        reason: 'tie-up shaft refs pruned to 1..=1, not left dangling');
+
+    // Grow picks by 2: the weft colors are padded so weft.length stays coupled to picks.
+    final grown = await repo.resizeDoc(doc,
+        ends: doc.ends, picks: doc.picks + 2, shafts: doc.shafts, treadles: doc.treadles);
+    expect(grown.picks, doc.picks + 2);
+    expect(grown.weftColors.length, doc.picks + 2, reason: 'growing picks pads weft colors');
+
+    // Grow a BLANK draft so the integrated grids become editable.
+    final blank = await repo.resizeDoc(DraftDoc.blank(shafts: 4, treadles: 4),
+        ends: 3, picks: 3, shafts: 4, treadles: 4);
+    expect(blank.ends, 3);
+    expect(blank.picks, 3);
+    expect((await repo.validateDto(blank)).where((i) => i.isError), isEmpty);
+  });
 }

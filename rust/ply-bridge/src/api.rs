@@ -100,6 +100,23 @@ pub fn to_liftplan_dto(dto: DraftDto) -> Result<DraftDto, String> {
     Ok(DraftDto::from(&draft.to_liftplan_draft()))
 }
 
+/// Resize a draft to `ends` x `picks` over `shafts`/`treadles`. SHRINKING prunes every shaft/
+/// treadle reference the smaller header no longer has (so the result never leaves a dangling
+/// reference for the user to hand-fix); GROWING pads blanks; warp/weft color lengths stay coupled
+/// to ends/picks. `Err` if the DTO can't convert back to a `Draft`.
+pub fn resize_dto(
+    dto: DraftDto,
+    ends: u32,
+    picks: u32,
+    shafts: u16,
+    treadles: u16,
+) -> Result<DraftDto, String> {
+    let draft = Draft::try_from(dto)?;
+    Ok(DraftDto::from(
+        &draft.resized(ends as usize, picks as usize, shafts, treadles),
+    ))
+}
+
 /// Suggest a sett (ends per inch) from wraps-per-inch and a structure name
 /// ("plain" | "twill" | "satin").
 pub fn suggest_sett(wpi: f32, structure: String) -> f32 {

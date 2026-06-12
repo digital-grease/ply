@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/draft_meta.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import '../widgets/dimensions_bar.dart';
 import '../widgets/integrated_draft_view.dart';
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
@@ -208,6 +209,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ),
       );
     }
-    return const IntegratedDraftView();
+    // The dimensions bar stays below the draft (always visible) so a blank draft can be grown.
+    return const Column(
+      children: [
+        Expanded(child: IntegratedDraftView()),
+        DimensionsBar(),
+      ],
+    );
   }
 }
