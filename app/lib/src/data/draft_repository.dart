@@ -77,6 +77,11 @@ class DraftRepository {
     return _decodePreview(preview);
   }
 
+  /// Parse WIF text straight into an editor [DraftDoc] (parse to the wire DTO, then map to the
+  /// domain). The editor's entry point when opening a draft to edit.
+  Future<DraftDoc> parseDoc(String wifText) async =>
+      fromDto(await parseWifDto(text: wifText));
+
   /// Decode an engine [PreviewImage] into a [ui.Image].
   ///
   /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is RGBA8,

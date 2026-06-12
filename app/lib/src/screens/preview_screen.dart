@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/draft_repository.dart';
 import '../models/draft_meta.dart';
 import '../widgets/drawdown_view.dart';
+import 'editor_screen.dart';
 
 /// Full-resolution drawdown of a single draft.
 ///
@@ -55,7 +56,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
   static const int _cellPx = 12;
 
   ui.Image? _image;
-  String? _wifText; // resolved source text, kept for Save
+  String? _wifText; // resolved source text, kept for Save/Edit
+  DraftMeta? _meta; // sidecar metadata (saved mode), preserved into the editor
   String _title = 'Pattern';
   bool _loading = true;
   String? _error;
@@ -76,6 +78,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
     try {
       final String text;
       final String title;
+      DraftMeta? meta;
       if (widget.isUnsaved) {
         text = widget.wifText!;
         title = widget.suggestedName!;
@@ -83,6 +86,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
         // Bump lastOpened and read the source text.
         final entry = await widget.repository.open(widget.id!);
         title = entry.meta.name;
+        meta = entry.meta;
         text = await widget.repository.readWif(widget.id!);
       }
       final image = await widget.repository.renderDrawdown(text, cellPx: _cellPx);
@@ -93,6 +97,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       setState(() {
         _wifText = text;
         _title = title;
+        _meta = meta;
         _image = image;
         _loading = false;
       });
@@ -142,14 +147,50 @@ class _PreviewScreenState extends State<PreviewScreen> {
     }
   }
 
+  /// Open this draft in the interactive editor. On return-with-`true` (an edit was saved):
+  /// a SAVED draft is overwritten in place, so reload to show the new cloth; an UNSAVED import
+  /// is saved as a NEW library entry, so leave this throwaway preview and pop back to the
+  /// Library (reloading here would re-render the ORIGINAL import and strand a duplicate Save).
+  Future<void> _onEdit() async {
+    final text = _wifText;
+    if (text == null) return;
+    final navigator = Navigator.of(context);
+    final changed = await navigator.push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditorScreen(
+          wifText: text,
+          title: _title,
+          id: widget.id, // null in unsaved mode -> the editor saves a new entry
+          meta: _meta,
+        ),
+      ),
+    );
+    if (changed != true || !mounted) return;
+    if (widget.isUnsaved) {
+      navigator.pop(true); // back to the Library, which refreshes to show the new entry
+      return;
+    }
+    _image?.dispose();
+    _image = null;
+    setState(() => _loading = true);
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final image = _image;
     final canSave = widget.isUnsaved && image != null;
+    final canEdit = image != null && _wifText != null;
     return Scaffold(
       appBar: AppBar(
         title: Text(_title),
         actions: [
+          if (canEdit)
+            IconButton(
+              onPressed: _onEdit,
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit',
+            ),
           if (canSave)
             IconButton(
               onPressed: _onSave,
