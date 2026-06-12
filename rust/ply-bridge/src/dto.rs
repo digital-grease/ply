@@ -14,6 +14,7 @@
 //! unrepresentable (DATA_MODEL decision 1).
 
 use ply_common::{Color, Unit};
+use ply_weave::calc::{WarpPlan, YarnEstimate};
 use ply_weave::draft::{
     ColorPlan, Draft, Drive, Liftplan, ShaftId, ShedType, Threading, TieUp, TreadleId, Treadling,
 };
@@ -65,6 +66,46 @@ pub enum SeverityKind {
 pub struct ValidationIssueDto {
     pub severity: SeverityKind,
     pub message: String,
+}
+
+/// Inputs to the warp-yarn estimate, mirroring `calc::WarpPlan` transparently (the engine
+/// `WarpPlan` would otherwise cross FFI as an opaque, un-constructible handle). Lengths are in the
+/// draft's unit; `takeup_shrinkage` is a FRACTION (0.10 = 10%).
+pub struct WarpPlanDto {
+    pub finished_length: f32,
+    pub items: u32,
+    pub ends: u32,
+    pub loom_waste: f32,
+    pub takeup_shrinkage: f32,
+}
+
+/// The warp-yarn estimate result, mirroring `calc::YarnEstimate` (else an opaque handle with no
+/// readable fields). `warp_length` = length to wind (all items + take-up + one loom-waste);
+/// `total_warp` = `warp_length * ends`.
+pub struct YarnEstimateDto {
+    pub warp_length: f32,
+    pub total_warp: f32,
+}
+
+impl From<WarpPlanDto> for WarpPlan {
+    fn from(d: WarpPlanDto) -> Self {
+        WarpPlan {
+            finished_length: d.finished_length,
+            items: d.items,
+            ends: d.ends,
+            loom_waste: d.loom_waste,
+            takeup_shrinkage: d.takeup_shrinkage,
+        }
+    }
+}
+
+impl From<&YarnEstimate> for YarnEstimateDto {
+    fn from(e: &YarnEstimate) -> Self {
+        YarnEstimateDto {
+            warp_length: e.warp_length,
+            total_warp: e.total_warp,
+        }
+    }
 }
 
 /// The whole editable document, mirrored transparently for the Dart editor.

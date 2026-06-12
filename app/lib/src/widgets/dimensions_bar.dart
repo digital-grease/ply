@@ -10,6 +10,7 @@ import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import 'palette_sheet.dart';
+import 'planning_sheet.dart';
 
 class DimensionsBar extends ConsumerStatefulWidget {
   const DimensionsBar({super.key});
@@ -98,6 +99,16 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                   ),
                   label: Text('Colors ${palette.length}'),
                   onPressed: () => showPaletteSheet(context),
+                ),
+              ),
+              // Opens the planning calculator (sett + warp-yarn estimate). A sibling of the Colors
+              // chip; the row scrolls so it never overflows.
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: ActionChip(
+                  avatar: const Icon(Icons.calculate_outlined, size: 18),
+                  label: const Text('Calculator'),
+                  onPressed: () => showPlanningSheet(context),
                 ),
               ),
               _Stepper(

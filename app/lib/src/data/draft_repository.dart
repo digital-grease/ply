@@ -118,6 +118,44 @@ class DraftRepository {
   Future<DraftDoc> removeColorDoc(DraftDoc doc, int idx) async =>
       fromDto(await removePaletteColorDto(dto: toDto(doc), index: idx));
 
+  // ---------------------------------------------------------------------------
+  // Planning calculators (Phase 5.1) — pure engine math, no draft mutation.
+  // ---------------------------------------------------------------------------
+
+  /// Suggest a sett (ends per inch) from wraps-per-inch and a [structure] name
+  /// ("plain" | "twill" | "satin"). Thin pass-through to the engine; the result is already rounded.
+  /// (Named `suggestSettCalc` to avoid colliding with the generated `suggestSett`.)
+  Future<double> suggestSettCalc(double wpi, String structure) =>
+      suggestSett(wpi: wpi, structure: structure);
+
+  /// Estimate warp length + total warp yarn for a plan. [takeupPercent] is entered as a PERCENT
+  /// (10 = 10%) and converted to the engine's fraction here. Returns `(warpLength, totalWarp)` in the
+  /// draft's unit. (Named `estimateWarpPlan` to avoid colliding with the generated `estimateWarpDto`.)
+  Future<(double warpLength, double totalWarp)> estimateWarpPlan({
+    required double finishedLength,
+    required int items,
+    required int ends,
+    required double loomWaste,
+    required double takeupPercent,
+  }) async {
+    // Guard the u32 wire fields against silent mod-2^32 truncation (the same THROW-don't-truncate
+    // policy `_checkU16`/`_indicesToU32` enforce for ids/indices). The UI validators cap far below
+    // this; this is the backstop for any direct caller.
+    for (final (name, v) in [('items', items), ('ends', ends)]) {
+      if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, name);
+    }
+    final est = await estimateWarpDto(
+      plan: WarpPlanDto(
+        finishedLength: finishedLength,
+        items: items,
+        ends: ends,
+        loomWaste: loomWaste,
+        takeupShrinkage: takeupPercent / 100.0,
+      ),
+    );
+    return (est.warpLength, est.totalWarp);
+  }
+
   /// Decode an engine [PreviewImage] into a [ui.Image].
   ///
   /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is RGBA8,

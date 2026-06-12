@@ -100,6 +100,13 @@ void main() {
     expect(find.text('Colors 2'), findsOneWidget, reason: 'the chip count tracks the palette');
   });
 
+  testWidgets('the Calculator chip opens the planning sheet', (tester) async {
+    await pumpBar(tester);
+    await tester.tap(find.widgetWithText(ActionChip, 'Calculator'));
+    await tester.pumpAndSettle();
+    expect(find.text('Planning calculator'), findsOneWidget);
+  });
+
   testWidgets('the Colors chip dot shows the active brush color', (tester) async {
     Color dotColor(WidgetTester t) {
       final dot = t
