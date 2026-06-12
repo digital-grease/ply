@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/draft_doc.dart';
+import 'package:ply/src/models/draft_issue.dart';
 import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/screens/editor_screen.dart';
 import 'package:ply/src/state/draft_editor_notifier.dart';
@@ -33,6 +34,26 @@ class FakeRepo extends DraftRepository {
 
   /// When true, toLiftplanDoc throws (the engine Err path) so a test can assert the SnackBar.
   bool convertError = false;
+
+  /// What validateDto returns. Default clean so every pre-3.4 save/convert test is unchanged. The
+  /// validation provider AND the Save error-gate both call this; a test flips it to drive the gate.
+  List<DraftIssue> issues = const [];
+
+  /// When true, validateDto throws — exercises the Save gate's fail-closed path.
+  bool validateError = false;
+  int validateCount = 0;
+
+  /// When set, validateDto suspends on this — lets a test hold the Save gate's validate in flight
+  /// and land a concurrent edit during the FFI hop.
+  Completer<void>? validateGate;
+
+  @override
+  Future<List<DraftIssue>> validateDto(DraftDoc doc) async {
+    validateCount++;
+    if (validateError) throw Exception('validate boom');
+    if (validateGate != null) await validateGate!.future;
+    return issues;
+  }
 
   @override
   Future<DraftDoc> parseDoc(String wifText) async {
@@ -72,6 +93,11 @@ class FakeRepo extends DraftRepository {
 /// A liftplan draft to load when testing the convert action's already-liftplan (disabled) state.
 DraftDoc liftplanDoc() => DraftDoc.blank(shafts: 4, treadles: 4)
     .copyWith(drive: DraftLiftplan(liftplan: const [[1], [2]]), treadles: 0);
+
+const DraftIssue _err =
+    DraftIssue(severity: IssueSeverity.error, message: 'treadle 1 ties shaft 5 outside 1..=2');
+const DraftIssue _warn =
+    DraftIssue(severity: IssueSeverity.warning, message: 'warp color count (5) != warp ends (4)');
 
 Future<ui.Image> _stubImage() {
   final completer = Completer<ui.Image>();
@@ -421,5 +447,193 @@ void main() {
     expect(find.byIcon(Icons.swap_horiz), findsOneWidget);
     expect(find.byIcon(Icons.save_outlined), findsOneWidget);
     expect(iconButton(tester, Icons.save_outlined).onPressed, isNotNull, reason: 'Save still usable');
+  });
+
+  // --- Phase 3.4: Save error-gating ------------------------------------------
+
+  testWidgets('saving a draft with an Error warns, then Save anyway proceeds', (tester) async {
+    final fake = FakeRepo()..issues = const [_err];
+    await pumpEditor(tester, fake);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save with problems?'), findsOneWidget);
+    expect(fake.sawSave, isFalse, reason: 'nothing written until the user consents');
+
+    await tester.tap(find.text('Save anyway'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isTrue);
+  });
+
+  testWidgets('Cancel on the Error dialog aborts the save and re-enables Save', (tester) async {
+    final fake = FakeRepo()..issues = const [_err];
+    await pumpEditor(tester, fake);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    await tester.tap(find.text('Cancel'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isFalse);
+    expect(iconButton(tester, Icons.save_outlined).onPressed, isNotNull,
+        reason: 'a cancelled gate resets _saving');
+  });
+
+  testWidgets('Show me on the Error dialog expands the panel and aborts the save', (tester) async {
+    final fake = FakeRepo()..issues = const [_err];
+    final container = await pumpEditor(tester, fake);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    await tester.tap(find.text('Show me'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isFalse, reason: 'Show me reads, it does not save');
+    expect(container.read(editorIssuesExpandedProvider), isTrue,
+        reason: 'the inline panel is expanded so the user can read the problems');
+  });
+
+  testWidgets('the Error gate runs BEFORE the lossy-save gate', (tester) async {
+    final fake = FakeRepo()..issues = const [_err];
+    final container = await pumpEditor(tester, fake);
+    container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirtyStructural = true
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save with problems?'), findsOneWidget, reason: 'correctness gate first');
+    expect(find.text('Save changes?'), findsNothing, reason: 'the lossy gate is not reached yet');
+
+    await tester.tap(find.text('Save anyway')); // past the error gate
+    await letAsyncSettle(tester);
+    expect(find.text('Save changes?'), findsOneWidget, reason: 'THEN the lossy gate');
+    expect(fake.sawSave, isFalse);
+
+    await tester.tap(find.text('Save anyway')); // past the lossy gate
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isTrue);
+    expect(fake.capturedSourceWif, isNull, reason: 're-serialized after both gates');
+  });
+
+  testWidgets('a clean-but-errored from-scratch draft gates on Errors with NO lossy dialog',
+      (tester) async {
+    final fake = FakeRepo()..issues = const [_err];
+    final container = await pumpEditor(tester, fake);
+    // A from-scratch draft (no sourceWif): the verbatim path is gone, so the lossy gate never fires.
+    container.read(draftEditorProvider.notifier).load(DraftDoc.blank(shafts: 4, treadles: 4));
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save with problems?'), findsOneWidget);
+    await tester.tap(find.text('Save anyway'));
+    await letAsyncSettle(tester);
+    expect(find.text('Save changes?'), findsNothing, reason: 'no imported WIF to lose');
+    expect(fake.sawSave, isTrue);
+  });
+
+  testWidgets('Warnings do NOT gate Save', (tester) async {
+    final fake = FakeRepo()..issues = const [_warn];
+    await pumpEditor(tester, fake);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save with problems?'), findsNothing);
+    expect(fake.sawSave, isTrue, reason: 'a warning is advisory, never blocks a save');
+  });
+
+  testWidgets('the Save gate re-validates fresh and catches an Error the live panel missed',
+      (tester) async {
+    // STALE-AT-SAVE: the async panel validated clean; Save must compute its OWN ground truth so an
+    // Error introduced after the last panel validate is not missed.
+    final fake = FakeRepo(); // issues = [] -> the panel shows nothing
+    await pumpEditor(tester, fake);
+    expect(find.text('Save with problems?'), findsNothing);
+
+    fake.issues = const [_err]; // a problem the panel's stale AsyncValue hasn't observed
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save with problems?'), findsOneWidget,
+        reason: 'the Save gate re-validates the exact draft it will persist');
+  });
+
+  testWidgets('the Save gate fails closed when the validity check throws', (tester) async {
+    final fake = FakeRepo()..validateError = true;
+    await pumpEditor(tester, fake);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    // The root ScaffoldMessenger mirrors the snackbar onto both the test-host and editor Scaffolds,
+    // so assert "at least one" (the count is a nested-Scaffold test artifact, not production).
+    expect(find.textContaining('Could not check the pattern'), findsAtLeastNWidgets(1));
+    expect(fake.sawSave, isFalse, reason: 'refuse to save when correctness cannot be confirmed');
+  });
+
+  testWidgets('an edit landing during the Save validate hop is preserved (stale save bails)',
+      (tester) async {
+    // The Save twin of the convert/resize latest-wins guard: the canvas stays live during the gate's
+    // validate FFI hop, so an edit landing there must survive, and the stale capture must NOT persist.
+    final fake = FakeRepo();
+    final container = await pumpEditor(tester, fake); // initial validate (clean) resolves
+    fake.validateGate = Completer<void>();
+
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await tester.pump(); // _saving set; the gate's validateDto parks on validateGate
+    container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // edit during the hop
+    final edited = container.read(draftEditorProvider).draft;
+    await tester.pump();
+
+    fake.validateGate!.complete();
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isFalse, reason: 'the stale capture was not persisted');
+    expect(container.read(draftEditorProvider).draft, equals(edited),
+        reason: 'the concurrent edit survived');
+  });
+
+  testWidgets('the expanded-panel chrome resets on a fresh load (no cross-session bleed)',
+      (tester) async {
+    final fake = FakeRepo()..issues = const [_err];
+    final container = await pumpEditor(tester, fake);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    await tester.tap(find.text('Show me'));
+    await letAsyncSettle(tester);
+    expect(container.read(editorIssuesExpandedProvider), isTrue);
+
+    // A fresh editor session (new EditorScreen -> _load) must reset the expanded chrome.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: EditorScreen(wifText: 'WIF', title: 'T2')),
+      ),
+    );
+    await letAsyncSettle(tester);
+    expect(container.read(editorIssuesExpandedProvider), isFalse,
+        reason: 'a new editor load resets the panel-expanded chrome');
+  });
+
+  testWidgets('a mixed issue set gates on the ERROR count only', (tester) async {
+    final fake = FakeRepo()..issues = const [_err, _warn, _warn];
+    await pumpEditor(tester, fake);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    // 1 error + 2 warnings -> the dialog counts the 1 error, not all 3 issues.
+    expect(find.textContaining('1 problem'), findsOneWidget);
+    expect(find.textContaining('3 problem'), findsNothing);
+    await tester.tap(find.text('Save anyway'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isTrue, reason: 'the two warnings never re-gate');
+  });
+
+  testWidgets('Show me, then re-tapping Save re-gates and Save anyway proceeds', (tester) async {
+    final fake = FakeRepo()..issues = const [_err];
+    await pumpEditor(tester, fake);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    await tester.tap(find.text('Show me'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isFalse);
+    expect(iconButton(tester, Icons.save_outlined).onPressed, isNotNull, reason: 'Save re-enabled');
+
+    // The dialog is not suppressed, so a second Save tap re-gates.
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save with problems?'), findsOneWidget);
+    await tester.tap(find.text('Save anyway'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isTrue);
   });
 }

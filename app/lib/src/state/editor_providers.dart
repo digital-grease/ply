@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/draft_repository.dart';
+import '../models/draft_issue.dart';
 import 'draft_editor_notifier.dart';
 
 /// The app's single [DraftRepository] (the sole owner of the FFI bridge and on-device storage).
@@ -78,3 +79,47 @@ class PreviewController extends AutoDisposeAsyncNotifier<ui.Image> {
     return image;
   }
 }
+
+/// The live structural validation of the draft currently held by [draftEditorProvider]: the engine's
+/// [DraftIssue] list (empty = clean), re-run on every edit. The inline ValidationPanel watches this
+/// for the at-rest indicator; Save does NOT consult it (it re-validates the exact draft it persists,
+/// see EditorScreen._save), so this provider is purely the advisory panel feed.
+///
+/// A direct twin of [previewProvider]'s LATEST-WINS shape (monotonic [_seq] + dispose guard), MINUS
+/// the image-dispose arm — a `List<DraftIssue>` holds no native handle, so a dropped build just never
+/// resolves. The guard is still mandatory: the validate FFI hop is uncancellable, so a stale
+/// completion must not paint issues for a superseded draft. No debounce: validate() is strictly
+/// cheaper than the preview's RGBA render+decode, and the seq guard already collapses a drag burst.
+final validationProvider =
+    AutoDisposeAsyncNotifierProvider<ValidationController, List<DraftIssue>>(
+        ValidationController.new);
+
+class ValidationController extends AutoDisposeAsyncNotifier<List<DraftIssue>> {
+  /// Monotonic across rebuilds (the notifier instance is stable; only `build` re-runs).
+  int _seq = 0;
+
+  @override
+  Future<List<DraftIssue>> build() async {
+    final repo = ref.watch(repositoryProvider);
+    // The SAME narrow select previewProvider uses: undo/redo/dirtyStructural/strokeBase churn never
+    // re-triggers validation, and DraftDoc deep-== dedups a wander-out-and-back drag.
+    final draft = ref.watch(draftEditorProvider.select((s) => s.draft));
+    final mySeq = ++_seq;
+    var disposed = false;
+    ref.onDispose(() => disposed = true);
+
+    final issues = await repo.validateDto(draft);
+
+    if (disposed || mySeq != _seq) {
+      // Torn down mid-validate, or a newer edit superseded us: drop this result, never resolve.
+      return Completer<List<DraftIssue>>().future; // intentionally never completes
+    }
+    return issues;
+  }
+}
+
+/// Whether the inline ValidationPanel is expanded to its full issue list (vs the one-line collapsed
+/// summary). Pure view chrome (ephemeral like [zoomCellProvider]), kept out of EditorState — it must
+/// survive a validate re-resolve AND be settable cross-widget from the Save-with-errors dialog's
+/// "Show me" action.
+final editorIssuesExpandedProvider = StateProvider<bool>((ref) => false);

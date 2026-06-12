@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/draft_doc.dart';
+import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../widgets/dimensions_bar.dart';
 import '../widgets/integrated_draft_view.dart';
+import '../widgets/validation_panel.dart';
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
 /// tie-up cell toggles it and the drawdown re-renders live (engine recompute is microseconds;
@@ -64,6 +66,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final doc = await ref.read(repositoryProvider).parseDoc(widget.wifText);
       if (!mounted) return;
       ref.read(draftEditorProvider.notifier).load(doc, sourceWif: widget.wifText);
+      // Reset the inline-panel chrome for this fresh editor session: editorIssuesExpandedProvider is
+      // a global StateProvider, so a previous draft's "Show me"/expanded state would otherwise bleed
+      // into this one.
+      ref.read(editorIssuesExpandedProvider.notifier).state = false;
       setState(() => _loading = false);
     } catch (e) {
       if (!mounted) return;
@@ -84,7 +90,31 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final navigator = Navigator.of(context);
     try {
       final repo = ref.read(repositoryProvider);
+      // Capture ONCE: this exact draft instance is the one we validate AND persist, so "what was
+      // checked" can never diverge from "what was saved".
       final state = ref.read(draftEditorProvider);
+
+      // GATE 1 — structural Errors (correctness). Re-validate the EXACT draft fresh rather than
+      // reading the async [validationProvider] (which may be stale/in-flight at the tap), so an Error
+      // from the most recent edit can't be missed. Fail-CLOSED: if the check itself fails, refuse to
+      // save rather than risk persisting a mis-rendering cloth. Warnings never gate (advisory only).
+      final List<DraftIssue> issues;
+      try {
+        issues = await repo.validateDto(state.draft);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Could not check the pattern for problems; not saved.')));
+        return;
+      }
+      if (!mounted) return;
+      final errorCount = issues.where((i) => i.isError).length;
+      if (errorCount > 0) {
+        final proceed = await _confirmSaveWithErrors(errorCount);
+        // Cancel, "Show me" (which expands the panel), or unmounted -> abort before any write. The
+        // lossy gate below is never reached, and _warnedLossy stays untouched.
+        if (proceed != true || !mounted) return;
+      }
 
       // Dual path. A cosmetically-clean draft saves its imported WIF BYTE-IDENTICAL (lossless).
       // A structurally-edited one is re-serialized via write_wif, which drops the WIF header's
@@ -97,6 +127,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         if (proceed != true || !mounted) return; // cancelled (or unmounted mid-dialog)
         _warnedLossy = true;
       }
+
+      // LATEST-WINS (mirrors _convertToLiftplan / DimensionsBar._resize). An edit can land during the
+      // gate's validate FFI hop — the canvas + dimensions bar stay live until a modal opens, and
+      // _saving disables only the Save button — making the captured `state` stale. Persisting it
+      // would drop that edit AND could pick the wrong save path (its dirtyStructural/sourceWif are
+      // from the stale snapshot). Bail so the user re-saves on the current draft.
+      if (!mounted || !identical(ref.read(draftEditorProvider).draft, state.draft)) return;
 
       final messenger = ScaffoldMessenger.of(context);
       final now = DateTime.now();
@@ -133,6 +170,42 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save anyway'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Confirm saving a draft that has structural Errors (it will render incorrectly). Returns true to
+  /// proceed. "Show me" expands the inline validation panel and ABORTS the save (returns false) so
+  /// the user can read which problems they're consenting to. Shown every save (the error set changes
+  /// as the user edits, and the consequence is severe), never suppressed once-per-session.
+  Future<bool?> _confirmSaveWithErrors(int count) {
+    final problems = count == 1 ? '1 problem' : '$count problems';
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Save with problems?'),
+        content: Text(
+          'This pattern has $problems that make it render incorrectly (some threads show as '
+          'blank). You can fix them first, or save anyway.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              // Open the panel to the full issue list, then abort the save so the user reads them.
+              ref.read(editorIssuesExpandedProvider.notifier).state = true;
+              Navigator.pop(ctx, false);
+            },
+            child: const Text('Show me'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -300,10 +373,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ),
       );
     }
-    // The dimensions bar stays below the draft (always visible) so a blank draft can be grown.
+    // The validation band sits between the draft and the (always-visible) dimensions bar, with
+    // INTRINSIC height: it shrinks the drawdown viewport only when there are issues, and is zero
+    // chrome otherwise.
     return const Column(
       children: [
         Expanded(child: IntegratedDraftView()),
+        ValidationPanel(),
         DimensionsBar(),
       ],
     );
