@@ -147,29 +147,27 @@ class _PreviewScreenState extends State<PreviewScreen> {
     }
   }
 
-  /// Open this draft in the interactive editor. On return-with-`true` (an edit was saved):
-  /// a SAVED draft is overwritten in place, so reload to show the new cloth; an UNSAVED import
-  /// is saved as a NEW library entry, so leave this throwaway preview and pop back to the
-  /// Library (reloading here would re-render the ORIGINAL import and strand a duplicate Save).
+  /// Open this SAVED draft in the interactive editor and, on return-with-`true` (an edit was
+  /// saved), reload the preview to show the new cloth.
+  ///
+  /// Edit is offered ONLY for saved drafts (see `canEdit`), so the editor always has an id +
+  /// sidecar meta and overwrites in place, preserving author/notes. To edit a freshly-imported
+  /// draft you Save it first (which prompts for name/author/notes) and then Edit it. A metadata
+  /// prompt inside the editor (for the from-scratch New-draft flow) is deferred to Phase 5.2.
   Future<void> _onEdit() async {
     final text = _wifText;
     if (text == null) return;
-    final navigator = Navigator.of(context);
-    final changed = await navigator.push<bool>(
+    final changed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => EditorScreen(
           wifText: text,
           title: _title,
-          id: widget.id, // null in unsaved mode -> the editor saves a new entry
+          id: widget.id,
           meta: _meta,
         ),
       ),
     );
     if (changed != true || !mounted) return;
-    if (widget.isUnsaved) {
-      navigator.pop(true); // back to the Library, which refreshes to show the new entry
-      return;
-    }
     _image?.dispose();
     _image = null;
     setState(() => _loading = true);
@@ -180,7 +178,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
   Widget build(BuildContext context) {
     final image = _image;
     final canSave = widget.isUnsaved && image != null;
-    final canEdit = image != null && _wifText != null;
+    final canEdit = image != null && !widget.isUnsaved; // saved drafts only (see _onEdit)
     return Scaffold(
       appBar: AppBar(
         title: Text(_title),

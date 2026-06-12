@@ -19,7 +19,12 @@ class FakeRepo extends DraftRepository {
 
   final bool parseError;
   String? capturedSourceWif;
+  DraftMeta? capturedMeta;
   bool sawSave = false;
+  int saveCount = 0;
+
+  /// When set, saveDto suspends on this until completed — lets a test hold one save in flight.
+  Completer<void>? saveGate;
 
   @override
   Future<DraftDoc> parseDoc(String wifText) async {
@@ -38,8 +43,11 @@ class FakeRepo extends DraftRepository {
     String? id,
     String? sourceWif,
   }) async {
+    saveCount++;
+    if (saveGate != null) await saveGate!.future;
     sawSave = true;
     capturedSourceWif = sourceWif;
+    capturedMeta = meta;
     return id ?? 'new-id';
   }
 }
@@ -57,7 +65,13 @@ Future<ui.Image> _stubImage() {
 }
 
 /// Pumps a host that pushes the EditorScreen as a non-root route (so Save's pop is valid).
-Future<ProviderContainer> pumpEditor(WidgetTester tester, FakeRepo fake) async {
+/// [id]/[meta] simulate editing a SAVED library draft (overwrite-in-place + preserved meta).
+Future<ProviderContainer> pumpEditor(
+  WidgetTester tester,
+  FakeRepo fake, {
+  String? id,
+  DraftMeta? meta,
+}) async {
   final container = ProviderContainer(
     overrides: [repositoryProvider.overrideWithValue(fake)],
   );
@@ -73,7 +87,8 @@ Future<ProviderContainer> pumpEditor(WidgetTester tester, FakeRepo fake) async {
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const EditorScreen(wifText: 'WIF', title: 'T'),
+                    builder: (_) =>
+                        EditorScreen(wifText: 'WIF', title: 'T', id: id, meta: meta),
                   ),
                 ),
                 child: const Text('open'),
@@ -134,16 +149,17 @@ void main() {
     expect(iconButton(tester, Icons.redo).onPressed, isNotNull, reason: 'the undo can be redone');
   });
 
-  testWidgets('save dual-path: a CLEAN draft saves verbatim (sourceWif)', (tester) async {
+  testWidgets('save dual-path: a CLEAN draft saves verbatim with NO warning', (tester) async {
     final fake = FakeRepo();
     await pumpEditor(tester, fake);
     await tester.tap(find.byIcon(Icons.save_outlined));
     await letAsyncSettle(tester);
+    expect(find.text('Save anyway'), findsNothing, reason: 'lossless verbatim save -> no warning');
     expect(fake.sawSave, isTrue);
     expect(fake.capturedSourceWif, 'WIF', reason: 'unedited -> persist the original WIF verbatim');
   });
 
-  testWidgets('save dual-path: a STRUCTURALLY-EDITED draft re-serializes (null sourceWif)',
+  testWidgets('save dual-path: an EDITED draft WARNS, then Save anyway re-serializes (null)',
       (tester) async {
     final fake = FakeRepo();
     final container = await pumpEditor(tester, fake);
@@ -151,6 +167,65 @@ void main() {
     await tester.pump();
     await tester.tap(find.byIcon(Icons.save_outlined));
     await letAsyncSettle(tester);
+    // The lossy-save warning appears and NOTHING is written yet.
+    expect(find.text('Save anyway'), findsOneWidget);
+    expect(fake.sawSave, isFalse);
+
+    await tester.tap(find.text('Save anyway'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isTrue);
     expect(fake.capturedSourceWif, isNull, reason: 'edited -> re-serialize via write_wif, not verbatim');
+  });
+
+  testWidgets('save dual-path: Cancel on the warning aborts the save', (tester) async {
+    final fake = FakeRepo();
+    final container = await pumpEditor(tester, fake);
+    container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1);
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save anyway'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isFalse, reason: 'cancelling must not write anything');
+    expect(find.byIcon(Icons.save_outlined), findsOneWidget, reason: 'still in the editor');
+  });
+
+  testWidgets('editing a SAVED draft preserves its meta (author/notes/savedAt), bumps lastOpened',
+      (tester) async {
+    final fake = FakeRepo();
+    final existing = DraftMeta(
+      name: 'Original',
+      author: 'Ada',
+      notes: 'heirloom',
+      savedAt: DateTime.utc(2020, 1, 1),
+      lastOpened: DateTime.utc(2020, 1, 2),
+    );
+    await pumpEditor(tester, fake, id: 'abc', meta: existing);
+    await tester.tap(find.byIcon(Icons.save_outlined)); // clean save -> overwrite in place
+    await letAsyncSettle(tester);
+
+    final m = fake.capturedMeta!;
+    expect(m.author, 'Ada');
+    expect(m.notes, 'heirloom');
+    expect(m.craft, 'Weaving');
+    expect(m.savedAt, DateTime.utc(2020, 1, 1), reason: 'original savedAt preserved');
+    expect(m.lastOpened.isAfter(DateTime.utc(2020, 1, 2)), isTrue,
+        reason: 'lastOpened bumped to ~now');
+  });
+
+  testWidgets('a double-tap of Save collapses to ONE save (re-entrancy guard)', (tester) async {
+    final fake = FakeRepo()..saveGate = Completer<void>();
+    await pumpEditor(tester, fake); // clean draft -> no dialog
+    // First tap enters _save, disables the button, and suspends inside the gated saveDto.
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await tester.pump();
+    // Second tap while the first save is in flight is rejected (guarded + disabled button).
+    await tester.tap(find.byIcon(Icons.save_outlined), warnIfMissed: false);
+    await tester.pump();
+    expect(fake.saveCount, 1, reason: 'a double-tap must not double-write or double-pop');
+    fake.saveGate!.complete();
+    await letAsyncSettle(tester);
   });
 }
