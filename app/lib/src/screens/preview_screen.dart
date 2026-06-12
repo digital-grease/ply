@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/draft_repository.dart';
 import '../models/draft_meta.dart';
 import '../widgets/drawdown_view.dart';
+import '../widgets/save_draft_dialog.dart';
 import 'editor_screen.dart';
 
 /// Full-resolution drawdown of a single draft.
@@ -122,10 +123,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
   Future<void> _onSave() async {
     final text = _wifText;
     if (text == null) return; // nothing rendered to save
-    final input = await showDialog<_SaveInput>(
-      context: context,
-      builder: (_) => _SaveDraftDialog(initialName: _title),
-    );
+    final input = await showSaveDraftDialog(context, initialName: _title);
     if (input == null || !mounted) return;
     try {
       final now = DateTime.now();
@@ -152,8 +150,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
   ///
   /// Edit is offered ONLY for saved drafts (see `canEdit`), so the editor always has an id +
   /// sidecar meta and overwrites in place, preserving author/notes. To edit a freshly-imported
-  /// draft you Save it first (which prompts for name/author/notes) and then Edit it. A metadata
-  /// prompt inside the editor (for the from-scratch New-draft flow) is deferred to Phase 5.2.
+  /// draft you Save it first (which prompts for name/author/notes) and then Edit it. The
+  /// from-scratch New-draft flow gets its first-save metadata prompt inside the editor itself
+  /// (`EditorScreen._save` -> `showSaveDraftDialog`, the same shared dialog this screen uses).
   Future<void> _onEdit() async {
     final text = _wifText;
     if (text == null) return;
@@ -220,100 +219,6 @@ class _PreviewScreenState extends State<PreviewScreen> {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: DrawdownView(image),
-    );
-  }
-}
-
-/// The result of the Save dialog.
-class _SaveInput {
-  const _SaveInput({required this.name, this.author, required this.notes});
-  final String name;
-  final String? author;
-  final String notes;
-}
-
-/// Name (+ optional author/notes) entry before persisting an imported draft.
-class _SaveDraftDialog extends StatefulWidget {
-  const _SaveDraftDialog({required this.initialName});
-
-  final String initialName;
-
-  @override
-  State<_SaveDraftDialog> createState() => _SaveDraftDialogState();
-}
-
-class _SaveDraftDialogState extends State<_SaveDraftDialog> {
-  late final TextEditingController _name =
-      TextEditingController(text: widget.initialName);
-  final TextEditingController _author = TextEditingController();
-  final TextEditingController _notes = TextEditingController();
-  bool _nameEmpty = false;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _author.dispose();
-    _notes.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final name = _name.text.trim();
-    if (name.isEmpty) {
-      setState(() => _nameEmpty = true);
-      return;
-    }
-    final author = _author.text.trim();
-    Navigator.pop(
-      context,
-      _SaveInput(
-        name: name,
-        author: author.isEmpty ? null : author,
-        notes: _notes.text.trim(),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Save pattern'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _name,
-              autofocus: true,
-              textInputAction: TextInputAction.next,
-              decoration: InputDecoration(
-                labelText: 'Name',
-                errorText: _nameEmpty ? 'A name is required' : null,
-              ),
-              onChanged: (_) {
-                if (_nameEmpty) setState(() => _nameEmpty = false);
-              },
-            ),
-            TextField(
-              controller: _author,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'Author (optional)'),
-            ),
-            TextField(
-              controller: _notes,
-              maxLines: 3,
-              decoration: const InputDecoration(labelText: 'Notes (optional)'),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _submit, child: const Text('Save')),
-      ],
     );
   }
 }

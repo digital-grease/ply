@@ -164,6 +164,15 @@ class DraftRepository {
   /// alpha is always 255. frb maps the Rust `Vec<u8>` to a tightly-packed `Uint8List`
   /// (stride = width*4), exactly what `decodeImageFromPixels` wants (no rowBytes).
   Future<ui.Image> _decodePreview(PreviewImage preview) {
+    // A zero-area bitmap (a 0-end or 0-pick draft, e.g. an ungrown blank) has an empty
+    // pixel buffer; `decodeImageFromPixels` never invokes its callback for it, so a bare
+    // Completer would HANG forever (the same trap IntegratedDraftView guards the live
+    // preview against). Fail fast instead — callers (the thumbnail) swallow it.
+    if (preview.width == 0 || preview.height == 0) {
+      return Future<ui.Image>.error(
+        StateError('cannot decode a ${preview.width}x${preview.height} (zero-area) preview'),
+      );
+    }
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
       preview.rgba,

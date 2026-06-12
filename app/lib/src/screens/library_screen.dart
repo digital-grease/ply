@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../data/draft_repository.dart';
+import '../models/draft_doc.dart';
 import '../models/draft_meta.dart';
+import 'editor_screen.dart';
 import 'preview_screen.dart';
 
 /// Home screen: a grid of saved drafts with preview thumbnails, plus an import FAB.
@@ -86,6 +88,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
       _snack("That file isn't a weaving pattern.");
     } catch (e) {
       _snack('Import failed: $e');
+    }
+  }
+
+  /// Start a from-scratch draft: open the editor on a blank document (no source WIF, no meta). The
+  /// editor prompts for name/author/notes on its first save and pops `true` when it lands in the
+  /// library.
+  Future<void> _newDraft() async {
+    final navigator = Navigator.of(context);
+    final saved = await navigator.push<bool>(
+      MaterialPageRoute(
+        builder: (_) => EditorScreen(initialDoc: DraftDoc.blank(), title: 'New draft'),
+      ),
+    );
+    if (saved == true) {
+      _snack('Saved to library.');
+      await _refresh();
     }
   }
 
@@ -215,49 +233,77 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Ply · Patterns')),
-      body: FutureBuilder<List<DraftEntry>>(
-        future: _entriesFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  'Could not load your library:\n${snapshot.error}',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          final entries = snapshot.data ?? const <DraftEntry>[];
-          if (entries.isEmpty) return _emptyState();
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: GridView.builder(
-              padding: const EdgeInsets.all(12),
-              physics: const AlwaysScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 180,
-                childAspectRatio: 0.8,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: entries.length,
-              itemBuilder: (_, i) => _tile(entries[i]),
-            ),
-          );
-        },
+    // Wrap the Scaffold in the FutureBuilder so the FAB can see the load state: an EMPTY library
+    // shows a centered New-draft / Import call to action in _emptyState(), so suppress the FABs
+    // there to avoid offering the same two actions twice. They return once a pattern exists.
+    return FutureBuilder<List<DraftEntry>>(
+      future: _entriesFuture,
+      builder: (context, snapshot) {
+        final done = snapshot.connectionState == ConnectionState.done;
+        final entries = snapshot.data ?? const <DraftEntry>[];
+        final isEmpty = done && !snapshot.hasError && entries.isEmpty;
+        return Scaffold(
+          appBar: AppBar(title: const Text('Ply · Patterns')),
+          body: _libraryBody(snapshot, entries),
+          floatingActionButton: isEmpty ? null : _fabColumn(),
+        );
+      },
+    );
+  }
+
+  Widget _libraryBody(
+      AsyncSnapshot<List<DraftEntry>> snapshot, List<DraftEntry> entries) {
+    if (snapshot.connectionState != ConnectionState.done) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (snapshot.hasError) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            'Could not load your library:\n${snapshot.error}',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    if (entries.isEmpty) return _emptyState();
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: GridView.builder(
+        padding: const EdgeInsets.all(12),
+        physics: const AlwaysScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 180,
+          childAspectRatio: 0.8,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: entries.length,
+        itemBuilder: (_, i) => _tile(entries[i]),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _import,
-        icon: const Icon(Icons.file_open_outlined),
-        label: const Text('Import pattern'),
-      ),
+    );
+  }
+
+  Widget _fabColumn() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        FloatingActionButton.extended(
+          heroTag: 'import',
+          onPressed: _import,
+          icon: const Icon(Icons.file_open_outlined),
+          label: const Text('Import'),
+        ),
+        const SizedBox(height: 12),
+        FloatingActionButton.extended(
+          heroTag: 'newDraft',
+          onPressed: _newDraft,
+          icon: const Icon(Icons.add),
+          label: const Text('New draft'),
+        ),
+      ],
     );
   }
 
@@ -275,11 +321,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'No patterns yet — import one.',
+              'No patterns yet.\nStart a new draft, or import a WIF file.',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
+              onPressed: _newDraft,
+              icon: const Icon(Icons.add),
+              label: const Text('New draft'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
               onPressed: _import,
               icon: const Icon(Icons.file_open_outlined),
               label: const Text('Import pattern'),

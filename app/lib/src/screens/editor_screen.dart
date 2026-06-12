@@ -8,6 +8,7 @@ import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../widgets/dimensions_bar.dart';
 import '../widgets/integrated_draft_view.dart';
+import '../widgets/save_draft_dialog.dart';
 import '../widgets/validation_panel.dart';
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
@@ -16,15 +17,24 @@ import '../widgets/validation_panel.dart';
 /// the repository's dual path.
 class EditorScreen extends ConsumerStatefulWidget {
   const EditorScreen({
-    required this.wifText,
+    this.wifText,
+    this.initialDoc,
     required this.title,
     this.id,
     this.meta,
     super.key,
-  });
+  }) : assert((wifText == null) != (initialDoc == null),
+            'provide exactly one of wifText (import/open) or initialDoc (new draft)');
 
-  /// The draft's source WIF text: loaded into the editor and kept for the verbatim save path.
-  final String wifText;
+  /// The draft's source WIF text: parsed into the editor and kept for the verbatim save path.
+  /// Mutually exclusive with [initialDoc].
+  final String? wifText;
+
+  /// A from-scratch draft to open DIRECTLY (the Library "New draft" path), bypassing WIF parsing.
+  /// Such a draft has no original WIF, so its `sourceWif` stays null (it always re-serializes on
+  /// save) and its `meta` is null until the first save prompts for it. Mutually exclusive with
+  /// [wifText].
+  final DraftDoc? initialDoc;
 
   /// Display title (app bar + fallback save name).
   final String title;
@@ -63,9 +73,22 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   Future<void> _load() async {
     try {
-      final doc = await ref.read(repositoryProvider).parseDoc(widget.wifText);
+      // A new draft opens its in-memory doc directly (no WIF, no source); an import/open parses its
+      // WIF text and keeps it for the verbatim save path. Either way the provider writes below must
+      // land AFTER the first build — the WIF path defers via the parse await; the in-memory path
+      // yields a microtask so it never modifies a provider during initState.
+      final DraftDoc doc;
+      final String? source;
+      if (widget.initialDoc != null) {
+        doc = widget.initialDoc!;
+        source = null;
+        await Future<void>.microtask(() {});
+      } else {
+        doc = await ref.read(repositoryProvider).parseDoc(widget.wifText!);
+        source = widget.wifText;
+      }
       if (!mounted) return;
-      ref.read(draftEditorProvider.notifier).load(doc, sourceWif: widget.wifText);
+      ref.read(draftEditorProvider.notifier).load(doc, sourceWif: source);
       // Reset the inline-panel chrome for this fresh editor session: editorIssuesExpandedProvider is
       // a global StateProvider, so a previous draft's "Show me"/expanded state would otherwise bleed
       // into this one.
@@ -93,6 +116,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // Capture ONCE: this exact draft instance is the one we validate AND persist, so "what was
       // checked" can never diverge from "what was saved".
       final state = ref.read(draftEditorProvider);
+
+      // GATE 0 — non-empty cloth. A from-scratch draft starts 0x0 (the editor shows a placeholder
+      // until it's grown via the dimensions bar). An empty draft validates clean but isn't a
+      // meaningful library entry, and its 0-area drawdown can't be rendered into a thumbnail. Refuse
+      // rather than persist a degenerate cloth. (The repo's decode also fails fast on 0-area as a
+      // backstop, but blocking here gives the weaver a clear reason instead of a swallowed save.)
+      if (state.draft.ends == 0 || state.draft.picks == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Add at least one end and one pick before saving.')));
+        return;
+      }
 
       // GATE 1 — structural Errors (correctness). Re-validate the EXACT draft fresh rather than
       // reading the async [validationProvider] (which may be stale/in-flight at the tap), so an Error
@@ -135,15 +169,41 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // from the stale snapshot). Bail so the user re-saves on the current draft.
       if (!mounted || !identical(ref.read(draftEditorProvider).draft, state.draft)) return;
 
+      // METADATA. A saved/imported draft reuses its existing sidecar meta (overwrite in place); a
+      // from-scratch draft (no meta) prompts for name/author/notes on its FIRST save — that names the
+      // new library entry. Cancelling the prompt aborts the save. (The prompt is a modal, so no edit
+      // can land between the latest-wins check above and the persist below.)
+      final DraftMeta meta;
+      // The doc to persist. A from-scratch draft adopts the prompt name into the document itself
+      // (below), so its WIF carries a [TEXT] Title matching the sidecar — without that, write_wif
+      // would emit no name and a reopen would default to "Untitled". An edit keeps its doc as-is.
+      var docToSave = state.draft;
+      if (widget.meta != null) {
+        meta = widget.meta!.copyWith(lastOpened: DateTime.now());
+      } else {
+        final input = await showSaveDraftDialog(context, initialName: widget.title);
+        if (input == null || !mounted) return; // cancelled the name prompt
+        final now = DateTime.now();
+        meta = DraftMeta(
+          name: input.name,
+          craft: 'Weaving',
+          author: input.author,
+          notes: input.notes,
+          savedAt: now,
+          lastOpened: now,
+        );
+        docToSave = state.draft.copyWith(name: input.name);
+      }
       final messenger = ScaffoldMessenger.of(context);
-      final now = DateTime.now();
-      final meta = (widget.meta ??
-              DraftMeta(name: widget.title, savedAt: now, lastOpened: now))
-          .copyWith(lastOpened: now);
       final sourceWif = reSerializing ? null : state.sourceWif;
-      await repo.saveDto(state.draft, meta: meta, id: widget.id, sourceWif: sourceWif);
+      await repo.saveDto(docToSave, meta: meta, id: widget.id, sourceWif: sourceWif);
       if (!mounted) return;
-      messenger.showSnackBar(const SnackBar(content: Text('Saved.')));
+      // Feedback ONCE. An edit pops back to the preview (which shows nothing), so the editor owns the
+      // confirmation. A from-scratch draft (meta == null) pops to the Library, which shows its own
+      // "Saved to library." — staying silent here avoids a double toast and matches the import path.
+      if (widget.meta != null) {
+        messenger.showSnackBar(const SnackBar(content: Text('Saved.')));
+      }
       navigator.pop(true);
     } catch (e) {
       if (mounted) {

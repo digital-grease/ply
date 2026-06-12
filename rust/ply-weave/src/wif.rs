@@ -228,6 +228,16 @@ pub fn write(draft: &Draft) -> String {
     line!("Source Program=Ply");
     line!("");
 
+    // Embed the draft's name as the WIF Title so a written file is self-describing and the name
+    // survives a write->parse round-trip (parse reads [TEXT] Title, defaulting to "Untitled").
+    // Skip an empty name rather than emit a blank Title. (Author/notes live in the app sidecar,
+    // not the engine Draft, so they are not written here.)
+    if !draft.name.is_empty() {
+        line!("[TEXT]");
+        line!("Title={}", draft.name);
+        line!("");
+    }
+
     line!("[CONTENTS]");
     line!("COLOR TABLE=true");
     line!("WEAVING=true");
@@ -381,6 +391,30 @@ Threads=4
         let text = write(&a);
         let b = parse(&text).unwrap();
         assert_eq!(a, b);
+    }
+
+    /// Phase 5.2: a from-scratch draft's name (typed at the first-save prompt and propagated into
+    /// the document) must be embedded as `[TEXT] Title` by `write` and read back by a reopen.
+    /// Before this, `write` emitted no Title, so every reopened draft defaulted to "Untitled".
+    #[test]
+    fn draft_name_survives_wif_roundtrip_as_title() {
+        let mut d = parse(SAMPLE).unwrap();
+        d.name = "Ada's Scarf".into();
+        let text = write(&d);
+        assert!(text.contains("[TEXT]"), "a named draft writes a [TEXT] section");
+        assert!(text.contains("Title=Ada's Scarf"));
+        assert_eq!(parse(&text).unwrap().name, "Ada's Scarf");
+    }
+
+    /// An empty name writes no `[TEXT]` section (nothing meaningful to embed); a reopen then falls
+    /// back to the parse default "Untitled" rather than carrying a blank Title.
+    #[test]
+    fn empty_draft_name_writes_no_title_section() {
+        let mut d = parse(SAMPLE).unwrap();
+        d.name = String::new();
+        let text = write(&d);
+        assert!(!text.contains("[TEXT]"));
+        assert_eq!(parse(&text).unwrap().name, "Untitled");
     }
 
     /// The editor's Treadled->Liftplan convert sets the draft structurally-dirty, so the NEXT save

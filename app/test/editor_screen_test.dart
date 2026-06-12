@@ -58,8 +58,31 @@ class FakeRepo extends DraftRepository {
   @override
   Future<DraftDoc> parseDoc(String wifText) async {
     if (parseError) throw const FormatException('not a pattern');
-    // Distinct from DraftDoc.blank() (the build() default) so "load reflects the draft" is real.
-    return DraftDoc.blank(shafts: 4, treadles: 4).copyWith(name: 'loaded');
+    // A NON-EMPTY 4x4 straight-draw cloth: distinct from DraftDoc.blank() (the build() default) so
+    // "load reflects the draft" is real, AND with ends/picks > 0 so a save clears the editor's
+    // GATE 0 (an empty draft is refused) — every save/gate test operates on this loaded draft.
+    return DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
+      name: 'loaded',
+      threading: const [
+        [1],
+        [2],
+        [3],
+        [4],
+      ],
+      drive: DraftTreadled(tieup: const [
+        [1],
+        [2],
+        [3],
+        [4],
+      ], treadling: const [
+        [1],
+        [2],
+        [3],
+        [4],
+      ]),
+      warpColors: const [0, 0, 0, 0],
+      weftColors: const [0, 0, 0, 0],
+    );
   }
 
   @override
@@ -94,6 +117,22 @@ class FakeRepo extends DraftRepository {
 DraftDoc liftplanDoc() => DraftDoc.blank(shafts: 4, treadles: 4)
     .copyWith(drive: DraftLiftplan(liftplan: const [[1], [2]]), treadles: 0);
 
+/// A from-scratch draft that has been GROWN to a 1x1 plain cell — the smallest cloth that clears
+/// the editor's GATE 0 (non-empty) check, so the metadata-prompt tests reach the prompt. A truly
+/// blank (0x0) DraftDoc.blank() would be refused before prompting (see the GATE 0 test).
+DraftDoc grownNewDraft() => DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
+      threading: const [
+        [1],
+      ],
+      drive: DraftTreadled(tieup: const [
+        [1],
+      ], treadling: const [
+        [1],
+      ]),
+      warpColors: const [0],
+      weftColors: const [0],
+    );
+
 const DraftIssue _err =
     DraftIssue(severity: IssueSeverity.error, message: 'treadle 1 ties shaft 5 outside 1..=2');
 const DraftIssue _warn =
@@ -111,18 +150,31 @@ Future<ui.Image> _stubImage() {
   return completer.future;
 }
 
-/// Pumps a host that pushes the EditorScreen as a non-root route (so Save's pop is valid).
-/// [id]/[meta] simulate editing a SAVED library draft (overwrite-in-place + preserved meta).
+/// A SAVED-draft meta (the production reality for a wifText-based editor: Edit is gated to saved
+/// drafts, so a wifText editor always carries a meta). Used as the default so save tests don't hit
+/// the new-draft metadata prompt.
+DraftMeta savedMeta() =>
+    DraftMeta(name: 'T', savedAt: DateTime.utc(2020), lastOpened: DateTime.utc(2020));
+
+/// Pumps a host that pushes the EditorScreen as a non-root route (so Save's pop is valid). Defaults
+/// to a SAVED draft (a non-null [meta]); pass `newDraft: true` for the from-scratch path (initialDoc,
+/// no meta) that prompts for metadata on first save.
 Future<ProviderContainer> pumpEditor(
   WidgetTester tester,
   FakeRepo fake, {
   String? id,
   DraftMeta? meta,
+  bool newDraft = false,
+  DraftDoc? initialDoc,
 }) async {
   final container = ProviderContainer(
     overrides: [repositoryProvider.overrideWithValue(fake)],
   );
   addTearDown(container.dispose);
+  final effectiveMeta = meta ?? (newDraft ? null : savedMeta());
+  // A new draft opens on a GROWN (non-empty) doc by default so the prompt is reachable; a test can
+  // pass a 0x0 DraftDoc.blank() to exercise GATE 0.
+  final effectiveInitial = newDraft ? (initialDoc ?? grownNewDraft()) : null;
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
@@ -134,8 +186,13 @@ Future<ProviderContainer> pumpEditor(
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) =>
-                        EditorScreen(wifText: 'WIF', title: 'T', id: id, meta: meta),
+                    builder: (_) => EditorScreen(
+                      wifText: newDraft ? null : 'WIF',
+                      initialDoc: effectiveInitial,
+                      title: 'T',
+                      id: id,
+                      meta: effectiveMeta,
+                    ),
                   ),
                 ),
                 child: const Text('open'),
@@ -515,7 +572,8 @@ void main() {
     final fake = FakeRepo()..issues = const [_err];
     final container = await pumpEditor(tester, fake);
     // A from-scratch draft (no sourceWif): the verbatim path is gone, so the lossy gate never fires.
-    container.read(draftEditorProvider.notifier).load(DraftDoc.blank(shafts: 4, treadles: 4));
+    // Non-empty (grown) so it clears GATE 0 and reaches the Error gate under test.
+    container.read(draftEditorProvider.notifier).load(grownNewDraft());
     await tester.pump();
 
     await tester.tap(find.byIcon(Icons.save_outlined));
@@ -549,6 +607,93 @@ void main() {
     await letAsyncSettle(tester);
     expect(find.text('Save with problems?'), findsOneWidget,
         reason: 'the Save gate re-validates the exact draft it will persist');
+  });
+
+  testWidgets('a NEW draft prompts for name on first save, then saves with that meta', (tester) async {
+    final fake = FakeRepo();
+    await pumpEditor(tester, fake, newDraft: true); // initialDoc, meta == null
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save pattern'), findsOneWidget, reason: 'the metadata dialog appears');
+    expect(fake.sawSave, isFalse, reason: 'nothing saved until the name is entered');
+
+    // Fill ALL three fields so the whole metadata payload (not just the name) is asserted to reach
+    // saveDto — author/notes are easy to silently drop on the wire.
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'My scarf');
+    await tester.enterText(find.widgetWithText(TextField, 'Author (optional)'), 'Ada');
+    await tester.enterText(find.widgetWithText(TextField, 'Notes (optional)'), 'heirloom');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isTrue);
+    expect(fake.capturedMeta!.name, 'My scarf');
+    expect(fake.capturedMeta!.author, 'Ada', reason: 'the author flows through to saveDto');
+    expect(fake.capturedMeta!.notes, 'heirloom', reason: 'the notes flow through to saveDto');
+    expect(fake.capturedMeta!.craft, 'Weaving');
+    expect(fake.capturedSourceWif, isNull, reason: 'a from-scratch draft has no source WIF');
+  });
+
+  testWidgets('a NEW draft EDITED before its first save still prompts and does NOT warn about loss',
+      (tester) async {
+    // The path production hits when a weaver builds a cloth then saves: the draft is structurally
+    // dirty, but a from-scratch draft has no sourceWif, so there is nothing to lose -> no lossy
+    // "Save changes?" warning, just the metadata prompt.
+    final fake = FakeRepo();
+    final container = await pumpEditor(tester, fake, newDraft: true);
+    container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // mark dirtyStructural
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save changes?'), findsNothing, reason: 'no source WIF -> nothing lossy to warn about');
+    expect(find.text('Save pattern'), findsOneWidget, reason: 'still prompts for the new name');
+
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Edited scarf');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await letAsyncSettle(tester);
+    expect(fake.capturedMeta!.name, 'Edited scarf');
+    expect(fake.capturedSourceWif, isNull);
+  });
+
+  testWidgets('a still-EMPTY (0x0) new draft is refused before prompting or saving', (tester) async {
+    // GATE 0: DraftDoc.blank() is 0 ends/0 picks; saving it would hang on the 0-area thumbnail
+    // decode and persist a meaningless entry. Refuse with a clear message instead.
+    final fake = FakeRepo();
+    await pumpEditor(tester, fake,
+        newDraft: true, initialDoc: DraftDoc.blank(shafts: 4, treadles: 4));
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.textContaining('Add at least one end'), findsAtLeastNWidgets(1));
+    expect(find.text('Save pattern'), findsNothing, reason: 'no metadata prompt for an empty draft');
+    expect(fake.sawSave, isFalse, reason: 'an empty draft is never persisted');
+    expect(iconButton(tester, Icons.save_outlined).onPressed, isNotNull, reason: 'Save re-enabled');
+  });
+
+  test('the constructor requires EXACTLY ONE of wifText / initialDoc', () {
+    expect(() => EditorScreen(title: 'x'), throwsAssertionError,
+        reason: 'neither source provided');
+    expect(
+        () => EditorScreen(title: 'x', wifText: 'w', initialDoc: DraftDoc.blank()),
+        throwsAssertionError,
+        reason: 'both sources provided');
+  });
+
+  testWidgets('cancelling the name prompt aborts the new-draft save', (tester) async {
+    final fake = FakeRepo();
+    await pumpEditor(tester, fake, newDraft: true);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await letAsyncSettle(tester);
+    expect(fake.sawSave, isFalse, reason: 'no save without a name');
+    expect(iconButton(tester, Icons.save_outlined).onPressed, isNotNull, reason: 'Save re-enabled');
+  });
+
+  testWidgets('a SAVED draft (meta present) does NOT prompt for metadata', (tester) async {
+    final fake = FakeRepo();
+    await pumpEditor(tester, fake); // default: a saved draft with meta
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(find.text('Save pattern'), findsNothing, reason: 'an existing meta is reused, not re-prompted');
+    expect(fake.sawSave, isTrue);
   });
 
   testWidgets('the Save gate fails closed when the validity check throws', (tester) async {
