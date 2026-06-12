@@ -11,6 +11,9 @@ import '../widgets/integrated_draft_view.dart';
 import '../widgets/save_draft_dialog.dart';
 import '../widgets/validation_panel.dart';
 
+/// What the user chose when leaving the editor with unsaved edits (see `_confirmLeave`).
+enum _LeaveAction { keepEditing, discard, save }
+
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
 /// tie-up cell toggles it and the drawdown re-renders live (engine recompute is microseconds;
 /// the preview provider is latest-wins). Undo/redo walk the snapshot history; Save persists via
@@ -65,6 +68,20 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   /// hop), to reject a re-entrant Convert tap and disable the button. Twin of [_saving].
   bool _converting = false;
 
+  /// True while the leave-guard flow is open (the "Leave without saving?" dialog and, on the Save
+  /// branch, the nested save). The back path is NOT a disable-able button, so a second system back
+  /// fired during the dialog — or during the nested save's pre-modal validate FFI hop, when no
+  /// barrier is on screen and canPop is still false — would otherwise re-enter [_onLeave] and stack
+  /// a second dialog / pop the wrong route. This flag drops that re-entrant back. Twin of [_saving].
+  bool _leaving = false;
+
+  /// True once SOMETHING has begun popping the editor (a successful save OR a Discard). Both exit
+  /// paths route through [_popEditor], which latches this synchronously, so whichever fires first
+  /// wins and the other is a no-op. Without it, a back+Discard that races a Save already in flight
+  /// would double-pop past the parent route: the Discard pops the editor, then the resumed save —
+  /// still `mounted` during the exit transition — would pop a SECOND time.
+  bool _exiting = false;
+
   @override
   void initState() {
     super.initState();
@@ -110,7 +127,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // so the second tap's handler returns immediately; the button is also disabled while saving.
     if (_saving) return;
     setState(() => _saving = true);
-    final navigator = Navigator.of(context);
     try {
       final repo = ref.read(repositoryProvider);
       // Capture ONCE: this exact draft instance is the one we validate AND persist, so "what was
@@ -141,7 +157,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             content: Text('Could not check the pattern for problems; not saved.')));
         return;
       }
-      if (!mounted) return;
+      // Also bail if a Discard fired during the validate FFI hop (the back path stays live during
+      // this non-modal await). _exiting means the editor is already popping; continuing would show a
+      // stray gate dialog or persist a draft the user just discarded.
+      if (!mounted || _exiting) return;
       final errorCount = issues.where((i) => i.isError).length;
       if (errorCount > 0) {
         final proceed = await _confirmSaveWithErrors(errorCount);
@@ -197,14 +216,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final messenger = ScaffoldMessenger.of(context);
       final sourceWif = reSerializing ? null : state.sourceWif;
       await repo.saveDto(docToSave, meta: meta, id: widget.id, sourceWif: sourceWif);
-      if (!mounted) return;
+      if (!mounted || _exiting) return;
       // Feedback ONCE. An edit pops back to the preview (which shows nothing), so the editor owns the
       // confirmation. A from-scratch draft (meta == null) pops to the Library, which shows its own
       // "Saved to library." — staying silent here avoids a double toast and matches the import path.
       if (widget.meta != null) {
         messenger.showSnackBar(const SnackBar(content: Text('Saved.')));
       }
-      navigator.pop(true);
+      _popEditor(true);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -214,6 +233,89 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // Re-enable if we didn't pop (cancel/error); a successful save unmounts, so skip then.
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// PopScope handler for the back button / system back. Only fires for a BLOCKED pop (canPop=false,
+  /// i.e. the draft is dirty); a clean draft pops straight through (didPop=true) with no prompt. On
+  /// a block, ask whether to discard, save, or keep editing.
+  ///
+  /// - Discard: an UNCONDITIONAL `Navigator.pop()` (not maybePop, so PopScope does not re-intercept)
+  ///   with NO result, so callers see "nothing saved" (no library refresh).
+  /// - Save: delegate to [_save], which runs the full gated flow (metadata prompt / error + lossy
+  ///   gates / latest-wins) and pops `true` ONLY on success — a cancelled or gated save simply
+  ///   leaves us in the editor, which is the right outcome for a back that the user backed out of.
+  /// - Keep editing (or a dismissed dialog): stay put.
+  ///
+  /// The `result` of the blocked pop is unused: the only pop we ever want to honor here is decided
+  /// by the user's dialog choice, not by a value the framework carried. (PopScope is typed `<bool>`
+  /// purely to match the callers' `push<bool>` route type.)
+  Future<void> _onLeave(bool didPop, bool? _) async {
+    if (didPop) return;
+    // Re-entrancy: a second back during the leave dialog (or during the Save branch's nested save,
+    // whose pre-modal validate hop leaves no barrier on screen) must not stack another dialog. Set
+    // _leaving synchronously BEFORE the first await so the second back returns immediately. NOTE we
+    // do NOT gate on _saving: a back DURING an in-flight AppBar save SHOULD still open the prompt;
+    // the double-pop that could follow is handled by the shared _exiting latch in _popEditor.
+    if (_leaving) return;
+    _leaving = true;
+    try {
+      final action = await _confirmLeave() ?? _LeaveAction.keepEditing;
+      if (!mounted) return;
+      switch (action) {
+        case _LeaveAction.discard:
+          _popEditor(); // single-pop latched; no result -> callers see "nothing saved"
+        case _LeaveAction.save:
+          await _save(); // pops true on success; a gated/cancelled save just leaves us here
+        case _LeaveAction.keepEditing:
+          break;
+      }
+    } finally {
+      // A successful save/discard unmounts; only reset when we stayed.
+      if (mounted) _leaving = false;
+    }
+  }
+
+  /// Pop the editor exactly ONCE. Both exit paths — a successful [_save] (`result == true`, so the
+  /// caller refreshes) and a Discard (`result == null`, so it does not) — route here. The [_exiting]
+  /// latch makes whichever fires first win: a Discard that races a Save already in flight pops here
+  /// first, and when the resumed save reaches here it is a no-op (no second pop past the parent).
+  /// The canPop() guard is belt-and-suspenders for a hypothetical root-route editor.
+  void _popEditor([bool? result]) {
+    if (_exiting || !mounted) return;
+    final navigator = Navigator.of(context);
+    if (!navigator.canPop()) return;
+    _exiting = true;
+    navigator.pop(result);
+  }
+
+  /// Ask what to do about unsaved edits when leaving. Returns null if the dialog is dismissed.
+  Future<_LeaveAction?> _confirmLeave() {
+    return showDialog<_LeaveAction>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Leave without saving?'),
+        content: const Text("Your edits to this pattern haven't been saved. Discard will lose them."),
+        // Order matters: the destructive Discard is LEFTMOST, separated from the rightmost primary
+        // Save by the safe Keep editing, so a mis-tap toward the primary never lands on data loss.
+        actions: [
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, _LeaveAction.discard),
+            child: const Text('Discard'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _LeaveAction.keepEditing),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, _LeaveAction.save),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Confirm a lossy re-serialize. Returns true to proceed, false/null to cancel.
@@ -354,7 +456,23 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ref.watch(draftEditorProvider.select((s) => s.draft.drive is DraftTreadled));
     final notifier = ref.read(draftEditorProvider.notifier);
     final pencil = ref.watch(editorToolProvider) == EditorTool.pencil;
-    return Scaffold(
+    // Dirty-on-exit guard. `dirtyStructural` is sticky-true from the first edit until a save (and a
+    // save EXITS the editor), so it is a complete "has unsaved work" signal for one session — every
+    // edit reducer sets it (colors via setWarp/WeftColor, resize/convert/remove via commitEdit,
+    // drags via endStroke). We ALSO treat an OPEN drag-paint stroke (strokeBase != null) as dirty:
+    // its painted cells are already in `draft`, but `dirtyStructural` is not set until the stroke
+    // seals, so without this a system back fired mid-stroke (e.g. a two-finger edge-swipe during the
+    // VERY FIRST stroke, when dirtyStructural is still false) would see canPop=true and pop the
+    // editor, silently dropping that stroke. Both are cheap bools, so the selector stays per-cell
+    // cheap and the rebuild fires only when the combined flag flips. canPop=false routes the back
+    // button / system back through _onLeave; the Save action's own `Navigator.pop(true)` is an
+    // UNCONDITIONAL pop (PopScope gates only maybePop), so saving still exits without re-prompting.
+    final dirty = ref.watch(
+        draftEditorProvider.select((s) => s.dirtyStructural || s.strokeBase != null));
+    return PopScope<bool>(
+      canPop: !dirty,
+      onPopInvokedWithResult: _onLeave,
+      child: Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
         // Seven icon actions plus the back button overflow a default AppBar on a standard phone, so
@@ -412,6 +530,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             : null,
       ),
       body: _buildBody(),
+      ),
     );
   }
 

@@ -166,6 +166,7 @@ Future<ProviderContainer> pumpEditor(
   DraftMeta? meta,
   bool newDraft = false,
   DraftDoc? initialDoc,
+  List<bool?>? popLog,
 }) async {
   final container = ProviderContainer(
     overrides: [repositoryProvider.overrideWithValue(fake)],
@@ -183,18 +184,23 @@ Future<ProviderContainer> pumpEditor(
           builder: (context) => Scaffold(
             body: Center(
               child: ElevatedButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditorScreen(
-                      wifText: newDraft ? null : 'WIF',
-                      initialDoc: effectiveInitial,
-                      title: 'T',
-                      id: id,
-                      meta: effectiveMeta,
+                // push<bool> mirrors the real callers (Library/Preview), so a test can assert the
+                // pop RESULT: a Save pops true (refresh), a Discard pops null (no refresh).
+                onPressed: () async {
+                  final r = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute<bool>(
+                      builder: (_) => EditorScreen(
+                        wifText: newDraft ? null : 'WIF',
+                        initialDoc: effectiveInitial,
+                        title: 'T',
+                        id: id,
+                        meta: effectiveMeta,
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                  popLog?.add(r);
+                },
                 child: const Text('open'),
               ),
             ),
@@ -780,5 +786,203 @@ void main() {
     await tester.tap(find.text('Save anyway'));
     await letAsyncSettle(tester);
     expect(fake.sawSave, isTrue);
+  });
+
+  group('dirty-on-exit guard (Phase 5.3)', () {
+    testWidgets('a CLEAN editor pops straight back with no prompt', (tester) async {
+      await pumpEditor(tester, FakeRepo()); // loaded, no edits
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle(); // let the pop transition finish (no spinner once loaded)
+      expect(find.text('Leave without saving?'), findsNothing);
+      expect(find.byType(EditorScreen), findsNothing, reason: 'a clean back exits immediately');
+    });
+
+    testWidgets('back on a DIRTY editor prompts; Keep editing stays put', (tester) async {
+      final fake = FakeRepo();
+      final container = await pumpEditor(tester, fake);
+      container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirtyStructural
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await letAsyncSettle(tester);
+      expect(find.text('Leave without saving?'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(TextButton, 'Keep editing'));
+      await letAsyncSettle(tester);
+      expect(find.byType(EditorScreen), findsOneWidget, reason: 'still editing');
+      expect(fake.sawSave, isFalse);
+    });
+
+    testWidgets('Discard leaves WITHOUT saving and pops a non-true result (no caller refresh)',
+        (tester) async {
+      final fake = FakeRepo();
+      final popLog = <bool?>[];
+      final container = await pumpEditor(tester, fake, popLog: popLog);
+      container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1);
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await letAsyncSettle(tester);
+      await tester.tap(find.widgetWithText(TextButton, 'Discard'));
+      await tester.pumpAndSettle();
+      expect(find.byType(EditorScreen), findsNothing, reason: 'discard exits');
+      expect(fake.sawSave, isFalse, reason: 'nothing persisted on discard');
+      // The real callers (Library _newDraft / Preview _onEdit) refresh ONLY on `== true`; a discard
+      // must pop a non-true result so a discarded edit never triggers a spurious library refresh.
+      expect(popLog.single, isNot(true), reason: 'discard pops null, not true');
+    });
+
+    testWidgets('Save from the leave prompt runs the full save flow then exits', (tester) async {
+      // A from-scratch draft: no sourceWif (so no lossy gate), so the only nested step is the
+      // metadata prompt — proving the prompt's Save delegates to the real gated _save.
+      final fake = FakeRepo();
+      final popLog = <bool?>[];
+      final container = await pumpEditor(tester, fake, newDraft: true, popLog: popLog);
+      container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirty
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await letAsyncSettle(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await letAsyncSettle(tester);
+      expect(find.text('Save pattern'), findsOneWidget, reason: 'Save routes into the gated _save');
+      await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Kept');
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(fake.sawSave, isTrue);
+      expect(fake.capturedMeta!.name, 'Kept');
+      expect(find.byType(EditorScreen), findsNothing, reason: 'a successful save exits');
+      expect(popLog.single, isTrue, reason: 'a saved exit pops true so the caller refreshes');
+    });
+
+    testWidgets('the Save AppBar action still exits a dirty draft directly (PopScope gates only back)',
+        (tester) async {
+      // The Save button's own Navigator.pop(true) is an unconditional pop, so a dirty save must NOT
+      // re-trigger the leave prompt. (A saved draft re-serialized while dirty hits the lossy gate.)
+      final fake = FakeRepo();
+      final container = await pumpEditor(tester, fake);
+      container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1);
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.save_outlined));
+      await letAsyncSettle(tester);
+      await tester.tap(find.text('Save anyway')); // clear the lossy gate
+      await tester.pumpAndSettle();
+      expect(find.text('Leave without saving?'), findsNothing, reason: 'no back prompt on a save');
+      expect(fake.sawSave, isTrue);
+      expect(find.byType(EditorScreen), findsNothing, reason: 'save exits');
+    });
+
+    testWidgets('the leave prompt orders Discard | Keep editing | Save, Save primary, Discard red',
+        (tester) async {
+      final fake = FakeRepo();
+      final container = await pumpEditor(tester, fake);
+      container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1);
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await letAsyncSettle(tester);
+
+      expect(find.widgetWithText(FilledButton, 'Save'), findsOneWidget, reason: 'Save is the primary');
+      // Destructive Discard is LEFTMOST, separated from the rightmost primary Save by Keep editing,
+      // so a mis-tap toward Save never lands on data loss.
+      final dxDiscard = tester.getCenter(find.text('Discard')).dx;
+      final dxKeep = tester.getCenter(find.text('Keep editing')).dx;
+      final dxSave = tester.getCenter(find.text('Save')).dx;
+      expect(dxDiscard, lessThan(dxKeep), reason: 'Discard left of Keep editing');
+      expect(dxKeep, lessThan(dxSave), reason: 'Keep editing left of Save');
+      // Discard carries the theme error color as its destructive cue.
+      final ctx = tester.element(find.byType(AlertDialog));
+      final discard = tester.widget<TextButton>(find.widgetWithText(TextButton, 'Discard'));
+      expect(discard.style?.foregroundColor?.resolve(<WidgetState>{}),
+          Theme.of(ctx).colorScheme.error, reason: 'Discard is styled destructive');
+    });
+
+    testWidgets('Save from the leave prompt on a still-empty 0x0 draft shows GATE 0 and stays',
+        (tester) async {
+      // A draft shrunk to 0x0 is dirty but unsaveable (GATE 0). The leave prompt's Save delegates to
+      // the gated _save, which surfaces the clear "add a cell" message and leaves the user in the
+      // editor (free to Discard or grow) — not a silent dead-end, and never a persisted empty entry.
+      final fake = FakeRepo();
+      final container = await pumpEditor(tester, fake); // loaded non-empty, dirty=false
+      container.read(draftEditorProvider.notifier).commitEdit(DraftDoc.blank()); // dirty + 0x0
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await letAsyncSettle(tester);
+      expect(find.text('Leave without saving?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await letAsyncSettle(tester);
+      expect(find.textContaining('Add at least one end'), findsAtLeastNWidgets(1),
+          reason: 'GATE 0 explains why an empty draft cannot be saved');
+      expect(find.byType(EditorScreen), findsOneWidget, reason: 'stays in the editor (not stuck)');
+      expect(fake.sawSave, isFalse, reason: 'an empty draft is never persisted');
+    });
+
+    testWidgets('REPRO: AppBar Save in flight + back -> Discard double-pop past the parent',
+        (tester) async {
+      // A from-scratch draft so there is no lossy gate; after validate resolves the save would go
+      // straight to the metadata prompt (and on its OK, pop). Hold the SAVE validate in flight, then
+      // press back and Discard. If the finding is real, the Discard's imperative pop AND the resumed
+      // _save's pop both fire, over-popping past the parent (host) route.
+      final fake = FakeRepo();
+      final container = await pumpEditor(tester, fake, newDraft: true);
+      container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirty
+      await tester.pump();
+
+      fake.validateGate = Completer<void>(); // park the Save gate's validate FFI hop
+      await tester.tap(find.byIcon(Icons.save_outlined));
+      await tester.pump(); // _saving set; validate parks
+      expect(find.byType(EditorScreen), findsOneWidget);
+
+      // Back-press DURING the in-flight save -> the leave prompt (back path is NOT _saving-gated).
+      await tester.tap(find.byType(BackButton));
+      await letAsyncSettle(tester);
+      expect(find.text('Leave without saving?'), findsOneWidget,
+          reason: 'the back path opens the leave prompt even mid-save');
+
+      // Discard: imperative pop of the editor route. Resolve the parked save in the SAME window so
+      // the resumed _save races the discard's exit transition (the realistic timing).
+      await tester.tap(find.widgetWithText(TextButton, 'Discard'));
+      await tester.pump(); // let the discard pop start (transition begins)
+      fake.validateGate!.complete(); // _save resumes now, mid-transition
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      // Final state. The host route ("open" button) MUST still be present; the editor gone. A
+      // double-pop would also have removed the host route (over-popped the parent).
+      expect(find.byType(EditorScreen), findsNothing, reason: 'the editor is gone (discarded)');
+      expect(find.text('open'), findsOneWidget,
+          reason: 'the parent route must survive: the resumed save must not pop a second time');
+      expect(fake.sawSave, isFalse,
+          reason: 'a discarded editor must not persist via the resumed save');
+    });
+
+    testWidgets('REPRO (edit path, tightest race): saved-draft Save in flight + back -> Discard',
+        (tester) async {
+      // The SAVED-draft path is the worst case for the finding: after validate resolves there is NO
+      // metadata dialog, so the only async hop between resume and navigator.pop(true) is saveDto.
+      final fake = FakeRepo();
+      final container = await pumpEditor(tester, fake); // saved draft (meta present, sourceWif set)
+      container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirty
+      await tester.pump();
+
+      fake.validateGate = Completer<void>();
+      await tester.tap(find.byIcon(Icons.save_outlined));
+      await tester.pump(); // _saving set; validate parks (lossy gate is AFTER validate, not reached)
+
+      await tester.tap(find.byType(BackButton));
+      await letAsyncSettle(tester);
+      expect(find.text('Leave without saving?'), findsOneWidget);
+      // Tightest possible race: complete the gate in the SAME turn as the Discard tap, BEFORE any
+      // pump, so the microtask resuming _save is queued right behind the imperative discard pop and
+      // the route's exit transition has not advanced at all.
+      // Realistic ordering: a real validateDto FFI resolves on a LATER event-loop turn, never
+      // synchronously inside the Discard tap handler. Pump the discard pop first, THEN resolve.
+      await tester.tap(find.widgetWithText(TextButton, 'Discard'));
+      await tester.pump(); // discard pop begins its exit transition
+      fake.validateGate!.complete(); // _save resumes on the next turn, mid-transition
+      await tester.pumpAndSettle();
+
+      expect(find.text('open'), findsOneWidget,
+          reason: 'parent route survives: no second pop from the resumed edit-path save');
+      expect(find.byType(EditorScreen), findsNothing, reason: 'the editor is gone (discarded)');
+      expect(fake.sawSave, isFalse,
+          reason: 'the resumed save bailed at !mounted (saveCount stays 0) before persisting');
+    });
   });
 }
