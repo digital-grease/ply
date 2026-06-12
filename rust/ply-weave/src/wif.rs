@@ -393,6 +393,17 @@ Threads=4
         assert_eq!(a, b);
     }
 
+    /// A non-default SINKING shed must survive write -> parse: `write` emits `Rising Shed=false` and
+    /// `parse` reads it back. Every other round-trip fixture is Rising, so an always-write-Rising (or
+    /// drop-on-parse) regression would otherwise be invisible. Pins the engine half of the m6 device
+    /// shed assertion.
+    #[test]
+    fn sinking_shed_survives_wif_roundtrip() {
+        let mut d = parse(SAMPLE).unwrap();
+        d.shed = ShedType::Sinking;
+        assert!(matches!(parse(&write(&d)).unwrap().shed, ShedType::Sinking));
+    }
+
     /// Phase 5.2: a from-scratch draft's name (typed at the first-save prompt and propagated into
     /// the document) must be embedded as `[TEXT] Title` by `write` and read back by a reopen.
     /// Before this, `write` emitted no Title, so every reopened draft defaulted to "Untitled".
