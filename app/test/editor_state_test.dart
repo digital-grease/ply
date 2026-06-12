@@ -329,7 +329,7 @@ void main() {
       expect(s.draft, equals(s0.draft));
     });
 
-    test('beginStroke clears redo (a fresh edit invalidates the redo future)', () {
+    test('a committed stroke clears redo; a NET-NO-OP stroke PRESERVES it', () {
       final s0 = EditorState(draft: paintableTreadled());
       final edited = s0
           .beginStroke()
@@ -337,7 +337,23 @@ void main() {
           .endStroke();
       final undone = edited.undoEdit();
       expect(undone.redo.length, 1);
-      expect(undone.beginStroke().redo, isEmpty);
+
+      // A REAL stroke (begin -> a changing paint -> end) invalidates the redo future ON COMMIT.
+      // End 2 is shaft 2 in the straight-draw fixture, so paint it shaft 1 (a genuine change).
+      final real = undone
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.threading, 2, 1), on: true)
+          .endStroke();
+      expect(real.draft, isNot(undone.draft), reason: 'the stroke really changed a cell');
+      expect(real.redo, isEmpty, reason: 'a committed stroke clears redo');
+
+      // A NET-NO-OP color stroke (paint a cell its existing color) must NOT touch redo or the draft.
+      final noop = undone
+          .beginStroke()
+          .withWarpColorForEnd(1, 0) // end 1 is already color 0 -> no-op
+          .endStroke();
+      expect(noop.redo.length, 1, reason: 'a no-op stroke leaves the redo future intact');
+      expect(noop.draft, undone.draft, reason: 'and changes nothing');
     });
 
     test('multiple strokes undo and redo in LIFO order', () {
@@ -470,6 +486,119 @@ void main() {
       expect(s1.draft.weftColors, s0.draft.weftColors);
       expect(s1.undo.length, 1);
       expect(s1.undoEdit().draft.palette.length, 2, reason: 'undo restores the shorter palette');
+    });
+  });
+
+  group('warp/weft color reducers', () {
+    // paintableTreadled: 4 ends, 4 picks, palette [white, black], warp [0,0,0,0], weft [1,1,1,1].
+    EditorState s0() => EditorState(draft: paintableTreadled());
+
+    test('withWarpColorForEnd sets the cell, leaves length==ends, pushes NO undo, no-op identity', () {
+      final s = s0().withWarpColorForEnd(2, 1);
+      expect(s.draft.warpColors, const [0, 1, 0, 0]);
+      expect(s.draft.warpColors.length, s.draft.ends);
+      expect(s.undo, isEmpty, reason: 'the stroke owns undo; the value-setter does not');
+      expect(identical(s0().withWarpColorForEnd(1, 0), s0()), isFalse); // builds a new state...
+      final same = s0();
+      expect(identical(same.withWarpColorForEnd(1, 0), same), isTrue,
+          reason: 'end 1 is already color 0 -> no-op identity');
+    });
+
+    test('withWarpColorForEnd pads a short band with 0', () {
+      final short = EditorState(draft: paintableTreadled().copyWith(warpColors: const [0, 0]));
+      final s = short.withWarpColorForEnd(4, 1); // end 4 beyond the short [0,0]
+      expect(s.draft.warpColors, const [0, 0, 0, 1], reason: 'padded with 0 up to end 4');
+    });
+
+    test('withWeftColorForPick sets the cell and pads', () {
+      final s = s0().withWeftColorForPick(0, 0);
+      expect(s.draft.weftColors, const [0, 1, 1, 1]);
+      expect(s.undo, isEmpty);
+    });
+
+    test('color value-setters throw on a bad index / position', () {
+      expect(() => s0().withWarpColorForEnd(0, 0), throwsRangeError);
+      expect(() => s0().withWarpColorForEnd(1, 5), throwsRangeError); // palette len 2
+      expect(() => s0().withWeftColorForPick(-1, 0), throwsRangeError);
+      expect(() => s0().withWeftColorForPick(0, 9), throwsRangeError);
+    });
+
+    test('color setters are BOUND to the axis (no growing past ends/picks -> no dangling tail)', () {
+      // 4 ends, 4 picks.
+      expect(() => s0().withWarpColorForEnd(5, 0), throwsRangeError, reason: 'end > ends rejected');
+      expect(() => s0().setWarpColor(5, 0), throwsRangeError);
+      expect(() => s0().withWeftColorForPick(4, 0), throwsRangeError, reason: 'pick >= picks');
+      expect(() => s0().setWeftColor(4, 0), throwsRangeError);
+      // The boundary cell (end==ends) is still in range and stays length-coupled.
+      final s = s0().withWarpColorForEnd(4, 1);
+      expect(s.draft.warpColors.length, s.draft.ends);
+    });
+
+    test('fillWarpStripe on a zero-length axis: no-op when already empty, repair-to-empty otherwise',
+        () {
+      final zero = EditorState(
+          draft: paintableTreadled().copyWith(
+        threading: const <List<int>>[], // 0 ends
+        warpColors: const <int>[],
+      ));
+      expect(identical(zero.fillWarpStripe([0, 1]), zero), isTrue,
+          reason: 'ends==0 + already-empty band -> no-op, no undo entry');
+      // A draft with ends==0 but a stale non-empty warpColors is repaired to [] as one undo entry.
+      final stale = EditorState(
+          draft: paintableTreadled().copyWith(
+        threading: const <List<int>>[],
+        warpColors: const [0, 0],
+      ));
+      final fixed = stale.fillWarpStripe([0]);
+      expect(fixed.draft.warpColors, isEmpty);
+      expect(fixed.undo.length, 1);
+    });
+
+    test('setWarpColor/setWeftColor commit ONE undo entry, clear redo, mark dirty', () {
+      final s = s0().setWarpColor(2, 1);
+      expect(s.draft.warpColors[1], 1);
+      expect(s.undo.length, 1);
+      expect(s.redo, isEmpty);
+      expect(s.dirtyStructural, isTrue);
+      expect(s.undoEdit().draft.warpColors, s0().draft.warpColors);
+      final same = s0();
+      expect(identical(same.setWarpColor(1, 0), same), isTrue, reason: 'no-op identity');
+    });
+
+    test('fillWarpStripe tiles the sequence across ALL ends; length==ends', () {
+      final s = s0().fillWarpStripe([1, 0, 1]); // 4 ends
+      expect(s.draft.warpColors, const [1, 0, 1, 1]);
+      expect(s.draft.warpColors.length, s.draft.ends);
+      expect(s.undo.length, 1);
+      expect(s.redo, isEmpty);
+    });
+
+    test('fillWeftStripe tiles across picks', () {
+      final s = s0().fillWeftStripe([0, 1]); // 4 picks -> [0,1,0,1]
+      expect(s.draft.weftColors, const [0, 1, 0, 1]);
+      expect(s.draft.weftColors.length, s.draft.picks);
+    });
+
+    test('fillWarpStripe REPAIRS a wrong-length band to exactly ends', () {
+      final short = EditorState(draft: paintableTreadled().copyWith(warpColors: const [1]));
+      final s = short.fillWarpStripe([0]);
+      expect(s.draft.warpColors, const [0, 0, 0, 0]);
+      expect(s.draft.warpColors.length, s.draft.ends);
+    });
+
+    test('fillWarpStripe empty sequence is a no-op; out-of-range index throws', () {
+      final same = s0();
+      expect(identical(same.fillWarpStripe(const []), same), isTrue);
+      expect(() => s0().fillWarpStripe([0, 5]), throwsRangeError);
+    });
+
+    test('paintCell THROWS on a color region (loud mis-route guard); isCellOn is false', () {
+      expect(() => s0().paintCell(const DraftHit(DraftRegion.warpColor, 1, 0), on: true),
+          throwsStateError);
+      expect(() => s0().paintCell(const DraftHit(DraftRegion.weftColor, 1, 0), on: false),
+          throwsStateError);
+      expect(s0().isCellOn(const DraftHit(DraftRegion.warpColor, 1, 0)), isFalse);
+      expect(s0().isCellOn(const DraftHit(DraftRegion.weftColor, 1, 0)), isFalse);
     });
   });
 }

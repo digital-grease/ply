@@ -142,21 +142,36 @@ class DraftLayout {
   double get _shaftH => shafts * cell; // threading & tie-up height
   double get _pickH => picks * cell; // right-band & drawdown height
 
-  // --- region rects in CANVAS space (what Positioned.fromRect consumes). Flush, no gutters. ---
-  Rect get threadingRect => Rect.fromLTWH(0, 0, _warpW, _shaftH);
-  Rect get tieupRect => Rect.fromLTWH(_warpW, 0, _rightW, _shaftH);
-  Rect get drawdownRect => Rect.fromLTWH(0, _shaftH, _warpW, _pickH);
-  Rect get rightRect => Rect.fromLTWH(_warpW, _shaftH, _rightW, _pickH);
+  // The color bands reserve a 1-cell strip each: the weft band a left column (width [_leftPad]), the
+  // warp band a top row (height [_topPad]). They VANISH (0) on a blank axis, so the placeholder path
+  // and any ends==0/picks==0 case keep the four core regions at the (0,0) origin.
+  double get _leftPad => picks > 0 ? cell : 0; // weft-color band column
+  double get _topPad => ends > 0 ? cell : 0; // warp-color band row
+
+  // --- region rects in CANVAS space. The four core regions shift right/down past the bands. ---
+  Rect get threadingRect => Rect.fromLTWH(_leftPad, _topPad, _warpW, _shaftH);
+  Rect get tieupRect => Rect.fromLTWH(_leftPad + _warpW, _topPad, _rightW, _shaftH);
+  Rect get drawdownRect => Rect.fromLTWH(_leftPad, _topPad + _shaftH, _warpW, _pickH);
+  Rect get rightRect => Rect.fromLTWH(_leftPad + _warpW, _topPad + _shaftH, _rightW, _pickH);
+
+  /// Warp colors: a top strip ABOVE threading, sharing the warp column's X + width with both
+  /// threading and the drawdown (the alignment that matters).
+  Rect get warpColorRect => Rect.fromLTWH(_leftPad, 0, _warpW, _topPad);
+
+  /// Weft colors: a left strip beside the drawdown, sharing the drawdown's Y + height.
+  Rect get weftColorRect => Rect.fromLTWH(0, _topPad + _shaftH, _leftPad, _pickH);
 
   Rect rectOf(DraftRegion r) => switch (r) {
         DraftRegion.threading => threadingRect,
         DraftRegion.tieup => tieupRect,
         DraftRegion.right => rightRect,
+        DraftRegion.warpColor => warpColorRect,
+        DraftRegion.weftColor => weftColorRect,
         DraftRegion.drawdown => drawdownRect,
       };
 
   /// Fixed-pitch canvas size; the scrollable SizedBox uses exactly this.
-  Size get totalSize => Size(_warpW + _rightW, _shaftH + _pickH);
+  Size get totalSize => Size(_leftPad + _warpW + _rightW, _topPad + _shaftH + _pickH);
 
   // --- per-grid geometry in each grid's LOCAL space ---
 
@@ -193,10 +208,32 @@ class DraftLayout {
         bottomOrigin: true,
       );
 
+  /// Warp-color band: ends columns (end 1 at LEFT, sharing threading/drawdown X), a single row.
+  RegionGeom get warpColor => RegionGeom(
+        cols: ends,
+        rows: 1,
+        cell: cell,
+        colBase: 1,
+        rowBase: 0,
+        bottomOrigin: false,
+      );
+
+  /// Weft-color band: a single column, picks rows (pick 0 at BOTTOM, sharing drawdown/right Y).
+  RegionGeom get weftColor => RegionGeom(
+        cols: 1,
+        rows: picks,
+        cell: cell,
+        colBase: 1,
+        rowBase: 0,
+        bottomOrigin: true,
+      );
+
   RegionGeom geomOf(DraftRegion r) => switch (r) {
         DraftRegion.threading => threading,
         DraftRegion.tieup => tieup,
         DraftRegion.right => right,
+        DraftRegion.warpColor => warpColor,
+        DraftRegion.weftColor => weftColor,
         DraftRegion.drawdown => throw ArgumentError('drawdown has no editable grid geometry'),
       };
 
@@ -216,7 +253,15 @@ class DraftLayout {
       final c = right.cellAt(content - rightRect.topLeft);
       return c == null ? null : DraftHit(DraftRegion.right, c.$1, c.$2);
     }
-    // Drawdown is display-only; everything else is a gutter / outside.
+    if (ends > 0 && warpColorRect.contains(content)) {
+      final c = warpColor.cellAt(content - warpColorRect.topLeft);
+      return c == null ? null : DraftHit(DraftRegion.warpColor, c.$1, c.$2);
+    }
+    if (picks > 0 && weftColorRect.contains(content)) {
+      final c = weftColor.cellAt(content - weftColorRect.topLeft);
+      return c == null ? null : DraftHit(DraftRegion.weftColor, c.$1, c.$2);
+    }
+    // Drawdown is display-only; the dead top-left corner + everything else is a gutter / outside.
     return null;
   }
 }

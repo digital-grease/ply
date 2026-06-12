@@ -53,15 +53,25 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
 
   @override
   Widget build(BuildContext context) {
-    final (ends, picks, shafts, treadles, isTreadled, colorCount) =
+    final (ends, picks, shafts, treadles, isTreadled) =
         ref.watch(draftEditorProvider.select((s) => (
               s.draft.ends,
               s.draft.picks,
               s.draft.shafts,
               s.draft.treadles,
               s.draft.drive is DraftTreadled,
-              s.draft.palette.length,
             )));
+    final palette = ref.watch(draftEditorProvider.select((s) => s.draft.palette));
+    final active = ref.watch(activePaletteColorProvider);
+    final cs = Theme.of(context).colorScheme;
+    // The chip's leading dot is the active BRUSH color, so the chosen color is visible without
+    // opening the sheet.
+    final brushColor = palette.isEmpty
+        ? cs.surfaceContainerHighest
+        : () {
+            final c = palette[clampBrush(active, palette.length)];
+            return Color.fromARGB(255, c.r, c.g, c.b);
+          }();
     final enabled = !_resizing;
     return Material(
       elevation: 2,
@@ -72,13 +82,21 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
             children: [
-              // Opens the palette editor sheet. Leading the dimension steppers; the row already
-              // scrolls horizontally, so it never overflows.
+              // Opens the palette editor sheet; the leading dot is the active brush color. Leads the
+              // dimension steppers; the row already scrolls horizontally, so it never overflows.
               Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: ActionChip(
-                  avatar: const Icon(Icons.palette_outlined, size: 18),
-                  label: Text('Colors $colorCount'),
+                  avatar: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: brushColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: cs.outlineVariant),
+                    ),
+                  ),
+                  label: Text('Colors ${palette.length}'),
                   onPressed: () => showPaletteSheet(context),
                 ),
               ),

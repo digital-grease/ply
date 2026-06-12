@@ -142,6 +142,14 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
                   rect: layout.rightRect,
                   child: RepaintBoundary(child: RightGrid(geom: layout.right)),
                 ),
+                Positioned.fromRect(
+                  rect: layout.warpColorRect,
+                  child: RepaintBoundary(child: WarpColorBand(geom: layout.warpColor)),
+                ),
+                Positioned.fromRect(
+                  rect: layout.weftColorRect,
+                  child: RepaintBoundary(child: WeftColorBand(geom: layout.weftColor)),
+                ),
               ],
             ),
           ),

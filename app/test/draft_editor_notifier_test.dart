@@ -4,6 +4,7 @@ import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/models/draft_region.dart';
 import 'package:ply/src/models/editor_state.dart';
 import 'package:ply/src/state/draft_editor_notifier.dart';
+import 'package:ply/src/state/editor_providers.dart';
 
 // Host tests for the Riverpod glue: the notifier is a thin forwarder, but load() (constructor
 // reset of undo/redo + set-or-CLEAR sourceWif), the three reducer forwards, and the drag-paint
@@ -142,6 +143,49 @@ void main() {
     n.paintAt(const DraftHit(DraftRegion.threading, 1, 1));
     expect(read().draft, equals(DraftDoc.blank(shafts: 2, treadles: 2)),
         reason: 'the cleared scratch makes paintAt a no-op after a load');
+  });
+
+  test('a color-region stroke paints the active brush index, constant + region-confined, one undo', () {
+    notifier().load(paintableTreadled()); // palette [white, black]; warp [0,0,0,0]
+    container.read(activePaletteColorProvider.notifier).state = 1; // brush = black
+    final n = notifier();
+    n.beginStroke(const DraftHit(DraftRegion.warpColor, 1, 0)); // end 1
+    n.paintAt(const DraftHit(DraftRegion.warpColor, 2, 0)); // end 2
+    n.paintAt(const DraftHit(DraftRegion.tieup, 1, 1)); // out of region -> ignored
+    n.paintAt(const DraftHit(DraftRegion.warpColor, 3, 0)); // end 3
+    n.endStroke();
+    expect(read().draft.warpColors, const [1, 1, 1, 0],
+        reason: 'ends 1-3 painted brush 1; end 4 untouched; the out-of-region move ignored');
+    expect(read().undo.length, 1, reason: 'the whole color drag is ONE undo entry');
+    n.undo();
+    expect(read().draft.warpColors, const [0, 0, 0, 0], reason: 'one undo restores the band');
+  });
+
+  test('a color stroke CLAMPS a dangling brush index before writing (never dangles warpColors)', () {
+    notifier().load(paintableTreadled()); // palette len 2
+    container.read(activePaletteColorProvider.notifier).state = 9; // dangles past the palette
+    final n = notifier();
+    n.beginStroke(const DraftHit(DraftRegion.warpColor, 1, 0));
+    n.endStroke();
+    expect(read().draft.warpColors[0], 1, reason: 'brush clamped to palette.length-1');
+  });
+
+  test('a color stroke on an EMPTY palette is a no-op (no RangeError)', () {
+    notifier().load(paintableTreadled().copyWith(palette: const <DraftColor>[]));
+    final n = notifier();
+    n.beginStroke(const DraftHit(DraftRegion.warpColor, 1, 0)); // must not throw
+    n.endStroke();
+    expect(read().draft.warpColors, paintableTreadled().warpColors, reason: 'nothing painted');
+  });
+
+  test('a weft color stroke paints by pick (row), ignoring the single column', () {
+    notifier().load(paintableTreadled()); // weft [1,1,1,1]
+    container.read(activePaletteColorProvider.notifier).state = 0;
+    final n = notifier();
+    n.beginStroke(const DraftHit(DraftRegion.weftColor, 1, 0)); // pick 0
+    n.paintAt(const DraftHit(DraftRegion.weftColor, 1, 1)); // pick 1
+    n.endStroke();
+    expect(read().draft.weftColors, const [0, 0, 1, 1]);
   });
 
   test('commitEdit mid-stroke seals the stroke first; undo history stays chronological', () {

@@ -163,8 +163,31 @@ Offset tieupC(WidgetTester t, int treadle, int shaft) =>
     _origin(t) + kLayout.tieupRect.topLeft + kLayout.tieup.rectFor(treadle, shaft).center;
 Offset rightC(WidgetTester t, int col, int pick) =>
     _origin(t) + kLayout.rightRect.topLeft + kLayout.right.rectFor(col, pick).center;
+Offset warpC(WidgetTester t, int end) =>
+    _origin(t) + kLayout.warpColorRect.topLeft + kLayout.warpColor.rectFor(end, 0).center;
+Offset weftC(WidgetTester t, int pick) =>
+    _origin(t) + kLayout.weftColorRect.topLeft + kLayout.weftColor.rectFor(1, pick).center;
 
 void main() {
+  testWidgets('tapping a warp-color cell paints the active brush onto that end', (tester) async {
+    final c = await pumpView(tester); // fixture warpColors [0,0,0,0]
+    c.read(activePaletteColorProvider.notifier).state = 1; // brush = black (index 1)
+    await tester.pump();
+    await tester.tapAt(warpC(tester, 2));
+    await tester.pump();
+    expect(c.read(draftEditorProvider).draft.warpColors[1], 1, reason: 'end 2 painted brush 1');
+    expect(c.read(draftEditorProvider).undo.length, 1, reason: 'one undo entry');
+  });
+
+  testWidgets('tapping a weft-color cell paints the active brush onto that pick', (tester) async {
+    final c = await pumpView(tester); // fixture weftColors [1,1,1,1]
+    c.read(activePaletteColorProvider.notifier).state = 0; // brush = white (index 0)
+    await tester.pump();
+    await tester.tapAt(weftC(tester, 0)); // pick 0
+    await tester.pump();
+    expect(c.read(draftEditorProvider).draft.weftColors[0], 0, reason: 'pick 0 painted brush 0');
+  });
+
   testWidgets('tapping a threading cell sets that end\'s shaft', (tester) async {
     final c = await pumpView(tester);
     await tester.tapAt(threadingC(tester, 1, 2));

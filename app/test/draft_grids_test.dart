@@ -128,6 +128,79 @@ void main() {
     expect(cells.toSet(), {(2, 2), (3, 1), (4, 2)});
   });
 
+  // --- color bands (Phase 4.2) ---
+  const RegionGeom warpBandGeom =
+      RegionGeom(cols: 3, rows: 1, cell: 10, colBase: 1, rowBase: 0, bottomOrigin: false);
+  const RegionGeom weftBandGeom =
+      RegionGeom(cols: 1, rows: 4, cell: 10, colBase: 1, rowBase: 0, bottomOrigin: true);
+
+  DraftDoc colored() => treadled().copyWith(
+        threading: const [
+          [1],
+          [2],
+          [1],
+        ],
+        palette: const [
+          DraftColor(r: 0, g: 0, b: 0), // 0 black
+          DraftColor(r: 255, g: 0, b: 0), // 1 red
+          DraftColor(r: 0, g: 255, b: 0), // 2 green
+        ],
+        warpColors: const [1, 2, 0],
+        weftColors: const [0, 1, 2, 0],
+      );
+
+  List<Color> colorsOf(WidgetTester t, Finder f) {
+    final cp = t.widget<CustomPaint>(find.descendant(of: f, matching: find.byType(CustomPaint)));
+    return (cp.painter! as ColorBandPainter).colors;
+  }
+
+  testWidgets('WarpColorBand paints one palette color per end (warpColors order)', (t) async {
+    await pumpGrid(t, colored(), const WarpColorBand(geom: warpBandGeom));
+    expect(colorsOf(t, find.byType(WarpColorBand)),
+        const [Color(0xFFFF0000), Color(0xFF00FF00), Color(0xFF000000)]); // red, green, black
+  });
+
+  testWidgets('WeftColorBand paints one palette color per pick', (t) async {
+    await pumpGrid(t, colored(), const WeftColorBand(geom: weftBandGeom));
+    expect(colorsOf(t, find.byType(WeftColorBand)),
+        const [Color(0xFF000000), Color(0xFFFF0000), Color(0xFF00FF00), Color(0xFF000000)]);
+  });
+
+  testWidgets('a SHORT warpColors falls back to palette[0]', (t) async {
+    final doc = colored().copyWith(warpColors: const [1]); // 1 entry over 3 ends
+    await pumpGrid(t, doc, const WarpColorBand(geom: warpBandGeom));
+    expect(colorsOf(t, find.byType(WarpColorBand)),
+        const [Color(0xFFFF0000), Color(0xFF000000), Color(0xFF000000)]); // red, black, black
+  });
+
+  testWidgets('a dangling color index renders WHITE (matching the engine), not a crash', (t) async {
+    final doc = colored().copyWith(warpColors: const [9, 0, 0]); // 9 dangles (palette len 3)
+    await pumpGrid(t, doc, const WarpColorBand(geom: warpBandGeom));
+    expect(colorsOf(t, find.byType(WarpColorBand)).first, const Color(0xFFFFFFFF),
+        reason: 'out-of-range index renders white, exactly as render_rgba does');
+  });
+
+  testWidgets('the color bands expose a Semantics label (a11y)', (t) async {
+    final handle = t.ensureSemantics();
+    await pumpGrid(t, colored(), const WarpColorBand(geom: warpBandGeom));
+    expect(find.bySemanticsLabel('Warp colors'), findsOneWidget);
+    handle.dispose();
+  });
+
+  test('ColorBandPainter.shouldRepaint flips when the colors list changes', () {
+    ColorBandPainter make(List<Color> colors) => ColorBandPainter(
+        colors: colors,
+        cells: const [(1, 0), (2, 0), (3, 0)],
+        geom: warpBandGeom,
+        line: const Color(0xFF000000),
+        background: const Color(0xFFFFFFFF));
+    final a = make(const [Color(0xFFFF0000), Color(0xFF00FF00), Color(0xFF000000)]);
+    expect(a.shouldRepaint(make(const [Color(0xFFFF0000), Color(0xFF00FF00), Color(0xFF000000)])),
+        isFalse);
+    expect(a.shouldRepaint(make(const [Color(0xFF0000FF), Color(0xFF00FF00), Color(0xFF000000)])),
+        isTrue, reason: 'a color changed');
+  });
+
   test('CellGridPainter.shouldRepaint reflects cell/geom changes', () {
     CellGridPainter make(List<(int, int)> cells, RegionGeom geom) => CellGridPainter(
         cells: cells,

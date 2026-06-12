@@ -100,6 +100,27 @@ void main() {
     expect(find.text('Colors 2'), findsOneWidget, reason: 'the chip count tracks the palette');
   });
 
+  testWidgets('the Colors chip dot shows the active brush color', (tester) async {
+    Color dotColor(WidgetTester t) {
+      final dot = t
+          .widgetList<Container>(find.byType(Container))
+          .firstWhere((c) => (c.decoration as BoxDecoration?)?.shape == BoxShape.circle);
+      return (dot.decoration as BoxDecoration).color!;
+    }
+
+    final (c, _) = await pumpBar(tester); // fixture palette [black]
+    expect(dotColor(tester), const Color(0xFF000000), reason: 'brush 0 = black');
+    c.read(draftEditorProvider.notifier).addPaletteColor(const DraftColor(r: 255, g: 0, b: 0));
+    c.read(activePaletteColorProvider.notifier).state = 1;
+    await tester.pump();
+    expect(dotColor(tester), const Color(0xFFFF0000), reason: 'brush 1 = red');
+
+    // A dangling brush index clamps to the last swatch (no crash).
+    c.read(activePaletteColorProvider.notifier).state = 5;
+    await tester.pump();
+    expect(dotColor(tester), const Color(0xFFFF0000), reason: 'clamped to the last swatch (red)');
+  });
+
   testWidgets('More Ends resizes with ends+1, others unchanged, and commits', (tester) async {
     final (c, fake) = await pumpBar(tester);
     await tester.tap(find.byTooltip('More Ends'));

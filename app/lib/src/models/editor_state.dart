@@ -168,6 +168,57 @@ class EditorState {
     return copyWith(draft: next, undo: [...undo, draft], redo: const [], dirtyStructural: true);
   }
 
+  /// Set warp end [end]'s color (1-based) as ONE undo entry (the committing single-cell twin of the
+  /// stroke setter [withWarpColorForEnd]). No-op when already that color.
+  EditorState setWarpColor(int end, int idx) {
+    final next = withWarpColorForEnd(end, idx);
+    if (identical(next, this)) return this;
+    return copyWith(
+        draft: next.draft, undo: [...undo, draft], redo: const [], dirtyStructural: true);
+  }
+
+  /// Set pick [pick]'s color (0-based) as ONE undo entry.
+  EditorState setWeftColor(int pick, int idx) {
+    final next = withWeftColorForPick(pick, idx);
+    if (identical(next, this)) return this;
+    return copyWith(
+        draft: next.draft, undo: [...undo, draft], redo: const [], dirtyStructural: true);
+  }
+
+  /// Tile [sequence] (palette indices) across ALL warp ends from end 1, wrapping:
+  /// `warpColors[e] = sequence[e % sequence.length]`. Rebuilds the band to EXACTLY [DraftDoc.ends],
+  /// so `warpColors.length == ends` holds by construction (this is also the repair path for an
+  /// imported list of the wrong length). Empty [sequence] is a no-op; every index is range-checked.
+  /// Commits as ONE undo entry.
+  EditorState fillWarpStripe(List<int> sequence) {
+    if (sequence.isEmpty) return this;
+    _checkPaletteRange(sequence);
+    final n = draft.ends;
+    final filled = [for (var e = 0; e < n; e++) sequence[e % sequence.length]];
+    final next = draft.copyWith(warpColors: filled);
+    if (next == draft) return this;
+    return copyWith(draft: next, undo: [...undo, draft], redo: const [], dirtyStructural: true);
+  }
+
+  /// Tile [sequence] across ALL picks (rebuilds to exactly [DraftDoc.picks]). See [fillWarpStripe].
+  EditorState fillWeftStripe(List<int> sequence) {
+    if (sequence.isEmpty) return this;
+    _checkPaletteRange(sequence);
+    final n = draft.picks;
+    final filled = [for (var p = 0; p < n; p++) sequence[p % sequence.length]];
+    final next = draft.copyWith(weftColors: filled);
+    if (next == draft) return this;
+    return copyWith(draft: next, undo: [...undo, draft], redo: const [], dirtyStructural: true);
+  }
+
+  void _checkPaletteRange(List<int> indices) {
+    for (final idx in indices) {
+      if (idx < 0 || idx >= draft.palette.length) {
+        throw RangeError.range(idx, 0, draft.palette.length - 1, 'palette index');
+      }
+    }
+  }
+
   /// Restore the most recent pre-edit snapshot, moving the current doc onto [redo]. No-op (same
   /// identity) when there is nothing to undo.
   EditorState undoEdit() {
@@ -246,6 +297,10 @@ class EditorState {
               pick < drive.liftplan.length &&
               drive.liftplan[pick].contains(hit.col);
         }
+        return false;
+      case DraftRegion.warpColor:
+      case DraftRegion.weftColor:
+        // Color cells have no on/off state; the driver routes them by region, never via isCellOn.
         return false;
       case DraftRegion.drawdown:
         return false;
@@ -341,6 +396,38 @@ class EditorState {
     ];
   }
 
+  /// A fresh copy of [xs] with element [i] (0-based) set to [idx], padding with 0 up to [i] when
+  /// short (the SAME pad the engine resize uses for warp/weft, so a grow stays consistent).
+  static List<int> _setIndex(List<int> xs, int i, int idx) {
+    final n = i >= xs.length ? i + 1 : xs.length;
+    return [for (var k = 0; k < n; k++) k == i ? idx : (k < xs.length ? xs[k] : 0)];
+  }
+
+  /// Set warp end [end]'s (1-based) color to palette index [idx]. Pure draft-mutation (does NOT
+  /// touch undo; the stroke owns that), padding a short warpColors with 0. Returns `this` on a
+  /// no-op. Throws on a bad [end] or an out-of-range [idx].
+  EditorState withWarpColorForEnd(int end, int idx) {
+    // Bound to the warp axis so the band can never grow PAST ends and leave a dangling tail until
+    // the next resize (the engine keeps warpColors.length == ends; this setter must not break it).
+    if (end < 1 || end > draft.ends) throw RangeError.range(end, 1, draft.ends, 'end');
+    if (idx < 0 || idx >= draft.palette.length) {
+      throw RangeError.range(idx, 0, draft.palette.length - 1, 'palette index');
+    }
+    final next = draft.copyWith(warpColors: _setIndex(draft.warpColors, end - 1, idx));
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// Set pick [pick]'s (0-based) color to palette index [idx]. Pure draft-mutation; pads weftColors
+  /// with 0. Returns `this` on a no-op.
+  EditorState withWeftColorForPick(int pick, int idx) {
+    if (pick < 0 || pick >= draft.picks) throw RangeError.range(pick, 0, draft.picks - 1, 'pick');
+    if (idx < 0 || idx >= draft.palette.length) {
+      throw RangeError.range(idx, 0, draft.palette.length - 1, 'palette index');
+    }
+    final next = draft.copyWith(weftColors: _setIndex(draft.weftColors, pick, idx));
+    return next == draft ? this : copyWith(draft: next);
+  }
+
   /// Apply a paint to the cell named by [hit], forcing it [on] or off, routing to the right
   /// region's value-setter so tap and drag share identical semantics.
   EditorState paintCell(DraftHit hit, {required bool on}) {
@@ -353,28 +440,38 @@ class EditorState {
         return draft.drive is DraftTreadled
             ? withTreadleForPick(hit.row, on ? [hit.col] : const <int>[])
             : withLiftForPick(hit.row, on ? [hit.col] : const <int>[]);
+      case DraftRegion.warpColor:
+      case DraftRegion.weftColor:
+        // Color regions set a palette INDEX, not an on/off bool: a mis-route here is a bug, so fail
+        // loudly instead of writing a boolean into a color band. The driver paints them via
+        // withWarpColorForEnd / withWeftColorForPick.
+        throw StateError('color regions are painted via the color value-setters, not paintCell');
       case DraftRegion.drawdown:
         return this; // display-only
     }
   }
 
-  /// Open a stroke: capture the pre-edit doc into [strokeBase] and clear redo ONCE. Auto-seals a
-  /// stale open stroke first (so a widget torn down mid-drag cannot freeze the next capture).
+  /// Open a stroke: capture the pre-edit doc into [strokeBase]. Auto-seals a stale open stroke first
+  /// (so a widget torn down mid-drag cannot freeze the next capture). The redo future is cleared at
+  /// COMMIT (in [endStroke]), NOT here: a stroke that begins and ends with zero net change (e.g.
+  /// painting a color cell the color it already has) must leave redo intact, just like every other
+  /// reducer that returns `this` on a no-op.
   EditorState beginStroke() {
     final base = strokeBase == null ? this : endStroke();
-    return base.copyWith(strokeBase: base.draft, redo: const []);
+    return base.copyWith(strokeBase: base.draft);
   }
 
-  /// Close a stroke: push [strokeBase] as the SINGLE undo entry for the whole stroke (or push
-  /// nothing if the net change is zero), clear [strokeBase], and mark structurally dirty. No-op
-  /// when no stroke is open.
+  /// Close a stroke: push [strokeBase] as the SINGLE undo entry for the whole stroke AND clear redo
+  /// (a real edit invalidates the redo future), clear [strokeBase], mark dirty. A net-no-op stroke
+  /// (base == draft) pushes NOTHING and PRESERVES redo. No-op when no stroke is open.
   EditorState endStroke() {
     final base = strokeBase;
     if (base == null) return this;
     if (base == draft) {
-      return copyWith(strokeBase: null); // wander-out-and-back drag: push NOTHING
+      return copyWith(strokeBase: null); // wander-out-and-back drag: push NOTHING, keep redo
     }
-    return copyWith(undo: [...undo, base], strokeBase: null, dirtyStructural: true);
+    return copyWith(
+        undo: [...undo, base], redo: const [], strokeBase: null, dirtyStructural: true);
   }
 
   @override

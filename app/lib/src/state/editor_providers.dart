@@ -33,12 +33,24 @@ enum EditorTool { pencil, hand }
 /// The current tool. Default is pencil so a freshly-opened draft is immediately editable.
 final editorToolProvider = StateProvider<EditorTool>((ref) => EditorTool.pencil);
 
-// 4.2: activePaletteColorProvider = StateProvider<int>((_) => 0) — the brush-color index for
-//      warp/weft painting (setWarpColor/setWeftColor). Ephemeral view chrome, NOT on EditorState
-//      (so it never poisons undo-dedup or the preview select), exactly like zoomCell/editorTool.
-//      MUST be remapped across a palette REMOVE by the same rule the engine uses
-//      (e == removed -> 0, e > removed -> e - 1) and clamped-on-read to 0..palette.length-1 after a
-//      smaller-palette load(), or the brush index will dangle / ring a removed swatch.
+/// The active brush-color palette index (0-based) for warp/weft painting. Ephemeral VIEW CHROME, NOT
+/// on EditorState (so it never poisons undo-dedup or the preview select), exactly like
+/// [zoomCellProvider]/[editorToolProvider]. Reset to 0 on [DraftEditorNotifier.load], remapped across
+/// a palette remove (see [remapAfterRemove]), and clamped-on-read (see [activeBrushIndex]) so it can
+/// never dangle past a shrunk palette.
+final activePaletteColorProvider = StateProvider<int>((ref) => 0);
+
+/// The engine's color-remove renumbering (matches `Draft::with_color_removed`): the brush pointing at
+/// [e] after color [removed] is dropped — `e == removed -> 0`, `e > removed -> e - 1`, else unchanged.
+/// Pure + top-level so it is unit-testable and stays in lockstep with the Rust rule.
+int remapAfterRemove(int e, int removed) => e == removed ? 0 : (e > removed ? e - 1 : e);
+
+/// Clamp a brush index into a palette of [paletteLength] colors (defends a dangling brush after a
+/// smaller-palette shrink). The shared rule the brush consumers apply on read: the notifier's stroke
+/// (off `state`), the palette ring, and the dimensions-bar dot. (The notifier cannot read its own
+/// provider, so it calls this with `state.draft.palette.length` rather than a `Ref`.)
+int clampBrush(int index, int paletteLength) =>
+    paletteLength == 0 ? 0 : index.clamp(0, paletteLength - 1);
 
 /// Discrete on-screen cell sizes (logical px) the integrated view can zoom through. Discrete +
 /// integer so cells stay crisp and the tap math is scroll-/zoom-invariant.

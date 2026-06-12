@@ -44,10 +44,12 @@ class _PaletteSheetState extends ConsumerState<PaletteSheet> {
 
   @override
   Widget build(BuildContext context) {
-    // Watch only the palette so the sheet rebuilds live as colors are added/edited/removed and stays
-    // open across edits.
+    // Watch the palette + the active brush so the sheet rebuilds live (colors added/edited/removed,
+    // brush re-selected) and stays open across edits.
     final palette = ref.watch(draftEditorProvider.select((s) => s.draft.palette));
+    final active = ref.watch(activePaletteColorProvider);
     final canRemove = palette.length > 1;
+    final cs = Theme.of(context).colorScheme;
     return SafeArea(
       top: false,
       child: Padding(
@@ -67,13 +69,14 @@ class _PaletteSheetState extends ConsumerState<PaletteSheet> {
                 ),
               ],
             ),
+            Text(
+              'Tap to choose the brush color, long-press to edit.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 4, bottom: 4),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
+                child: Text(_error!, style: TextStyle(color: cs.error)),
               ),
             const SizedBox(height: 8),
             Wrap(
@@ -85,7 +88,10 @@ class _PaletteSheetState extends ConsumerState<PaletteSheet> {
                     color: palette[i],
                     index: i,
                     canRemove: canRemove,
-                    onTap: () => _edit(i, palette[i]),
+                    // Clamp so a transient dangling brush rings the last swatch, never nowhere.
+                    selected: i == clampBrush(active, palette.length),
+                    onTap: () => ref.read(activePaletteColorProvider.notifier).state = i,
+                    onLongPress: () => _edit(i, palette[i]),
                     onRemove: () => _remove(i),
                   ),
               ],
@@ -142,6 +148,11 @@ class _PaletteSheetState extends ConsumerState<PaletteSheet> {
       // hop, so a stale remove can't stomp it.
       if (!mounted || !identical(ref.read(draftEditorProvider).draft, d)) return;
       notifier.commitEdit(next);
+      // Keep the brush ringing the swatch it pointed at: the palette renumbered, so remap the brush
+      // index by the SAME rule the engine used (off EditorState, so commitEdit can't touch it).
+      final b = ref.read(activePaletteColorProvider);
+      final nb = remapAfterRemove(b, idx);
+      if (nb != b) ref.read(activePaletteColorProvider.notifier).state = nb;
     } catch (e) {
       if (mounted) setState(() => _error = 'Could not remove the color: $e');
     } finally {
@@ -174,19 +185,18 @@ class _SwatchTile extends StatelessWidget {
     required this.color,
     required this.index,
     required this.canRemove,
+    required this.selected,
     required this.onTap,
+    required this.onLongPress,
     required this.onRemove,
-    // 4.2 seam: the active-brush ring. Always false in 4.1 (never passed, so the ring never renders);
-    // 4.2 flips it on by watching the reserved activePaletteColorProvider.
-    // ignore: unused_element_parameter
-    this.selected = false,
   });
 
   final DraftColor color;
   final int index; // 0-based
   final bool canRemove;
-  final bool selected;
-  final VoidCallback onTap;
+  final bool selected; // draws the active-brush ring
+  final VoidCallback onTap; // select as the brush
+  final VoidCallback onLongPress; // edit the RGB
   final VoidCallback onRemove;
 
   @override
@@ -199,8 +209,10 @@ class _SwatchTile extends StatelessWidget {
         ? Colors.white
         : Colors.black;
     return Semantics(
-      label: 'Color ${index + 1}: R ${color.r} G ${color.g} B ${color.b}',
+      label: 'Color ${index + 1}${selected ? ', selected brush' : ''}: '
+          'R ${color.r} G ${color.g} B ${color.b}',
       button: true,
+      selected: selected,
       child: SizedBox(
         // The badge sits ENTIRELY inside this box (no negative Positioned / Clip.none), so its whole
         // tap target is hittable — a child painted outside the parent never receives pointers.
@@ -213,6 +225,7 @@ class _SwatchTile extends StatelessWidget {
               bottom: 0,
               child: InkWell(
                 onTap: onTap,
+                onLongPress: onLongPress,
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
                   width: 44,

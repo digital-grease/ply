@@ -137,6 +137,141 @@ class TieupGrid extends ConsumerWidget {
   }
 }
 
+/// Paints a COLOR band: each cell filled with its OWN palette color (one [Color] per cell, parallel
+/// to [cells]), plus the same grid lines as [CellGridPainter]. Used by the warp/weft color bands.
+class ColorBandPainter extends CustomPainter {
+  ColorBandPainter({
+    required this.colors,
+    required this.cells,
+    required this.geom,
+    required this.line,
+    required this.background,
+  });
+
+  final List<Color> colors; // parallel to [cells]
+  final List<(int, int)> cells; // (col, row) per cell, region-local terms
+  final RegionGeom geom;
+  final Color line;
+  final Color background;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (geom.isDegenerate) return;
+    assert(size == geom.size, 'ColorBandPainter size $size != geom.size ${geom.size}');
+    final gsize = geom.size;
+    canvas.drawRect(Offset.zero & gsize, Paint()..color = background);
+
+    for (var i = 0; i < cells.length; i++) {
+      final (col, row) = cells[i];
+      canvas.drawRect(geom.rectFor(col, row).deflate(0.5), Paint()..color = colors[i]);
+    }
+
+    final linePaint = Paint()
+      ..color = line
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (var c = 0; c <= geom.cols; c++) {
+      final x = c * geom.cell;
+      canvas.drawLine(Offset(x, 0), Offset(x, gsize.height), linePaint);
+    }
+    for (var r = 0; r <= geom.rows; r++) {
+      final y = r * geom.cell;
+      canvas.drawLine(Offset(0, y), Offset(gsize.width, y), linePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(ColorBandPainter old) =>
+      geom != old.geom ||
+      line != old.line ||
+      background != old.background ||
+      !listEquals(cells, old.cells) ||
+      !listEquals(colors, old.colors);
+}
+
+/// The opaque RGB of palette entry [idx]. An OUT-OF-RANGE index renders WHITE, exactly as the engine
+/// drawdown does (`render_rgba` uses `palette.get(idx).unwrap_or(WHITE)`), so the band and the cloth
+/// never disagree on a dangling reference (which `validate()` separately flags as an Error).
+Color _swatch(List<DraftColor> palette, int idx) {
+  if (idx < 0 || idx >= palette.length) return const Color(0xFFFFFFFF);
+  final c = palette[idx];
+  return Color.fromARGB(255, c.r, c.g, c.b);
+}
+
+/// Warp color band: per warp end (end-1 at LEFT), its palette color. A single row.
+class WarpColorBand extends ConsumerWidget {
+  const WarpColorBand({required this.geom, super.key});
+
+  final RegionGeom geom; // cols = ends, rows = 1
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (warpColors, palette) = ref.watch(
+        draftEditorProvider.select((s) => (s.draft.warpColors, s.draft.palette)));
+    final cells = <(int, int)>[for (var end = 1; end <= geom.cols; end++) (end, 0)];
+    final colors = <Color>[
+      for (var end = 1; end <= geom.cols; end++)
+        _swatch(palette, end - 1 < warpColors.length ? warpColors[end - 1] : 0),
+    ];
+    final cs = Theme.of(context).colorScheme;
+    return Semantics(
+      label: 'Warp colors',
+      value: _bandValue(warpColors, geom.cols, 'end'),
+      child: CustomPaint(
+        size: geom.size,
+        painter: ColorBandPainter(
+          colors: colors,
+          cells: cells,
+          geom: geom,
+          line: cs.outlineVariant,
+          background: cs.surfaceContainerHighest,
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact screen-reader value for a color band: the 1-based palette color of each cell, e.g.
+/// "end 1 color 2, end 2 color 1" (a missing entry reads as color 1, the engine's pad).
+String _bandValue(List<int> indices, int count, String unit) => [
+      for (var i = 0; i < count; i++)
+        '$unit ${i + 1} color ${(i < indices.length ? indices[i] : 0) + 1}',
+    ].join(', ');
+
+/// Weft color band: per pick (pick-0 at BOTTOM, the geom owns the flip), its palette color. A
+/// single column.
+class WeftColorBand extends ConsumerWidget {
+  const WeftColorBand({required this.geom, super.key});
+
+  final RegionGeom geom; // cols = 1, rows = picks
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (weftColors, palette) = ref.watch(
+        draftEditorProvider.select((s) => (s.draft.weftColors, s.draft.palette)));
+    final cells = <(int, int)>[for (var pick = 0; pick < geom.rows; pick++) (1, pick)];
+    final colors = <Color>[
+      for (var pick = 0; pick < geom.rows; pick++)
+        _swatch(palette, pick < weftColors.length ? weftColors[pick] : 0),
+    ];
+    final cs = Theme.of(context).colorScheme;
+    return Semantics(
+      label: 'Weft colors',
+      value: _bandValue(weftColors, geom.rows, 'pick'),
+      child: CustomPaint(
+        size: geom.size,
+        painter: ColorBandPainter(
+          colors: colors,
+          cells: cells,
+          geom: geom,
+          line: cs.outlineVariant,
+          background: cs.surfaceContainerHighest,
+        ),
+      ),
+    );
+  }
+}
+
 /// Right band: per pick, the pressed treadle(s) (treadled, col=treadle) OR raised shaft(s)
 /// (liftplan, col=shaft). Cells are (col, pick), pick-0-at-bottom (the geom owns the flip).
 class RightGrid extends ConsumerWidget {

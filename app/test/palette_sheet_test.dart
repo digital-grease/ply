@@ -109,10 +109,10 @@ void main() {
     expect(c.read(draftEditorProvider).undo, isEmpty);
   });
 
-  testWidgets('tapping a swatch opens the picker; a changed color commits setPaletteColor',
+  testWidgets('LONG-PRESS a swatch opens the picker; a changed color commits setPaletteColor',
       (tester) async {
     final c = await pumpSheet(tester, FakePaletteRepo());
-    await tester.tap(find.text('1')); // swatch index 1 (1-based label)
+    await tester.longPress(find.text('1')); // long-press edits (tap selects the brush)
     await tester.pumpAndSettle();
     expect(find.text('Use color'), findsOneWidget, reason: 'the RGB picker opened');
     // Change R, then apply.
@@ -185,7 +185,7 @@ void main() {
     expect(c.read(draftEditorProvider).draft.palette.length, 3, reason: 'nothing committed');
   });
 
-  testWidgets('an edit tile tap during an in-flight remove is gated (no stale-index edit)',
+  testWidgets('a swatch edit during an in-flight remove is gated (no stale-index edit)',
       (tester) async {
     final repo = FakePaletteRepo()..gate = Completer<void>();
     final c = await pumpSheet(tester, repo);
@@ -193,8 +193,8 @@ void main() {
     await tester.pump();
     expect(repo.removeCount, 1);
 
-    // Tapping a swatch to edit must be a no-op while a remove is renumbering the palette.
-    await tester.tap(find.text('1'));
+    // Long-pressing a swatch to edit must be a no-op while a remove is renumbering the palette.
+    await tester.longPress(find.text('1'));
     await tester.pumpAndSettle();
     expect(find.text('Use color'), findsNothing, reason: 'the picker did not open during a remove');
 
@@ -205,8 +205,8 @@ void main() {
 
   testWidgets('re-opening a swatch seeds the picker from its CURRENT (edited) color', (tester) async {
     final c = await pumpSheet(tester, FakePaletteRepo());
-    // Edit swatch 2 (index 1, black) — raise R.
-    await tester.tap(find.text('2'));
+    // Long-press swatch 2 (index 1, black) to edit — raise R.
+    await tester.longPress(find.text('2'));
     await tester.pumpAndSettle();
     expect(find.text('#000000'), findsOneWidget);
     await tester.drag(find.byType(Slider).first, const Offset(300, 0));
@@ -216,7 +216,7 @@ void main() {
     expect(c.read(draftEditorProvider).draft.palette[1].r, greaterThan(0));
 
     // Re-open the SAME swatch: the picker now seeds from the edited color, not the stale black.
-    await tester.tap(find.text('2'));
+    await tester.longPress(find.text('2'));
     await tester.pumpAndSettle();
     expect(find.text('#000000'), findsNothing, reason: 'seeded from the edited color');
   });
@@ -226,7 +226,7 @@ void main() {
     Color tileColor(int i) =>
         (tester.widget<Container>(find.byType(Container).at(i)).decoration as BoxDecoration).color!;
     final before = tileColor(1); // black
-    await tester.tap(find.text('2'));
+    await tester.longPress(find.text('2'));
     await tester.pumpAndSettle();
     await tester.drag(find.byType(Slider).first, const Offset(300, 0)); // raise R
     await tester.pumpAndSettle();
@@ -245,6 +245,48 @@ void main() {
     expect(repo.removeCount, 1);
     // The survivor at index 2 renumbers down to 1 (same color, no dangle).
     expect(c.read(draftEditorProvider).draft.warpColors, const [0, 1]);
+  });
+
+  testWidgets('tapping a swatch selects it as the active brush', (tester) async {
+    final c = await pumpSheet(tester, FakePaletteRepo()); // 3-color palette
+    await tester.tap(find.text('3')); // swatch index 2 (1-based label)
+    await tester.pump();
+    expect(c.read(activePaletteColorProvider), 2);
+    await tester.tap(find.text('1'));
+    await tester.pump();
+    expect(c.read(activePaletteColorProvider), 0);
+  });
+
+  testWidgets('the sheet shows the brush hint', (tester) async {
+    await pumpSheet(tester, FakePaletteRepo());
+    expect(find.textContaining('Tap to choose the brush color'), findsOneWidget);
+  });
+
+  testWidgets('the selected swatch announces itself as the brush (a11y)', (tester) async {
+    final handle = tester.ensureSemantics();
+    final c = await pumpSheet(tester, FakePaletteRepo());
+    c.read(activePaletteColorProvider.notifier).state = 1;
+    await tester.pump();
+    expect(find.bySemanticsLabel(RegExp('selected brush')), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('removing a color BELOW the active brush decrements the brush', (tester) async {
+    final c = await pumpSheet(tester, FakePaletteRepo());
+    c.read(activePaletteColorProvider.notifier).state = 2; // brush on red (idx 2)
+    await tester.tap(find.byIcon(Icons.close).at(0)); // remove idx 0 (referenced -> confirm)
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(c.read(activePaletteColorProvider), 1, reason: 'brush 2 > removed 0 -> 1');
+  });
+
+  testWidgets('removing the ACTIVE color resets the brush to 0', (tester) async {
+    final c = await pumpSheet(tester, FakePaletteRepo());
+    c.read(activePaletteColorProvider.notifier).state = 2; // brush on red (idx 2, unreferenced)
+    await tester.tap(find.byIcon(Icons.close).at(2)); // unreferenced -> no dialog
+    await tester.pumpAndSettle();
+    expect(c.read(activePaletteColorProvider), 0, reason: 'brush == removed -> 0');
   });
 
   testWidgets('a color used by exactly one thread shows the SINGULAR confirm copy', (tester) async {
