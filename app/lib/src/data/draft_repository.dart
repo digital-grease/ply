@@ -100,6 +100,16 @@ class DraftRepository {
         treadles: treadles,
       ));
 
+  /// Convert [doc] from a treadled drive to a canonical liftplan-driven copy via the engine
+  /// (per-pick raised shafts baked in honoring the source shed, the tie-up + treadling dropped,
+  /// shed -> Rising, treadles -> 0). The rendered cloth is UNCHANGED: a sinking-shed tie-up is
+  /// already complemented into the liftplan. One-way -- factoring a liftplan back into a tie-up is
+  /// deferred (CLAUDE.md). (Named `toLiftplanDoc` to avoid colliding with the generated
+  /// `toLiftplanDto`, exactly as `resizeDoc` avoids `resizeDto`.) Throws if the DTO can't convert
+  /// back to a `Draft` (the engine's `Err`, surfaced by frb as a thrown exception).
+  Future<DraftDoc> toLiftplanDoc(DraftDoc doc) async =>
+      fromDto(await toLiftplanDto(dto: toDto(doc)));
+
   /// Decode an engine [PreviewImage] into a [ui.Image].
   ///
   /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is RGBA8,

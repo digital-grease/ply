@@ -382,4 +382,79 @@ Threads=4
         let b = parse(&text).unwrap();
         assert_eq!(a, b);
     }
+
+    /// The editor's Treadled->Liftplan convert sets the draft structurally-dirty, so the NEXT save
+    /// re-serializes the liftplan via `write` and a later open re-`parse`s it. A liftplan pick that
+    /// raises NO shaft writes as an empty/absent row, so the pick count must survive via the
+    /// `[WEFT] Threads=N` count, even when the empty picks are at the START, MIDDLE, or END (or the
+    /// whole plan is empty). This pins that recovery so the convert-then-save-then-reload cloth
+    /// stays byte-identical. (Companion to the device cloth-preservation test, which only covers the
+    /// first round-trip.)
+    #[test]
+    fn liftplan_with_empty_picks_survives_wif_roundtrip() {
+        // A sinking-shed draft: treadle 1 sinks ALL shafts (so the pick RAISES none -> empty row),
+        // treadle 2 sinks only shaft 1 (raises 2,3,4). Pressing 1/2/1/2/1 puts an empty raised set
+        // at picks 0 (start), 2 (middle), and 4 (end).
+        let d = Draft {
+            name: "empty-picks".into(),
+            shafts: 4,
+            treadles: 2,
+            shed: ShedType::Sinking,
+            unit: Unit::Inches,
+            threading: Threading(vec![vec![ShaftId(1)], vec![ShaftId(2)], vec![ShaftId(3)], vec![ShaftId(4)]]),
+            drive: Drive::Treadled {
+                tieup: TieUp(vec![
+                    vec![ShaftId(1), ShaftId(2), ShaftId(3), ShaftId(4)], // treadle 1: sink all
+                    vec![ShaftId(1)],                                     // treadle 2: sink shaft 1
+                ]),
+                treadling: Treadling(vec![
+                    vec![TreadleId(1)],
+                    vec![TreadleId(2)],
+                    vec![TreadleId(1)],
+                    vec![TreadleId(2)],
+                    vec![TreadleId(1)],
+                ]),
+            },
+            colors: ColorPlan {
+                palette: vec![Color::WHITE, Color::BLACK],
+                warp: vec![0, 0, 0, 0],
+                weft: vec![0, 0, 0, 0, 0],
+            },
+            notes: String::new(),
+        };
+
+        let lp = d.to_liftplan_draft();
+        // Sanity: the convert really produced empty raised sets at the three boundary positions.
+        assert!(lp.raised_shafts(0).is_empty(), "pick 0 raises nothing (start)");
+        assert!(lp.raised_shafts(2).is_empty(), "pick 2 raises nothing (middle)");
+        assert!(lp.raised_shafts(4).is_empty(), "pick 4 raises nothing (end)");
+
+        let rt = parse(&write(&lp)).unwrap();
+        assert_eq!(rt.picks(), lp.picks(), "pick count survives (empty rows recovered via WEFT Threads)");
+        for p in 0..lp.picks() {
+            assert_eq!(rt.raised_shafts(p), lp.raised_shafts(p), "pick {p} raised set preserved");
+        }
+
+        // The degenerate all-empty plan (every pick presses the sink-all treadle) must still recover
+        // its full pick count rather than collapsing to zero rows.
+        let all_empty = Draft {
+            drive: Drive::Treadled {
+                tieup: TieUp(vec![vec![ShaftId(1), ShaftId(2), ShaftId(3), ShaftId(4)]]),
+                treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(1)], vec![TreadleId(1)]]),
+            },
+            treadles: 1,
+            colors: ColorPlan {
+                palette: vec![Color::WHITE, Color::BLACK],
+                warp: vec![0, 0, 0, 0],
+                weft: vec![0, 0, 0],
+            },
+            ..d.clone()
+        }
+        .to_liftplan_draft();
+        let rt2 = parse(&write(&all_empty)).unwrap();
+        assert_eq!(rt2.picks(), 3, "an all-empty liftplan still recovers 3 picks");
+        for p in 0..rt2.picks() {
+            assert!(rt2.raised_shafts(p).is_empty(), "pick {p} stays empty");
+        }
+    }
 }

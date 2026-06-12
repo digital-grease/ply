@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/draft_doc.dart';
 import '../models/draft_meta.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
@@ -47,6 +48,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   /// True while a save is in flight, to reject a re-entrant Save tap (and disable the button).
   bool _saving = false;
+
+  /// True while a Treadled->Liftplan conversion is in flight (across the confirm dialog AND the FFI
+  /// hop), to reject a re-entrant Convert tap and disable the button. Twin of [_saving].
+  bool _converting = false;
 
   @override
   void initState() {
@@ -138,6 +143,71 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
+  /// Convert the open treadled draft to a canonical liftplan (the engine bakes the per-pick raised
+  /// shafts in, so the cloth is unchanged), committed as ONE undo entry. One-way and lossy (the
+  /// tie-up + treadling are dropped), so it confirms first. Mirrors [_save]/[DimensionsBar._resize]:
+  /// the FFI lives here in the widget layer; the notifier stays FFI-free.
+  Future<void> _convertToLiftplan() async {
+    // Serialize/re-entrancy: set synchronously BEFORE the first await so a double-tap (or a tap
+    // while the dialog is open) returns immediately; the button is also disabled while converting.
+    if (_converting) return;
+    if (ref.read(draftEditorProvider).draft.drive is! DraftTreadled) return; // already a liftplan
+    setState(() => _converting = true);
+    final repo = ref.read(repositoryProvider);
+    final notifier = ref.read(draftEditorProvider.notifier);
+    try {
+      final proceed = await _confirmConvertToLiftplan();
+      if (proceed != true || !mounted) return; // cancelled (or unmounted mid-dialog)
+      // Re-read post-dialog: a structural edit (e.g. a dimensions-bar resize) could have landed
+      // while the modal was open, so re-check the variant before committing a stale/liftplan result.
+      final cur = ref.read(draftEditorProvider).draft;
+      if (cur.drive is! DraftTreadled) return;
+      final next = await repo.toLiftplanDoc(cur); // the FFI hop (engine Err -> thrown -> caught)
+      if (!mounted) return;
+      // LATEST-WINS. The confirm dialog's modal barrier only blocks input while it is OPEN; during
+      // this FFI hop the AppBar (Undo/Redo) and the dimensions bar / paint Listener are live again.
+      // If any edit landed, `cur` is stale -- committing the liftplan derived from it would silently
+      // overwrite that edit and wipe redo. Drop the stale result (the user can re-convert).
+      // `identical` is sound: DraftDoc is immutable and the notifier only swaps whole instances.
+      if (!identical(ref.read(draftEditorProvider).draft, cur)) return;
+      notifier.commitEdit(next); // one undo entry; no-op if next == cur; seals any open stroke
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not convert: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _converting = false);
+    }
+  }
+
+  /// Confirm the one-way, lossy Treadled->Liftplan conversion. Returns true to proceed, false/null
+  /// to cancel. Shown every time (not suppressed once-per-session like the lossy-save warning): the
+  /// conversion is a rare, deliberate structural act that must not fire on a mis-tap.
+  Future<bool?> _confirmConvertToLiftplan() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Convert to liftplan?'),
+        content: const Text(
+          'This replaces the tie-up and treadling with a per-pick liftplan. The woven cloth stays '
+          'exactly the same, but the tie-up and treadling are not kept and Ply cannot convert a '
+          'liftplan back. You can still undo this right after.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Convert'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ready = !_loading && _error == null;
@@ -145,14 +215,22 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // boundaries, so a multi-cell drag does not rebuild the AppBar per painted cell.
     final (canUndo, canRedo) =
         ref.watch(draftEditorProvider.select((s) => (s.canUndo, s.canRedo)));
+    // The convert action is only meaningful on a treadled draft (the reverse is deferred); watch
+    // just the variant so it flips disabled the frame a conversion commits.
+    final isTreadled =
+        ref.watch(draftEditorProvider.select((s) => s.draft.drive is DraftTreadled));
     final notifier = ref.read(draftEditorProvider.notifier);
     final pencil = ref.watch(editorToolProvider) == EditorTool.pencil;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
+        // Seven icon actions plus the back button overflow a default AppBar on a standard phone, so
+        // tighten the action buttons (the same compact density the DimensionsBar steppers use). The
+        // title still ellipsizes first; this keeps every action hit-testable down to a ~360dp width.
         actions: ready
             ? [
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: pencil ? 'Pencil (tap to pan)' : 'Pan (tap to draw)',
                   isSelected: pencil,
                   onPressed: () => ref.read(editorToolProvider.notifier).state =
@@ -160,26 +238,39 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                   icon: Icon(pencil ? Icons.draw : Icons.pan_tool_outlined),
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: 'Zoom out',
                   onPressed: () => _zoom(-1),
                   icon: const Icon(Icons.zoom_out),
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: 'Zoom in',
                   onPressed: () => _zoom(1),
                   icon: const Icon(Icons.zoom_in),
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: 'Undo',
                   onPressed: canUndo ? notifier.undo : null,
                   icon: const Icon(Icons.undo),
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: 'Redo',
                   onPressed: canRedo ? notifier.redo : null,
                   icon: const Icon(Icons.redo),
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
+                  // Disabled (not hidden) on a liftplan so the affordance stays discoverable, with
+                  // a self-explaining tooltip; also disabled while a conversion is in flight.
+                  tooltip: isTreadled ? 'Convert to liftplan' : 'Already a liftplan',
+                  onPressed: (isTreadled && !_converting) ? _convertToLiftplan : null,
+                  icon: const Icon(Icons.swap_horiz),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: 'Save',
                   onPressed: _saving ? null : _save,
                   icon: const Icon(Icons.save_outlined),

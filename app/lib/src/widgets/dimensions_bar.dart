@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 
@@ -38,6 +39,11 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
         shafts: shafts ?? d.shafts,
         treadles: treadles ?? d.treadles,
       );
+      // LATEST-WINS. `_resizing` only disables the steppers; the AppBar undo/redo and the paint
+      // Listener stay live during this FFI hop. If an edit landed, `d` is stale -- committing the
+      // resize derived from it would overwrite that edit and wipe redo. Drop it (`identical` is
+      // sound: DraftDoc is immutable and the notifier only swaps whole instances).
+      if (!mounted || !identical(ref.read(draftEditorProvider).draft, d)) return;
       ref.read(draftEditorProvider.notifier).commitEdit(next);
     } finally {
       if (mounted) setState(() => _resizing = false);
@@ -46,8 +52,8 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
 
   @override
   Widget build(BuildContext context) {
-    final (ends, picks, shafts, treadles) = ref.watch(draftEditorProvider.select(
-        (s) => (s.draft.ends, s.draft.picks, s.draft.shafts, s.draft.treadles)));
+    final (ends, picks, shafts, treadles, isTreadled) = ref.watch(draftEditorProvider.select((s) =>
+        (s.draft.ends, s.draft.picks, s.draft.shafts, s.draft.treadles, s.draft.drive is DraftTreadled)));
     final enabled = !_resizing;
     return Material(
       elevation: 2,
@@ -79,13 +85,17 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                   max: _maxDim,
                   enabled: enabled,
                   onChange: (v) => _resize(shafts: v)),
-              _Stepper(
-                  label: 'Treadles',
-                  value: treadles,
-                  min: 0,
-                  max: _maxDim,
-                  enabled: enabled,
-                  onChange: (v) => _resize(treadles: v)),
+              // A liftplan has no treadle axis (treadles==0, ignored by the engine), so the stepper
+              // would be a meaningless dead control: hide it. Pairs with the convert action going
+              // unavailable in the same frame.
+              if (isTreadled)
+                _Stepper(
+                    label: 'Treadles',
+                    value: treadles,
+                    min: 0,
+                    max: _maxDim,
+                    enabled: enabled,
+                    onChange: (v) => _resize(treadles: v)),
             ],
           ),
         ),

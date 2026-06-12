@@ -158,4 +158,50 @@ void main() {
     expect(fake.callCount, 1, reason: 'nothing was queued, so no second resize fires afterwards');
     expect(c.read(draftEditorProvider).undo.length, 1, reason: 'exactly one resize committed');
   });
+
+  testWidgets('an edit landing during the resize FFI hop is preserved (stale resize dropped)',
+      (tester) async {
+    // The resize twin of the convert latest-wins guard: _resizing only disables the steppers, so an
+    // AppBar undo/redo or a paint can still land during the FFI hop. A resize derived from the
+    // pre-edit draft must be dropped, not committed over that edit.
+    final gate = Completer<void>();
+    final fake = FakeResizeRepo()..gate = gate;
+    final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(fake)]);
+    addTearDown(c.dispose);
+    c.read(draftEditorProvider.notifier).load(fixture());
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: c,
+      child: const MaterialApp(home: Scaffold(body: DimensionsBar())),
+    ));
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('More Ends')); // resize parks on the gate
+    await tester.pump();
+    expect(fake.callCount, 1);
+
+    // A concurrent edit lands while the resize is in flight.
+    c.read(draftEditorProvider.notifier).toggleTieupCell(1, 1);
+    await tester.pump();
+    final afterEdit = c.read(draftEditorProvider).draft;
+
+    gate.complete(); // the resize resolves with a result derived from the now-stale pre-edit draft
+    await tester.pumpAndSettle();
+    expect(c.read(draftEditorProvider).draft, equals(afterEdit),
+        reason: 'the stale resize was dropped; the concurrent edit survives');
+  });
+
+  testWidgets('the Treadles stepper is hidden on a liftplan draft, shown on a treadled one',
+      (tester) async {
+    final (c, _) = await pumpBar(tester); // treadled fixture (ends/picks/shafts/treadles all 4)
+    expect(find.text('Treadles 4'), findsOneWidget, reason: 'a treadled draft has a treadle axis');
+    expect(find.text('Ends 4'), findsOneWidget);
+
+    // A liftplan has no treadle axis, so the stepper disappears; the other three stay.
+    c.read(draftEditorProvider.notifier).load(
+        fixture().copyWith(drive: DraftLiftplan(liftplan: const [[1], [2], [3], [4]]), treadles: 0));
+    await tester.pump();
+    expect(find.textContaining('Treadles'), findsNothing, reason: 'liftplan -> no treadle stepper');
+    expect(find.text('Ends 4'), findsOneWidget, reason: 'Ends/Picks/Shafts remain');
+    expect(find.text('Shafts 4'), findsOneWidget);
+  });
 }
