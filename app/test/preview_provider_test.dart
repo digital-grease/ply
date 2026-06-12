@@ -70,8 +70,10 @@ void main() {
     await pumpEventQueue();
     fake.pending[1].complete(mid);
     await pumpEventQueue();
+    expect(mid.debugDisposed, isTrue, reason: 'a superseded frame is freed immediately, not leaked');
     fake.pending[0].complete(oldest);
     await pumpEventQueue();
+    expect(oldest.debugDisposed, isTrue, reason: 'a superseded frame is freed immediately');
 
     final state = container.read(previewProvider);
     expect(state.hasValue, isTrue);

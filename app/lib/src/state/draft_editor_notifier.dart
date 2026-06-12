@@ -25,6 +25,7 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   /// Open [draft] for editing, resetting the undo history. [sourceWif] is the original WIF text
   /// for an imported draft (enables the verbatim save path), or null for a from-scratch draft.
   void load(DraftDoc draft, {String? sourceWif}) {
+    _clearStroke(); // a load mid-drag must not leave the transient stroke scratch dangling
     state = EditorState(draft: draft, sourceWif: sourceWif);
   }
 
@@ -69,9 +70,13 @@ class DraftEditorNotifier extends Notifier<EditorState> {
 
   /// End the stroke, committing it as one undo entry (or nothing if it was a net no-op).
   void endStroke() {
+    _clearStroke();
+    state = state.endStroke();
+  }
+
+  void _clearStroke() {
     _strokeRegion = null;
     _paintValue = null;
     _lastCell = null;
-    state = state.endStroke();
   }
 }

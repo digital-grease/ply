@@ -20,8 +20,24 @@ final repositoryProvider = Provider<DraftRepository>((ref) {
   );
 });
 
-/// Pixels-per-intersection for the live editor preview. Crispness only; `BoxFit` handles layout.
+/// Pixels-per-intersection the ENGINE renders the drawdown at (internal raster pitch). The
+/// integrated view scales this bitmap to the on-screen pitch via RawImage; the engine never
+/// re-renders on zoom. Crispness only.
 const int previewCellPx = 12;
+
+/// The editor's interaction mode. PENCIL paints cells (scroll is disabled so a drag never scrolls
+/// instead of painting); HAND scrolls/pans the draft (no painting). Toggled from the editor AppBar.
+enum EditorTool { pencil, hand }
+
+/// The current tool. Default is pencil so a freshly-opened draft is immediately editable.
+final editorToolProvider = StateProvider<EditorTool>((ref) => EditorTool.pencil);
+
+/// Discrete on-screen cell sizes (logical px) the integrated view can zoom through. Discrete +
+/// integer so cells stay crisp and the tap math is scroll-/zoom-invariant.
+const List<int> zoomCellLevels = [8, 12, 16, 24, 32, 48];
+
+/// The on-screen pixels-per-cell (the shared grid pitch). Stepped through [zoomCellLevels].
+final zoomCellProvider = StateProvider<int>((ref) => 16);
 
 /// The live drawdown image for the draft currently held by [draftEditorProvider]. Re-renders on
 /// every edit (the engine recompute is microseconds) and decodes the RGBA buffer to a [ui.Image].
@@ -46,15 +62,18 @@ class PreviewController extends AutoDisposeAsyncNotifier<ui.Image> {
     final repo = ref.watch(repositoryProvider);
     final draft = ref.watch(draftEditorProvider.select((s) => s.draft));
     final mySeq = ++_seq;
+    // The FFI render is un-cancellable, so it can resolve after the provider is disposed
+    // (navigate away mid-render). Track that so we free the orphaned image instead of leaking it.
+    var disposed = false;
+    ref.onDispose(() => disposed = true);
 
     final image = await repo.renderDto(draft, cellPx: previewCellPx);
 
-    if (mySeq != _seq) {
-      // A newer edit started rendering while this one was in flight. Riverpod is already
-      // awaiting that newer build, so this result would be a stale frame: free it and never
-      // resolve, leaving the newer build to set the state.
+    if (disposed || mySeq != _seq) {
+      // Either the provider was torn down while we rendered, or a newer edit superseded us. Both
+      // mean this frame will never be shown: free it and never resolve.
       image.dispose();
-      return Completer<ui.Image>().future; // intentionally never completes (superseded frame)
+      return Completer<ui.Image>().future; // intentionally never completes
     }
     return image;
   }

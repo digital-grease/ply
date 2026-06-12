@@ -1,13 +1,10 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/draft_meta.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
-import '../widgets/drawdown_view.dart';
-import '../widgets/tieup_grid.dart';
+import '../widgets/integrated_draft_view.dart';
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
 /// tie-up cell toggles it and the drawdown re-renders live (engine recompute is microseconds;
@@ -143,21 +140,42 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   @override
   Widget build(BuildContext context) {
     final ready = !_loading && _error == null;
-    final editor = ref.watch(draftEditorProvider);
+    // Narrow select: the AppBar only needs the two undo/redo booleans, which flip at stroke
+    // boundaries, so a multi-cell drag does not rebuild the AppBar per painted cell.
+    final (canUndo, canRedo) =
+        ref.watch(draftEditorProvider.select((s) => (s.canUndo, s.canRedo)));
     final notifier = ref.read(draftEditorProvider.notifier);
+    final pencil = ref.watch(editorToolProvider) == EditorTool.pencil;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
         actions: ready
             ? [
                 IconButton(
+                  tooltip: pencil ? 'Pencil (tap to pan)' : 'Pan (tap to draw)',
+                  isSelected: pencil,
+                  onPressed: () => ref.read(editorToolProvider.notifier).state =
+                      pencil ? EditorTool.hand : EditorTool.pencil,
+                  icon: Icon(pencil ? Icons.draw : Icons.pan_tool_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Zoom out',
+                  onPressed: () => _zoom(-1),
+                  icon: const Icon(Icons.zoom_out),
+                ),
+                IconButton(
+                  tooltip: 'Zoom in',
+                  onPressed: () => _zoom(1),
+                  icon: const Icon(Icons.zoom_in),
+                ),
+                IconButton(
                   tooltip: 'Undo',
-                  onPressed: editor.canUndo ? notifier.undo : null,
+                  onPressed: canUndo ? notifier.undo : null,
                   icon: const Icon(Icons.undo),
                 ),
                 IconButton(
                   tooltip: 'Redo',
-                  onPressed: editor.canRedo ? notifier.redo : null,
+                  onPressed: canRedo ? notifier.redo : null,
                   icon: const Icon(Icons.redo),
                 ),
                 IconButton(
@@ -172,6 +190,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
+  /// Step the on-screen cell pitch up (+1) or down (-1) through [zoomCellLevels].
+  void _zoom(int dir) {
+    final cur = ref.read(zoomCellProvider);
+    final idx = zoomCellLevels.indexOf(cur);
+    final next = ((idx < 0 ? 2 : idx) + dir).clamp(0, zoomCellLevels.length - 1);
+    ref.read(zoomCellProvider.notifier).state = zoomCellLevels[next];
+  }
+
   Widget _buildBody() {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
@@ -182,59 +208,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ),
       );
     }
-    return const _EditorBody();
-  }
-}
-
-/// The loaded editor layout: live drawdown and the tie-up grid, side by side when wide and
-/// stacked when tall.
-class _EditorBody extends ConsumerWidget {
-  const _EditorBody();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final preview = ref.watch(previewProvider);
-    final previewPane = Padding(
-      padding: const EdgeInsets.all(16),
-      child: Center(child: _Preview(preview)),
-    );
-    const gridPane = Padding(
-      padding: EdgeInsets.all(16),
-      child: Center(child: TieupGrid()),
-    );
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth > constraints.maxHeight;
-        return Flex(
-          direction: wide ? Axis.horizontal : Axis.vertical,
-          children: [
-            Expanded(child: previewPane),
-            const Expanded(child: gridPane),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _Preview extends StatelessWidget {
-  const _Preview(this.image);
-
-  final AsyncValue<ui.Image> image;
-
-  @override
-  Widget build(BuildContext context) {
-    return image.when(
-      // Keep the previous frame on screen while the next render is in flight so live edits do
-      // not flash a spinner. The previous ui.Image is still valid (the provider frees only
-      // never-shown superseded frames eagerly).
-      skipLoadingOnReload: true,
-      data: DrawdownView.new,
-      loading: () => const CircularProgressIndicator(),
-      error: (e, _) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text('Could not render this draft: $e', textAlign: TextAlign.center),
-      ),
-    );
+    return const IntegratedDraftView();
   }
 }

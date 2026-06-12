@@ -132,4 +132,15 @@ void main() {
     n.undo();
     expect(read().draft, equals(before), reason: 'one undo reverts the entire drag');
   });
+
+  test('load() mid-stroke clears the transient scratch (no dangling driver)', () {
+    notifier().load(paintableTreadled());
+    final n = notifier();
+    n.beginStroke(const DraftHit(DraftRegion.threading, 1, 2)); // open a stroke, never end it
+    n.load(DraftDoc.blank(shafts: 2, treadles: 2)); // load a smaller draft mid-stroke
+    // A stray paintAt must be a no-op now (scratch cleared), not paint onto the fresh draft.
+    n.paintAt(const DraftHit(DraftRegion.threading, 1, 1));
+    expect(read().draft, equals(DraftDoc.blank(shafts: 2, treadles: 2)),
+        reason: 'the cleared scratch makes paintAt a no-op after a load');
+  });
 }

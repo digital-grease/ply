@@ -91,6 +91,23 @@ class RegionGeom {
     final row = (r + rowBase).clamp(rowBase, rowBase + rows - 1);
     return (col, row);
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RegionGeom &&
+          runtimeType == other.runtimeType &&
+          cols == other.cols &&
+          rows == other.rows &&
+          cell == other.cell &&
+          colBase == other.colBase &&
+          rowBase == other.rowBase &&
+          bottomOrigin == other.bottomOrigin &&
+          rightOrigin == other.rightOrigin;
+
+  @override
+  int get hashCode =>
+      Object.hash(cols, rows, cell, colBase, rowBase, bottomOrigin, rightOrigin);
 }
 
 /// The whole integrated layout. Built once per (ends, picks, shafts, treadles, hasTieup, cell);
