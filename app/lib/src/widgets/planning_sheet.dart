@@ -12,17 +12,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import 'adaptive_sheet.dart';
 
 /// Open the planning calculator. Call from a context inside the editor's ProviderScope (the
-/// DimensionsBar chip) so the sheet's `ref` resolves the draft.
+/// DimensionsBar chip) so the sheet's `ref` resolves the draft. Adaptive: a bottom sheet on phones,
+/// a centered dialog on tablet/wide screens.
 Future<void> showPlanningSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    showDragHandle: true,
-    builder: (_) => const PlanningSheet(),
-  );
+  return showAdaptiveSheet<void>(context, child: const PlanningSheet());
 }
 
 class PlanningSheet extends ConsumerStatefulWidget {

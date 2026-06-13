@@ -6,6 +6,7 @@ import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import '../util/responsive.dart';
 import '../widgets/dimensions_bar.dart';
 import '../widgets/integrated_draft_view.dart';
 import '../widgets/save_draft_dialog.dart';
@@ -13,6 +14,9 @@ import '../widgets/validation_panel.dart';
 
 /// What the user chose when leaving the editor with unsaved edits (see `_confirmLeave`).
 enum _LeaveAction { keepEditing, discard, save }
+
+/// The less-frequent AppBar actions tucked into the overflow (⋮) menu.
+enum _OverflowAction { zoomIn, zoomOut, convert }
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
 /// tie-up cell toggles it and the drawdown re-renders live (engine recompute is microseconds;
@@ -491,18 +495,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'Zoom out',
-                  onPressed: () => _zoom(-1),
-                  icon: const Icon(Icons.zoom_out),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: 'Zoom in',
-                  onPressed: () => _zoom(1),
-                  icon: const Icon(Icons.zoom_in),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
                   tooltip: 'Undo',
                   onPressed: canUndo ? notifier.undo : null,
                   icon: const Icon(Icons.undo),
@@ -515,17 +507,45 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  // Disabled (not hidden) on a liftplan so the affordance stays discoverable, with
-                  // a self-explaining tooltip; also disabled while a conversion is in flight.
-                  tooltip: isTreadled ? 'Convert to liftplan' : 'Already a liftplan',
-                  onPressed: (isTreadled && !_converting) ? _convertToLiftplan : null,
-                  icon: const Icon(Icons.swap_horiz),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
                   tooltip: 'Save',
                   onPressed: _saving ? null : _save,
                   icon: const Icon(Icons.save_outlined),
+                ),
+                // Overflow: the less-frequent actions (zoom, convert) move here so the bar stays
+                // uncrowded on a narrow phone (the M2 crowding follow-up). Convert is disabled on a
+                // liftplan / mid-conversion but stays listed so it's discoverable.
+                PopupMenuButton<_OverflowAction>(
+                  tooltip: 'More actions',
+                  onSelected: (a) {
+                    switch (a) {
+                      case _OverflowAction.zoomIn:
+                        _zoom(1);
+                      case _OverflowAction.zoomOut:
+                        _zoom(-1);
+                      case _OverflowAction.convert:
+                        _convertToLiftplan();
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: _OverflowAction.zoomIn,
+                      child: ListTile(
+                          dense: true, leading: Icon(Icons.zoom_in), title: Text('Zoom in')),
+                    ),
+                    const PopupMenuItem(
+                      value: _OverflowAction.zoomOut,
+                      child: ListTile(
+                          dense: true, leading: Icon(Icons.zoom_out), title: Text('Zoom out')),
+                    ),
+                    PopupMenuItem(
+                      value: _OverflowAction.convert,
+                      enabled: isTreadled && !_converting,
+                      child: const ListTile(
+                          dense: true,
+                          leading: Icon(Icons.swap_horiz),
+                          title: Text('Convert to liftplan')),
+                    ),
+                  ],
                 ),
               ]
             : null,
@@ -553,9 +573,30 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ),
       );
     }
-    // The validation band sits between the draft and the (always-visible) dimensions bar, with
-    // INTRINSIC height: it shrinks the drawdown viewport only when there are issues, and is zero
-    // chrome otherwise.
+    // PHONE (portrait/narrow): a vertical stack — the validation band sits between the draft and the
+    // always-visible dimensions bar, with INTRINSIC height (it shrinks the drawdown only when there
+    // are issues, zero chrome otherwise).
+    //
+    // TABLET/LANDSCAPE (wide): the controls move into a fixed side RAIL so the cloth keeps the full
+    // height instead of being crushed by the bar below it. The DimensionsBar still scrolls
+    // horizontally within the rail; the validation band sits under it.
+    if (isWide(context)) {
+      return const Row(
+        children: [
+          Expanded(child: IntegratedDraftView()),
+          VerticalDivider(width: 1),
+          SizedBox(
+            width: 320,
+            child: Column(
+              children: [
+                DimensionsBar(),
+                ValidationPanel(),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     return const Column(
       children: [
         Expanded(child: IntegratedDraftView()),

@@ -13,18 +13,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import 'adaptive_sheet.dart';
 import 'rgb_color_picker.dart';
 
-/// Open the palette editor as a modal bottom sheet. Must be called from a context inside the editor's
-/// ProviderScope (the DimensionsBar satisfies this) so the sheet's `ref` resolves the same providers.
+/// Open the palette editor. Must be called from a context inside the editor's ProviderScope (the
+/// DimensionsBar satisfies this) so the sheet's `ref` resolves the same providers. Adaptive: a
+/// modal bottom sheet on phones, a centered dialog on tablet/wide screens.
 Future<void> showPaletteSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    showDragHandle: true,
-    builder: (_) => const PaletteSheet(),
-  );
+  return showAdaptiveSheet<void>(context, child: const PaletteSheet());
 }
 
 class PaletteSheet extends ConsumerStatefulWidget {

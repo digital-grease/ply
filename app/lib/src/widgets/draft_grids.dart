@@ -91,14 +91,21 @@ class ThreadingGrid extends ConsumerWidget {
 
   Widget _grid(BuildContext context, List<(int, int)> cells) {
     final colors = Theme.of(context).colorScheme;
-    return CustomPaint(
-      size: geom.size,
-      painter: CellGridPainter(
-        cells: cells,
-        geom: geom,
-        fill: colors.primary,
-        line: colors.outlineVariant,
-        background: colors.surfaceContainerHighest,
+    // Compact structural label only (geom.cols = ends, geom.rows = shafts), so it stays O(1) and
+    // updates on resize. Per-cell semantics + screen-reader editing of individual threadings is
+    // future work (would need a Semantics node per cell, too costly for a large draft).
+    return Semantics(
+      label: 'Threading: ${geom.cols} warp ends across ${geom.rows} shafts',
+      container: true,
+      child: CustomPaint(
+        size: geom.size,
+        painter: CellGridPainter(
+          cells: cells,
+          geom: geom,
+          fill: colors.primary,
+          line: colors.outlineVariant,
+          background: colors.surfaceContainerHighest,
+        ),
       ),
     );
   }
@@ -124,14 +131,20 @@ class TieupGrid extends ConsumerWidget {
             if (shaft >= 1 && shaft <= geom.rows) (t, shaft),
     ];
     final colors = Theme.of(context).colorScheme;
-    return CustomPaint(
-      size: geom.size,
-      painter: CellGridPainter(
-        cells: cells,
-        geom: geom,
-        fill: colors.primary,
-        line: colors.outlineVariant,
-        background: colors.surfaceContainerHighest,
+    // Compact structural label only (geom.cols = treadles, geom.rows = shafts); per-cell semantics
+    // + screen-reader editing of individual ties is future work.
+    return Semantics(
+      label: 'Tie-up: ${geom.cols} treadles by ${geom.rows} shafts',
+      container: true,
+      child: CustomPaint(
+        size: geom.size,
+        painter: CellGridPainter(
+          cells: cells,
+          geom: geom,
+          fill: colors.primary,
+          line: colors.outlineVariant,
+          background: colors.surfaceContainerHighest,
+        ),
       ),
     );
   }
@@ -281,9 +294,9 @@ class RightGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final rows = ref.watch(draftEditorProvider.select((s) {
+    final (rows, treadled) = ref.watch(draftEditorProvider.select((s) {
       final d = s.draft.drive;
-      return d is DraftTreadled ? d.treadling : (d as DraftLiftplan).liftplan;
+      return d is DraftTreadled ? (d.treadling, true) : ((d as DraftLiftplan).liftplan, false);
     }));
     final cells = <(int, int)>[
       for (var pick = 0; pick < geom.rows; pick++)
@@ -292,14 +305,22 @@ class RightGrid extends ConsumerWidget {
             if (col >= 1 && col <= geom.cols) (col, pick),
     ];
     final colors = Theme.of(context).colorScheme;
-    return CustomPaint(
-      size: geom.size,
-      painter: CellGridPainter(
-        cells: cells,
-        geom: geom,
-        fill: colors.primary,
-        line: colors.outlineVariant,
-        background: colors.surfaceContainerHighest,
+    // The right band shows treadling (treadled drive) OR the liftplan; label by which variant it is
+    // (geom.rows = picks). Compact structural label only; per-cell semantics + screen-reader editing
+    // of individual picks is future work.
+    final label = treadled ? 'Treadling: ${geom.rows} picks' : 'Liftplan: ${geom.rows} picks';
+    return Semantics(
+      label: label,
+      container: true,
+      child: CustomPaint(
+        size: geom.size,
+        painter: CellGridPainter(
+          cells: cells,
+          geom: geom,
+          fill: colors.primary,
+          line: colors.outlineVariant,
+          background: colors.surfaceContainerHighest,
+        ),
       ),
     );
   }

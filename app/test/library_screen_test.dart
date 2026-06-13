@@ -75,6 +75,16 @@ void main() {
     expect(find.widgetWithText(FloatingActionButton, 'New draft'), findsOneWidget);
   });
 
+  testWidgets('a tile is one labelled (button) semantics node (M4 a11y)', (tester) async {
+    final handle = tester.ensureSemantics();
+    await pumpLibrary(tester, FakeLibraryRepo([_entry('a')])); // name 'Pattern a'
+    // The tile is wrapped in Semantics(button: true, label: 'Pattern <name>'); finding the label
+    // proves the wrapper applied (the thumbnail + inner name Text are ExcludeSemantics'd, so the
+    // node is the single tile button rather than image + duplicate name).
+    expect(find.bySemanticsLabel('Pattern Pattern a'), findsOneWidget);
+    handle.dispose();
+  });
+
   testWidgets('an EMPTY library hides the FABs and shows the centered call to action',
       (tester) async {
     await pumpLibrary(tester, FakeLibraryRepo(const []));

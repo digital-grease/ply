@@ -217,6 +217,26 @@ Future<ProviderContainer> pumpEditor(
 IconButton iconButton(WidgetTester tester, IconData icon) =>
     tester.widget<IconButton>(find.widgetWithIcon(IconButton, icon));
 
+/// Open the AppBar overflow (⋮) menu. Convert + zoom live here now (the M4 declutter).
+Future<void> openOverflow(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('More actions'));
+  await tester.pumpAndSettle();
+}
+
+/// The overflow's "Convert to liftplan" menu item (the menu must be OPEN). Cast to the raw generic
+/// since its value type is private to editor_screen.dart.
+PopupMenuItem convertItem(WidgetTester tester) => tester.widget(find.ancestor(
+      of: find.text('Convert to liftplan'),
+      matching: find.byWidgetPredicate((w) => w is PopupMenuItem),
+    )) as PopupMenuItem;
+
+/// Open the overflow and tap Convert (which then raises the confirm dialog).
+Future<void> tapConvert(WidgetTester tester) async {
+  await openOverflow(tester);
+  await tester.tap(find.text('Convert to liftplan'));
+  await letAsyncSettle(tester);
+}
+
 /// Pump a bounded number of frames to let async work (parseDoc, load, render, save) resolve.
 /// We cannot use pumpAndSettle here: while loading, the editor shows a CircularProgressIndicator
 /// (an infinite animation) which pumpAndSettle would wait on forever.
@@ -339,27 +359,29 @@ void main() {
     await letAsyncSettle(tester);
   });
 
-  testWidgets('convert action is enabled on a treadled draft, DISABLED on a liftplan',
+  testWidgets('convert (in the overflow) is enabled on a treadled draft, DISABLED on a liftplan',
       (tester) async {
     final container = await pumpEditor(tester, FakeRepo()); // parseDoc returns a treadled draft
-    expect(iconButton(tester, Icons.swap_horiz).onPressed, isNotNull,
-        reason: 'a treadled draft can be converted');
-    expect(find.byTooltip('Convert to liftplan'), findsOneWidget);
+    await openOverflow(tester);
+    expect(find.text('Convert to liftplan'), findsOneWidget, reason: 'listed in the overflow');
+    expect(convertItem(tester).enabled, isTrue, reason: 'a treadled draft can be converted');
+    await tester.tapAt(const Offset(5, 5)); // dismiss the menu via its barrier
+    await tester.pumpAndSettle();
 
-    // Load a liftplan draft: the action greys out (disabled, not hidden) with an explaining tooltip.
+    // Load a liftplan draft: the action greys out (disabled, not hidden — still discoverable).
     container.read(draftEditorProvider.notifier).load(liftplanDoc());
     await tester.pump();
-    expect(iconButton(tester, Icons.swap_horiz).onPressed, isNull,
-        reason: 'already a liftplan -> disabled, never hidden');
-    expect(find.byTooltip('Already a liftplan'), findsOneWidget);
+    await openOverflow(tester);
+    expect(convertItem(tester).enabled, isFalse, reason: 'already a liftplan -> disabled, not hidden');
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('convert confirms, commits ONE undo entry, and Undo reverts to treadled',
       (tester) async {
     final fake = FakeRepo();
     final container = await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.swap_horiz));
-    await letAsyncSettle(tester);
+    await tapConvert(tester);
     // The confirm dialog is up and NOTHING converted yet.
     expect(find.text('Convert to liftplan?'), findsOneWidget);
     expect(fake.convertCount, 0);
@@ -380,8 +402,7 @@ void main() {
   testWidgets('Cancel on the convert dialog aborts (nothing converted)', (tester) async {
     final fake = FakeRepo();
     final container = await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.swap_horiz));
-    await letAsyncSettle(tester);
+    await tapConvert(tester);
     expect(find.text('Convert to liftplan?'), findsOneWidget);
 
     await tester.tap(find.text('Cancel'));
@@ -394,14 +415,15 @@ void main() {
   testWidgets('a second convert while one is in flight is dropped (re-entrancy)', (tester) async {
     final fake = FakeRepo()..convertGate = Completer<void>();
     await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.swap_horiz));
-    await letAsyncSettle(tester);
+    await tapConvert(tester);
     await tester.tap(find.text('Convert')); // confirmed -> parks inside the gated toLiftplanDoc
     await tester.pump();
     await tester.pump();
     expect(fake.convertCount, 1);
-    // The button is now disabled (_converting); a second tap is a no-op.
-    await tester.tap(find.byIcon(Icons.swap_horiz), warnIfMissed: false);
+    // Convert is now disabled (_converting), so a second invocation can't fire.
+    await openOverflow(tester);
+    expect(convertItem(tester).enabled, isFalse, reason: 'a convert in flight disables a second');
+    await tester.tapAt(const Offset(5, 5)); // dismiss
     await tester.pump();
     expect(fake.convertCount, 1, reason: 'a convert in flight drops a second invocation');
     fake.convertGate!.complete();
@@ -411,16 +433,18 @@ void main() {
   testWidgets('an engine Err surfaces a SnackBar and leaves the draft treadled', (tester) async {
     final fake = FakeRepo()..convertError = true;
     final container = await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.swap_horiz));
-    await letAsyncSettle(tester);
+    await tapConvert(tester);
     await tester.tap(find.text('Convert'));
     await letAsyncSettle(tester);
     expect(find.textContaining('Could not convert'), findsOneWidget);
     expect(container.read(draftEditorProvider).draft.drive, isA<DraftTreadled>(),
         reason: 'a failed conversion leaves the draft untouched');
     expect(container.read(draftEditorProvider).undo, isEmpty);
-    expect(iconButton(tester, Icons.swap_horiz).onPressed, isNotNull,
-        reason: 'a failed convert resets _converting and re-enables the button');
+    await openOverflow(tester);
+    expect(convertItem(tester).enabled, isTrue,
+        reason: 'a failed convert resets _converting and re-enables convert');
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('the convert dialog states cloth-preservation AND that the conversion is one-way',
@@ -428,8 +452,7 @@ void main() {
     // The three consent claims the user relies on to accept a lossy, one-way op are pinned here so a
     // copy edit that drops the irreversibility warning fails a test, not just a reviewer's eye.
     await pumpEditor(tester, FakeRepo());
-    await tester.tap(find.byIcon(Icons.swap_horiz));
-    await letAsyncSettle(tester);
+    await tapConvert(tester);
     expect(find.textContaining('woven cloth stays'), findsOneWidget, reason: 'cloth preserved');
     expect(find.textContaining('cannot convert a liftplan back'), findsOneWidget,
         reason: 'the one-way warning');
@@ -444,8 +467,7 @@ void main() {
     await tester.pump();
     expect(container.read(draftEditorProvider).canRedo, isTrue);
 
-    await tester.tap(find.byIcon(Icons.swap_horiz));
-    await letAsyncSettle(tester);
+    await tapConvert(tester);
     await tester.tap(find.text('Convert'));
     await letAsyncSettle(tester);
     expect(container.read(draftEditorProvider).draft.drive, isA<DraftLiftplan>());
@@ -458,8 +480,7 @@ void main() {
     // became a liftplan while the modal was open, so it never calls the engine on an already-liftplan.
     final fake = FakeRepo();
     final container = await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.swap_horiz));
-    await letAsyncSettle(tester); // dialog open
+    await tapConvert(tester); // dialog open
     container.read(draftEditorProvider.notifier).load(liftplanDoc()); // drive flips under the dialog
     await tester.pump();
     await tester.tap(find.text('Convert'));
@@ -478,8 +499,7 @@ void main() {
     container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // edit B; undo=[loaded]
     await tester.pump();
 
-    await tester.tap(find.byIcon(Icons.swap_horiz));
-    await letAsyncSettle(tester);
+    await tapConvert(tester);
     await tester.tap(find.text('Convert')); // confirmed -> parks inside the gated toLiftplanDoc(B)
     await tester.pump();
     await tester.pump();
@@ -497,9 +517,10 @@ void main() {
     expect(st.canRedo, isTrue, reason: "the concurrent undo's redo entry was not clobbered");
   });
 
-  testWidgets('the AppBar actions fit a standard 360dp phone without overflowing', (tester) async {
-    // 7 icon actions (pencil, zoom-, zoom+, undo, redo, convert, save) plus the back button must not
-    // overflow a standard 360dp phone; the compact density keeps them all hit-testable.
+  testWidgets('the AppBar fits a standard 360dp phone (M4 declutter: zoom + convert in the overflow)',
+      (tester) async {
+    // After M4 the bar is pencil, undo, redo, save + an overflow (⋮) — zoom and convert moved into
+    // the overflow — plus the back button, comfortably hit-testable at 360dp.
     tester.view.physicalSize = const Size(360 * 3, 720 * 3);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -507,9 +528,25 @@ void main() {
 
     await pumpEditor(tester, FakeRepo());
     expect(tester.takeException(), isNull, reason: 'no RenderFlex overflow at 360dp');
-    expect(find.byIcon(Icons.swap_horiz), findsOneWidget);
+    expect(find.byIcon(Icons.more_vert), findsOneWidget, reason: 'the overflow (⋮) button');
     expect(find.byIcon(Icons.save_outlined), findsOneWidget);
     expect(iconButton(tester, Icons.save_outlined).onPressed, isNotNull, reason: 'Save still usable');
+  });
+
+  testWidgets('the editor uses a side-rail Row on a wide screen, a vertical stack on a phone',
+      (tester) async {
+    // Wide (the default 800px host viewport >= the 600 breakpoint): controls move to a side rail so
+    // the cloth keeps the full height. The VerticalDivider exists ONLY in that wide layout.
+    await pumpEditor(tester, FakeRepo());
+    expect(find.byType(VerticalDivider), findsOneWidget, reason: 'wide -> side rail');
+
+    // Narrow phone: the original vertical stack (no side rail).
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pump();
+    expect(find.byType(VerticalDivider), findsNothing, reason: 'narrow -> vertical stack');
   });
 
   // --- Phase 3.4: Save error-gating ------------------------------------------
@@ -786,6 +823,21 @@ void main() {
     await tester.tap(find.text('Save anyway'));
     await letAsyncSettle(tester);
     expect(fake.sawSave, isTrue);
+  });
+
+  testWidgets('the AppBar actions carry their tooltips into the semantics (M4 a11y)', (tester) async {
+    // A Flutter IconButton with a `tooltip` wraps it in a Tooltip, which sets the semantic TOOLTIP
+    // property (not `label`) — screen readers DO announce it, so the editor's tooltipped actions are
+    // already labelled. Pin it (via the semantic tooltip data) so a refactor dropping the tooltips is
+    // caught.
+    final handle = tester.ensureSemantics();
+    await pumpEditor(tester, FakeRepo()); // a loaded saved draft
+    for (final label in ['Undo', 'Redo', 'Save']) {
+      expect(find.byTooltip(label), findsOneWidget, reason: '$label has a tooltip');
+      final data = tester.getSemantics(find.byTooltip(label)).getSemanticsData();
+      expect(data.tooltip, contains(label), reason: '$label is in the semantics for a screen reader');
+    }
+    handle.dispose();
   });
 
   group('dirty-on-exit guard (Phase 5.3)', () {

@@ -13,13 +13,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/draft_issue.dart';
 import '../state/editor_providers.dart';
+import '../theme/ply_colors.dart';
 
 class ValidationPanel extends ConsumerWidget {
   const ValidationPanel({super.key});
-
-  /// Warning amber. The Material [ColorScheme] has no semantic "warning" role, so the one amber the
-  /// editor uses is centralized HERE — the standing M4 theming request swaps it in a single place.
-  static const Color _amber = Color(0xFFB26A00);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,12 +27,16 @@ class ValidationPanel extends ConsumerWidget {
     if (issues.isEmpty) return const SizedBox.shrink();
 
     final colors = Theme.of(context).colorScheme;
+    // The warning role M3's ColorScheme lacks, supplied by the [PlyColors] theme extension. The
+    // `??` is a safety net for a tree where the extension was not registered: fall back to the
+    // amber the band historically hardcoded so the warning tone never resolves to null.
+    final warning = Theme.of(context).extension<PlyColors>()?.warning ?? const Color(0xFFB26A00);
     final errors = issues.where((i) => i.isError).length;
     final warnings = issues.length - errors;
     final hasError = errors > 0;
     // The worst severity present drives the band's tone.
-    final tone = hasError ? colors.error : _amber;
-    final bg = hasError ? colors.errorContainer : _amber.withValues(alpha: 0.12);
+    final tone = hasError ? colors.error : warning;
+    final bg = hasError ? colors.errorContainer : warning.withValues(alpha: 0.12);
     final headerIcon = hasError ? Icons.error : Icons.warning_amber_rounded;
     final expanded = ref.watch(editorIssuesExpandedProvider);
 
@@ -77,18 +78,19 @@ class ValidationPanel extends ConsumerWidget {
               ),
             ),
             // Expanded: the full list, Errors first, bounded so many issues scroll INSIDE the band
-            // instead of eating the drawdown. The cap is relative to the screen so a large text scale
-            // still shows several rows (never below 120, never above 240).
+            // instead of eating the drawdown. The cap GROWS with the text scale so larger type still
+            // shows several rows before scrolling (rows get taller at scale), but never past half the
+            // screen height.
             if (expanded)
               ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight: (MediaQuery.sizeOf(context).height * 0.25).clamp(120.0, 240.0),
+                  maxHeight: _expandedMaxHeight(context),
                 ),
                 child: ListView(
                   shrinkWrap: true,
                   padding: const EdgeInsets.only(bottom: 8),
                   children: [
-                    for (final issue in _sorted(issues)) _IssueRow(issue: issue, amber: _amber),
+                    for (final issue in _sorted(issues)) _IssueRow(issue: issue, amber: warning),
                   ],
                 ),
               ),
@@ -96,6 +98,16 @@ class ValidationPanel extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// The expanded list's max height. Scales with the text scale so larger type (an accessibility
+  /// setting) still shows several rows before scrolling — rows grow taller at scale, so a fixed cap
+  /// would starve them. Floor 120; cap grows with scale but never past half the screen height.
+  double _expandedMaxHeight(BuildContext context) {
+    final h = MediaQuery.sizeOf(context).height;
+    final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
+    final cap = (240.0 * scale).clamp(240.0, h * 0.5);
+    return (h * 0.25 * scale).clamp(120.0, cap);
   }
 
   /// The summary as a screen reader should hear it: a single issue is prefixed with its severity

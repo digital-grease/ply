@@ -127,7 +127,14 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
               children: [
                 Positioned.fromRect(
                   rect: layout.drawdownRect,
-                  child: const RepaintBoundary(child: _DrawdownChild()),
+                  // Compact image label only (N ends by P picks from the live layout, so it updates
+                  // on resize); per-cell semantics + screen-reader editing of the cloth is future
+                  // work. The bitmap itself stays a single opaque RawImage.
+                  child: Semantics(
+                    label: 'Woven cloth preview, ${layout.ends} ends by ${layout.picks} picks',
+                    image: true,
+                    child: const RepaintBoundary(child: _DrawdownChild()),
+                  ),
                 ),
                 Positioned.fromRect(
                   rect: layout.threadingRect,

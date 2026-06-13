@@ -178,8 +178,10 @@ void main() {
     expect(container.read(draftEditorProvider).draft.drive, isA<DraftTreadled>(),
         reason: 'the loaded draft is treadled');
 
-    // Tap the convert action, confirm the dialog.
-    await tester.tap(find.byIcon(Icons.swap_horiz));
+    // Convert moved into the AppBar overflow (⋮) in M4; open it then pick Convert, confirm the dialog.
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Convert to liftplan'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 30));
     }

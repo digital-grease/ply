@@ -356,5 +356,13 @@ void main() {
     expect(find.textContaining('no warp ends or picks'), findsNothing);
     expect(find.byType(ThreadingGrid), findsOneWidget, reason: 'the threading grid is now editable');
     expect(find.byType(RightGrid), findsOneWidget);
+
+    // M4 a11y: the formerly-silent grids + drawdown carry descriptive Semantics summaries.
+    final handle = tester.ensureSemantics();
+    expect(find.bySemanticsLabel(RegExp('Threading:')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('Tie-up:')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('Treadling:|Liftplan:')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('Woven cloth preview')), findsOneWidget);
+    handle.dispose();
   });
 }

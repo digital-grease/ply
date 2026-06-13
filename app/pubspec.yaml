@@ -19,6 +19,7 @@ dependencies:
   freezed_annotation: ^2.4.4 # frb mirrors the DriveDto sum-type as a freezed sealed class
   flutter_riverpod: ^2.5.1 # editor state: the live-preview provider ref.watches DraftDoc (next phase)
   collection: ^1.18.0 # DeepCollectionEquality/.hash for deep value-equality of DraftDoc's nested lists
+  dynamic_color: ^1.7.0 # M4: Material You dynamic color from the device palette (with seed fallback)
   rust_lib_ply:
     path: rust_builder
 

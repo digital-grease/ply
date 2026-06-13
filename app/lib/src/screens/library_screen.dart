@@ -8,8 +8,10 @@ import 'package:path/path.dart' as p;
 import '../data/draft_repository.dart';
 import '../models/draft_doc.dart';
 import '../models/draft_meta.dart';
+import '../util/responsive.dart';
 import 'editor_screen.dart';
 import 'preview_screen.dart';
+import 'settings_screen.dart';
 
 /// Home screen: a grid of saved drafts with preview thumbnails, plus an import FAB.
 ///
@@ -243,7 +245,18 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final entries = snapshot.data ?? const <DraftEntry>[];
         final isEmpty = done && !snapshot.hasError && entries.isEmpty;
         return Scaffold(
-          appBar: AppBar(title: const Text('Ply · Patterns')),
+          appBar: AppBar(
+            title: const Text('Ply · Patterns'),
+            actions: [
+              IconButton(
+                tooltip: 'Settings',
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+                ),
+              ),
+            ],
+          ),
           body: _libraryBody(snapshot, entries),
           floatingActionButton: isEmpty ? null : _fabColumn(),
         );
@@ -273,8 +286,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
       child: GridView.builder(
         padding: const EdgeInsets.all(12),
         physics: const AlwaysScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 180,
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          // Wider tiles on a tablet so the grid fills the width instead of a sparse phone-sized 2-up.
+          maxCrossAxisExtent: isWide(context) ? 240 : 180,
           childAspectRatio: 0.8,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
@@ -343,7 +357,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _tile(DraftEntry entry) {
-    return Card(
+    // The whole tile is one button (opens the draft); the thumbnail is decorative and the name is
+    // folded into the tile label, so a screen reader hears "Pattern <name>, button" once (not the
+    // image + the name twice). The ⋮ stays a separate, reachable button (its tooltip labels it) so
+    // rename/delete don't depend on a long-press gesture.
+    return Semantics(
+      button: true,
+      label: 'Pattern ${entry.meta.name}',
+      onTapHint: 'open',
+      onLongPressHint: 'show actions',
+      child: Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _open(entry),
@@ -351,17 +374,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: _thumb(entry)),
+            Expanded(child: ExcludeSemantics(child: _thumb(entry))),
             Padding(
               padding: const EdgeInsets.only(left: 10, right: 2, top: 4, bottom: 4),
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      entry.meta.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium,
+                    child: ExcludeSemantics(
+                      child: Text(
+                        entry.meta.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ),
                   ),
                   PopupMenuButton<_TileAction>(
@@ -389,6 +414,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

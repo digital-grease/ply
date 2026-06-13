@@ -10,16 +10,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../rust/dto.dart' show StructureFamily, ThreadingKind;
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import 'adaptive_sheet.dart';
 
-/// Open the structure generator. Call from a context inside the editor's ProviderScope.
+/// Open the structure generator. Call from a context inside the editor's ProviderScope. Adaptive: a
+/// modal bottom sheet on phones, a centered dialog on tablet/wide screens.
 Future<void> showStructureSheet(BuildContext context) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    showDragHandle: true,
-    builder: (_) => const StructureSheet(),
-  );
+  return showAdaptiveSheet<void>(context, child: const StructureSheet());
 }
 
 class StructureSheet extends ConsumerStatefulWidget {
