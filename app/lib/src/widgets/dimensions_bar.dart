@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/glossary_lookup.dart';
 import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
@@ -178,8 +179,23 @@ class _Stepper extends StatelessWidget {
   final bool enabled;
   final void Function(int) onChange;
 
+  /// The glossary headword each plural stepper label teaches (the source is singular: "Ends" ->
+  /// "End"). Used to pull the tooltip help text from [glossaryDefinition].
+  static const Map<String, String> _concept = {
+    'Ends': 'End',
+    'Picks': 'Pick',
+    'Shafts': 'Shaft',
+    'Treadles': 'Treadle',
+  };
+
   @override
   Widget build(BuildContext context) {
+    final concept = _concept[label] ?? label;
+    final def = glossaryDefinition(concept);
+    // The numeric label doubles as a concept tooltip: long-press (or hover) shows the glossary
+    // definition, sourced from docs/GLOSSARY.md. Falls back to a bare label if the term is absent.
+    final Widget labelText =
+        Text('$label $value', style: Theme.of(context).textTheme.labelLarge);
     return Padding(
       padding: const EdgeInsets.only(right: 12),
       child: Row(
@@ -192,7 +208,10 @@ class _Stepper extends StatelessWidget {
             onPressed: enabled && value > min ? () => onChange(value - 1) : null,
             icon: const Icon(Icons.remove),
           ),
-          Text('$label $value', style: Theme.of(context).textTheme.labelLarge),
+          if (def == null)
+            labelText
+          else
+            Tooltip(message: '$concept: $def', triggerMode: TooltipTriggerMode.tap, child: labelText),
           IconButton(
             visualDensity: VisualDensity.compact,
             iconSize: 20,

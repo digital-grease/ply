@@ -10,6 +10,7 @@ import '../models/draft_doc.dart';
 import '../models/draft_meta.dart';
 import '../util/responsive.dart';
 import 'editor_screen.dart';
+import 'glossary_screen.dart';
 import 'preview_screen.dart';
 import 'settings_screen.dart';
 
@@ -248,6 +249,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
           appBar: AppBar(
             title: const Text('Ply · Patterns'),
             actions: [
+              IconButton(
+                tooltip: 'Glossary',
+                icon: const Icon(Icons.menu_book_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const GlossaryScreen()),
+                ),
+              ),
               IconButton(
                 tooltip: 'Settings',
                 icon: const Icon(Icons.settings_outlined),
