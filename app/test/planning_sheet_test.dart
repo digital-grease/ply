@@ -16,6 +16,8 @@ class FakePlanningRepo extends DraftRepository {
   String? settStructure;
   double settReturn = 12.0;
   ({double finishedLength, int items, int ends, double loomWaste, double takeupPercent})? warpArgs;
+  ({double picksPerUnit, double width, double wovenLength, int items, double takeupPercent})?
+      weftArgs;
 
   @override
   Future<double> suggestSettCalc(double wpi, String structure) async {
@@ -40,6 +42,24 @@ class FakePlanningRepo extends DraftRepository {
       takeupPercent: takeupPercent,
     );
     return (27.0, 270.0);
+  }
+
+  @override
+  Future<(int, double)> estimateWeftPlan({
+    required double picksPerUnit,
+    required double width,
+    required double wovenLength,
+    required int items,
+    required double takeupPercent,
+  }) async {
+    weftArgs = (
+      picksPerUnit: picksPerUnit,
+      width: width,
+      wovenLength: wovenLength,
+      items: items,
+      takeupPercent: takeupPercent,
+    );
+    return (720, 15840.0);
   }
 }
 
@@ -78,10 +98,11 @@ Future<ProviderContainer> pumpSheet(WidgetTester t, FakePlanningRepo repo, {Draf
 }
 
 void main() {
-  testWidgets('renders both sections and seeds warp ends from the draft', (t) async {
+  testWidgets('renders all three sections and seeds warp ends from the draft', (t) async {
     await pumpSheet(t, FakePlanningRepo()); // 4 ends
     expect(find.text('Suggest a sett'), findsOneWidget);
     expect(find.text('Estimate warp yarn'), findsOneWidget);
+    expect(find.text('Estimate weft yarn'), findsOneWidget);
     // The "Warp ends" field is pre-filled with the draft's ends.
     final ends = t.widget<TextFormField>(find.widgetWithText(TextFormField, 'Warp ends'));
     expect(ends.controller!.text, '4');
@@ -193,9 +214,52 @@ void main() {
     expect(find.text('0 ends/in'), findsNothing);
   });
 
-  testWidgets('a centimeters draft labels warp lengths in cm', (t) async {
+  testWidgets('a centimeters draft labels warp + weft lengths in cm', (t) async {
     await pumpSheet(t, FakePlanningRepo(), doc: fourEnds().copyWith(unit: MeasureUnit.centimeters));
     expect(find.widgetWithText(TextFormField, 'Finished length (cm)'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Loom waste (cm)'), findsOneWidget);
+    // The weft "picks per unit" tracks the draft unit (the engine multiplies it by woven_length in
+    // the same unit), so it reads "per cm", not a hardcoded "per inch".
+    expect(find.widgetWithText(TextFormField, 'Picks per cm'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Woven width (cm)'), findsOneWidget);
+  });
+
+  testWidgets('Estimate weft passes the parsed fields (take-up as a percent) and shows the result',
+      (t) async {
+    final repo = FakePlanningRepo();
+    await pumpSheet(t, repo);
+    await t.enterText(find.widgetWithText(TextFormField, 'Picks per in'), '12');
+    await t.enterText(find.widgetWithText(TextFormField, 'Woven width (in)'), '20');
+    await t.enterText(find.widgetWithText(TextFormField, 'Woven length (in)'), '60');
+    // items default '1', take-up default '10'.
+    await t.ensureVisible(find.text('Estimate weft'));
+    await t.tap(find.text('Estimate weft'));
+    await t.pump();
+    expect(repo.weftArgs, isNotNull);
+    expect(repo.weftArgs!.picksPerUnit, 12.0);
+    expect(repo.weftArgs!.width, 20.0);
+    expect(repo.weftArgs!.wovenLength, 60.0);
+    expect(repo.weftArgs!.items, 1);
+    expect(repo.weftArgs!.takeupPercent, 10.0, reason: 'entered as a percent; the repo divides by 100');
+    expect(find.text('Total picks: 720'), findsOneWidget);
+    expect(find.text('Total weft yarn: 15840 in'), findsOneWidget);
+  });
+
+  testWidgets('an empty required weft field blocks the estimate', (t) async {
+    final repo = FakePlanningRepo();
+    await pumpSheet(t, repo);
+    await t.ensureVisible(find.text('Estimate weft'));
+    await t.tap(find.text('Estimate weft')); // picks/width/length all empty
+    await t.pump();
+    expect(repo.weftArgs, isNull, reason: 'no FFI until every field is valid');
+  });
+
+  test('the weft repo backstop THROWS on a > u32 items count rather than truncating', () async {
+    final repo = DraftRepository();
+    await expectLater(
+      repo.estimateWeftPlan(
+          picksPerUnit: 1, width: 1, wovenLength: 1, items: 0x100000000, takeupPercent: 0),
+      throwsRangeError,
+    );
   });
 }

@@ -14,7 +14,7 @@
 //! unrepresentable (DATA_MODEL decision 1).
 
 use ply_common::{Color, Unit};
-use ply_weave::calc::{WarpPlan, YarnEstimate};
+use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
 use ply_weave::draft::{
     ColorPlan, Draft, Drive, Liftplan, ShaftId, ShedType, Threading, TieUp, TreadleId, Treadling,
 };
@@ -104,6 +104,46 @@ impl From<&YarnEstimate> for YarnEstimateDto {
         YarnEstimateDto {
             warp_length: e.warp_length,
             total_warp: e.total_warp,
+        }
+    }
+}
+
+/// Inputs to the weft-yarn estimate, mirroring `calc::WeftPlan` transparently (else an opaque,
+/// un-constructible handle). `picks_per_unit` is picks per unit of woven length (picks-per-inch in
+/// an imperial draft); `width` is the woven width in the reed; `woven_length` is the length actually
+/// woven per item; `takeup` is a width-direction FRACTION (0.10 = 10%).
+pub struct WeftPlanDto {
+    pub picks_per_unit: f32,
+    pub width: f32,
+    pub woven_length: f32,
+    pub items: u32,
+    pub takeup: f32,
+}
+
+/// The weft-yarn estimate result, mirroring `calc::WeftEstimate` (else an opaque handle). `picks` =
+/// total picks across all items; `total_weft` = `picks * width * (1 + takeup)`, in the draft's unit.
+pub struct WeftEstimateDto {
+    pub picks: u32,
+    pub total_weft: f32,
+}
+
+impl From<WeftPlanDto> for WeftPlan {
+    fn from(d: WeftPlanDto) -> Self {
+        WeftPlan {
+            picks_per_unit: d.picks_per_unit,
+            width: d.width,
+            woven_length: d.woven_length,
+            items: d.items,
+            takeup: d.takeup,
+        }
+    }
+}
+
+impl From<&WeftEstimate> for WeftEstimateDto {
+    fn from(e: &WeftEstimate) -> Self {
+        WeftEstimateDto {
+            picks: e.picks,
+            total_weft: e.total_weft,
         }
     }
 }

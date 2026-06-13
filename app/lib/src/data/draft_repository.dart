@@ -156,6 +156,32 @@ class DraftRepository {
     return (est.warpLength, est.totalWarp);
   }
 
+  /// Estimate weft picks + total weft yarn for a plan. [takeupPercent] is entered as a PERCENT
+  /// (10 = 10%, width-direction weft take-up + selvedge allowance) and converted to the engine's
+  /// fraction here. Returns `(picks, totalWeft)` — `picks` is a count, `totalWeft` is in the draft's
+  /// unit. (Named `estimateWeftPlan` to avoid colliding with the generated `estimateWeftDto`.)
+  Future<(int picks, double totalWeft)> estimateWeftPlan({
+    required double picksPerUnit,
+    required double width,
+    required double wovenLength,
+    required int items,
+    required double takeupPercent,
+  }) async {
+    // Guard the u32 wire field against silent mod-2^32 truncation (THROW-don't-truncate, as the warp
+    // wrapper and `_indicesToU32` do). The UI validators cap far below; this is the backstop.
+    if (items < 0 || items > 0xFFFFFFFF) throw RangeError.range(items, 0, 0xFFFFFFFF, 'items');
+    final est = await estimateWeftDto(
+      plan: WeftPlanDto(
+        picksPerUnit: picksPerUnit,
+        width: width,
+        wovenLength: wovenLength,
+        items: items,
+        takeup: takeupPercent / 100.0,
+      ),
+    );
+    return (est.picks, est.totalWeft);
+  }
+
   /// Decode an engine [PreviewImage] into a [ui.Image].
   ///
   /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is RGBA8,

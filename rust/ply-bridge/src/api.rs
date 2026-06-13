@@ -28,7 +28,7 @@ use ply_weave::{self as weave, Draft};
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
     ColorDto, DraftDto, DriveDto, SeverityKind, ShedKind, UnitKind, ValidationIssueDto,
-    WarpPlanDto, YarnEstimateDto,
+    WarpPlanDto, WeftEstimateDto, WeftPlanDto, YarnEstimateDto,
 };
 
 /// Serialize an editor `DraftDto` back to WIF text. Takes the mirrored DTO (not an opaque
@@ -155,4 +155,11 @@ pub fn estimate_warp_dto(plan: WarpPlanDto) -> YarnEstimateDto {
 /// take-up + selvedge/wastage fraction (width-direction).
 pub fn estimate_weft(plan: WeftPlan) -> WeftEstimate {
     weave::calc::estimate_weft(&plan)
+}
+
+/// Estimate weft picks + total weft yarn from a TRANSPARENT plan DTO (the editor's calculator path).
+/// `plan.takeup` is the width-direction weft take-up + selvedge/wastage FRACTION (0.10 = 10%). Unlike
+/// `estimate_weft`, both the input and the result cross FFI as readable mirrored DTOs.
+pub fn estimate_weft_dto(plan: WeftPlanDto) -> WeftEstimateDto {
+    WeftEstimateDto::from(&weave::calc::estimate_weft(&plan.into()))
 }

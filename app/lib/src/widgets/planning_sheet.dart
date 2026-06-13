@@ -35,6 +35,7 @@ class PlanningSheet extends ConsumerStatefulWidget {
 class _PlanningSheetState extends ConsumerState<PlanningSheet> {
   final _settForm = GlobalKey<FormState>();
   final _warpForm = GlobalKey<FormState>();
+  final _weftForm = GlobalKey<FormState>();
 
   final _wpi = TextEditingController();
   String _structure = 'plain';
@@ -47,6 +48,13 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
   final _takeup = TextEditingController(text: '10');
   (double, double)? _warp;
 
+  final _ppi = TextEditingController();
+  final _width = TextEditingController();
+  final _wovenLength = TextEditingController();
+  final _weftItems = TextEditingController(text: '1');
+  final _weftTakeup = TextEditingController(text: '10');
+  (int, double)? _weft;
+
   @override
   void initState() {
     super.initState();
@@ -57,7 +65,10 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
 
   @override
   void dispose() {
-    for (final c in [_wpi, _finished, _items, _ends, _loomWaste, _takeup]) {
+    for (final c in [
+      _wpi, _finished, _items, _ends, _loomWaste, _takeup, //
+      _ppi, _width, _wovenLength, _weftItems, _weftTakeup,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -83,6 +94,18 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
           takeupPercent: double.parse(_takeup.text.trim()),
         );
     if (mounted) setState(() => _warp = warp);
+  }
+
+  Future<void> _estimateWeft() async {
+    if (!_weftForm.currentState!.validate()) return;
+    final weft = await ref.read(repositoryProvider).estimateWeftPlan(
+          picksPerUnit: double.parse(_ppi.text.trim()),
+          width: double.parse(_width.text.trim()),
+          wovenLength: double.parse(_wovenLength.text.trim()),
+          items: int.parse(_weftItems.text.trim()),
+          takeupPercent: double.parse(_weftTakeup.text.trim()),
+        );
+    if (mounted) setState(() => _weft = weft);
   }
 
   @override
@@ -187,6 +210,46 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
                     children: [
                       Text('Warp length: ${_fmt(_warp!.$1)} $_unit', style: text.bodyLarge),
                       Text('Total warp yarn: ${_fmt(_warp!.$2)} $_unit', style: text.bodyLarge),
+                    ],
+                  ),
+                ),
+              ),
+
+            const Divider(height: 32),
+
+            // --- Weft yarn estimate — picks/unit + woven width + woven length. ---
+            Text('Estimate weft yarn', style: text.titleSmall),
+            Form(
+              key: _weftForm,
+              child: Column(
+                children: [
+                  // picks_per_unit is per the DRAFT'S unit (the engine multiplies it by woven_length
+                  // in that same unit), so label it per-unit, not a hardcoded "per inch".
+                  _numField(_ppi, 'Picks per $_unit', _positive),
+                  _numField(_width, 'Woven width ($_unit)', _positive),
+                  _numField(_wovenLength, 'Woven length ($_unit)', _positive),
+                  _numField(_weftItems, 'Items', _positiveInt, decimal: false),
+                  _numField(_weftTakeup, 'Take-up + selvedge (%)', _nonNegative),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                FilledButton.tonal(onPressed: _estimateWeft, child: const Text('Estimate weft')),
+              ],
+            ),
+            if (_weft != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Semantics(
+                  liveRegion: true,
+                  container: true,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Total picks: ${_weft!.$1}', style: text.bodyLarge),
+                      Text('Total weft yarn: ${_fmt(_weft!.$2)} $_unit', style: text.bodyLarge),
                     ],
                   ),
                 ),
