@@ -15,8 +15,9 @@ import '../widgets/validation_panel.dart';
 /// What the user chose when leaving the editor with unsaved edits (see `_confirmLeave`).
 enum _LeaveAction { keepEditing, discard, save }
 
-/// The less-frequent AppBar actions tucked into the overflow (⋮) menu.
-enum _OverflowAction { zoomIn, zoomOut, convert }
+/// The less-frequent AppBar actions tucked into the overflow (⋮) menu. The two `toggle*` entries
+/// are view-chrome switches (gridlines / long-float highlight) rather than one-shot actions.
+enum _OverflowAction { zoomIn, zoomOut, convert, toggleGridlines, toggleFloats }
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
 /// tie-up cell toggles it and the drawdown re-renders live (engine recompute is microseconds;
@@ -524,6 +525,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _zoom(-1);
                       case _OverflowAction.convert:
                         _convertToLiftplan();
+                      case _OverflowAction.toggleGridlines:
+                        final p = ref.read(showGridlinesProvider.notifier);
+                        p.state = !p.state;
+                      case _OverflowAction.toggleFloats:
+                        final p = ref.read(highlightFloatsProvider.notifier);
+                        p.state = !p.state;
                     }
                   },
                   itemBuilder: (_) => [
@@ -544,6 +551,18 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           dense: true,
                           leading: Icon(Icons.swap_horiz),
                           title: Text('Convert to liftplan')),
+                    ),
+                    const PopupMenuDivider(),
+                    // View overlays (checkable): reflect the current toggle state at open time.
+                    CheckedPopupMenuItem(
+                      value: _OverflowAction.toggleGridlines,
+                      checked: ref.read(showGridlinesProvider),
+                      child: const Text('Gridlines'),
+                    ),
+                    CheckedPopupMenuItem(
+                      value: _OverflowAction.toggleFloats,
+                      checked: ref.read(highlightFloatsProvider),
+                      child: const Text('Highlight long floats'),
                     ),
                   ],
                 ),

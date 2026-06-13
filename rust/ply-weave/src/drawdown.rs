@@ -68,34 +68,126 @@ pub struct RgbaImage {
     pub pixels: Vec<u8>,
 }
 
-/// Render the drawdown to an RGBA8 buffer at `cell_px` pixels per intersection.
+/// Per-thread pixel extents from relative thickness values.
+///
+/// The **thinnest** positive thread becomes `base` px and thicker ones scale up proportionally
+/// (ratio clamped to keep one fat thread from dwarfing the cloth). An empty or all-default slice
+/// yields a uniform `base`-px grid, so equal thickness reproduces the old raster exactly.
+fn thread_extents(thickness: &[f32], n: usize, base: usize) -> Vec<usize> {
+    const MAX_RATIO: f32 = 6.0;
+    // Reference = the smallest positive, finite thickness actually present (the thinnest thread
+    // maps to `base` px). With none set we fall straight back to a uniform grid.
+    let min = thickness
+        .iter()
+        .take(n)
+        .copied()
+        .filter(|t| t.is_finite() && *t > 0.0)
+        .fold(f32::INFINITY, f32::min);
+    if !min.is_finite() {
+        return vec![base; n];
+    }
+    (0..n)
+        .map(|i| {
+            let t = thickness
+                .get(i)
+                .copied()
+                .filter(|t| t.is_finite() && *t > 0.0)
+                .unwrap_or(min);
+            let scale = (t / min).clamp(1.0, MAX_RATIO);
+            ((base as f32 * scale).round() as usize).max(1)
+        })
+        .collect()
+}
+
+/// Optional overlays drawn onto the drawdown raster. Default-OFF (a plain cloth render): the live
+/// editor turns these on per-view; the thumbnail/library path leaves them off so the saved preview
+/// stays a clean cloth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderOptions {
+    /// Draw a 1px separator between cells so the interlacement reads as a grid (aligned to the
+    /// variable cell boundaries, so it stays correct under per-thread thickness).
+    pub gridlines: bool,
+    /// Tint every cell belonging to a float (a run of same-face cells) of this length OR MORE,
+    /// flagging snag-prone long floats. `0` (or `1`) disables the cue.
+    pub float_threshold: u32,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        RenderOptions { gridlines: false, float_threshold: 0 }
+    }
+}
+
+/// Render the drawdown to an RGBA8 buffer at `cell_px` pixels per (thinnest) intersection, with no
+/// overlays (a plain cloth). Thin wrapper over [`render_rgba_with`] for the common case.
+///
+/// Cells are **variable-sized** when the draft carries per-thread thickness: a fatter warp end
+/// draws a wider column, a fatter weft pick a taller row (see [`thread_extents`]). With no
+/// thickness set every cell is `cell_px` square — byte-identical to a plain uniform grid.
+pub fn render_rgba(draft: &Draft, cell_px: u32) -> RgbaImage {
+    render_rgba_with(draft, cell_px, &RenderOptions::default())
+}
+
+/// Render the drawdown to an RGBA8 buffer, optionally drawing gridlines and/or highlighting long
+/// floats (see [`RenderOptions`]).
 ///
 /// This is the function the FFI bridge calls for live preview: compute the **whole**
 /// buffer in Rust and hand it across in one shot. Never marshal per cell across FFI.
 ///
 /// Pick 0 is the first row woven; cloth grows upward, so it is drawn at the bottom of
 /// the image (the last pick becomes the top row of pixels).
-pub fn render_rgba(draft: &Draft, cell_px: u32) -> RgbaImage {
+pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> RgbaImage {
     let dd = compute(draft);
-    let cell = cell_px.max(1) as usize;
-    let w = dd.ends * cell;
-    let h = dd.picks * cell;
+    if dd.ends == 0 || dd.picks == 0 {
+        return RgbaImage { width: 0, height: 0, pixels: Vec::new() };
+    }
+    let base = cell_px.max(1) as usize;
+    let col_w = thread_extents(&draft.warp_thickness, dd.ends, base);
+    let row_h = thread_extents(&draft.weft_thickness, dd.picks, base);
+
+    // Cumulative left edge per end (end 0 at the left); total width is the running sum.
+    let mut col_left = Vec::with_capacity(dd.ends);
+    let mut acc = 0usize;
+    for &cw in &col_w {
+        col_left.push(acc);
+        acc += cw;
+    }
+    let w = acc;
+
+    // Pick 0 sits at the BOTTOM, so build top edges from the bottom up: a pick's top edge is the
+    // image height minus the cloth woven up to and including it.
+    let h: usize = row_h.iter().sum();
+    let mut row_top = vec![0usize; dd.picks];
+    let mut from_bottom = 0usize;
+    for pick in 0..dd.picks {
+        from_bottom += row_h[pick];
+        row_top[pick] = h - from_bottom;
+    }
+
+    let mask = long_float_mask(&dd, opts.float_threshold as usize);
     let mut px = vec![0u8; w * h * 4];
     let palette = &draft.colors.palette;
     let color_at = |idx: ColorIndex| -> Color { palette.get(idx).copied().unwrap_or(Color::WHITE) };
 
     for pick in 0..dd.picks {
-        let row_top = (dd.picks - 1 - pick) * cell; // vertical flip
+        let top = row_top[pick];
+        let ch = row_h[pick];
         for end in 0..dd.ends {
-            let c = match dd.cell(end, pick) {
+            let base_c = match dd.cell(end, pick) {
                 Cell::WarpUp(i) | Cell::WeftUp(i) => color_at(i),
             };
-            let col_left = end * cell;
-            for dy in 0..cell {
-                let y = row_top + dy;
-                for dx in 0..cell {
-                    let x = col_left + dx;
-                    let o = (y * w + x) * 4;
+            // Tint cells that belong to a long float so they read at a glance (over any palette).
+            let c = if mask[pick * dd.ends + end] {
+                blend(base_c, FLOAT_HIGHLIGHT, 0.5)
+            } else {
+                base_c
+            };
+            let left = col_left[end];
+            let cw = col_w[end];
+            for dy in 0..ch {
+                let row = ((top + dy) * w + left) * 4;
+                for dx in 0..cw {
+                    let o = row + dx * 4;
                     px[o] = c.r;
                     px[o + 1] = c.g;
                     px[o + 2] = c.b;
@@ -105,7 +197,111 @@ pub fn render_rgba(draft: &Draft, cell_px: u32) -> RgbaImage {
         }
     }
 
+    if opts.gridlines {
+        draw_gridlines(&mut px, w, h, &col_left, &row_top, dd.ends, dd.picks);
+    }
+
     RgbaImage { width: w as u32, height: h as u32, pixels: px }
+}
+
+/// The grid-seam color: a neutral mid-gray that reads on most cloth colors (it can vanish on a
+/// near-`128` gray cell — an accepted v1 limitation).
+const GRID_LINE: [u8; 3] = [128, 128, 128];
+
+/// The long-float highlight: a warm orange that, blended at 50%, stays visible over both dark and
+/// light cloth.
+const FLOAT_HIGHLIGHT: [u8; 3] = [255, 120, 0];
+
+/// Alpha-blend `over` onto `base` (`a` in 0..=1). Used for the float-highlight tint.
+fn blend(base: Color, over: [u8; 3], a: f32) -> Color {
+    let mix = |b: u8, o: u8| ((b as f32) * (1.0 - a) + (o as f32) * a).round() as u8;
+    Color::rgb(mix(base.r, over[0]), mix(base.g, over[1]), mix(base.b, over[2]))
+}
+
+/// Mark every cell that belongs to a float — a maximal run of same-face cells along the warp (down
+/// a column) or weft (across a row) — of length `>= threshold`. A `threshold` below 2 marks nothing
+/// (a "float" of one is just ordinary interlacement). The flat mask is indexed like the drawdown.
+fn long_float_mask(dd: &Drawdown, threshold: usize) -> Vec<bool> {
+    let mut mask = vec![false; dd.cells.len()];
+    if threshold < 2 {
+        return mask;
+    }
+    // Warp floats: consecutive WarpUp down each column. The `0..=picks` sweep uses the final
+    // out-of-range step as a sentinel that flushes a run ending at the top edge.
+    for end in 0..dd.ends {
+        let mut run: Vec<usize> = Vec::new();
+        for pick in 0..=dd.picks {
+            let is_warp = pick < dd.picks && matches!(dd.cell(end, pick), Cell::WarpUp(_));
+            if is_warp {
+                run.push(pick);
+            } else {
+                if run.len() >= threshold {
+                    for &p in &run {
+                        mask[p * dd.ends + end] = true;
+                    }
+                }
+                run.clear();
+            }
+        }
+    }
+    // Weft floats: consecutive WeftUp across each row.
+    for pick in 0..dd.picks {
+        let mut run: Vec<usize> = Vec::new();
+        for end in 0..=dd.ends {
+            let is_weft = end < dd.ends && matches!(dd.cell(end, pick), Cell::WeftUp(_));
+            if is_weft {
+                run.push(end);
+            } else {
+                if run.len() >= threshold {
+                    for &e in &run {
+                        mask[pick * dd.ends + e] = true;
+                    }
+                }
+                run.clear();
+            }
+        }
+    }
+    mask
+}
+
+/// Draw interior cell-boundary seams (one between each pair of adjacent ends/picks; no outer
+/// border) in [`GRID_LINE`], aligned to the variable cell positions so the grid stays true under
+/// per-thread thickness.
+fn draw_gridlines(
+    px: &mut [u8],
+    w: usize,
+    h: usize,
+    col_left: &[usize],
+    row_top: &[usize],
+    ends: usize,
+    picks: usize,
+) {
+    let mut set = |x: usize, y: usize| {
+        if x < w && y < h {
+            let o = (y * w + x) * 4;
+            px[o] = GRID_LINE[0];
+            px[o + 1] = GRID_LINE[1];
+            px[o + 2] = GRID_LINE[2];
+            px[o + 3] = 255;
+        }
+    };
+    // Vertical seams at the left edge of every end except the first (an interior boundary).
+    for end in 1..ends {
+        let x = col_left[end];
+        for y in 0..h {
+            set(x, y);
+        }
+    }
+    // Horizontal seams at the top edge of every cell except the topmost pick (whose top edge is the
+    // outer image border at y == 0).
+    for &y in row_top.iter().take(picks) {
+        if y == 0 {
+            continue;
+        }
+        for x in 0..w {
+            set(x, y);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -130,6 +326,8 @@ mod tests {
                 warp: vec![0, 0],
                 weft: vec![1, 1],
             },
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             notes: String::new(),
             retained: Vec::new(),
         }
@@ -170,5 +368,124 @@ mod tests {
         let img = render_rgba(&plain_2x2(), 4);
         assert_eq!((img.width, img.height), (8, 8));
         assert_eq!(img.pixels.len(), 8 * 8 * 4);
+    }
+
+    /// Equal (or absent) thickness must reproduce the plain uniform raster byte for byte — the
+    /// invariant that lets every existing golden and device check keep passing.
+    #[test]
+    fn equal_thickness_matches_uniform_raster() {
+        let uniform = render_rgba(&plain_2x2(), 5);
+
+        let mut all_two = plain_2x2();
+        all_two.warp_thickness = vec![2.0; all_two.ends()];
+        all_two.weft_thickness = vec![2.0; all_two.picks()];
+        let scaled = render_rgba(&all_two, 5);
+
+        assert_eq!((scaled.width, scaled.height), (uniform.width, uniform.height));
+        assert_eq!(scaled.pixels, uniform.pixels, "uniform thickness == plain grid");
+    }
+
+    /// A fatter warp end draws a proportionally wider column; the thinnest thread stays `base` px.
+    #[test]
+    fn fat_warp_end_widens_its_column() {
+        let mut d = plain_2x2();
+        d.warp_thickness = vec![1.0, 2.0]; // end 1 is twice as fat
+        let img = render_rgba(&d, 4);
+        // end 0 -> 4 px, end 1 -> 8 px; both picks stay 4 px tall.
+        assert_eq!((img.width, img.height), (12, 8));
+
+        // Sample the top row: end 0 occupies x in [0,4), end 1 in [4,12). Read the cell colors
+        // there straight from the palette to prove the wide band is genuinely end 1's column.
+        let pixel = |x: usize, y: usize| -> [u8; 3] {
+            let o = (y * img.width as usize + x) * 4;
+            [img.pixels[o], img.pixels[o + 1], img.pixels[o + 2]]
+        };
+        // Top image row is the last pick (pick 1); end 0 = WeftUp, end 1 = WarpUp there.
+        let end0 = pixel(2, 0);
+        let end1_a = pixel(5, 0);
+        let end1_b = pixel(10, 0); // still inside the widened end-1 band
+        assert_eq!(end1_a, end1_b, "the whole widened band is one color");
+        assert_ne!(end0, end1_a, "end 0 and the fat end 1 differ");
+    }
+
+    /// A fatter weft pick draws a taller row, and the bottom-anchored flip is preserved.
+    #[test]
+    fn fat_weft_pick_heightens_its_row() {
+        let mut d = plain_2x2();
+        d.weft_thickness = vec![3.0, 1.0]; // pick 0 (bottom) is 3x tall
+        let img = render_rgba(&d, 4);
+        // pick 0 -> 12 px, pick 1 -> 4 px => height 16; width unchanged at 8.
+        assert_eq!((img.width, img.height), (8, 16));
+    }
+
+    /// Default options reproduce the plain render byte for byte (so the goldens and every existing
+    /// caller are unaffected by the overlay machinery).
+    #[test]
+    fn default_options_match_plain_render() {
+        let d = plain_2x2();
+        let plain = render_rgba(&d, 5);
+        let with_default = render_rgba_with(&d, 5, &RenderOptions::default());
+        assert_eq!(plain.pixels, with_default.pixels);
+    }
+
+    /// Gridlines paint mid-gray seams at interior cell boundaries while leaving cell interiors (and
+    /// the outer border) untouched.
+    #[test]
+    fn gridlines_paint_interior_seams_only() {
+        let d = plain_2x2(); // 8x8 at cell 4: one interior vertical seam (x=4), one horizontal (y=4)
+        let opts = RenderOptions { gridlines: true, float_threshold: 0 };
+        let img = render_rgba_with(&d, 4, &opts);
+        let at = |x: usize, y: usize| -> [u8; 3] {
+            let o = (y * 8 + x) * 4;
+            [img.pixels[o], img.pixels[o + 1], img.pixels[o + 2]]
+        };
+        assert_eq!(at(4, 2), GRID_LINE, "interior vertical seam is gray");
+        assert_eq!(at(2, 4), GRID_LINE, "interior horizontal seam is gray");
+        // A cell interior keeps its cloth color (pure black/white), never the seam gray.
+        assert_ne!(at(1, 1), GRID_LINE, "cell interior is untouched");
+        // No outer border: the left column (x=0) is cloth, not a seam.
+        assert_ne!(at(0, 1), GRID_LINE, "no seam on the outer edge");
+    }
+
+    /// A long warp float gets tinted; below threshold (or with the cue off) the cloth is untouched.
+    #[test]
+    fn float_highlight_tints_only_long_floats() {
+        // 1 end threaded on shaft 1, raised on all 6 picks => one warp float of length 6.
+        let d = Draft {
+            name: "float".into(),
+            shafts: 1,
+            treadles: 0,
+            shed: ShedType::Rising,
+            unit: Unit::Inches,
+            threading: Threading(vec![vec![ShaftId(1)]]),
+            drive: Drive::Liftplan(Liftplan(vec![vec![ShaftId(1)]; 6])),
+            colors: ColorPlan {
+                palette: vec![Color::BLACK, Color::WHITE],
+                warp: vec![0],
+                weft: vec![1; 6],
+            },
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
+            notes: String::new(),
+            retained: Vec::new(),
+        };
+        let center = |img: &RgbaImage| -> [u8; 3] {
+            let o = (2 * img.width as usize + 2) * 4; // somewhere inside the column
+            [img.pixels[o], img.pixels[o + 1], img.pixels[o + 2]]
+        };
+
+        // Off: the warp cell is pure black (palette idx 0).
+        let off = render_rgba(&d, 4);
+        assert_eq!(center(&off), [0, 0, 0], "no cue => untouched cloth");
+
+        // Below threshold (need 7+, float is 6): still untouched.
+        let high = render_rgba_with(&d, 4, &RenderOptions { gridlines: false, float_threshold: 7 });
+        assert_eq!(center(&high), [0, 0, 0], "float shorter than threshold is untouched");
+
+        // At threshold (5 <= 6): tinted toward the warm highlight (no longer pure black).
+        let on = render_rgba_with(&d, 4, &RenderOptions { gridlines: false, float_threshold: 5 });
+        let c = center(&on);
+        assert_ne!(c, [0, 0, 0], "a long float is tinted");
+        assert!(c[0] > c[2], "tint is warm (more red than blue)");
     }
 }

@@ -180,6 +180,8 @@ mod tests {
                 warp: vec![0; 8],
                 weft: vec![1; 8],
             },
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             notes: String::new(),
             retained: Vec::new(),
         };

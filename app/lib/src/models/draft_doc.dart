@@ -309,11 +309,15 @@ class DraftDoc {
     required List<int> warpColors,
     required List<int> weftColors,
     required this.notes,
+    List<double> warpThickness = const <double>[],
+    List<double> weftThickness = const <double>[],
     List<RetainedSection> retained = const <RetainedSection>[],
   })  : threading = _sealRows(threading),
         palette = _sealList(palette),
         warpColors = _sealList(warpColors),
         weftColors = _sealList(weftColors),
+        warpThickness = _sealList(warpThickness),
+        weftThickness = _sealList(weftThickness),
         retained = _sealList(retained);
 
   /// Internal constructor for lists that are ALREADY sealed, so [copyWith] can reuse the
@@ -333,6 +337,8 @@ class DraftDoc {
     required this.warpColors,
     required this.weftColors,
     required this.notes,
+    this.warpThickness = const <double>[],
+    this.weftThickness = const <double>[],
     this.retained = const <RetainedSection>[],
   });
 
@@ -414,6 +420,17 @@ class DraftDoc {
   /// DEEPLY IMMUTABLE; never mutate in place.
   final List<int> weftColors;
 
+  /// Per warp end, a relative thread thickness (1.0 = base) driving variable-WIDTH drawdown cells.
+  /// EMPTY means "all default 1.0" (a uniform grid), which is the common case; a set list is
+  /// length-coupled to [ends] like [warpColors]. Imported from WIF `[WARP THICKNESS]`; there is no
+  /// in-app thickness editor yet, so this is carried through edits and round-trips, not mutated.
+  /// DEEPLY IMMUTABLE; never mutate in place.
+  final List<double> warpThickness;
+
+  /// Per pick, a relative thickness driving variable-HEIGHT cells. Empty = all 1.0. See
+  /// [warpThickness].
+  final List<double> weftThickness;
+
   /// Free-form notes; empty string when absent (mirrors the wire `String`, not an `Option`).
   final String notes;
 
@@ -458,6 +475,8 @@ class DraftDoc {
     List<DraftColor>? palette,
     List<int>? warpColors,
     List<int>? weftColors,
+    List<double>? warpThickness,
+    List<double>? weftThickness,
     String? notes,
     List<RetainedSection>? retained,
   }) {
@@ -472,6 +491,8 @@ class DraftDoc {
       palette: palette == null ? this.palette : _sealList(palette),
       warpColors: warpColors == null ? this.warpColors : _sealList(warpColors),
       weftColors: weftColors == null ? this.weftColors : _sealList(weftColors),
+      warpThickness: warpThickness == null ? this.warpThickness : _sealList(warpThickness),
+      weftThickness: weftThickness == null ? this.weftThickness : _sealList(weftThickness),
       notes: notes ?? this.notes,
       retained: retained == null ? this.retained : _sealList(retained),
     );
@@ -497,6 +518,8 @@ class DraftDoc {
           _deepEq.equals(palette, other.palette) &&
           _deepEq.equals(warpColors, other.warpColors) &&
           _deepEq.equals(weftColors, other.weftColors) &&
+          _deepEq.equals(warpThickness, other.warpThickness) &&
+          _deepEq.equals(weftThickness, other.weftThickness) &&
           _deepEq.equals(retained, other.retained);
 
   /// `hashCode` consistent with `==`: scalars and enums by value, `drive` by its own deep hash,
@@ -518,6 +541,8 @@ class DraftDoc {
         _deepEq.hash(palette),
         _deepEq.hash(warpColors),
         _deepEq.hash(weftColors),
+        _deepEq.hash(warpThickness),
+        _deepEq.hash(weftThickness),
         _deepEq.hash(retained),
       );
 

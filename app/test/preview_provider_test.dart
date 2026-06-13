@@ -14,7 +14,12 @@ class FakeRepo extends DraftRepository {
   final List<Completer<ui.Image>> pending = [];
 
   @override
-  Future<ui.Image> renderDto(DraftDoc doc, {required int cellPx}) {
+  Future<ui.Image> renderDto(
+    DraftDoc doc, {
+    required int cellPx,
+    bool gridlines = false,
+    int floatThreshold = 0,
+  }) {
     final completer = Completer<ui.Image>();
     pending.add(completer);
     return completer.future;
@@ -122,4 +127,49 @@ void main() {
     await pumpEventQueue();
     expect(identical(container.read(previewProvider).value, newest), isTrue);
   });
+
+  test('previewProvider forwards the gridline/float view toggles to renderDto', () async {
+    final fake = _CapturingRepo();
+    final container = ProviderContainer(
+      overrides: [
+        repositoryProvider.overrideWithValue(fake),
+        // Start both overlays ON so the first render already carries them.
+        showGridlinesProvider.overrideWith((ref) => true),
+        highlightFloatsProvider.overrideWith((ref) => true),
+      ],
+    );
+    addTearDown(container.dispose);
+    final sub = container.listen(previewProvider, (_, __) {});
+    addTearDown(sub.close);
+
+    await pumpEventQueue();
+    expect(fake.lastGridlines, isTrue, reason: 'gridline toggle reaches the render');
+    expect(fake.lastFloatThreshold, kLongFloatThreshold,
+        reason: 'float highlight maps to the threshold');
+
+    // Turning floats OFF re-renders with threshold 0 (gridlines untouched).
+    container.read(highlightFloatsProvider.notifier).state = false;
+    await pumpEventQueue();
+    expect(fake.lastGridlines, isTrue);
+    expect(fake.lastFloatThreshold, 0, reason: 'float cue off => no threshold');
+  });
+}
+
+/// A repository that records the overlay args of the most recent [renderDto] and returns a real
+/// 1x1 image, so a test can assert the preview provider forwards the view toggles.
+class _CapturingRepo extends DraftRepository {
+  bool lastGridlines = false;
+  int lastFloatThreshold = 0;
+
+  @override
+  Future<ui.Image> renderDto(
+    DraftDoc doc, {
+    required int cellPx,
+    bool gridlines = false,
+    int floatThreshold = 0,
+  }) {
+    lastGridlines = gridlines;
+    lastFloatThreshold = floatThreshold;
+    return makeImage();
+  }
 }

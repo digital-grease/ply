@@ -16,5 +16,7 @@ pub mod validate;
 pub mod wif;
 
 pub use draft::{Draft, Drive, Liftplan, ShaftId, ShedType, Threading, TieUp, Treadling, TreadleId};
-pub use drawdown::{compute, render_rgba, Cell, Drawdown, RgbaImage};
+pub use drawdown::{
+    compute, render_rgba, render_rgba_with, Cell, Drawdown, RenderOptions, RgbaImage,
+};
 pub use error::{Result, WeaveError};

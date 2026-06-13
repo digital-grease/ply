@@ -27,18 +27,20 @@ use ply_weave::{self as weave, Draft};
 // M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
-    ColorDto, DraftDto, DriveDto, RetainedEntryDto, RetainedSectionDto, SeverityKind, ShedKind,
-    StructureFamily, ThreadingKind, UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto,
-    WeftPlanDto, YarnEstimateDto,
+    ColorDto, DraftDto, DriveDto, RenderOptionsDto, RetainedEntryDto, RetainedSectionDto,
+    SeverityKind, ShedKind, StructureFamily, ThreadingKind, UnitKind, ValidationIssueDto,
+    WarpPlanDto, WeftEstimateDto, WeftPlanDto, YarnEstimateDto,
 };
 
 /// Serialize an editor `DraftDto` back to WIF text. Takes the mirrored DTO (not an opaque
 /// handle), so the editor's Save path can re-serialize the live document. `Err` if the DTO
 /// fails to convert back to a `Draft` (e.g. malformed ids); WIF writing itself is infallible.
 ///
-/// NOTE: `write` is lossy at the WIF header (thickness/spacing/unknown sections are dropped) —
-/// the M2 editor keeps the original WIF verbatim until a structural edit dirties it, then
-/// re-serializes via this and warns. See `docs/WIF_MAPPING.md`.
+/// NOTE: `write` re-serializes from the model, so it normalizes formatting and DROPS source
+/// comments — but it no longer drops DATA: modeled sections, per-thread thickness (M4), and
+/// unmodeled sections kept verbatim in `retained` (M3) all round-trip. The editor still keeps the
+/// original WIF verbatim until a structural edit dirties it, then re-serializes via this. See
+/// `docs/WIF_MAPPING.md`.
 pub fn write_wif(dto: DraftDto) -> Result<String, String> {
     let draft = Draft::try_from(dto)?;
     Ok(weave::wif::write(&draft))
@@ -70,9 +72,17 @@ pub fn parse_wif_dto(text: String) -> Result<DraftDto, String> {
 /// Render an editor `DraftDto` to an RGBA preview. Takes the DTO BY VALUE but, because it is
 /// a mirrored value (not an opaque handle), the Dart caller may render the SAME `DraftDto`
 /// repeatedly with no use-after-free — the M1 single-use trap is gone by construction.
-pub fn render_preview_dto(dto: DraftDto, cell_px: u32) -> Result<PreviewImage, String> {
+///
+/// `options` carries the optional drawdown overlays (gridlines, long-float highlight); pass `None`
+/// (the library/thumbnail path) for a plain cloth, byte-identical to the pre-overlay render.
+pub fn render_preview_dto(
+    dto: DraftDto,
+    cell_px: u32,
+    options: Option<RenderOptionsDto>,
+) -> Result<PreviewImage, String> {
     let draft = Draft::try_from(dto)?;
-    let img = weave::render_rgba(&draft, cell_px);
+    let opts = options.map(Into::into).unwrap_or_default();
+    let img = weave::render_rgba_with(&draft, cell_px, &opts);
     Ok(PreviewImage { width: img.width, height: img.height, rgba: img.pixels })
 }
 

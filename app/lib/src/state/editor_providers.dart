@@ -59,6 +59,19 @@ const List<int> zoomCellLevels = [8, 12, 16, 24, 32, 48];
 /// The on-screen pixels-per-cell (the shared grid pitch). Stepped through [zoomCellLevels].
 final zoomCellProvider = StateProvider<int>((ref) => 16);
 
+/// Whether the live drawdown draws cell-boundary gridlines. Ephemeral VIEW CHROME (like
+/// [zoomCellProvider]): it changes only how the cloth is rasterized for display, never the document,
+/// so it stays off [DraftEditorNotifier]'s state and never touches undo/dedup. Default off.
+final showGridlinesProvider = StateProvider<bool>((ref) => false);
+
+/// Whether the live drawdown highlights snag-prone long floats (runs of [kLongFloatThreshold]+
+/// same-face cells). Ephemeral view chrome, same rationale as [showGridlinesProvider]. Default off.
+final highlightFloatsProvider = StateProvider<bool>((ref) => false);
+
+/// The float length (in cells) at/above which [highlightFloatsProvider] tints a float. A pragmatic
+/// default for "long enough to snag"; not user-tunable in this milestone.
+const int kLongFloatThreshold = 5;
+
 /// The live drawdown image for the draft currently held by [draftEditorProvider]. Re-renders on
 /// every edit (the engine recompute is microseconds) and decodes the RGBA buffer to a [ui.Image].
 ///
@@ -81,13 +94,22 @@ class PreviewController extends AutoDisposeAsyncNotifier<ui.Image> {
   Future<ui.Image> build() async {
     final repo = ref.watch(repositoryProvider);
     final draft = ref.watch(draftEditorProvider.select((s) => s.draft));
+    // Overlay toggles are view chrome: watching them re-renders the cloth on toggle WITHOUT touching
+    // the document (so undo/validation never fire). A no-op recompute is microseconds.
+    final gridlines = ref.watch(showGridlinesProvider);
+    final highlightFloats = ref.watch(highlightFloatsProvider);
     final mySeq = ++_seq;
     // The FFI render is un-cancellable, so it can resolve after the provider is disposed
     // (navigate away mid-render). Track that so we free the orphaned image instead of leaking it.
     var disposed = false;
     ref.onDispose(() => disposed = true);
 
-    final image = await repo.renderDto(draft, cellPx: previewCellPx);
+    final image = await repo.renderDto(
+      draft,
+      cellPx: previewCellPx,
+      gridlines: gridlines,
+      floatThreshold: highlightFloats ? kLongFloatThreshold : 0,
+    );
 
     if (disposed || mySeq != _seq) {
       // Either the provider was torn down while we rendered, or a newer edit superseded us. Both

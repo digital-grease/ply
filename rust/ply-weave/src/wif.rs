@@ -191,11 +191,17 @@ pub fn parse(text: &str) -> Result<Draft> {
 
     let notes = ini.section("NOTES").map(parse_notes).unwrap_or_default();
 
-    // Retain every section Ply does NOT model, verbatim, so `write` can re-emit it (thickness,
-    // spacing, vendor sections). Section names are already uppercased by the Ini reader.
+    // Per-thread thickness (relative). `[WARP/WEFT THICKNESS]` carries `index=value`; an absent
+    // section stays EMPTY (the "uniform grid" convention) so equal-thickness drafts render plainly.
+    let warp_thickness = thickness_for(ini.section("WARP THICKNESS"), threading.ends());
+    let weft_thickness = thickness_for(ini.section("WEFT THICKNESS"), drive.picks());
+
+    // Retain every section Ply does NOT model, verbatim, so `write` can re-emit it (spacing,
+    // vendor sections). Section names are already uppercased by the Ini reader.
     const MODELED: &[&str] = &[
         "WIF", "TEXT", "CONTENTS", "WEAVING", "WARP", "WEFT", "COLOR TABLE", "COLOR PALETTE",
         "THREADING", "TIEUP", "TREADLING", "LIFTPLAN", "WARP COLORS", "WEFT COLORS", "NOTES",
+        "WARP THICKNESS", "WEFT THICKNESS",
     ];
     let retained = ini
         .sections
@@ -208,7 +214,45 @@ pub fn parse(text: &str) -> Result<Draft> {
         return Err(WeaveError::WifParse("no recognizable draft data (missing WEAVING/THREADING)".into()));
     }
 
-    Ok(Draft { name, shafts, treadles, shed, unit, threading, drive, colors, notes, retained })
+    Ok(Draft {
+        name,
+        shafts,
+        treadles,
+        shed,
+        unit,
+        threading,
+        drive,
+        colors,
+        warp_thickness,
+        weft_thickness,
+        notes,
+        retained,
+    })
+}
+
+/// Parse a per-thread `[WARP/WEFT THICKNESS]` section (`index=value`) into a length-`n` `Vec<f32>`.
+/// Returns EMPTY when the section is absent so the "all-default uniform" convention survives. A
+/// thread missing from a present section defaults to the smallest specified value (so it renders at
+/// the base width) rather than a fixed 1.0 that could dwarf real unit-based thickness values.
+fn thickness_for(section: Option<&Section>, n: usize) -> Vec<f32> {
+    let Some(s) = section else {
+        return Vec::new();
+    };
+    let mut vals: Vec<Option<f32>> = vec![None; n];
+    for (k, v) in &s.entries {
+        if let Ok(i) = k.parse::<usize>() {
+            if (1..=n).contains(&i) {
+                if let Ok(t) = v.trim().parse::<f32>() {
+                    if t.is_finite() && t > 0.0 {
+                        vals[i - 1] = Some(t);
+                    }
+                }
+            }
+        }
+    }
+    let fallback = vals.iter().filter_map(|&x| x).fold(f32::INFINITY, f32::min);
+    let fallback = if fallback.is_finite() { fallback } else { 1.0 };
+    vals.into_iter().map(|x| x.unwrap_or(fallback)).collect()
 }
 
 fn parse_color_table(section: &Section, range: u32) -> Vec<Color> {
@@ -320,6 +364,12 @@ pub fn write(draft: &Draft) -> String {
     }
     line!("WARP COLORS=true");
     line!("WEFT COLORS=true");
+    if !draft.warp_thickness.is_empty() {
+        line!("WARP THICKNESS=true");
+    }
+    if !draft.weft_thickness.is_empty() {
+        line!("WEFT THICKNESS=true");
+    }
     for sec in &draft.retained {
         line!("{}=true", sec.name);
     }
@@ -397,7 +447,24 @@ pub fn write(draft: &Draft) -> String {
         line!("{}={}", i + 1, c + 1);
     }
 
-    // Re-emit unmodeled sections kept verbatim on import (thickness, spacing, vendor sections), so a
+    // Per-thread thickness (modeled): emit `index=value` only when set. `{}` on an f32 drops a
+    // trailing `.0` (10.0 -> "10"), so the values round-trip stably through `thickness_for`.
+    if !draft.warp_thickness.is_empty() {
+        line!("");
+        line!("[WARP THICKNESS]");
+        for (i, t) in draft.warp_thickness.iter().enumerate() {
+            line!("{}={}", i + 1, t);
+        }
+    }
+    if !draft.weft_thickness.is_empty() {
+        line!("");
+        line!("[WEFT THICKNESS]");
+        for (i, t) in draft.weft_thickness.iter().enumerate() {
+            line!("{}={}", i + 1, t);
+        }
+    }
+
+    // Re-emit unmodeled sections kept verbatim on import (spacing, vendor sections), so a
     // structurally-edited re-serialize is no longer lossy for them. (A resize already dropped any
     // per-thread section whose axis changed — see `Draft::resized`.)
     for sec in &draft.retained {
@@ -563,16 +630,17 @@ Threads=4
 
     const RETAIN_WIF: &str = "[WEAVING]\nShafts=2\nTreadles=2\n[WARP]\nThreads=2\n\
         [WEFT]\nThreads=2\n[THREADING]\n1=1\n2=2\n[TIEUP]\n1=1\n2=2\n[TREADLING]\n1=1\n2=2\n\
-        [WARP THICKNESS]\n1=10\n2=10\n[ACME VENDOR]\nFoo=Bar\n";
+        [WARP SPACING]\n1=10\n2=10\n[ACME VENDOR]\nFoo=Bar\n";
 
-    /// M3 2.3: an unmodeled per-thread section (`[WARP THICKNESS]`) and an unknown vendor section are
+    /// M3 2.3: an unmodeled per-thread section (`[WARP SPACING]`) and an unknown vendor section are
     /// retained verbatim and re-emitted by `write`, so a re-serialize is no longer lossy for them.
+    /// (Thickness is now modeled, so spacing stands in as the still-unmodeled per-thread example.)
     #[test]
     fn unmodeled_sections_survive_wif_roundtrip() {
         let d = parse(RETAIN_WIF).unwrap();
         assert_eq!(d.retained.len(), 2);
         let text = write(&d);
-        assert!(text.contains("[WARP THICKNESS]") && text.contains("[ACME VENDOR]"));
+        assert!(text.contains("[WARP SPACING]") && text.contains("[ACME VENDOR]"));
         assert!(text.contains("Foo=Bar"));
         assert_eq!(parse(&text).unwrap().retained, d.retained); // round-trips
     }
@@ -584,8 +652,39 @@ Threads=4
         let d = parse(RETAIN_WIF).unwrap();
         let r = d.resized(3, d.picks(), d.shafts, d.treadles); // grow ends 2 -> 3
         let names: Vec<&str> = r.retained.iter().map(|s| s.name.as_str()).collect();
-        assert!(!names.contains(&"WARP THICKNESS"), "stale per-thread warp section dropped");
+        assert!(!names.contains(&"WARP SPACING"), "stale per-thread warp section dropped");
         assert!(names.contains(&"ACME VENDOR"), "global vendor section kept");
+    }
+
+    /// M4 4.1: per-thread `[WARP/WEFT THICKNESS]` parse into the modeled fields (NOT `retained`),
+    /// survive write -> parse, and a thread missing from a present section defaults to the smallest
+    /// specified value (so it renders at base width, never dwarfing real unit-based values).
+    #[test]
+    fn thickness_parses_modeled_and_round_trips() {
+        let wif = "[WEAVING]\nShafts=2\nTreadles=2\n[WARP]\nThreads=3\n[WEFT]\nThreads=2\n\
+                   [THREADING]\n1=1\n2=2\n3=1\n[TIEUP]\n1=1\n2=2\n[TREADLING]\n1=1\n2=2\n\
+                   [WARP THICKNESS]\n1=1\n2=3\n[WEFT THICKNESS]\n1=2\n2=2\n";
+        let d = parse(wif).unwrap();
+        // Modeled, not retained.
+        assert!(d.retained.is_empty(), "thickness is modeled, not stuffed into retained");
+        // End 3 is absent from [WARP THICKNESS] -> defaults to the smallest present value (1).
+        assert_eq!(d.warp_thickness, vec![1.0, 3.0, 1.0]);
+        assert_eq!(d.weft_thickness, vec![2.0, 2.0]);
+        // Round-trips through write -> parse.
+        let rt = parse(&write(&d)).unwrap();
+        assert_eq!(rt.warp_thickness, d.warp_thickness);
+        assert_eq!(rt.weft_thickness, d.weft_thickness);
+        assert!(write(&d).contains("[WARP THICKNESS]") && write(&d).contains("[WEFT THICKNESS]"));
+    }
+
+    /// A draft with no thickness sections keeps the EMPTY "uniform" convention (no 1.0 vectors
+    /// materialized) and writes no `[*THICKNESS]` sections.
+    #[test]
+    fn absent_thickness_stays_empty_and_writes_nothing() {
+        let d = parse(SAMPLE).unwrap();
+        assert!(d.warp_thickness.is_empty() && d.weft_thickness.is_empty());
+        let text = write(&d);
+        assert!(!text.contains("THICKNESS"));
     }
 
     /// The editor's Treadled->Liftplan convert sets the draft structurally-dirty, so the NEXT save
@@ -625,6 +724,8 @@ Threads=4
                 warp: vec![0, 0, 0, 0],
                 weft: vec![0, 0, 0, 0, 0],
             },
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             notes: String::new(),
             retained: Vec::new(),
         };

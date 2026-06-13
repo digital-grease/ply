@@ -82,6 +82,11 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                             warp,
                             weft,
                         },
+                        // Thickness is empty here (a uniform grid); its write->parse round-trip has
+                        // its own unit test, and arbitrary f32 formatting is out of scope for this
+                        // identity property.
+                        warp_thickness: Vec::new(),
+                        weft_thickness: Vec::new(),
                         notes,
                         retained: retained
                             .into_iter()

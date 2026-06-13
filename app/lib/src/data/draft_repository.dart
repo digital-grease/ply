@@ -72,8 +72,21 @@ class DraftRepository {
 
   /// Render an editor [DraftDoc] to a decoded [ui.Image] at [cellPx] pixels per
   /// intersection. The live editor calls this on every edit; recompute is microseconds.
-  Future<ui.Image> renderDto(DraftDoc doc, {required int cellPx}) async {
-    final preview = await renderPreviewDto(dto: toDto(doc), cellPx: cellPx);
+  ///
+  /// [gridlines] draws cell-boundary seams; [floatThreshold] (> 0) tints floats of that length or
+  /// more. Both default OFF — a plain cloth, byte-identical to the pre-overlay render — so the
+  /// thumbnail path keeps a clean preview while the live editor toggles overlays per view.
+  Future<ui.Image> renderDto(
+    DraftDoc doc, {
+    required int cellPx,
+    bool gridlines = false,
+    int floatThreshold = 0,
+  }) async {
+    final options = (gridlines || floatThreshold > 0)
+        ? RenderOptionsDto(gridlines: gridlines, floatThreshold: floatThreshold)
+        : null;
+    final preview =
+        await renderPreviewDto(dto: toDto(doc), cellPx: cellPx, options: options);
     return _decodePreview(preview);
   }
 
@@ -174,9 +187,11 @@ class DraftRepository {
       ),
       warpColors: List<int>.filled(ends, 0),
       weftColors: List<int>.filled(picks, weftIdx),
-      // A generated structure is a wholesale new cloth, so any unmodeled per-thread sections from
-      // the base (e.g. [WARP THICKNESS] sized to the OLD ends) no longer apply — clear them rather
-      // than carry a stale array.
+      // A generated structure is a wholesale new cloth, so any per-thread arrays from the base
+      // (thickness sized to the OLD ends/picks, or unmodeled [WARP …] retained sections) no longer
+      // apply — clear them rather than carry a stale array.
+      warpThickness: const <double>[],
+      weftThickness: const <double>[],
       retained: const <RetainedSection>[],
     );
   }
@@ -314,12 +329,13 @@ class DraftRepository {
 
   /// Save an editor [DraftDoc] as the `<id>.{wif,json,png}` triplet, dual-path.
   ///
-  /// If [sourceWif] is non-null the draft is persisted BYTE-IDENTICAL to it: the lossless path
-  /// the editor takes while the draft is only cosmetically changed. Otherwise the doc is
-  /// re-serialized via `write_wif`, which is lossy at the WIF header (thickness/spacing and
-  /// unrecognized sections are dropped, see docs/WIF_MAPPING.md). The editor chooses by passing
-  /// `sourceWif` only when its `dirtyStructural` flag is false (the "warn about loss" UI is
-  /// Phase 2.5). Returns the saved draft id.
+  /// If [sourceWif] is non-null the draft is persisted BYTE-IDENTICAL to it: the path the editor
+  /// takes while the draft is only cosmetically changed (it also preserves source comments and
+  /// exact formatting). Otherwise the doc is re-serialized via `write_wif`, which normalizes
+  /// formatting and drops source COMMENTS but preserves the data: modeled sections, per-thread
+  /// thickness (M4), and unrecognized sections kept verbatim in `retained` (M3) all round-trip (see
+  /// docs/WIF_MAPPING.md). The editor chooses the verbatim path while its `dirtyStructural` flag is
+  /// false. Returns the saved draft id.
   Future<String> saveDto(
     DraftDoc doc, {
     required DraftMeta meta,
@@ -514,6 +530,10 @@ class DraftRepository {
       ],
       warpColors: _indicesToU32(doc.warpColors),
       weftColors: _indicesToU32(doc.weftColors),
+      // Thickness is a relative f32 with no narrowing hazard (unlike ids/indices), so it maps
+      // straight across as a Float32List. Empty stays empty (the engine's "uniform grid" case).
+      warpThickness: Float32List.fromList(doc.warpThickness),
+      weftThickness: Float32List.fromList(doc.weftThickness),
       notes: doc.notes,
       retained: [
         for (final s in doc.retained)
@@ -556,6 +576,8 @@ class DraftRepository {
       ],
       warpColors: List<int>.of(dto.warpColors),
       weftColors: List<int>.of(dto.weftColors),
+      warpThickness: List<double>.of(dto.warpThickness),
+      weftThickness: List<double>.of(dto.weftThickness),
       notes: dto.notes,
       retained: [
         for (final s in dto.retained)

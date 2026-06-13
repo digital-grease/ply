@@ -247,6 +247,13 @@ pub struct Draft {
     pub threading: Threading,
     pub drive: Drive,
     pub colors: ColorPlan,
+    /// Per warp end, a relative thread thickness (1.0 = base) that drives variable-WIDTH cells in the
+    /// drawdown. EMPTY means "all default 1.0" (a uniform grid); otherwise length-coupled to `ends`
+    /// like the warp colors. Parsed from `[WARP THICKNESS]`; a resize couples its length.
+    pub warp_thickness: Vec<f32>,
+    /// Per weft pick, a relative thickness driving variable-HEIGHT cells. Empty = all 1.0. See
+    /// [`Draft::warp_thickness`].
+    pub weft_thickness: Vec<f32>,
     pub notes: String,
     /// Unmodeled WIF sections kept verbatim for round-trip fidelity (see [`RetainedSection`]).
     /// Carried through cosmetic edits; a resize drops the per-thread WARP/WEFT ones on a changing
@@ -276,6 +283,8 @@ impl Draft {
                 weft: Vec::new(),
             },
             notes: String::new(),
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             retained: Vec::new(),
         }
     }
@@ -408,6 +417,10 @@ impl Draft {
                 warp: resize_rows(&self.colors.warp, ends, || 0),
                 weft: resize_rows(&self.colors.weft, picks, || 0),
             },
+            // Per-thread thickness stays length-coupled like the colors (growing pads the default
+            // 1.0); an empty "all-default" slice stays empty rather than materializing 1.0s.
+            warp_thickness: resize_thickness(&self.warp_thickness, ends),
+            weft_thickness: resize_thickness(&self.weft_thickness, picks),
             notes: self.notes.clone(),
             retained,
         }
@@ -430,6 +443,17 @@ fn resize_rows<T: Clone>(rows: &[T], len: usize, pad: impl FnMut() -> T) -> Vec<
     let mut out: Vec<T> = rows.iter().take(len).cloned().collect();
     out.resize_with(len, pad);
     out
+}
+
+/// Resize a per-thread thickness slice, preserving the "empty == all-default 1.0" convention: an
+/// empty slice stays empty (no need to materialize a uniform grid); a set one is length-coupled,
+/// padding new threads with 1.0.
+fn resize_thickness(t: &[f32], len: usize) -> Vec<f32> {
+    if t.is_empty() {
+        Vec::new()
+    } else {
+        resize_rows(t, len, || 1.0)
+    }
 }
 
 /// Keep only shafts in `1..=shafts` (drops dangling references on a shrink).
@@ -516,6 +540,8 @@ mod tests {
                 weft: vec![1; 8],
             },
             notes: String::new(),
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             retained: Vec::new(),
         };
         assert!(validate(&d).iter().all(|i| i.severity != Severity::Error));
@@ -559,6 +585,8 @@ mod tests {
                 weft: vec![1, 0, 1],
             },
             notes: String::new(),
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             retained: Vec::new(),
         };
         let lp = d.to_liftplan_draft();
@@ -634,6 +662,8 @@ mod tests {
                 weft: vec![0, 2],
             },
             notes: String::new(),
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             retained: Vec::new(),
         };
         let removed = d.with_color_removed(2).unwrap(); // drop RED (referenced by warp[0], weft[1])
@@ -711,6 +741,8 @@ mod tests {
                 weft: vec![1, 1, 1, 1],
             },
             notes: String::new(),
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             retained: Vec::new(),
         }
     }
@@ -796,6 +828,8 @@ mod tests {
                 weft: vec![0, 0],
             },
             notes: String::new(),
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
             retained: Vec::new(),
         };
         let d = lp.resized(2, 2, 2, 0); // shafts 4 -> 2

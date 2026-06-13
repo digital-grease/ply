@@ -20,6 +20,7 @@ use ply_weave::draft::{
     TreadleId, Treadling,
 };
 use ply_weave::validate::{Severity, ValidationIssue};
+use ply_weave::RenderOptions;
 
 /// An sRGB color. No alpha — the engine/WIF `Color` is RGB only.
 pub struct ColorDto {
@@ -177,6 +178,22 @@ pub struct RetainedSectionDto {
     pub entries: Vec<RetainedEntryDto>,
 }
 
+/// Optional drawdown overlays the live editor toggles, mirroring `drawdown::RenderOptions`
+/// transparently. All-off (the `Default`) is a plain cloth render, byte-identical to the no-options
+/// path — so the thumbnail/library render simply omits this.
+pub struct RenderOptionsDto {
+    /// Draw a 1px seam between cells so the structure reads as a grid.
+    pub gridlines: bool,
+    /// Tint floats spanning this many cells OR MORE (warp or weft). 0 disables the cue.
+    pub float_threshold: u32,
+}
+
+impl From<RenderOptionsDto> for RenderOptions {
+    fn from(d: RenderOptionsDto) -> Self {
+        RenderOptions { gridlines: d.gridlines, float_threshold: d.float_threshold }
+    }
+}
+
 /// The whole editable document, mirrored transparently for the Dart editor.
 pub struct DraftDto {
     pub name: String,
@@ -192,6 +209,11 @@ pub struct DraftDto {
     pub warp_colors: Vec<u32>,
     /// Per pick, a 0-based index into `palette`.
     pub weft_colors: Vec<u32>,
+    /// Per warp end, a relative thread thickness (1.0 = base) driving variable-width drawdown cells.
+    /// EMPTY means "all default 1.0" (a uniform grid); otherwise length-coupled to the ends.
+    pub warp_thickness: Vec<f32>,
+    /// Per pick, a relative thickness driving variable-height cells. Empty = all 1.0.
+    pub weft_thickness: Vec<f32>,
     pub notes: String,
     /// Unmodeled WIF sections kept verbatim (see [`RetainedSectionDto`]).
     pub retained: Vec<RetainedSectionDto>,
@@ -258,6 +280,8 @@ impl From<&Draft> for DraftDto {
                 .collect(),
             warp_colors: d.colors.warp.iter().map(|&i| i as u32).collect(),
             weft_colors: d.colors.weft.iter().map(|&i| i as u32).collect(),
+            warp_thickness: d.warp_thickness.clone(),
+            weft_thickness: d.weft_thickness.clone(),
             notes: d.notes.clone(),
             retained: d
                 .retained
@@ -306,6 +330,8 @@ impl TryFrom<DraftDto> for Draft {
                 warp: dto.warp_colors.iter().map(|&i| i as usize).collect(),
                 weft: dto.weft_colors.iter().map(|&i| i as usize).collect(),
             },
+            warp_thickness: dto.warp_thickness,
+            weft_thickness: dto.weft_thickness,
             notes: dto.notes,
             retained: dto
                 .retained
@@ -355,12 +381,17 @@ mod tests {
                 warp: vec![0, 0],
                 weft: vec![1, 1],
             },
+            // Non-default per-thread thickness must survive the DTO round-trip (Draft's PartialEq
+            // includes these, so assert_roundtrip fails if the DTO drops or truncates them).
+            warp_thickness: vec![1.0, 2.0],
+            weft_thickness: vec![1.5, 1.0],
             notes: "n".into(),
             // A retained unmodeled section must survive the DTO round-trip too (Draft's PartialEq
-            // includes `retained`, so assert_roundtrip fails if the DTO drops it).
+            // includes `retained`, so assert_roundtrip fails if the DTO drops it). `[WARP THICKNESS]`
+            // is modeled now, so use a vendor section as the unmodeled example.
             retained: vec![RetainedSection {
-                name: "WARP THICKNESS".into(),
-                entries: vec![("1".into(), "10".into()), ("2".into(), "10".into())],
+                name: "ACME VENDOR".into(),
+                entries: vec![("Foo".into(), "Bar".into())],
             }],
         };
         assert_roundtrip(&d);

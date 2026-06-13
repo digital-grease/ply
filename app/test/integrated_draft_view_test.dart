@@ -21,7 +21,13 @@ import 'package:ply/src/widgets/integrated_draft_view.dart';
 
 class FakeRepo extends DraftRepository {
   @override
-  Future<ui.Image> renderDto(DraftDoc doc, {required int cellPx}) => _stubImage();
+  Future<ui.Image> renderDto(
+    DraftDoc doc, {
+    required int cellPx,
+    bool gridlines = false,
+    int floatThreshold = 0,
+  }) =>
+      _stubImage();
 
   /// Builds a real grown/shrunk doc at the requested dims (empty cells) so a grow makes the
   /// integrated grids appear. The engine's prune/pad is cargo-tested; here we only need the

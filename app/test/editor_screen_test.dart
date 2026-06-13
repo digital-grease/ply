@@ -86,7 +86,13 @@ class FakeRepo extends DraftRepository {
   }
 
   @override
-  Future<ui.Image> renderDto(DraftDoc doc, {required int cellPx}) => _stubImage();
+  Future<ui.Image> renderDto(
+    DraftDoc doc, {
+    required int cellPx,
+    bool gridlines = false,
+    int floatThreshold = 0,
+  }) =>
+      _stubImage();
 
   @override
   Future<String> saveDto(

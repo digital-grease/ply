@@ -29,7 +29,12 @@ class FakeLibraryRepo extends DraftRepository {
   Future<List<DraftIssue>> validateDto(DraftDoc doc) async => const [];
 
   @override
-  Future<ui.Image> renderDto(DraftDoc doc, {required int cellPx}) {
+  Future<ui.Image> renderDto(
+    DraftDoc doc, {
+    required int cellPx,
+    bool gridlines = false,
+    int floatThreshold = 0,
+  }) {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
       Uint8List.fromList(const [0, 0, 0, 255]),
