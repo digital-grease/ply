@@ -452,6 +452,15 @@ class DraftRepository {
       warpColors: _indicesToU32(doc.warpColors),
       weftColors: _indicesToU32(doc.weftColors),
       notes: doc.notes,
+      retained: [
+        for (final s in doc.retained)
+          RetainedSectionDto(
+            name: s.name,
+            entries: [
+              for (final e in s.entries) RetainedEntryDto(key: e.key, value: e.value),
+            ],
+          ),
+      ],
     );
   }
 
@@ -485,6 +494,13 @@ class DraftRepository {
       warpColors: List<int>.of(dto.warpColors),
       weftColors: List<int>.of(dto.weftColors),
       notes: dto.notes,
+      retained: [
+        for (final s in dto.retained)
+          RetainedSection(
+            s.name,
+            [for (final e in s.entries) RetainedEntry(e.key, e.value)],
+          ),
+      ],
     );
   }
 

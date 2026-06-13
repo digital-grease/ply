@@ -107,6 +107,39 @@ void main() {
       expect(back.warpColors, equals([0, 1, 2, 0]));
       expect(back.weftColors, equals([2, 1, 0, 1]));
     });
+
+    test('retained unmodeled sections round-trip through the mapping (cross-FFI passthrough)', () {
+      final d = treadledFixture().copyWith(retained: [
+        RetainedSection(
+            'WARP THICKNESS', const [RetainedEntry('1', '10'), RetainedEntry('2', '10')]),
+        RetainedSection('ACME VENDOR', const [RetainedEntry('Foo', 'Bar')]),
+      ]);
+      final back = repo.fromDto(repo.toDto(d));
+      expect(back, equals(d), reason: 'retained sections survive toDto -> fromDto');
+      expect(back.retained.map((s) => s.name), ['WARP THICKNESS', 'ACME VENDOR']);
+      expect(back.retained[0].entries, equals(d.retained[0].entries));
+    });
+  });
+
+  group('retained deep equality', () {
+    test('retained participates in DraftDoc deep ==/hashCode', () {
+      final base = treadledFixture();
+      final a = base.copyWith(retained: [
+        RetainedSection('X', const [RetainedEntry('a', 'b')]),
+      ]);
+      // DISTINCT instances, equal content -> deep-equal docs (the undo-snapshot contract).
+      final b = base.copyWith(retained: [
+        RetainedSection('X', const [RetainedEntry('a', 'b')]),
+      ]);
+      expect(a == base, isFalse, reason: 'a retained section makes it differ from the bare doc');
+      expect(a == b, isTrue, reason: 'equal retained content -> equal docs');
+      expect(a.hashCode, b.hashCode);
+      // A differing entry value breaks equality.
+      final c = base.copyWith(retained: [
+        RetainedSection('X', const [RetainedEntry('a', 'DIFFERENT')]),
+      ]);
+      expect(a == c, isFalse);
+    });
   });
 
   group('toDto color-channel clamping (wire is u8)', () {

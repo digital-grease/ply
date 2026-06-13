@@ -325,8 +325,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Save changes?'),
         content: const Text(
-          'Saving your edits rewrites the pattern file. Yarn thickness, spacing, and any '
-          'sections of the original import that Ply does not yet understand are not kept.',
+          'Saving your edits rewrites the pattern file. Notes, colors, and any sections Ply '
+          "doesn't edit are kept — but RESIZING the draft drops its original per-thread yarn "
+          "thickness and spacing, and file comments and exact formatting aren't preserved.",
         ),
         actions: [
           TextButton(

@@ -83,6 +83,19 @@ fn parse_indexed_lists(section: &Section, count_hint: usize) -> Vec<Vec<u16>> {
     out
 }
 
+/// Read a `[NOTES]` section. WIF stores free text as numbered lines (`1=first`, `2=second`);
+/// collect them in numeric-key order and join with newlines. Comma-SAFE (unlike
+/// `parse_indexed_lists`), so a note containing commas survives.
+fn parse_notes(section: &Section) -> String {
+    let mut lines: Vec<(usize, &str)> = section
+        .entries
+        .iter()
+        .filter_map(|(k, v)| k.parse::<usize>().ok().map(|i| (i, v.as_str())))
+        .collect();
+    lines.sort_by_key(|(i, _)| *i);
+    lines.into_iter().map(|(_, v)| v).collect::<Vec<_>>().join("\n")
+}
+
 // ---------------------------------------------------------------------------
 // Import
 // ---------------------------------------------------------------------------
@@ -148,8 +161,18 @@ pub fn parse(text: &str) -> Result<Draft> {
         Drive::Treadled { tieup, treadling }
     };
 
-    // Colors
-    let palette = ini.section("COLOR TABLE").map(parse_color_table).unwrap_or_default();
+    // Colors. `[COLOR PALETTE] Range` (default 255) sets the color-table component scale; scale to
+    // the model's 0..=255 so a non-standard range (e.g. 0..999) keeps its colors instead of clipping.
+    let palette_range = ini
+        .section("COLOR PALETTE")
+        .and_then(|s| s.get("Range"))
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|&r| r > 0)
+        .unwrap_or(255);
+    let palette = ini
+        .section("COLOR TABLE")
+        .map(|s| parse_color_table(s, palette_range))
+        .unwrap_or_default();
     let warp_default = warp_sec.and_then(|s| s.get("Color")).and_then(parse_color_ref);
     let weft_default = weft_sec.and_then(|s| s.get("Color")).and_then(parse_color_ref);
     let warp_colors = colors_for(ini.section("WARP COLORS"), threading.ends(), warp_default);
@@ -162,26 +185,50 @@ pub fn parse(text: &str) -> Result<Draft> {
         .unwrap_or("Untitled")
         .to_string();
 
+    let notes = ini.section("NOTES").map(parse_notes).unwrap_or_default();
+
+    // Retain every section Ply does NOT model, verbatim, so `write` can re-emit it (thickness,
+    // spacing, vendor sections). Section names are already uppercased by the Ini reader.
+    const MODELED: &[&str] = &[
+        "WIF", "TEXT", "CONTENTS", "WEAVING", "WARP", "WEFT", "COLOR TABLE", "COLOR PALETTE",
+        "THREADING", "TIEUP", "TREADLING", "LIFTPLAN", "WARP COLORS", "WEFT COLORS", "NOTES",
+    ];
+    let retained = ini
+        .sections
+        .iter()
+        .filter(|s| !MODELED.contains(&s.name.as_str()))
+        .map(|s| RetainedSection { name: s.name.clone(), entries: s.entries.clone() })
+        .collect();
+
     if shafts == 0 && threading.ends() == 0 {
         return Err(WeaveError::WifParse("no recognizable draft data (missing WEAVING/THREADING)".into()));
     }
 
-    Ok(Draft { name, shafts, treadles, shed, unit, threading, drive, colors, notes: String::new() })
+    Ok(Draft { name, shafts, treadles, shed, unit, threading, drive, colors, notes, retained })
 }
 
-fn parse_color_table(section: &Section) -> Vec<Color> {
-    // WIF color indices are 1-based; palette[0] corresponds to WIF index 1.
-    // NOTE: assumes a 0..255 palette range; non-standard ranges (e.g. 0..999) are TODO.
+fn parse_color_table(section: &Section, range: u32) -> Vec<Color> {
+    // WIF color indices are 1-based; palette[0] corresponds to WIF index 1. Components are in
+    // 0..=`range` (from `[COLOR PALETTE] Range`, default 255) and are scaled to the model's 0..=255.
     parse_indexed_lists(section, 0)
         .into_iter()
         .map(|rgb| {
             if rgb.len() >= 3 {
-                Color::rgb(rgb[0].min(255) as u8, rgb[1].min(255) as u8, rgb[2].min(255) as u8)
+                Color::rgb(scale8(rgb[0], range), scale8(rgb[1], range), scale8(rgb[2], range))
             } else {
                 Color::WHITE
             }
         })
         .collect()
+}
+
+/// Scale a `0..=range` color component into the model's `0..=255`, rounded. `range == 255` (or a
+/// degenerate 0) is identity, so standard files are byte-for-byte unchanged.
+fn scale8(v: u16, range: u32) -> u8 {
+    if range == 255 || range == 0 {
+        return v.min(255) as u8;
+    }
+    (((v as u32) * 255 + range / 2) / range).min(255) as u8
 }
 
 /// A `Color=` value in WARP/WEFT is a 1-based palette index; convert to 0-based.
@@ -238,6 +285,15 @@ pub fn write(draft: &Draft) -> String {
         line!("");
     }
 
+    // Free-form notes round-trip as numbered `[NOTES]` lines (skip when empty, like Title).
+    if !draft.notes.is_empty() {
+        line!("[NOTES]");
+        for (i, l) in draft.notes.split('\n').enumerate() {
+            line!("{}={}", i + 1, l);
+        }
+        line!("");
+    }
+
     line!("[CONTENTS]");
     line!("COLOR TABLE=true");
     line!("WEAVING=true");
@@ -267,6 +323,15 @@ pub fn write(draft: &Draft) -> String {
     line!("[WEFT]");
     line!("Threads={}", draft.picks());
     line!("Units={}", unit);
+    line!("");
+
+    // Declare the palette encoding explicitly so the file is self-describing: Ply's model is RGB
+    // 0..=255, so a re-export normalizes any imported non-standard Range to 255 (the colors are
+    // already scaled into 0..=255). Standard files are unaffected (Range was 255 to begin with).
+    line!("[COLOR PALETTE]");
+    line!("Entries={}", draft.colors.palette.len());
+    line!("Form=RGB");
+    line!("Range=255");
     line!("");
 
     line!("[COLOR TABLE]");
@@ -315,6 +380,17 @@ pub fn write(draft: &Draft) -> String {
     line!("[WEFT COLORS]");
     for (i, c) in draft.colors.weft.iter().enumerate() {
         line!("{}={}", i + 1, c + 1);
+    }
+
+    // Re-emit unmodeled sections kept verbatim on import (thickness, spacing, vendor sections), so a
+    // structurally-edited re-serialize is no longer lossy for them. (A resize already dropped any
+    // per-thread section whose axis changed — see `Draft::resized`.)
+    for sec in &draft.retained {
+        line!("");
+        line!("[{}]", sec.name);
+        for (k, v) in &sec.entries {
+            line!("{}={}", k, v);
+        }
     }
 
     o
@@ -428,6 +504,66 @@ Threads=4
         assert_eq!(parse(&text).unwrap().name, "Untitled");
     }
 
+    /// M3 2.1: multi-line `[NOTES]` (comma-bearing) survive write -> parse; before, `parse` hard-set
+    /// notes to "" and `write` emitted nothing.
+    #[test]
+    fn notes_survive_wif_roundtrip() {
+        let mut d = parse(SAMPLE).unwrap();
+        d.notes = "Line one, with a comma.\nLine two.".into();
+        let text = write(&d);
+        assert!(text.contains("[NOTES]"));
+        assert_eq!(parse(&text).unwrap().notes, "Line one, with a comma.\nLine two.");
+    }
+
+    /// Empty notes write no `[NOTES]` section (like an empty Title).
+    #[test]
+    fn empty_notes_writes_no_notes_section() {
+        let d = parse(SAMPLE).unwrap(); // SAMPLE has no [NOTES]
+        assert_eq!(d.notes, "");
+        assert!(!write(&d).contains("[NOTES]"));
+    }
+
+    /// M3 2.2: a non-default `[COLOR PALETTE] Range` scales the color table into the model's 0..=255
+    /// instead of clipping; a re-export normalizes to Range=255 and the colors survive a round-trip.
+    #[test]
+    fn non_default_palette_range_scales_to_0_255() {
+        let wif = "[WEAVING]\nShafts=1\nTreadles=1\n[THREADING]\n1=1\n\
+                   [COLOR PALETTE]\nRange=999\nForm=RGB\n[COLOR TABLE]\n1=999,0,500\n";
+        let d = parse(wif).unwrap();
+        let c = d.colors.palette[0];
+        assert_eq!((c.r, c.g, c.b), (255, 0, 128)); // 999->255, 0->0, round(500/999*255)=128
+        let text = write(&d);
+        assert!(text.contains("Range=255"));
+        assert_eq!(parse(&text).unwrap().colors.palette[0], c); // colors survive the round-trip
+    }
+
+    const RETAIN_WIF: &str = "[WEAVING]\nShafts=2\nTreadles=2\n[WARP]\nThreads=2\n\
+        [WEFT]\nThreads=2\n[THREADING]\n1=1\n2=2\n[TIEUP]\n1=1\n2=2\n[TREADLING]\n1=1\n2=2\n\
+        [WARP THICKNESS]\n1=10\n2=10\n[ACME VENDOR]\nFoo=Bar\n";
+
+    /// M3 2.3: an unmodeled per-thread section (`[WARP THICKNESS]`) and an unknown vendor section are
+    /// retained verbatim and re-emitted by `write`, so a re-serialize is no longer lossy for them.
+    #[test]
+    fn unmodeled_sections_survive_wif_roundtrip() {
+        let d = parse(RETAIN_WIF).unwrap();
+        assert_eq!(d.retained.len(), 2);
+        let text = write(&d);
+        assert!(text.contains("[WARP THICKNESS]") && text.contains("[ACME VENDOR]"));
+        assert!(text.contains("Foo=Bar"));
+        assert_eq!(parse(&text).unwrap().retained, d.retained); // round-trips
+    }
+
+    /// A resize that changes the end count DROPS a per-thread `[WARP …]` section (its one-row-per-end
+    /// data would desync) but KEEPS a global vendor section.
+    #[test]
+    fn resize_drops_stale_per_thread_retained() {
+        let d = parse(RETAIN_WIF).unwrap();
+        let r = d.resized(3, d.picks(), d.shafts, d.treadles); // grow ends 2 -> 3
+        let names: Vec<&str> = r.retained.iter().map(|s| s.name.as_str()).collect();
+        assert!(!names.contains(&"WARP THICKNESS"), "stale per-thread warp section dropped");
+        assert!(names.contains(&"ACME VENDOR"), "global vendor section kept");
+    }
+
     /// The editor's Treadled->Liftplan convert sets the draft structurally-dirty, so the NEXT save
     /// re-serializes the liftplan via `write` and a later open re-`parse`s it. A liftplan pick that
     /// raises NO shaft writes as an empty/absent row, so the pick count must survive via the
@@ -466,6 +602,7 @@ Threads=4
                 weft: vec![0, 0, 0, 0, 0],
             },
             notes: String::new(),
+            retained: Vec::new(),
         };
 
         let lp = d.to_liftplan_draft();

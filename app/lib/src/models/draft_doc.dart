@@ -241,6 +241,43 @@ final class DraftLiftplan extends DraftDrive {
   String toString() => 'DraftLiftplan(${liftplan.length} picks)';
 }
 
+/// One `key=value` line of a retained (unmodeled) WIF section. Immutable, value-equal.
+class RetainedEntry {
+  const RetainedEntry(this.key, this.value);
+  final String key;
+  final String value;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RetainedEntry && key == other.key && value == other.value;
+
+  @override
+  int get hashCode => Object.hash(key, value);
+}
+
+/// A WIF `[SECTION]` Ply does not model (e.g. `[WARP THICKNESS]`, a vendor section), kept verbatim
+/// so a structural-edit re-serialize re-emits it. Mirrors `RetainedSectionDto` by MEANING (no wire
+/// import). Deeply immutable (its [entries] are sealed at construction) and value-equal, so it
+/// participates in [DraftDoc]'s deep `==`/`hashCode` and is safe on the undo stack. `name` is the
+/// section header without brackets.
+class RetainedSection {
+  RetainedSection(this.name, List<RetainedEntry> entries)
+      : entries = UnmodifiableListView(List<RetainedEntry>.of(entries));
+  final String name;
+  final List<RetainedEntry> entries;
+
+  static const ListEquality<RetainedEntry> _eq = ListEquality<RetainedEntry>();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RetainedSection && name == other.name && _eq.equals(entries, other.entries);
+
+  @override
+  int get hashCode => Object.hash(name, _eq.hash(entries));
+}
+
 /// The whole editable weaving document: the immutable spine the editor mutates via pure
 /// reducers (each returns a NEW [DraftDoc] via [copyWith]).
 ///
@@ -272,10 +309,12 @@ class DraftDoc {
     required List<int> warpColors,
     required List<int> weftColors,
     required this.notes,
+    List<RetainedSection> retained = const <RetainedSection>[],
   })  : threading = _sealRows(threading),
         palette = _sealList(palette),
         warpColors = _sealList(warpColors),
-        weftColors = _sealList(weftColors);
+        weftColors = _sealList(weftColors),
+        retained = _sealList(retained);
 
   /// Internal constructor for lists that are ALREADY sealed, so [copyWith] can reuse the
   /// unchanged fields of `this` by reference (keeping the `identical()` short-circuit alive on
@@ -294,6 +333,7 @@ class DraftDoc {
     required this.warpColors,
     required this.weftColors,
     required this.notes,
+    this.retained = const <RetainedSection>[],
   });
 
   /// A blank, structurally-valid document to start editing from scratch, mirroring the
@@ -377,6 +417,12 @@ class DraftDoc {
   /// Free-form notes; empty string when absent (mirrors the wire `String`, not an `Option`).
   final String notes;
 
+  /// Unmodeled WIF sections kept verbatim for export fidelity (thickness, spacing, vendor
+  /// sections). Carried through edits so a structural-edit re-serialize re-emits them; a resize
+  /// drops the stale per-thread ones (in the engine). Empty for a from-scratch draft. DEEPLY
+  /// IMMUTABLE; never mutate in place.
+  final List<RetainedSection> retained;
+
   /// Number of warp ends (= columns in the drawdown), defined by the threading length (the
   /// authoritative warp axis). Mirrors the engine's `ends()` so UI, reducers, and validation
   /// read one obvious source instead of recomputing `threading.length` ad hoc. Excluded from
@@ -413,6 +459,7 @@ class DraftDoc {
     List<int>? warpColors,
     List<int>? weftColors,
     String? notes,
+    List<RetainedSection>? retained,
   }) {
     return DraftDoc._sealed(
       name: name ?? this.name,
@@ -426,6 +473,7 @@ class DraftDoc {
       warpColors: warpColors == null ? this.warpColors : _sealList(warpColors),
       weftColors: weftColors == null ? this.weftColors : _sealList(weftColors),
       notes: notes ?? this.notes,
+      retained: retained == null ? this.retained : _sealList(retained),
     );
   }
 
@@ -448,7 +496,8 @@ class DraftDoc {
           _deepEq.equals(threading, other.threading) &&
           _deepEq.equals(palette, other.palette) &&
           _deepEq.equals(warpColors, other.warpColors) &&
-          _deepEq.equals(weftColors, other.weftColors);
+          _deepEq.equals(weftColors, other.weftColors) &&
+          _deepEq.equals(retained, other.retained);
 
   /// `hashCode` consistent with `==`: scalars and enums by value, `drive` by its own deep hash,
   /// and every nested list by the SAME deep hash that backs `==`. This hashes the full deep
@@ -469,6 +518,7 @@ class DraftDoc {
         _deepEq.hash(palette),
         _deepEq.hash(warpColors),
         _deepEq.hash(weftColors),
+        _deepEq.hash(retained),
       );
 
   @override

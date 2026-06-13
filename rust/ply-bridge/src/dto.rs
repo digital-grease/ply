@@ -16,7 +16,8 @@
 use ply_common::{Color, Unit};
 use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
 use ply_weave::draft::{
-    ColorPlan, Draft, Drive, Liftplan, ShaftId, ShedType, Threading, TieUp, TreadleId, Treadling,
+    ColorPlan, Draft, Drive, Liftplan, RetainedSection, ShaftId, ShedType, Threading, TieUp,
+    TreadleId, Treadling,
 };
 use ply_weave::validate::{Severity, ValidationIssue};
 
@@ -148,6 +149,20 @@ impl From<&WeftEstimate> for WeftEstimateDto {
     }
 }
 
+/// One `key=value` line of a retained (unmodeled) WIF section, mirrored transparently (frb does not
+/// mirror raw tuples cleanly, so the engine's `(String, String)` becomes this named pair).
+pub struct RetainedEntryDto {
+    pub key: String,
+    pub value: String,
+}
+
+/// An unmodeled WIF section kept verbatim, mirroring `draft::RetainedSection` for the Dart editor so
+/// it survives a structural-edit re-serialize (not just the verbatim save path).
+pub struct RetainedSectionDto {
+    pub name: String,
+    pub entries: Vec<RetainedEntryDto>,
+}
+
 /// The whole editable document, mirrored transparently for the Dart editor.
 pub struct DraftDto {
     pub name: String,
@@ -164,6 +179,8 @@ pub struct DraftDto {
     /// Per pick, a 0-based index into `palette`.
     pub weft_colors: Vec<u32>,
     pub notes: String,
+    /// Unmodeled WIF sections kept verbatim (see [`RetainedSectionDto`]).
+    pub retained: Vec<RetainedSectionDto>,
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +245,18 @@ impl From<&Draft> for DraftDto {
             warp_colors: d.colors.warp.iter().map(|&i| i as u32).collect(),
             weft_colors: d.colors.weft.iter().map(|&i| i as u32).collect(),
             notes: d.notes.clone(),
+            retained: d
+                .retained
+                .iter()
+                .map(|s| RetainedSectionDto {
+                    name: s.name.clone(),
+                    entries: s
+                        .entries
+                        .iter()
+                        .map(|(k, v)| RetainedEntryDto { key: k.clone(), value: v.clone() })
+                        .collect(),
+                })
+                .collect(),
         }
     }
 }
@@ -264,6 +293,14 @@ impl TryFrom<DraftDto> for Draft {
                 weft: dto.weft_colors.iter().map(|&i| i as usize).collect(),
             },
             notes: dto.notes,
+            retained: dto
+                .retained
+                .into_iter()
+                .map(|s| RetainedSection {
+                    name: s.name,
+                    entries: s.entries.into_iter().map(|e| (e.key, e.value)).collect(),
+                })
+                .collect(),
         })
     }
 }
@@ -305,6 +342,12 @@ mod tests {
                 weft: vec![1, 1],
             },
             notes: "n".into(),
+            // A retained unmodeled section must survive the DTO round-trip too (Draft's PartialEq
+            // includes `retained`, so assert_roundtrip fails if the DTO drops it).
+            retained: vec![RetainedSection {
+                name: "WARP THICKNESS".into(),
+                entries: vec![("1".into(), "10".into()), ("2".into(), "10".into())],
+            }],
         };
         assert_roundtrip(&d);
     }

@@ -170,6 +170,15 @@ impl ColorPlan {
     }
 }
 
+/// A WIF `[SECTION]` Ply does not model (e.g. `[WARP THICKNESS]`, a vendor section), kept verbatim
+/// on import so `write` can re-emit it — closing the lossy-save gap for sections Ply ignores. `name`
+/// is the section header without brackets; `entries` are its raw `key=value` pairs, in order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RetainedSection {
+    pub name: String,
+    pub entries: Vec<(String, String)>,
+}
+
 /// A complete weaving draft — the editable, round-trippable document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Draft {
@@ -182,6 +191,10 @@ pub struct Draft {
     pub drive: Drive,
     pub colors: ColorPlan,
     pub notes: String,
+    /// Unmodeled WIF sections kept verbatim for round-trip fidelity (see [`RetainedSection`]).
+    /// Carried through cosmetic edits; a resize drops the per-thread WARP/WEFT ones on a changing
+    /// axis (their rows would desync). Empty for a from-scratch draft.
+    pub retained: Vec<RetainedSection>,
 }
 
 impl Draft {
@@ -206,6 +219,7 @@ impl Draft {
                 weft: Vec::new(),
             },
             notes: String::new(),
+            retained: Vec::new(),
         }
     }
 
@@ -308,6 +322,22 @@ impl Draft {
             )),
         };
 
+        // Retained unmodeled sections: DROP the per-thread WARP/WEFT ones (e.g. `[WARP THICKNESS]`)
+        // whose axis count is changing — their one-row-per-thread data would desync the new count.
+        // Keep global/vendor sections and per-thread sections on an unchanged axis. Correctness over
+        // fidelity: an unprefixed per-thread section is kept (we cannot tell its axis).
+        let (old_ends, old_picks) = (self.ends(), self.picks());
+        let retained = self
+            .retained
+            .iter()
+            .filter(|s| {
+                let up = s.name.to_uppercase();
+                !((up.starts_with("WARP ") && ends != old_ends)
+                    || (up.starts_with("WEFT ") && picks != old_picks))
+            })
+            .cloned()
+            .collect();
+
         Draft {
             name: self.name.clone(),
             shafts,
@@ -322,6 +352,7 @@ impl Draft {
                 weft: resize_rows(&self.colors.weft, picks, || 0),
             },
             notes: self.notes.clone(),
+            retained,
         }
     }
 
@@ -397,6 +428,7 @@ mod tests {
                 weft: vec![1, 0, 1],
             },
             notes: String::new(),
+            retained: Vec::new(),
         };
         let lp = d.to_liftplan_draft();
         assert!(matches!(lp.drive, Drive::Liftplan(_)));
@@ -471,6 +503,7 @@ mod tests {
                 weft: vec![0, 2],
             },
             notes: String::new(),
+            retained: Vec::new(),
         };
         let removed = d.with_color_removed(2).unwrap(); // drop RED (referenced by warp[0], weft[1])
         assert_eq!(removed.colors.palette.len(), 2);
@@ -547,6 +580,7 @@ mod tests {
                 weft: vec![1, 1, 1, 1],
             },
             notes: String::new(),
+            retained: Vec::new(),
         }
     }
 
@@ -631,6 +665,7 @@ mod tests {
                 weft: vec![0, 0],
             },
             notes: String::new(),
+            retained: Vec::new(),
         };
         let d = lp.resized(2, 2, 2, 0); // shafts 4 -> 2
         if let Drive::Liftplan(l) = &d.drive {

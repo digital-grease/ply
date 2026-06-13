@@ -131,6 +131,7 @@ mod tests {
                 weft: vec![1, 1],
             },
             notes: String::new(),
+            retained: Vec::new(),
         }
     }
 

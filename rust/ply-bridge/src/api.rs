@@ -27,8 +27,8 @@ use ply_weave::{self as weave, Draft};
 // M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
-    ColorDto, DraftDto, DriveDto, SeverityKind, ShedKind, UnitKind, ValidationIssueDto,
-    WarpPlanDto, WeftEstimateDto, WeftPlanDto, YarnEstimateDto,
+    ColorDto, DraftDto, DriveDto, RetainedEntryDto, RetainedSectionDto, SeverityKind, ShedKind,
+    UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPlanDto, YarnEstimateDto,
 };
 
 /// Serialize an editor `DraftDto` back to WIF text. Takes the mirrored DTO (not an opaque
