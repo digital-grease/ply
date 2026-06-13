@@ -101,8 +101,10 @@ pub struct WeftEstimate {
 /// The take-up here is width-direction: it scales each pick's length, not the pick
 /// count. Length-direction take-up belongs to the warp estimate / `woven_length`.
 pub fn estimate_weft(plan: &WeftPlan) -> WeftEstimate {
+    // `as u32` already saturates a huge float; saturate the product too so an extreme
+    // picks-per-item * items can't overflow-panic (debug) / wrap (release).
     let picks_per_item = (plan.picks_per_unit * plan.woven_length).round() as u32;
-    let picks = picks_per_item * plan.items;
+    let picks = picks_per_item.saturating_mul(plan.items);
     let total_weft = picks as f32 * plan.width * (1.0 + plan.takeup);
     WeftEstimate { picks, total_weft }
 }

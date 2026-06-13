@@ -11,6 +11,7 @@ import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import 'palette_sheet.dart';
 import 'planning_sheet.dart';
+import 'structure_sheet.dart';
 
 class DimensionsBar extends ConsumerStatefulWidget {
   const DimensionsBar({super.key});
@@ -109,6 +110,15 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                   avatar: const Icon(Icons.calculate_outlined, size: 18),
                   label: const Text('Calculator'),
                   onPressed: () => showPlanningSheet(context),
+                ),
+              ),
+              // Generate a plain/twill/satin structure into the draft (one undo entry).
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: ActionChip(
+                  avatar: const Icon(Icons.grid_4x4, size: 18),
+                  label: const Text('Structure'),
+                  onPressed: () => showStructureSheet(context),
                 ),
               ),
               _Stepper(

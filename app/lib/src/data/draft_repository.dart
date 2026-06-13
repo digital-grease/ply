@@ -118,6 +118,69 @@ class DraftRepository {
   Future<DraftDoc> removeColorDoc(DraftDoc doc, int idx) async =>
       fromDto(await removePaletteColorDto(dto: toDto(doc), index: idx));
 
+  /// Generate a complete draft for a weave structure (Phase 3): the engine builds the tie-up
+  /// ([family] + [over]/[under]/[counter]) and threading ([threading]) sized to [ends] x [picks],
+  /// and we lay a STRAIGHT treadling over them (pick i presses treadle `(i % treadles) + 1`) so a
+  /// twill shows its diagonal. The result is derived from [base] so its palette/unit/name carry over;
+  /// warp/weft colors are reset to fit (warp -> color 0, weft -> color 1 when the palette has one).
+  /// Twill's shaft count is `over + under`; Plain/Satin use [shafts]. The editor commits the result
+  /// as one undo entry.
+  Future<DraftDoc> generateStructureDoc(
+    DraftDoc base, {
+    required StructureFamily family,
+    required ThreadingKind threading,
+    required int shafts,
+    required int over,
+    required int under,
+    required int counter,
+    required int ends,
+    required int picks,
+  }) async {
+    final effShafts = family == StructureFamily.twill ? over + under : shafts;
+    // Guard the wire fields (u16 shafts/over/under/counter, u32 ends) against silent truncation,
+    // the same THROW-don't-truncate policy the other wrappers use; the UI validators cap far below.
+    for (final (name, v) in [
+      ('shafts', effShafts),
+      ('over', over),
+      ('under', under),
+      ('counter', counter),
+    ]) {
+      if (v < 0 || v > 0xFFFF) throw RangeError.range(v, 0, 0xFFFF, name);
+    }
+    if (ends < 0 || ends > 0xFFFFFFFF) throw RangeError.range(ends, 0, 0xFFFFFFFF, 'ends');
+
+    final tieupRows = await generateTieupDto(
+      family: family,
+      shafts: effShafts,
+      over: over,
+      under: under,
+      counter: counter,
+    );
+    final threadingRows =
+        await generateThreadingDto(kind: threading, ends: ends, shafts: effShafts);
+
+    final treadles = tieupRows.length;
+    final treadling = [
+      for (var i = 0; i < picks; i++) [treadles == 0 ? 0 : (i % treadles) + 1],
+    ];
+    final weftIdx = base.palette.length > 1 ? 1 : 0;
+    return base.copyWith(
+      shafts: effShafts,
+      treadles: treadles,
+      threading: [for (final r in threadingRows) r.toList()],
+      drive: DraftTreadled(
+        tieup: [for (final r in tieupRows) r.toList()],
+        treadling: treadling,
+      ),
+      warpColors: List<int>.filled(ends, 0),
+      weftColors: List<int>.filled(picks, weftIdx),
+      // A generated structure is a wholesale new cloth, so any unmodeled per-thread sections from
+      // the base (e.g. [WARP THICKNESS] sized to the OLD ends) no longer apply — clear them rather
+      // than carry a stale array.
+      retained: const <RetainedSection>[],
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Planning calculators (Phase 5.1) — pure engine math, no draft mutation.
   // ---------------------------------------------------------------------------

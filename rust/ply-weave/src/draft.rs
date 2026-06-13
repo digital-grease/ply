@@ -44,6 +44,29 @@ impl Threading {
     pub fn ends(&self) -> usize {
         self.0.len()
     }
+
+    /// A straight draw over `ends` ends: end i threads shaft `((i-1) mod shafts) + 1`
+    /// (1, 2, …, N, 1, 2, …). The most common threading and the natural partner of a twill tie-up.
+    pub fn straight(ends: usize, shafts: u16) -> Threading {
+        let n = shafts.max(1) as usize;
+        Threading((0..ends).map(|i| vec![ShaftId((i % n) as u16 + 1)]).collect())
+    }
+
+    /// A point (zigzag) draw over `ends`: 1, 2, …, N, N-1, …, 2, 1, 2, … (period `2N - 2`), the
+    /// threading that turns a twill into a chevron / point twill.
+    pub fn point(ends: usize, shafts: u16) -> Threading {
+        let n = shafts.max(1) as usize;
+        let period = if n > 1 { 2 * (n - 1) } else { 1 };
+        Threading(
+            (0..ends)
+                .map(|i| {
+                    let p = i % period;
+                    let s = if p < n { p + 1 } else { 2 * n - p - 1 };
+                    vec![ShaftId(s as u16)]
+                })
+                .collect(),
+        )
+    }
 }
 
 /// Tie-up: for each treadle (in order), the set of shafts it is tied to.
@@ -61,6 +84,40 @@ impl TieUp {
             .get((t.0 as usize).wrapping_sub(1))
             .map(|v| v.as_slice())
             .unwrap_or(&[])
+    }
+
+    // --- Structure generators (M3) — pure constructors for common weave families. Each returns a
+    // canonical tie-up sized to the structure's natural repeat, ready to commit into a draft. ---
+
+    /// Plain weave (tabby): 2 treadles — treadle 1 raises the ODD shafts, treadle 2 the EVEN — over
+    /// `shafts` shafts, so it alternates correctly under a multi-shaft straight threading.
+    pub fn plain(shafts: u16) -> TieUp {
+        let odds = (1..=shafts).step_by(2).map(ShaftId).collect();
+        let evens = (2..=shafts).step_by(2).map(ShaftId).collect();
+        TieUp(vec![odds, evens])
+    }
+
+    /// A straight `over`/`under` twill over `over + under` shafts and the same number of treadles:
+    /// treadle i (1-based) raises `over` consecutive shafts starting at shaft i, wrapping. E.g.
+    /// `twill(2, 2)` is the classic 2/2 twill on 4 shafts (`[[1,2],[2,3],[3,4],[4,1]]`).
+    pub fn twill(over: u16, under: u16) -> TieUp {
+        // Sum in u32 so `over + under` near the u16 ceiling cannot overflow (panic in debug).
+        let n = (over as u32 + under as u32).max(1);
+        let rows = (0..n)
+            .map(|i| (0..over as u32).map(|k| ShaftId(((i + k) % n + 1) as u16)).collect())
+            .collect();
+        TieUp(rows)
+    }
+
+    /// A `shafts`-shaft satin: each treadle raises ONE shaft, stepping by `counter` (the satin move),
+    /// giving long floats. For a TRUE satin `counter` is coprime with `shafts` and not 1 or
+    /// `shafts - 1`, but any value yields a valid tie-up.
+    pub fn satin(shafts: u16, counter: u16) -> TieUp {
+        let n = shafts.max(1) as u32;
+        let rows = (0..n)
+            .map(|i| vec![ShaftId(((i * counter as u32) % n + 1) as u16)])
+            .collect();
+        TieUp(rows)
     }
 }
 
@@ -389,6 +446,80 @@ fn prune_treadles(row: Vec<TreadleId>, treadles: u16) -> Vec<TreadleId> {
 mod tests {
     use super::*;
     use crate::validate::{validate, Severity};
+
+    fn ids(rows: &[Vec<ShaftId>]) -> Vec<Vec<u16>> {
+        rows.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
+    }
+
+    #[test]
+    fn plain_tieup_alternates_odd_even() {
+        assert_eq!(ids(&TieUp::plain(2).0), vec![vec![1], vec![2]]);
+        // Multi-shaft plain raises all odds then all evens.
+        assert_eq!(ids(&TieUp::plain(4).0), vec![vec![1, 3], vec![2, 4]]);
+    }
+
+    #[test]
+    fn twill_2_2_matches_canonical_tieup() {
+        // The classic 2/2 twill on 4 shafts — the same tie-up the golden + mapping fixtures use.
+        assert_eq!(
+            ids(&TieUp::twill(2, 2).0),
+            vec![vec![1, 2], vec![2, 3], vec![3, 4], vec![4, 1]]
+        );
+        // A 1/3 twill: one shaft up, stepping diagonally.
+        assert_eq!(ids(&TieUp::twill(1, 3).0), vec![vec![1], vec![2], vec![3], vec![4]]);
+    }
+
+    #[test]
+    fn twill_does_not_overflow_at_the_u16_ceiling() {
+        // `over + under` near u16::MAX must not panic (the sum is computed in u32).
+        let t = TieUp::twill(u16::MAX, 1);
+        assert_eq!(t.treadles(), u16::MAX as usize + 1);
+    }
+
+    #[test]
+    fn satin_steps_by_the_counter() {
+        // 5-shaft satin, counter 2: shafts 1,3,5,2,4 (one per treadle).
+        assert_eq!(
+            ids(&TieUp::satin(5, 2).0),
+            vec![vec![1], vec![3], vec![5], vec![2], vec![4]]
+        );
+    }
+
+    #[test]
+    fn straight_and_point_threadings() {
+        assert_eq!(ids(&Threading::straight(5, 4).0), vec![vec![1], vec![2], vec![3], vec![4], vec![1]]);
+        // Point draw on 4 shafts over 6 ends: 1,2,3,4,3,2 (then it would repeat 1,2,…).
+        assert_eq!(
+            ids(&Threading::point(6, 4).0),
+            vec![vec![1], vec![2], vec![3], vec![4], vec![3], vec![2]]
+        );
+    }
+
+    /// A generated twill threaded straight, tied, and treadled straight `validate()`s clean — the
+    /// "Generate structure" action must produce a usable draft.
+    #[test]
+    fn generated_twill_draft_validates_clean() {
+        let d = Draft {
+            name: String::new(),
+            shafts: 4,
+            treadles: 4,
+            shed: ShedType::Rising,
+            unit: ply_common::Unit::Inches,
+            threading: Threading::straight(8, 4),
+            drive: Drive::Treadled {
+                tieup: TieUp::twill(2, 2),
+                treadling: Treadling((0..8).map(|i| vec![TreadleId((i % 4) as u16 + 1)]).collect()),
+            },
+            colors: ColorPlan {
+                palette: vec![Color::WHITE, Color::BLACK],
+                warp: vec![0; 8],
+                weft: vec![1; 8],
+            },
+            notes: String::new(),
+            retained: Vec::new(),
+        };
+        assert!(validate(&d).iter().all(|i| i.severity != Severity::Error));
+    }
 
     #[test]
     fn blank_is_valid_and_empty() {

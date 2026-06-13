@@ -28,7 +28,8 @@ use ply_weave::{self as weave, Draft};
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
     ColorDto, DraftDto, DriveDto, RetainedEntryDto, RetainedSectionDto, SeverityKind, ShedKind,
-    UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPlanDto, YarnEstimateDto,
+    StructureFamily, ThreadingKind, UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto,
+    WeftPlanDto, YarnEstimateDto,
 };
 
 /// Serialize an editor `DraftDto` back to WIF text. Takes the mirrored DTO (not an opaque
@@ -162,4 +163,32 @@ pub fn estimate_weft(plan: WeftPlan) -> WeftEstimate {
 /// `estimate_weft`, both the input and the result cross FFI as readable mirrored DTOs.
 pub fn estimate_weft_dto(plan: WeftPlanDto) -> WeftEstimateDto {
     WeftEstimateDto::from(&weave::calc::estimate_weft(&plan.into()))
+}
+
+/// Generate a tie-up for a weave-structure family (the editor's "Generate structure" action). Each
+/// inner list is the 1-based shaft(s) raised by that treadle. `over`/`under` apply to Twill,
+/// `counter` to Satin, and `shafts` to Plain/Satin (Twill's shaft count is `over + under`).
+pub fn generate_tieup_dto(
+    family: StructureFamily,
+    shafts: u16,
+    over: u16,
+    under: u16,
+    counter: u16,
+) -> Vec<Vec<u16>> {
+    let tieup = match family {
+        StructureFamily::Plain => weave::draft::TieUp::plain(shafts),
+        StructureFamily::Twill => weave::draft::TieUp::twill(over, under),
+        StructureFamily::Satin => weave::draft::TieUp::satin(shafts, counter),
+    };
+    tieup.0.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
+}
+
+/// Generate a threading (per warp end, the 1-based shaft it threads) for the chosen draw over
+/// `ends` ends and `shafts` shafts.
+pub fn generate_threading_dto(kind: ThreadingKind, ends: u32, shafts: u16) -> Vec<Vec<u16>> {
+    let threading = match kind {
+        ThreadingKind::Straight => weave::draft::Threading::straight(ends as usize, shafts),
+        ThreadingKind::Point => weave::draft::Threading::point(ends as usize, shafts),
+    };
+    threading.0.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
 }

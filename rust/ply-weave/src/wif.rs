@@ -29,7 +29,9 @@ impl Section {
         self.entries
             .iter()
             .find(|(k, _)| k.to_lowercase() == lk)
-            .map(|(_, v)| v.as_str())
+            // Values are stored RAW (so `[NOTES]` keeps a line's leading whitespace); trim on access
+            // for the numeric/keyword callers (Shafts, Range, Title, …) that expect a clean token.
+            .map(|(_, v)| v.as_str().trim())
     }
 }
 
@@ -50,7 +52,9 @@ impl Ini {
                 sections.push(Section { name, entries: Vec::new() });
             } else if let Some(eq) = line.find('=') {
                 if let Some(sec) = sections.last_mut() {
-                    sec.entries.push((line[..eq].trim().into(), line[eq + 1..].trim().into()));
+                    // Trim the KEY but keep the VALUE raw so `[NOTES]` preserves a line's leading
+                    // whitespace (the outer `line.trim()` still strips trailing whitespace).
+                    sec.entries.push((line[..eq].trim().into(), line[eq + 1..].into()));
                 }
             }
         }
@@ -294,7 +298,15 @@ pub fn write(draft: &Draft) -> String {
         line!("");
     }
 
+    // [CONTENTS] declares every section actually written, so a strict WIF reader knows what to find.
     line!("[CONTENTS]");
+    if !draft.name.is_empty() {
+        line!("TEXT=true");
+    }
+    if !draft.notes.is_empty() {
+        line!("NOTES=true");
+    }
+    line!("COLOR PALETTE=true");
     line!("COLOR TABLE=true");
     line!("WEAVING=true");
     line!("WARP=true");
@@ -308,6 +320,9 @@ pub fn write(draft: &Draft) -> String {
     }
     line!("WARP COLORS=true");
     line!("WEFT COLORS=true");
+    for sec in &draft.retained {
+        line!("{}=true", sec.name);
+    }
     line!("");
 
     line!("[WEAVING]");
@@ -513,6 +528,15 @@ Threads=4
         let text = write(&d);
         assert!(text.contains("[NOTES]"));
         assert_eq!(parse(&text).unwrap().notes, "Line one, with a comma.\nLine two.");
+    }
+
+    /// A note line's LEADING whitespace survives the round-trip (values are stored raw; only the
+    /// numeric/keyword getters trim). Trailing whitespace is normalized by the line-level trim.
+    #[test]
+    fn notes_leading_whitespace_round_trips() {
+        let mut d = parse(SAMPLE).unwrap();
+        d.notes = "  indented\nplain".into();
+        assert_eq!(parse(&write(&d)).unwrap().notes, "  indented\nplain");
     }
 
     /// Empty notes write no `[NOTES]` section (like an empty Title).

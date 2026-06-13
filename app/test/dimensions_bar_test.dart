@@ -77,6 +77,12 @@ DraftDoc fixture() => DraftDoc(
     );
 
 Future<(ProviderContainer, FakeResizeRepo)> pumpBar(WidgetTester tester) async {
+  // The bar's action chips + 4 steppers scroll horizontally in production; widen the test surface
+  // so every stepper is on-screen and tappable at a fixed offset (the row gained a Structure chip).
+  tester.view.physicalSize = const Size(1600, 600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
   final fake = FakeResizeRepo();
   final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(fake)]);
   addTearDown(c.dispose);

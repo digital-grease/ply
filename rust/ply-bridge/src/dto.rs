@@ -40,6 +40,20 @@ pub enum UnitKind {
     Centimeters,
 }
 
+/// Which weave-structure family the "Generate structure" action builds a tie-up for. Flat C-like
+/// enum so frb mirrors it as a plain Dart enum.
+pub enum StructureFamily {
+    Plain,
+    Twill,
+    Satin,
+}
+
+/// Which threading the "Generate structure" action lays down. Flat C-like enum.
+pub enum ThreadingKind {
+    Straight,
+    Point,
+}
+
 /// How the raised-shaft pattern per pick is specified. A draft is EITHER treadled OR
 /// liftplan-driven — a real sum type, never coexisting fields. All ids are 1-based `u16`.
 pub enum DriveDto {

@@ -319,6 +319,12 @@ void main() {
     // The from-scratch flow: a blank draft (0 ends, 0 picks) can't render a zero-area drawdown, so
     // the view shows a placeholder until BOTH axes are grown via the steppers. Pump the view above
     // a real DimensionsBar (like the editor screen) and drive the transition with stepper taps.
+    // Widen the surface so the DimensionsBar's scrollable chips + steppers are all on-screen (the
+    // row gained a Structure chip), keeping 'More Ends'/'More Picks' tappable at a fixed offset.
+    tester.view.physicalSize = const Size(1600, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(FakeRepo())]);
     addTearDown(c.dispose);
     c.read(zoomCellProvider.notifier).state = kCell;

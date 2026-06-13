@@ -11,6 +11,7 @@ pub mod calc;
 pub mod draft;
 pub mod drawdown;
 pub mod error;
+pub mod profile;
 pub mod validate;
 pub mod wif;
 

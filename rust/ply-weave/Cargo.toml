@@ -8,3 +8,7 @@ license.workspace = true
 serde = { workspace = true }
 thiserror = { workspace = true }
 ply-common = { workspace = true }
+
+[dev-dependencies]
+# Property-based tests / fuzzing of the WIF round-trip + parser robustness (stable toolchain).
+proptest = "1"
