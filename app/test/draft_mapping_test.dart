@@ -109,14 +109,16 @@ void main() {
     });
 
     test('retained unmodeled sections round-trip through the mapping (cross-FFI passthrough)', () {
+      // [WARP SPACING] stands in as a still-unmodeled per-thread section (thickness became a modeled
+      // field in M4, so it no longer travels via `retained`).
       final d = treadledFixture().copyWith(retained: [
         RetainedSection(
-            'WARP THICKNESS', const [RetainedEntry('1', '10'), RetainedEntry('2', '10')]),
+            'WARP SPACING', const [RetainedEntry('1', '10'), RetainedEntry('2', '10')]),
         RetainedSection('ACME VENDOR', const [RetainedEntry('Foo', 'Bar')]),
       ]);
       final back = repo.fromDto(repo.toDto(d));
       expect(back, equals(d), reason: 'retained sections survive toDto -> fromDto');
-      expect(back.retained.map((s) => s.name), ['WARP THICKNESS', 'ACME VENDOR']);
+      expect(back.retained.map((s) => s.name), ['WARP SPACING', 'ACME VENDOR']);
       expect(back.retained[0].entries, equals(d.retained[0].entries));
     });
   });

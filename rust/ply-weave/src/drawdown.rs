@@ -157,6 +157,19 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
     // Pick 0 sits at the BOTTOM, so build top edges from the bottom up: a pick's top edge is the
     // image height minus the cloth woven up to and including it.
     let h: usize = row_h.iter().sum();
+
+    // Guard the raster allocation: w/h derive from untrusted dimensions and the caller's cell_px, so
+    // `w * h * 4` can overflow `usize` (a debug panic, or a release wrap -> under-alloc -> OOB writes)
+    // or demand a petabyte buffer. Size it with CHECKED math and bail to an empty image past a cap.
+    const MAX_RASTER_BYTES: usize = 512 * 1024 * 1024; // 512 MB
+    let Some(total) = w
+        .checked_mul(h)
+        .and_then(|wh| wh.checked_mul(4))
+        .filter(|&t| t <= MAX_RASTER_BYTES)
+    else {
+        return RgbaImage { width: 0, height: 0, pixels: Vec::new() };
+    };
+
     let mut row_top = vec![0usize; dd.picks];
     let mut from_bottom = 0usize;
     for pick in 0..dd.picks {
@@ -165,7 +178,7 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
     }
 
     let mask = long_float_mask(&dd, opts.float_threshold as usize);
-    let mut px = vec![0u8; w * h * 4];
+    let mut px = vec![0u8; total];
     let palette = &draft.colors.palette;
     let color_at = |idx: ColorIndex| -> Color { palette.get(idx).copied().unwrap_or(Color::WHITE) };
 
@@ -487,5 +500,15 @@ mod tests {
         let c = center(&on);
         assert_ne!(c, [0, 0, 0], "a long float is tinted");
         assert!(c[0] > c[2], "tint is warm (more red than blue)");
+    }
+
+    /// A caller-supplied `cell_px` (the zoom pitch, untrusted at the FFI) must never overflow the
+    /// raster: `w * h * 4` would panic in debug / wrap in release. The checked size guard bails to an
+    /// empty image instead of crashing the engine.
+    #[test]
+    fn huge_cell_px_does_not_overflow_the_raster() {
+        let img = render_rgba(&plain_2x2(), u32::MAX);
+        assert_eq!((img.width, img.height), (0, 0));
+        assert!(img.pixels.is_empty());
     }
 }

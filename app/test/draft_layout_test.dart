@@ -193,4 +193,34 @@ void main() {
       }
     });
   });
+
+  group('DraftLayout.fitCellLevel (auto-fit the open pitch to the viewport)', () {
+    // Same dims as treadled(): width = (1 + ends 4 + treadles 5) = 10 cells, height = (1 + shafts 2
+    // + picks 3) = 6 cells, so totalSize at pitch S is (10S, 6S).
+    int fit(Size available) => DraftLayout.fitCellLevel(
+          ends: 4,
+          picks: 3,
+          shafts: 2,
+          treadles: 5,
+          hasTieup: true,
+          available: available,
+          levels: const [8, 12, 16, 24, 32, 48],
+        );
+
+    test('a roomy viewport picks the LARGEST level that fits', () {
+      expect(fit(const Size(1000, 1000)), 48); // 480x288 fits
+    });
+    test('a tight WIDTH binds the level', () {
+      expect(fit(const Size(200, 1000)), 16); // 16 -> 160x96 fits; 24 -> 240 wide overflows
+    });
+    test('a tight HEIGHT binds the level', () {
+      expect(fit(const Size(1000, 100)), 16); // 16 -> 96 tall fits; 24 -> 144 tall overflows
+    });
+    test('exact fit is inclusive (<=)', () {
+      expect(fit(const Size(160, 96)), 16); // 10x6 cells at pitch 16 == 160x96 exactly
+    });
+    test('falls back to the SMALLEST level when even it overflows (the draft then scrolls)', () {
+      expect(fit(const Size(50, 50)), 8); // 8 -> 80x48 overflows 50 but is the floor
+    });
+  });
 }

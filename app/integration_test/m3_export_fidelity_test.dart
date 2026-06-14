@@ -82,7 +82,7 @@ Threads=2
 [WEFT COLORS]
 1=2
 2=2
-[WARP THICKNESS]
+[WARP SPACING]
 1=10
 2=10
 [ACME VENDOR]
@@ -119,7 +119,9 @@ void main() {
       (tester) async {
     final repo = DraftRepository();
     final doc = await repo.parseDoc(kWifWithRetained);
-    expect(doc.retained.map((s) => s.name), containsAll(['WARP THICKNESS', 'ACME VENDOR']),
+    // [WARP SPACING] is a still-UNMODELED per-thread section (thickness graduated to a modeled field
+    // in M4, so it no longer rides `retained` — m4_thickness_render covers that path).
+    expect(doc.retained.map((s) => s.name), containsAll(['WARP SPACING', 'ACME VENDOR']),
         reason: 'unmodeled sections are retained on import');
 
     // STRUCTURAL edit (toggle a tie-up cell — ends/picks unchanged) then re-serialize via write_wif:
@@ -129,15 +131,15 @@ void main() {
     final id = await repo.saveDto(edited, meta: meta, sourceWif: null);
     addTearDown(() => repo.delete(id));
     final reopened = await DraftRepository().parseDoc(await repo.readWif(id));
-    expect(reopened.retained.map((s) => s.name), containsAll(['WARP THICKNESS', 'ACME VENDOR']),
+    expect(reopened.retained.map((s) => s.name), containsAll(['WARP SPACING', 'ACME VENDOR']),
         reason: 'a structural-edit re-serialize keeps the retained sections');
 
-    // RESIZE the warp 2 -> 3 ends: the per-thread [WARP THICKNESS] is now stale and is dropped; the
+    // RESIZE the warp 2 -> 3 ends: the per-thread [WARP SPACING] is now stale and is dropped; the
     // global vendor section is kept.
     final resized = await repo.resizeDoc(doc,
         ends: 3, picks: doc.picks, shafts: doc.shafts, treadles: doc.treadles);
     final names = resized.retained.map((s) => s.name).toList();
-    expect(names, isNot(contains('WARP THICKNESS')), reason: 'stale per-thread section dropped');
+    expect(names, isNot(contains('WARP SPACING')), reason: 'stale per-thread section dropped');
     expect(names, contains('ACME VENDOR'), reason: 'global vendor section kept');
   });
 }

@@ -82,6 +82,24 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     final notifier = ref.read(draftEditorProvider.notifier);
     final physics = pencil ? const NeverScrollableScrollPhysics() : null;
 
+    // Size the pitch to fill the viewport on open (one-shot per load, until the user zooms manually).
+    // A LayoutBuilder gives the TRUE bounded viewport on both axes; the scroll view's own
+    // context.size shrink-wraps its scrolling axis to content, which would defeat the fit.
+    return LayoutBuilder(builder: (context, constraints) {
+      _maybeAutoFit(dims, constraints.biggest);
+      return _canvas(layout, physics, pencil, notifier);
+    });
+  }
+
+  /// The scrollable, pannable draft canvas (threading / tie-up / drawdown / treadling + color bands)
+  /// at the shared [DraftLayout] pitch. Split out so [build] can wrap it in a LayoutBuilder for the
+  /// open-time auto-fit without nesting the whole tree a level deeper.
+  Widget _canvas(
+    DraftLayout layout,
+    ScrollPhysics? physics,
+    bool pencil,
+    DraftEditorNotifier notifier,
+  ) {
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
       physics: physics,
@@ -163,6 +181,29 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
         ),
       ),
     );
+  }
+
+  /// Size the pitch to the viewport ONCE when a draft opens (until the user zooms manually). Fed the
+  /// TRUE viewport [available] from [build]'s LayoutBuilder; the provider WRITE is deferred to a
+  /// post-frame callback (so it never writes during build), and [zoomUserSetProvider] makes it a
+  /// one-shot per load (a manual zoom or the next [_load] flips the guard). [dims] is the live
+  /// (ends, picks, shafts, treadles, hasTieup).
+  void _maybeAutoFit((int, int, int, int, bool) dims, Size available) {
+    if (ref.read(zoomUserSetProvider) || !available.isFinite || available.isEmpty) return;
+    final fit = DraftLayout.fitCellLevel(
+      ends: dims.$1,
+      picks: dims.$2,
+      shafts: dims.$3,
+      treadles: dims.$4,
+      hasTieup: dims.$5,
+      available: available,
+      levels: zoomCellLevels,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ref.read(zoomUserSetProvider)) return;
+      ref.read(zoomCellProvider.notifier).state = fit;
+      ref.read(zoomUserSetProvider.notifier).state = true; // one-shot per load
+    });
   }
 }
 

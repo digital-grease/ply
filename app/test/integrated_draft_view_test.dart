@@ -110,6 +110,9 @@ Future<ProviderContainer> pumpView(
   );
   addTearDown(c.dispose);
   c.read(zoomCellProvider.notifier).state = kCell;
+  // These interaction tests compute tap coordinates from kLayout (a FIXED pitch), so opt out of the
+  // open-time auto-fit by marking the zoom user-set.
+  c.read(zoomUserSetProvider.notifier).state = true;
   c.read(editorToolProvider.notifier).state = tool;
   c.read(draftEditorProvider.notifier).load(fixture());
   await tester.pumpWidget(
@@ -151,6 +154,7 @@ Future<ProviderContainer> pumpLiftplan(WidgetTester tester) async {
   final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(FakeRepo())]);
   addTearDown(c.dispose);
   c.read(zoomCellProvider.notifier).state = kCell;
+  c.read(zoomUserSetProvider.notifier).state = true; // opt out of auto-fit; tap math uses kLayout pitch
   c.read(draftEditorProvider.notifier).load(liftplanFixture());
   await tester.pumpWidget(
     UncontrolledProviderScope(
@@ -334,6 +338,7 @@ void main() {
     final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(FakeRepo())]);
     addTearDown(c.dispose);
     c.read(zoomCellProvider.notifier).state = kCell;
+    c.read(zoomUserSetProvider.notifier).state = true; // opt out of auto-fit (grids appear at kCell)
     c.read(draftEditorProvider.notifier).load(DraftDoc.blank()); // 0 ends, 0 picks
     await tester.pumpWidget(UncontrolledProviderScope(
       container: c,
@@ -370,5 +375,52 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('Treadling:|Liftplan:')), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('Woven cloth preview')), findsOneWidget);
     handle.dispose();
+  });
+
+  // Auto-fit: a freshly-opened draft sizes its pitch to fill the viewport (until the user zooms).
+  group('open-time auto-fit', () {
+    // A LOOSE-constrained Scaffold body at a fixed 800x600 viewport — the PRODUCTION shape, where the
+    // view's scroll axes are unbounded by the parent so its own context.size shrink-wraps to content.
+    // This is what distinguishes the LayoutBuilder viewport (correct) from a content-pinned read (the
+    // bug that made auto-fit a silent no-op): a buggy read would leave the pitch at 16, the fix -> 48.
+    Future<ProviderContainer> pumpAutoFit(
+      WidgetTester tester, {
+      required bool userSet,
+      int startCell = 16,
+    }) async {
+      tester.view.physicalSize = const Size(800, 600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final c = ProviderContainer(
+        overrides: [repositoryProvider.overrideWithValue(FakeRepo())],
+      );
+      addTearDown(c.dispose);
+      c.read(zoomCellProvider.notifier).state = startCell;
+      c.read(zoomUserSetProvider.notifier).state = userSet;
+      c.read(draftEditorProvider.notifier).load(fixture()); // 7 cells wide x 7 tall
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: const MaterialApp(home: Scaffold(body: IntegratedDraftView())),
+        ),
+      );
+      await tester.pump(); // run the post-frame auto-fit
+      await tester.pump(); // settle the resulting provider write
+      return c;
+    }
+
+    testWidgets('fills the viewport with the largest fitting level on open', (tester) async {
+      // 7-cell axes in an 800x600 viewport: pitch 48 -> 336px fits both; it is the largest level.
+      final c = await pumpAutoFit(tester, userSet: false);
+      expect(c.read(zoomCellProvider), 48);
+      expect(c.read(zoomUserSetProvider), isTrue, reason: 'auto-fit claims the guard (one-shot)');
+    });
+
+    testWidgets('a manual zoom (user-set) is never overridden by auto-fit', (tester) async {
+      final c = await pumpAutoFit(tester, userSet: true, startCell: 8);
+      expect(c.read(zoomCellProvider), 8, reason: 'auto-fit must not stomp the user pitch');
+    });
   });
 }

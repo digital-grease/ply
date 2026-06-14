@@ -115,6 +115,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // a global StateProvider, so a previous draft's "Show me"/expanded state would otherwise bleed
       // into this one.
       ref.read(editorIssuesExpandedProvider.notifier).state = false;
+      // Re-arm the open-time auto-fit so THIS draft sizes its pitch to the viewport (a prior draft's
+      // manual zoom would otherwise stick).
+      ref.read(zoomUserSetProvider.notifier).state = false;
       setState(() => _loading = false);
     } catch (e) {
       if (!mounted) return;
@@ -574,12 +577,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
-  /// Step the on-screen cell pitch up (+1) or down (-1) through [zoomCellLevels].
+  /// Step the on-screen cell pitch up (+1) or down (-1) through [zoomCellLevels]. A manual zoom
+  /// claims control of the pitch so the open-time auto-fit never overrides the user afterward.
   void _zoom(int dir) {
     final cur = ref.read(zoomCellProvider);
     final idx = zoomCellLevels.indexOf(cur);
     final next = ((idx < 0 ? 2 : idx) + dir).clamp(0, zoomCellLevels.length - 1);
     ref.read(zoomCellProvider.notifier).state = zoomCellLevels[next];
+    ref.read(zoomUserSetProvider.notifier).state = true;
   }
 
   Widget _buildBody() {

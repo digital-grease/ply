@@ -8,6 +8,8 @@
 // Errors sorted first. The band has INTRINSIC height (it is NOT inside the body's Expanded), so it
 // shrinks the drawdown viewport only when issues exist and never steals space from a clean draft.
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -106,7 +108,14 @@ class ValidationPanel extends ConsumerWidget {
   double _expandedMaxHeight(BuildContext context) {
     final h = MediaQuery.sizeOf(context).height;
     final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
-    final cap = (240.0 * scale).clamp(240.0, h * 0.5);
+    // Upper bound = half the screen (the band never eats the drawdown), but never below the 120
+    // floor: on a short LANDSCAPE phone h*0.5 can dip under the floor, which would invert the
+    // clamp range and THROW. The floor wins there — a short scrollable panel, not a crash.
+    final upper = math.max(120.0, h * 0.5);
+    // Desired cap grows with the text scale (bigger type -> more rows before scrolling), bounded
+    // into [120, upper]. The 120 floor never binds the value (240*scale >= 240 always); it only
+    // keeps the clamp range valid (lower <= upper) when a short viewport pushes `upper` below 240.
+    final cap = (240.0 * scale).clamp(120.0, upper);
     return (h * 0.25 * scale).clamp(120.0, cap);
   }
 

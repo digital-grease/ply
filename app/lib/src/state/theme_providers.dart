@@ -13,6 +13,14 @@ final appSettingsRepositoryProvider =
 /// fire-and-forget. (Defaults-first + async-swap avoids a provider write during build and a
 /// loading-flash on launch.)
 class AppSettingsNotifier extends Notifier<AppSettings> {
+  /// Set the instant the user CHANGES a setting. Guards the load-vs-mutate race: the initial
+  /// [_load] resolves the OLD persisted value, so if a real mutation lands first (the user taps
+  /// Dark on a cold start before the slow first `path_provider` channel call returns), the
+  /// in-flight load must NOT clobber it back to disk's stale value and desync the UI. It is set
+  /// ONLY on a value-changing mutation: a no-op tap (e.g. re-tapping the already-selected accent
+  /// swatch) must fall through so the persisted load still applies, not strand the user on defaults.
+  bool _userTouched = false;
+
   @override
   AppSettings build() {
     _load();
@@ -20,11 +28,13 @@ class AppSettingsNotifier extends Notifier<AppSettings> {
   }
 
   Future<void> _load() async {
-    state = await ref.read(appSettingsRepositoryProvider).load();
+    final loaded = await ref.read(appSettingsRepositoryProvider).load();
+    if (!_userTouched) state = loaded; // a mutation during the load wins; never revert it
   }
 
   void _update(AppSettings next) {
-    if (next == state) return;
+    if (next == state) return; // a no-op tap claims nothing: it must not block the in-flight load
+    _userTouched = true;
     state = next;
     ref.read(appSettingsRepositoryProvider).save(next); // persist, don't await
   }

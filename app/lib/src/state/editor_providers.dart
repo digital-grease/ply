@@ -59,6 +59,13 @@ const List<int> zoomCellLevels = [8, 12, 16, 24, 32, 48];
 /// The on-screen pixels-per-cell (the shared grid pitch). Stepped through [zoomCellLevels].
 final zoomCellProvider = StateProvider<int>((ref) => 16);
 
+/// Whether the user has taken MANUAL control of the zoom (stepped it from the AppBar). Until then the
+/// integrated view AUTO-FITS the initial pitch to the viewport on open (the largest [zoomCellLevels]
+/// step whose whole draft fills the available area); once the user zooms, auto-fit yields and never
+/// overrides their choice. Reset to false on each draft load so a freshly-opened draft re-fits.
+/// Ephemeral view chrome, off EditorState like [zoomCellProvider].
+final zoomUserSetProvider = StateProvider<bool>((ref) => false);
+
 /// Whether the live drawdown draws cell-boundary gridlines. Ephemeral VIEW CHROME (like
 /// [zoomCellProvider]): it changes only how the cloth is rasterized for display, never the document,
 /// so it stays off [DraftEditorNotifier]'s state and never touches undo/dedup. Default off.

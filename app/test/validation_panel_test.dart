@@ -97,6 +97,25 @@ void main() {
     expect(find.text('1 error, 1 warning'), findsOneWidget);
   });
 
+  testWidgets('expanded panel survives a short LANDSCAPE viewport (no inverted-clamp crash)',
+      (tester) async {
+    // Regression: _expandedMaxHeight once did `clamp(240, h*0.5)`, which THROWS when h*0.5 < 240
+    // (a landscape phone, ~360dp tall). The panel lives in the landscape editor side-rail, so an
+    // expanded band there would crash. Pump it expanded on a 720x360 view and assert no exception.
+    tester.view.physicalSize = const Size(720, 360);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final c = await pumpPanel(tester, [warn('w1'), warn('w2'), err('e1')]);
+    c.read(editorIssuesExpandedProvider.notifier).state = true;
+    await tester.pump();
+
+    expect(tester.takeException(), isNull, reason: 'no clamp ArgumentError on a short viewport');
+    // The band still renders its content (the list is bounded, not skipped).
+    expect(find.text('e1'), findsOneWidget);
+  });
+
   testWidgets('mixed issues: collapsed counts, then expand lists all with Errors first',
       (tester) async {
     final c = await pumpPanel(tester, [

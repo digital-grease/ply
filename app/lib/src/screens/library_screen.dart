@@ -369,16 +369,30 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // folded into the tile label, so a screen reader hears "Pattern <name>, button" once (not the
     // image + the name twice). The ⋮ stays a separate, reachable button (its tooltip labels it) so
     // rename/delete don't depend on a long-press gesture.
+    //
+    // The tap/long-press ACTIONS live on this outer Semantics (not the InkWell) so the label and
+    // the actions co-locate on ONE node — otherwise a screen reader gets a named-but-inert stop
+    // plus a separate unnamed actionable stop, and the `onTapHint`/`onLongPressHint` (which need an
+    // action to attach to) are silently dropped. `excludeFromSemantics` keeps the InkWell from
+    // adding a duplicate action node while it still handles sighted taps AND leaves the ⋮ its node.
     return Semantics(
+      // An explicit container so the label + button + tap/long-press actions form ONE node;
+      // explicitChildNodes keeps the ⋮ PopupMenuButton a SEPARATE reachable child node rather than
+      // merging its 'Pattern actions' label into the tile.
+      container: true,
+      explicitChildNodes: true,
       button: true,
       label: 'Pattern ${entry.meta.name}',
       onTapHint: 'open',
       onLongPressHint: 'show actions',
+      onTap: () => _open(entry),
+      onLongPress: () => _showActions(entry),
       child: Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _open(entry),
         onLongPress: () => _showActions(entry),
+        excludeFromSemantics: true,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

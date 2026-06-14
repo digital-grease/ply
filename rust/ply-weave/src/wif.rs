@@ -67,19 +67,29 @@ impl Ini {
     }
 }
 
+/// The most threads (ends/picks/treadles) a single section may declare. A guard against a malformed
+/// WIF — an attacker-controlled `Threads=` count OR a sparse high numeric key like `4000000000=1`
+/// would otherwise drive `vec![..; max]` into a multi-GB allocation that ABORTS the process (an
+/// abort `catch_unwind` can't stop). 100,000 is far past any real draft (a wide fine-sett warp runs
+/// a few thousand ends), and caps the worst-case bogus-file allocation at a few MB.
+const MAX_THREADS: usize = 100_000;
+
 /// Parse a numeric-keyed section (`1=3,5`) into a position-indexed `Vec<Vec<u16>>`
-/// (1-based keys map to 0-based slots; gaps become empty lists).
+/// (1-based keys map to 0-based slots; gaps become empty lists). Length is capped at [`MAX_THREADS`]
+/// and keys above it are ignored, so untrusted input can never request an unbounded allocation.
 fn parse_indexed_lists(section: &Section, count_hint: usize) -> Vec<Vec<u16>> {
-    let mut max = count_hint;
+    let mut max = count_hint.min(MAX_THREADS);
     for (k, _) in &section.entries {
         if let Ok(i) = k.parse::<usize>() {
-            max = max.max(i);
+            if i <= MAX_THREADS {
+                max = max.max(i);
+            }
         }
     }
     let mut out = vec![Vec::new(); max];
     for (k, v) in &section.entries {
         if let Ok(i) = k.parse::<usize>() {
-            if i >= 1 {
+            if i >= 1 && i <= max {
                 out[i - 1] = v.split(',').filter_map(|t| t.trim().parse::<u16>().ok()).collect();
             }
         }
@@ -763,5 +773,18 @@ Threads=4
         for p in 0..rt2.picks() {
             assert!(rt2.raised_shafts(p).is_empty(), "pick {p} stays empty");
         }
+    }
+
+    /// A malformed WIF must never drive an unbounded allocation: a sparse 4-billion numeric key would,
+    /// uncapped, request a ~96 GB `Vec` and ABORT the process (uncatchable). The cap drops the
+    /// out-of-range key so the draft loads (here with empty threading) instead of crashing.
+    #[test]
+    fn malformed_huge_thread_key_does_not_abort() {
+        let d = parse("[WEAVING]\nShafts=2\nTreadles=2\n[THREADING]\n4000000000=1\n").unwrap();
+        assert!(d.threading.0.len() <= MAX_THREADS, "threading length is capped, not 4e9");
+        // An in-cap key still maps to its position (no off-by-one from the cap logic).
+        let d2 = parse("[WEAVING]\nShafts=2\n[THREADING]\n5=1\n").unwrap();
+        assert_eq!(d2.threading.0.len(), 5);
+        assert_eq!(d2.threading.0[4], vec![ShaftId(1)]);
     }
 }

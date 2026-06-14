@@ -20,7 +20,7 @@ import/export is lossless for what we support.
 
 | Type | Meaning |
 |---|---|
-| `Draft` | The whole editable document: shafts, treadles, shed, unit, threading, drive, colors, notes. |
+| `Draft` | The whole editable document: shafts, treadles, shed, unit, threading, drive, colors, per-thread thickness, notes, and any retained (unmodeled) WIF sections. |
 | `ShaftId(u16)`, `TreadleId(u16)` | **1-based** newtypes. Weavers and WIF count from 1; staying 1-based avoids a class of off-by-one bugs. |
 | `Threading(Vec<Vec<ShaftId>>)` | Per warp end (in order), the shaft(s) it threads through. Empty = unthreaded (legal); usually exactly one. |
 | `TieUp(Vec<Vec<ShaftId>>)` | Per treadle, the shafts it's tied to. |
@@ -29,6 +29,8 @@ import/export is lossless for what we support.
 | `Drive` | `Treadled { tieup, treadling }` **or** `Liftplan(..)`. A draft is one or the other. |
 | `ShedType` | `Rising` or `Sinking` — which way the named shafts move. |
 | `ColorPlan` | `palette: Vec<Color>` + `warp: Vec<ColorIndex>` + `weft: Vec<ColorIndex>`. |
+| `warp_thickness`, `weft_thickness` (`Vec<f32>`) | Per warp end / weft pick, a **relative** thread thickness (1.0 = base) that drives variable-width/height drawdown cells (M4). Empty = uniform. Length-coupled to ends/picks like colors; parsed from WIF `[WARP/WEFT THICKNESS]`, the thinnest present thread maps to the base pixel pitch. |
+| `RetainedSection` | A WIF `[SECTION]` Ply does not model (spacing, vendor sections), kept verbatim for export fidelity (M3): round-tripped on a structural edit, stale per-thread ones dropped on a resize. |
 
 ### Three decisions worth knowing
 

@@ -173,6 +173,37 @@ class DraftLayout {
   /// Fixed-pitch canvas size; the scrollable SizedBox uses exactly this.
   Size get totalSize => Size(_leftPad + _warpW + _rightW, _topPad + _shaftH + _pickH);
 
+  /// The largest pitch in [levels] whose whole [totalSize] fits within [available] on BOTH axes — a
+  /// "zoom to fit" so a freshly-opened draft fills the viewport instead of always starting at a fixed
+  /// pitch. Falls back to the SMALLEST level when even that overflows (the draft then scrolls at the
+  /// smallest pitch). [levels] must be ascending and non-empty; pass the editor's `zoomCellLevels` so
+  /// the result is always a snappable step.
+  static int fitCellLevel({
+    required int ends,
+    required int picks,
+    required int shafts,
+    required int treadles,
+    required bool hasTieup,
+    required Size available,
+    required List<int> levels,
+  }) {
+    var chosen = levels.first; // smallest = the scroll-anyway fallback
+    for (final level in levels) {
+      final size = DraftLayout(
+        ends: ends,
+        picks: picks,
+        shafts: shafts,
+        treadles: treadles,
+        hasTieup: hasTieup,
+        cell: level.toDouble(),
+      ).totalSize;
+      if (size.width <= available.width && size.height <= available.height) {
+        chosen = level; // monotonic in `level`, so the last fitting one is the largest
+      }
+    }
+    return chosen;
+  }
+
   // --- per-grid geometry in each grid's LOCAL space ---
 
   /// Threading: ends columns (end 1 at LEFT, conforming to the engine bitmap), shafts rows

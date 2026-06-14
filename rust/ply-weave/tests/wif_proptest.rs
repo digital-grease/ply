@@ -135,6 +135,11 @@ fn parser_corpus_never_panics() {
         "]]][[[==",                               // malformed brackets/equals
         "[NOTES]\n1=a\n2=b\n",                     // trailing newline
         ";[WEAVING]\nShafts=4",                    // comment line
+        // Unbounded-allocation guards: a sparse high numeric key or a huge `Threads=` count would,
+        // uncapped, request a multi-GB Vec and ABORT (uncatchable). These must parse-or-error instead.
+        "[WEAVING]\nShafts=2\n[THREADING]\n4000000000=1",        // 4-billion sparse key (dropped)
+        "[COLOR TABLE]\n3000000000=1,2,3",                       // huge key via parse_color_table
+        "[WEAVING]\nShafts=2\n[WARP]\nThreads=200000000\n[THREADING]\n1=1\n2=2", // huge Threads= count
     ] {
         let _ = parse(s);
     }

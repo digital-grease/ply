@@ -80,13 +80,24 @@ void main() {
     expect(find.widgetWithText(FloatingActionButton, 'New draft'), findsOneWidget);
   });
 
-  testWidgets('a tile is one labelled (button) semantics node (M4 a11y)', (tester) async {
+  testWidgets('a tile is one labelled (button) semantics node WITH the tap action (M4 a11y)',
+      (tester) async {
     final handle = tester.ensureSemantics();
     await pumpLibrary(tester, FakeLibraryRepo([_entry('a')])); // name 'Pattern a'
     // The tile is wrapped in Semantics(button: true, label: 'Pattern <name>'); finding the label
     // proves the wrapper applied (the thumbnail + inner name Text are ExcludeSemantics'd, so the
     // node is the single tile button rather than image + duplicate name).
     expect(find.bySemanticsLabel('Pattern Pattern a'), findsOneWidget);
+    // Regression: the label and the tap/long-press ACTIONS must live on the SAME node. They used to
+    // split (label on the outer Semantics, action on the inner InkWell), which detaches the label
+    // from the actionable node and drops the onTapHint. The actions now sit on the labelled node.
+    final data =
+        tester.getSemantics(find.bySemanticsLabel('Pattern Pattern a')).getSemanticsData();
+    expect(data.label, 'Pattern Pattern a');
+    expect(data.hasAction(ui.SemanticsAction.tap), isTrue,
+        reason: 'the labelled tile node is itself tappable (open)');
+    expect(data.hasAction(ui.SemanticsAction.longPress), isTrue,
+        reason: 'and long-pressable (actions)');
     handle.dispose();
   });
 

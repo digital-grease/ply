@@ -262,6 +262,31 @@ void main() {
     expect(find.textContaining('Tap to choose the brush color'), findsOneWidget);
   });
 
+  testWidgets('a large palette on a SHORT viewport scrolls instead of overflowing', (tester) async {
+    // Regression: PaletteSheet lacked a SingleChildScrollView, so a tall palette (a WIF import can
+    // carry dozens of colors) overflowed the Column — a RenderFlex assertion plus clipped,
+    // unreachable swatches — most visibly in the wide DIALOG path, whose height is bounded by the
+    // screen with no drag-to-expand. The body must scroll.
+    tester.view.physicalSize = const Size(360, 300);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final big = fixture().copyWith(
+      palette: [for (var i = 0; i < 24; i++) DraftColor(r: i * 10, g: 0, b: 0)],
+    );
+    await pumpSheet(tester, FakePaletteRepo(), doc: big);
+
+    expect(tester.takeException(), isNull, reason: 'the palette scrolls; no RenderFlex overflow');
+    expect(
+      find.descendant(of: find.byType(PaletteSheet), matching: find.byType(Scrollable)),
+      findsOneWidget,
+      reason: 'the palette body is scrollable',
+    );
+    // SingleChildScrollView is not lazy, so every swatch is built (reachable by scrolling).
+    expect(find.byIcon(Icons.close), findsNWidgets(24));
+  });
+
   testWidgets('the selected swatch announces itself as the brush (a11y)', (tester) async {
     final handle = tester.ensureSemantics();
     final c = await pumpSheet(tester, FakePaletteRepo());

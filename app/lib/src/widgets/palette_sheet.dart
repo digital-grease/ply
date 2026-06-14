@@ -48,8 +48,11 @@ class _PaletteSheetState extends ConsumerState<PaletteSheet> {
     final cs = Theme.of(context).colorScheme;
     return SafeArea(
       top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      // Scrollable like the planning/structure sheets: a large palette (a WIF import can carry
+      // dozens of colors) must scroll, not overflow — especially in the wide DIALOG path, where the
+      // body is bounded to the screen height with no sheet drag to expand it.
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + MediaQuery.viewInsetsOf(context).bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
