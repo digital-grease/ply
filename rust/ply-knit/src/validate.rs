@@ -142,13 +142,19 @@ fn check_cable_spans(
             )));
             continue;
         }
+        // Use `.get()` (not direct indexing): a RAGGED row whose cell count is below the chart width
+        // can satisfy the `c + span > width` edge check above while a filler index runs past the
+        // actual cells — a missing filler cell is a violation, not a panic.
         for k in 1..span {
-            if row.cells[c + k].stitch != builtin::NO_STITCH {
-                issues.push(KnitIssue::error(format!(
-                    "row {rownum} col {col}: a {span}-wide cable must be followed by no-stitch cells (col {} is not)",
-                    c + k + 1
-                )));
-                break;
+            match row.cells.get(c + k) {
+                Some(cell) if cell.stitch == builtin::NO_STITCH => {}
+                _ => {
+                    issues.push(KnitIssue::error(format!(
+                        "row {rownum} col {col}: a {span}-wide cable must be followed by no-stitch cells (col {} is not)",
+                        c + k + 1
+                    )));
+                    break;
+                }
             }
         }
     }
@@ -241,6 +247,24 @@ mod tests {
         // BAD: cable runs past the edge (span 4 at width 2).
         let off = pattern(2, vec![Row::plain(vec![Cell::of(cable_id), ns()])], vec![Color::WHITE], legend);
         assert!(validate(&off).iter().any(|i| i.message.contains("runs past the chart edge")));
+    }
+
+    #[test]
+    fn cable_on_a_ragged_row_reports_an_issue_without_panicking() {
+        // Regression: a RAGGED row (fewer cells than chart.width) carrying a cable used to PANIC —
+        // the `c + span > width` edge check used chart.width, but the trailing-filler scan indexed
+        // the (shorter) row cells, so `c + k` ran past the slice. It must report, never panic.
+        let cable = CableDef { front: 2, back: 2, direction: Cross::Right, front_purl: false, back_purl: false };
+        let mut legend = StitchLegend::builtin();
+        legend.stitches.push(StitchDef { symbol: "2/2RC".into(), consumes: 4, produces: 4, ws_variant: None, cable: Some(cable), macro_rows: 1 });
+        let cable_id = legend.stitches.len() - 1;
+        // width 6, but a lone span-4 cable cell (no fillers): c+span=4 <= 6 passes the edge check.
+        let p = pattern(6, vec![Row::plain(vec![Cell::of(cable_id)])], vec![Color::WHITE], legend);
+        let issues = validate(&p); // must NOT panic
+        assert!(
+            issues.iter().any(|i| i.message.contains("must be followed by no-stitch")),
+            "{issues:?}"
+        );
     }
 
     #[test]

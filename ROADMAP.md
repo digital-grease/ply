@@ -38,11 +38,23 @@ end (weaving) to harden the shared shell before fanning out.**
 - Tutorials + reference glossary in-app (seed content from `docs/GLOSSARY.md`).
 - Accessibility + responsive layout for tablets.
 
-## M5 — Knitting engine (`ply-knit`)
-- New sibling crate. Knitting has **no universal interchange standard**, so design a custom
-  schema (chart grid + symbol/op model; see `docs/DATA_MODEL.md` sketch).
-- Chart editor + gauge/yardage calculators reusing shell + calculator patterns.
-- Optional Knitout export for machine knitters.
+## M5 — Knitting engine (`ply-knit`) ✅ (core done)
+- New sibling crate. Knitting has **no universal interchange standard**, so we designed a
+  custom schema (chart grid + stitch legend/op model; resolved owner decisions in
+  `docs/KNIT_DESIGN.md`). Native format is JSON (`.plyknit`).
+- ✅ Engine: pattern model, drawdown/RGBA chart render (symbols + colorwork + cable spans),
+  sett/cast-on/yardage calculators, full stitch-count balancing validation, and chart →
+  written-instructions (RS/WS aware, run-length collapsed). FFI-free, unit-tested.
+- ✅ Bridge: mirrored knit DTOs + a thin `api.rs` surface; transparent `KnitPatternDto`
+  (no opaque handle) so a pattern renders/validates/writes repeatedly.
+- ✅ App: chart editor (paint, colorwork palette, undo/redo, zoom), a **cable builder**
+  (front/back/cross/purl → a placeable brush that lays the anchor + auto-fills its no-stitch
+  cells, with whole-group clearing), on-device persistence (`<docs>/knits/<id>.{plyknit,json,
+  png}` triplet), an expandable severity-coded validation band, a written-instructions view, a
+  gauge/yardage planning sheet, and pattern settings (construction, first-row side, notes).
+- ✅ Unified home: a single library with a tab per craft (Weaving | Knitting); the in-app
+  glossary now carries knitting terms too.
+- ⬜ Deferred: optional **Knitout export** for machine knitters (the one M5 item not yet built).
 
 ## M6 — Nalbinding engine (`ply-nalbind`)
 - New sibling crate. Encode stitches with the **Hansen notation** (UO/UOO… with connection

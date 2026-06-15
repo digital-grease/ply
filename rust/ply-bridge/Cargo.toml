@@ -17,4 +17,5 @@ crate-type = ["cdylib", "staticlib", "lib"]
 serde = { workspace = true }
 ply-common = { workspace = true }
 ply-weave = { workspace = true }
+ply-knit = { workspace = true }
 flutter_rust_bridge = "=2.12.0"

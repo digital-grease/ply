@@ -117,9 +117,67 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'long floats, smooth lustrous face, densest sett.',
   ),
   GlossaryTerm(
+    term: 'Knit',
+    aka: 'k',
+    definition: 'the basic stitch; a new loop pulled through to the back, making a flat "V" on the right side.',
+  ),
+  GlossaryTerm(
+    term: 'Purl',
+    aka: 'p',
+    definition: 'the reverse of a knit, the loop drawn through to the front, making a horizontal bump.',
+  ),
+  GlossaryTerm(
     term: 'Gauge',
-    aka: 'knitting',
-    definition: 'stitches and rows per unit; knitting\'s sett analogue.',
+    aka: 'tension',
+    definition: 'stitches and rows per 4 in / 10 cm; knitting\'s sett analogue, and what decides the finished size.',
+  ),
+  GlossaryTerm(
+    term: 'Right side / wrong side',
+    aka: 'RS/WS',
+    definition: 'the face meant to show (RS) versus the back (WS); on a flat piece the rows alternate between them.',
+  ),
+  GlossaryTerm(
+    term: 'Cast on',
+    definition: 'the foundation row that puts the first loops on the needle.',
+  ),
+  GlossaryTerm(
+    term: 'Bind off',
+    aka: 'cast off',
+    definition: 'securing the last loops so the work won\'t unravel.',
+  ),
+  GlossaryTerm(
+    term: 'Stockinette',
+    aka: 'stocking stitch',
+    definition: 'knit on right-side rows, purl on wrong-side rows; a smooth field of "V"s that curls at the edges.',
+  ),
+  GlossaryTerm(
+    term: 'Garter',
+    definition: 'knit every row; a reversible, ridged fabric that lies flat.',
+  ),
+  GlossaryTerm(
+    term: 'Yarn over',
+    aka: 'yo',
+    definition: 'wrapping the yarn to add a stitch and leave a deliberate hole, the basis of lace.',
+  ),
+  GlossaryTerm(
+    term: 'k2tog / ssk',
+    definition: 'paired decreases that each turn two stitches into one, leaning right (k2tog) or left (ssk).',
+  ),
+  GlossaryTerm(
+    term: 'Chart',
+    definition: 'a grid where each cell is one stitch, read bottom to top; right-side rows read right to left, wrong-side rows left to right.',
+  ),
+  GlossaryTerm(
+    term: 'Repeat',
+    definition: 'a block of stitches or rows worked over and over across a row or up the piece.',
+  ),
+  GlossaryTerm(
+    term: 'Cable',
+    definition: 'stitches crossed over their neighbours (held on a cable needle) to make a rope-like twist.',
+  ),
+  GlossaryTerm(
+    term: 'In the round',
+    definition: 'worked as a tube on circular or double-pointed needles, so every round faces the right side.',
   ),
   GlossaryTerm(
     term: 'Hansen notation',

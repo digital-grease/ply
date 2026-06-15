@@ -202,3 +202,83 @@ pub fn generate_threading_dto(kind: ThreadingKind, ends: u32, shafts: u16) -> Ve
     };
     threading.0.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
 }
+
+// ---------------------------------------------------------------------------
+// M5 KNITTING surface (transparent DTOs). Mirrors the weaving surface — parse / write / render /
+// validate over a mirrored `KnitPatternDto`, plus the gauge/yardage calculators. See `knit_dto.rs`.
+// (`RepeatDto` is a data-carrying enum -> regenerate freezed after codegen, like `DriveDto`.)
+// ---------------------------------------------------------------------------
+
+pub use crate::knit_dto::{
+    CableDefDto, CellDto, ChartDto, ConstructionKind, CrossKind, GaugeDto, KnitIssueDto,
+    KnitPatternDto, RepeatDto, RepeatSpanDto, RowDto, SideKind, StitchDefDto, StitchLegendDto,
+    YarnWeightKind,
+};
+
+/// Parse the native `.plyknit` JSON into the editor's `KnitPatternDto`.
+pub fn parse_knit(json: String) -> Result<KnitPatternDto, String> {
+    ply_knit::KnitPattern::from_json(&json)
+        .map(|p| KnitPatternDto::from(&p))
+        .map_err(|e| e.to_string())
+}
+
+/// Serialize the editor's `KnitPatternDto` back to native `.plyknit` JSON. `Err` if the gauge is
+/// non-finite (the engine rejects a NaN/Inf gauge that JSON can't round-trip).
+pub fn write_knit(dto: KnitPatternDto) -> Result<String, String> {
+    ply_knit::KnitPattern::from(dto).to_json().map_err(|e| e.to_string())
+}
+
+/// Render a knitting chart `KnitPatternDto` to an RGBA preview (symbols + colorwork + cable spans).
+/// A mirrored value, so the caller may render the SAME dto repeatedly (no single-use handle).
+pub fn render_knit_preview(dto: KnitPatternDto, cell_px: u32) -> PreviewImage {
+    let img = ply_knit::render_rgba(&ply_knit::KnitPattern::from(dto), cell_px);
+    PreviewImage { width: img.width, height: img.height, rgba: img.pixels }
+}
+
+/// Validate a knitting chart (full stitch-count balancing); one issue per problem, empty = clean.
+pub fn validate_knit(dto: KnitPatternDto) -> Vec<KnitIssueDto> {
+    ply_knit::validate(&ply_knit::KnitPattern::from(dto))
+        .iter()
+        .map(KnitIssueDto::from)
+        .collect()
+}
+
+/// A blank starter pattern (builtin stitch legend, a worsted seed gauge, a one-color palette, an
+/// empty chart the editor grows). The knit analog of `blank_draft`.
+pub fn knit_blank_pattern() -> KnitPatternDto {
+    let pattern = ply_knit::KnitPattern {
+        name: String::new(),
+        construction: ply_knit::Construction::Flat,
+        first_row_side: ply_knit::Side::Rs,
+        gauge: ply_knit::calc::seed_gauge(ply_common::YarnWeight::Medium),
+        palette: vec![ply_common::Color::WHITE],
+        legend: ply_knit::StitchLegend::builtin(),
+        chart: ply_knit::Chart { width: 0, rows: Vec::new() },
+        notes: String::new(),
+    };
+    KnitPatternDto::from(&pattern)
+}
+
+/// Cast-on stitch count for a target finished `width` + `ease` at `gauge`, rounded to the nearest
+/// `repeat` multiple. 0 on an unusable gauge.
+pub fn knit_cast_on(width: f32, ease: f32, gauge: GaugeDto, repeat: u32) -> u32 {
+    ply_knit::calc::cast_on(width, ease, gauge.into(), repeat)
+}
+
+/// Estimate yards of yarn for a stockinette `width` x `length` rectangle at `gauge` (rough — the UI
+/// should add a buffer).
+pub fn knit_estimate_yards(width: f32, length: f32, gauge: GaugeDto) -> f32 {
+    ply_knit::calc::estimate_yards_stockinette(width, length, gauge.into())
+}
+
+/// A default stockinette gauge seeded from a yarn weight (Craft Yarn Council table) — an editable
+/// starting point the knitter overrides with their own swatch.
+pub fn knit_seed_gauge(weight: YarnWeightKind) -> GaugeDto {
+    GaugeDto::from(ply_knit::calc::seed_gauge(weight.into()))
+}
+
+/// The chart rendered as WRITTEN INSTRUCTIONS, one line per row (bottom-to-top, RS/WS-aware,
+/// run-length collapsed) — the chart's second view.
+pub fn knit_written(dto: KnitPatternDto) -> Vec<String> {
+    ply_knit::to_written(&ply_knit::KnitPattern::from(dto))
+}

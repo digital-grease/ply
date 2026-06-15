@@ -42,7 +42,32 @@ plain so it can double as user-facing help content.
 - **Twill** — diagonal lines from offset floats (denim is a twill).
 - **Satin / sateen** — long floats, smooth lustrous face, densest sett.
 
+### Knitting
+- **Knit** (k) — the basic stitch; a new loop pulled through to the back, making a flat "V" on
+  the right side.
+- **Purl** (p) — the reverse of a knit, the loop drawn through to the front, making a horizontal
+  bump.
+- **Gauge** (tension) — stitches and rows per 4 in / 10 cm; knitting's sett analogue, and what
+  decides the finished size.
+- **Right side / wrong side** (RS/WS) — the face meant to show (RS) versus the back (WS); on a
+  flat piece the rows alternate between them.
+- **Cast on** — the foundation row that puts the first loops on the needle.
+- **Bind off** (cast off) — securing the last loops so the work won't unravel.
+- **Stockinette** (stocking stitch) — knit on right-side rows, purl on wrong-side rows; a smooth
+  field of "V"s that curls at the edges.
+- **Garter** — knit every row; a reversible, ridged fabric that lies flat.
+- **Yarn over** (yo) — wrapping the yarn to add a stitch and leave a deliberate hole, the basis of
+  lace.
+- **k2tog / ssk** — paired decreases that each turn two stitches into one, leaning right (k2tog) or
+  left (ssk).
+- **Chart** — a grid where each cell is one stitch, read bottom to top; right-side rows read right
+  to left, wrong-side rows left to right.
+- **Repeat** — a block of stitches or rows worked over and over across a row or up the piece.
+- **Cable** — stitches crossed over their neighbours (held on a cable needle) to make a rope-like
+  twist.
+- **In the round** — worked as a tube on circular or double-pointed needles, so every round faces
+  the right side.
+
 ### Other crafts (for later engines)
-- **Gauge** (knitting) — stitches and rows per unit; knitting's sett analogue.
 - **Hansen notation** (nalbinding) — `U`/`O` (under/over) stitch encoding with connection
   markers; the basis for the future nalbinding model.

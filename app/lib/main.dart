@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/data/draft_repository.dart';
-import 'src/screens/library_screen.dart';
+import 'src/screens/home_screen.dart';
 import 'src/state/editor_providers.dart';
 import 'src/state/theme_providers.dart';
 import 'src/theme/ply_colors.dart';
@@ -55,7 +55,7 @@ class PlyApp extends ConsumerWidget {
           theme: _theme(lightScheme, PlyColors.light()),
           darkTheme: _theme(darkScheme, PlyColors.dark()),
           themeMode: settings.themeMode,
-          home: LibraryScreen(repository: repository),
+          home: HomeScreen(repository: repository),
         );
       },
     );

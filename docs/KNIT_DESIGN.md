@@ -1,9 +1,9 @@
 # Knitting engine design proposal (`ply-knit`, M5)
 
-> **Status: PROPOSAL for owner review — no engine code written yet.** This grounds M5 the way
-> `WIF_MAPPING.md` grounds weaving. It is research-backed (sources at the end) and ends with the
-> **decisions only the owner can make**. The model sketch is a strawman to react to; the *Owner
-> decisions* section is the real ask.
+> **Status: IMPLEMENTED (M5 core, 2026-06).** The owner decisions below are RESOLVED and the engine,
+> bridge, and editor are built and tested (see `ROADMAP.md` M5) — including the cable builder and a
+> unified tabbed library. This document is kept as the design rationale of record; it is
+> research-backed (sources at the end). The one M5 item still deferred is Knitout export.
 
 ## Goal & constraints
 

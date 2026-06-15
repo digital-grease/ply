@@ -10,9 +10,7 @@ import '../models/draft_doc.dart';
 import '../models/draft_meta.dart';
 import '../util/responsive.dart';
 import 'editor_screen.dart';
-import 'glossary_screen.dart';
 import 'preview_screen.dart';
-import 'settings_screen.dart';
 
 /// Home screen: a grid of saved drafts with preview thumbnails, plus an import FAB.
 ///
@@ -41,10 +39,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
   /// Re-scan the library and rebuild. Returns the future so RefreshIndicator can
   /// await it. Self-guards `mounted` so every caller (some reached after an await)
   /// is safe even if this screen is ever made poppable later.
+  ///
+  /// NB: the setState callback MUST be a block body. An arrow body `() => _entriesFuture = future`
+  /// evaluates to the assigned Future, and `setState` throws on a callback that returns a Future
+  /// (which the delete/rename try-catch would silently swallow, leaving the grid stale).
   Future<void> _refresh() async {
     if (!mounted) return;
     final future = widget.repository.list();
-    setState(() => _entriesFuture = future);
+    setState(() {
+      _entriesFuture = future;
+    });
     await future;
   }
 
@@ -239,6 +243,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // Wrap the Scaffold in the FutureBuilder so the FAB can see the load state: an EMPTY library
     // shows a centered New-draft / Import call to action in _emptyState(), so suppress the FABs
     // there to avoid offering the same two actions twice. They return once a pattern exists.
+    //
+    // No AppBar: this is the Weaving TAB inside HomeScreen, which owns the shared chrome (title,
+    // Glossary, Settings). The inner Scaffold here exists only to host the FAB + body within the tab.
     return FutureBuilder<List<DraftEntry>>(
       future: _entriesFuture,
       builder: (context, snapshot) {
@@ -246,25 +253,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final entries = snapshot.data ?? const <DraftEntry>[];
         final isEmpty = done && !snapshot.hasError && entries.isEmpty;
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Ply · Patterns'),
-            actions: [
-              IconButton(
-                tooltip: 'Glossary',
-                icon: const Icon(Icons.menu_book_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const GlossaryScreen()),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Settings',
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
-                ),
-              ),
-            ],
-          ),
           body: _libraryBody(snapshot, entries),
           floatingActionButton: isEmpty ? null : _fabColumn(),
         );
