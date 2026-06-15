@@ -44,7 +44,9 @@ end (weaving) to harden the shared shell before fanning out.**
   `docs/KNIT_DESIGN.md`). Native format is JSON (`.plyknit`).
 - ✅ Engine: pattern model, drawdown/RGBA chart render (symbols + colorwork + cable spans),
   sett/cast-on/yardage calculators, full stitch-count balancing validation, and chart →
-  written-instructions (RS/WS aware, run-length collapsed). FFI-free, unit-tested.
+  written-instructions (RS/WS aware, run-length collapsed). FFI-free, unit + property-tested
+  (JSON round-trip identity + no-panic over adversarial patterns: ragged rows, dangling ids,
+  malformed cables, out-of-range repeats, overflow cell sizes, non-finite calc inputs).
 - ✅ Bridge: mirrored knit DTOs + a thin `api.rs` surface; transparent `KnitPatternDto`
   (no opaque handle) so a pattern renders/validates/writes repeatedly.
 - ✅ App: chart editor (paint, colorwork palette, undo/redo, zoom), a **cable builder**

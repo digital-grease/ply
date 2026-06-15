@@ -9,3 +9,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 ply-common = { workspace = true }
+
+[dev-dependencies]
+# Property-based hardening: JSON round-trip identity + no-panic over arbitrary/adversarial patterns.
+proptest = "1"
