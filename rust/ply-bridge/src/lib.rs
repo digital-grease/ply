@@ -14,6 +14,7 @@
 pub mod api;
 pub mod dto;
 pub mod knit_dto;
+pub mod nalbind_dto;
 
 // frb emits this (git-ignored). It MUST sit below the crate's `//!` inner docs — frb's
 // codegen injects it at the very top by default, which makes the inner doc comments

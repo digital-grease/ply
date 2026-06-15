@@ -58,11 +58,19 @@ end (weaving) to harden the shared shell before fanning out.**
   glossary now carries knitting terms too.
 - ⬜ Deferred: optional **Knitout export** for machine knitters (the one M5 item not yet built).
 
-## M6 — Nalbinding engine (`ply-nalbind`)
-- New sibling crate. Encode stitches with the **Hansen notation** (UO/UOO… with connection
-  markers); model worked-in-spiral structure rather than a flat grid
-  (see `docs/DATA_MODEL.md` sketch).
-- Stitch reference + simple structure visualization.
+## M6 — Nalbinding engine (`ply-nalbind`) ✅ (v1 done)
+- New sibling crate. Stitches modeled around **Hansen notation** (`U`/`O` passes, `/`/`:` turns,
+  `( )` skipped, `-` no-engage, `F`/`B`/`M`+count connections), identity keyed on (skeleton,
+  connection). Owner decisions + research in `docs/NALBIND_DESIGN.md`.
+- ✅ Engine: the stitch model (full Hansen grammar), a round-trippable notation parser/printer,
+  a curated 12-stitch dictionary (source-attributed codes), a per-stitch structural loop diagram
+  generator, and validation. FFI-free, unit + property-tested (notation round-trip + no-panic).
+- ✅ Bridge + app: mirrored nalbind DTOs; a "Nalbinding" tab in the unified home → a stitch
+  REFERENCE (browse the dictionary with notation + a+b alias + the generated loop diagram drawn by
+  a CustomPainter) + a notation playground (type a Hansen string → live diagram + validation). The
+  glossary gains nalbinding terms.
+- ⬜ Deferred: the project/recipe model (worked pieces: spiral/tube/short-row shaping segments) and
+  its spiral node-graph view; persistence; a 3-D/round structural render.
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.

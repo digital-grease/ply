@@ -180,8 +180,29 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'worked as a tube on circular or double-pointed needles, so every round faces the right side.',
   ),
   GlossaryTerm(
+    term: 'Nalbinding',
+    aka: 'nålbinding',
+    definition: 'an ancient single-needle looping craft, worked in a spiral with short lengths of yarn; predates knitting and crochet, and does not unravel when cut.',
+  ),
+  GlossaryTerm(
     term: 'Hansen notation',
-    aka: 'nalbinding',
-    definition: '`U`/`O` (under/over) stitch encoding with connection markers; the basis for the future nalbinding model.',
+    definition: 'the standard encoding of a nalbinding stitch: a string of `U` (needle under a loop) and `O` (over), with `/` marking the turn where the thread reverses, plus a connection. E.g. the Oslo stitch is `UO/UOO F1`.',
+  ),
+  GlossaryTerm(
+    term: 'Connection',
+    aka: 'F/B',
+    definition: 'how a new loop anchors into the previous round: `F` enters from the front, `B` from the back, and the number is how many loops it engages (`F2` = one new + one old).',
+  ),
+  GlossaryTerm(
+    term: 'Thumb loop',
+    definition: 'a loop held around the thumb while forming the next stitch; the `a+b` count (Oslo = 1+1, Mammen = 1+2) names a stitch by its thumb-loop groups.',
+  ),
+  GlossaryTerm(
+    term: 'Spiral',
+    definition: 'nalbinding has no rows; it climbs continuously in a spiral, leaving a visible "step" where one round meets the next.',
+  ),
+  GlossaryTerm(
+    term: 'Increase / decrease',
+    definition: 'shaping by eye: an increase works two stitches into one connection point, a decrease skips a loop, judged by the thumb-loop angle to the centre.',
   ),
 ];

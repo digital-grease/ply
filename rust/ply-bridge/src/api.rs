@@ -282,3 +282,47 @@ pub fn knit_seed_gauge(weight: YarnWeightKind) -> GaugeDto {
 pub fn knit_written(dto: KnitPatternDto) -> Vec<String> {
     ply_knit::to_written(&ply_knit::KnitPattern::from(dto))
 }
+
+// ---------------------------------------------------------------------------
+// Nalbinding (M6) — stitch reference + per-stitch structural diagram. No project model or gauge
+// calculator yet; see docs/NALBIND_DESIGN.md.
+// ---------------------------------------------------------------------------
+
+pub use crate::nalbind_dto::{
+    ConnArrowDto, ConnSideKind, ConnectionDto, DiagramDto, LoopGlyphDto, LoopKindDto,
+    NalbindIssueDto, NalbindStitchDto, PassDto, PublishedCodeDto, StepKind, ThumbLoopsDto, TwistKind,
+};
+
+/// The curated builtin stitch dictionary (~12 stitches) for the reference screen.
+pub fn nalbind_builtin() -> Vec<NalbindStitchDto> {
+    ply_nalbind::builtin().into_iter().map(NalbindStitchDto::from).collect()
+}
+
+/// Parse a Hansen-notation string into an anonymous stitch (the notation playground). `Err` carries
+/// the parse message for an unrecognized character.
+pub fn parse_nalbind(notation: String) -> Result<NalbindStitchDto, String> {
+    ply_nalbind::notation::parse(&notation)
+        .map(|(passes, connections)| {
+            NalbindStitchDto::from(ply_nalbind::StitchType::anonymous(passes, connections))
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Print a stitch back to a canonical Hansen string.
+pub fn print_nalbind(dto: NalbindStitchDto) -> String {
+    let st = ply_nalbind::StitchType::from(dto);
+    ply_nalbind::notation::print(&st.passes, &st.connections)
+}
+
+/// Build the per-stitch structural loop diagram (vector model the Flutter painter draws).
+pub fn nalbind_diagram(dto: NalbindStitchDto) -> DiagramDto {
+    DiagramDto::from(ply_nalbind::diagram(&ply_nalbind::StitchType::from(dto)))
+}
+
+/// Validate a stitch (empty path / zero-loop connection); empty = clean.
+pub fn validate_nalbind(dto: NalbindStitchDto) -> Vec<NalbindIssueDto> {
+    ply_nalbind::validate(&ply_nalbind::StitchType::from(dto))
+        .iter()
+        .map(NalbindIssueDto::from)
+        .collect()
+}

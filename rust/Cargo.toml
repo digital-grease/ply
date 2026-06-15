@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["ply-common", "ply-weave", "ply-knit", "ply-bridge"]
+members = ["ply-common", "ply-weave", "ply-knit", "ply-nalbind", "ply-bridge"]
 
 [workspace.package]
 edition = "2021"
@@ -13,3 +13,4 @@ thiserror = "1"
 ply-common = { path = "ply-common" }
 ply-weave = { path = "ply-weave" }
 ply-knit = { path = "ply-knit" }
+ply-nalbind = { path = "ply-nalbind" }
