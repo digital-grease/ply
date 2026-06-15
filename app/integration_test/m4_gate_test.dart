@@ -21,7 +21,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:ply/src/data/app_settings_repository.dart';
 import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/app_settings.dart';
-import 'package:ply/src/screens/library_screen.dart';
+import 'package:ply/src/screens/home_screen.dart';
 import 'package:ply/src/rust/frb_generated.dart';
 
 void main() {
@@ -61,7 +61,9 @@ void main() {
     final repo = DraftRepository();
     await tester.pumpWidget(
       ProviderScope(
-        child: MaterialApp(home: LibraryScreen(repository: repo)),
+        // The unified home (Weaving | Knitting tabs) owns the shared chrome since the M5 library
+        // unification; Glossary + Settings live on its AppBar.
+        child: MaterialApp(home: HomeScreen(repository: repo)),
       ),
     );
     await tester.pumpAndSettle();
