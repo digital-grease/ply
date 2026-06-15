@@ -81,6 +81,10 @@ void main() {
     );
     addTearDown(container.dispose);
     container.read(draftEditorProvider.notifier).load(plainWeave());
+    // Opt out of the M4 open-time auto-fit so the rendered pitch stays `cell`; the hand-computed
+    // tie-up tap coordinates below assume that pitch. Without this, auto-fit resizes the grid to the
+    // device viewport and the tap lands off the cell (the regression this device run surfaced).
+    container.read(zoomUserSetProvider.notifier).state = true;
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
