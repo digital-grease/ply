@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/theme_providers.dart';
 import '../theme/spacing.dart';
+import 'diagnostics_screen.dart';
 import 'ravelry_screen.dart';
 
 /// App settings — appearance for M4 (theme mode, Material You, accent). Reads + writes the persisted
@@ -97,6 +98,21 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const RavelryScreen()),
+            ),
+          ),
+          const Divider(height: PlySpacing.lg),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(PlySpacing.md, PlySpacing.xs, PlySpacing.md, PlySpacing.xs),
+            child: Text('Troubleshooting',
+                style: text.titleSmall?.copyWith(color: Theme.of(context).colorScheme.primary)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.bug_report_outlined),
+            title: const Text('Diagnostics'),
+            subtitle: const Text('On-device logs + crash reports for filing a bug'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const DiagnosticsScreen()),
             ),
           ),
         ],

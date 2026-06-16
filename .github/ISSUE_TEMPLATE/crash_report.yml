@@ -1,0 +1,40 @@
+name: Crash / bug report
+description: Report a crash or bug. The app's Settings → Diagnostics screen pre-fills this for you.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The fields below are filled in automatically when you tap
+        "Report on GitHub" in the app's Diagnostics screen. The report is scrubbed of sensitive data
+        on your device before it gets here — feel free to review it.
+  - type: input
+    id: device
+    attributes:
+      label: Device / OS
+      placeholder: e.g. android 14
+    validations:
+      required: false
+  - type: input
+    id: app_version
+    attributes:
+      label: App version
+      placeholder: e.g. 0.1.0
+    validations:
+      required: false
+  - type: textarea
+    id: report
+    attributes:
+      label: Crash report / logs
+      description: The on-device report (already scrubbed). Leave as-is, or paste it if it was too long for the link.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: What were you doing?
+      description: Steps to reproduce, if you know them.
+    validations:
+      required: false

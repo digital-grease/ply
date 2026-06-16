@@ -56,4 +56,8 @@ against frb v2. The **Flutter app is a skeleton** to be wired after codegen. See
 
 ## License
 
-Dual-licensed under MIT or Apache-2.0.
+Licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). In short: you're
+free to use, study, modify, and share Ply, but derivative works — including ones offered over a
+network — must be released under the same license with their source available.
+
+Copyright (C) 2026 digital-grease

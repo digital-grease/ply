@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/data/draft_repository.dart';
+import 'src/diagnostics/crash_reporter.dart';
+import 'src/diagnostics/log_buffer.dart';
 import 'src/screens/home_screen.dart';
 import 'src/state/editor_providers.dart';
 import 'src/state/theme_providers.dart';
@@ -16,17 +18,24 @@ import 'src/theme/ply_colors.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await RustLib.init(); // load the native engine before any bridge call
-  final repository = DraftRepository();
-  // The Library/Preview screens take the repository by constructor; the editor reads it from
-  // Riverpod. One instance, exposed both ways, so there is a single owner of the FFI bridge.
-  runApp(
-    ProviderScope(
-      overrides: [repositoryProvider.overrideWithValue(repository)],
-      child: PlyApp(repository: repository),
-    ),
-  );
+  // Local crash reporting: capture uncaught Dart/Flutter errors into a scrubbed, on-device report the
+  // user can review in Settings -> Diagnostics. Nothing is uploaded. Handlers are installed before
+  // the guarded zone so framework + async + zone errors are all covered.
+  CrashReporter.instance.installHandlers();
+  await CrashReporter.instance.runGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    PlyLog.instance.info('Ply $kPlyAppVersion starting');
+    await RustLib.init(); // load the native engine before any bridge call
+    final repository = DraftRepository();
+    // The Library/Preview screens take the repository by constructor; the editor reads it from
+    // Riverpod. One instance, exposed both ways, so there is a single owner of the FFI bridge.
+    runApp(
+      ProviderScope(
+        overrides: [repositoryProvider.overrideWithValue(repository)],
+        child: PlyApp(repository: repository),
+      ),
+    );
+  });
 }
 
 class PlyApp extends ConsumerWidget {
