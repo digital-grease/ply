@@ -8,9 +8,11 @@ import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/dimensions_bar.dart';
+import '../widgets/draft_layout.dart';
 import '../widgets/integrated_draft_view.dart';
 import '../widgets/save_draft_dialog.dart';
 import '../widgets/validation_panel.dart';
+import '../widgets/woven_preview.dart';
 
 /// What the user chose when leaving the editor with unsaved edits (see `_confirmLeave`).
 enum _LeaveAction { keepEditing, discard, save }
@@ -621,12 +623,39 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ],
       );
     }
-    return const Column(
-      children: [
-        Expanded(child: IntegratedDraftView()),
-        ValidationPanel(),
-        DimensionsBar(),
-      ],
-    );
+    // The draft is FLEXIBLE (loose), not Expanded, so when it fits with room to spare the cloth
+    // shrinks to its content and the dimensions bar rises into the freed whitespace under it. When the
+    // cloth is short enough to leave real space below the controls, a tiled WOVEN PREVIEW fills it (the
+    // same drawdown bitmap repeated, so you see the fabric as yardage). A tall draft fills the viewport
+    // and scrolls, so the preview is omitted rather than crushing the editable cloth.
+    final dims = ref.watch(draftEditorProvider.select((s) => (
+          s.draft.ends,
+          s.draft.picks,
+          s.draft.shafts,
+          s.draft.treadles,
+          s.draft.drive is DraftTreadled,
+        )));
+    final cell = ref.watch(zoomCellProvider);
+    return LayoutBuilder(builder: (context, c) {
+      final hasCloth = dims.$1 > 0 && dims.$2 > 0;
+      final showSwatch = hasCloth &&
+          DraftLayout(
+                ends: dims.$1,
+                picks: dims.$2,
+                shafts: dims.$3,
+                treadles: dims.$4,
+                hasTieup: dims.$5,
+                cell: cell.toDouble(),
+              ).totalSize.height <
+              c.maxHeight * 0.45;
+      return Column(
+        children: [
+          const Flexible(child: IntegratedDraftView()),
+          const ValidationPanel(),
+          const DimensionsBar(),
+          if (showSwatch) const Expanded(child: WovenPreview()),
+        ],
+      );
+    });
   }
 }

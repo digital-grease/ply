@@ -148,10 +148,52 @@ class DraftRepository {
     required int counter,
     required int ends,
     required int picks,
+    int block = 4,
+    bool twill = false,
+    // Composable application (basic families only): write only the chosen components, optionally at an
+    // end/pick offset, OVER the existing draft (non-destructive). Defaults reproduce a whole-cloth
+    // generate from a blank draft.
+    bool applyThreading = true,
+    bool applyTieup = true,
+    bool applyTreadling = true,
+    int endStart = 0,
+    int pickStart = 0,
   }) async {
+    // Whole-draft structures (overshot / shadow weave / double weave) are interdependent, so the
+    // engine builds them complete and returns a ready `DraftDto`. Keep the user's draft IDENTITY
+    // (name, notes) and display prefs (unit, shed); take the structure + its colors from the
+    // generator. (Plain/Twill/Satin fall through to the Dart tie-up + threading composition below.)
+    const wholeDraft = {
+      StructureFamily.overshot,
+      StructureFamily.shadowWeave,
+      StructureFamily.doubleWeave,
+    };
+    if (wholeDraft.contains(family)) {
+      for (final (name, v) in [('ends', ends), ('picks', picks), ('block', block)]) {
+        if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, name);
+      }
+      final gen = fromDto(await generateStructureDto(
+        family: family,
+        ends: ends,
+        picks: picks,
+        block: block,
+        twill: twill,
+      ));
+      return gen.copyWith(
+        name: base.name,
+        notes: base.notes,
+        unit: base.unit,
+        shed: base.shed,
+      );
+    }
+
+    // --- Basic families (plain / twill / satin): COMPOSABLE, NON-DESTRUCTIVE application. Write only
+    // the chosen components, optionally at an end/pick offset, OVER the existing draft — so a structure
+    // can be laid into a band (mix) or one component swapped (modify) without wiping colors, thickness,
+    // or the untouched regions. All components + offset 0 onto a blank draft == the old whole-cloth.
     final effShafts = family == StructureFamily.twill ? over + under : shafts;
-    // Guard the wire fields (u16 shafts/over/under/counter, u32 ends) against silent truncation,
-    // the same THROW-don't-truncate policy the other wrappers use; the UI validators cap far below.
+    // Guard the wire fields (u16 shafts/over/under/counter, u32 ends/picks/offsets) against silent
+    // truncation, the same THROW-don't-truncate policy the other wrappers use.
     for (final (name, v) in [
       ('shafts', effShafts),
       ('over', over),
@@ -160,39 +202,129 @@ class DraftRepository {
     ]) {
       if (v < 0 || v > 0xFFFF) throw RangeError.range(v, 0, 0xFFFF, name);
     }
-    if (ends < 0 || ends > 0xFFFFFFFF) throw RangeError.range(ends, 0, 0xFFFFFFFF, 'ends');
+    for (final (name, v) in [
+      ('ends', ends),
+      ('picks', picks),
+      ('endStart', endStart),
+      ('pickStart', pickStart),
+    ]) {
+      if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, name);
+    }
 
-    final tieupRows = await generateTieupDto(
+    final genTieup = await generateTieupDto(
       family: family,
       shafts: effShafts,
       over: over,
       under: under,
       counter: counter,
     );
-    final threadingRows =
-        await generateThreadingDto(kind: threading, ends: ends, shafts: effShafts);
+    final genThreading = applyThreading
+        ? [
+            for (final r
+                in await generateThreadingDto(kind: threading, ends: ends, shafts: effShafts))
+              r.toList()
+          ]
+        : null;
+    return applyBasicStructure(
+      base: base,
+      effShafts: effShafts,
+      genThreading: genThreading,
+      genTieup: applyTieup ? [for (final r in genTieup) r.toList()] : null,
+      applyTreadling: applyTreadling,
+      effTreadles: genTieup.length,
+      picks: picks,
+      endStart: endStart,
+      pickStart: pickStart,
+    );
+  }
 
-    final treadles = tieupRows.length;
-    final treadling = [
-      for (var i = 0; i < picks; i++) [treadles == 0 ? 0 : (i % treadles) + 1],
-    ];
-    final weftIdx = base.palette.length > 1 ? 1 : 0;
+  /// The PURE overlay step of [generateStructureDoc] for basic families, split out so it is
+  /// host-unit-testable without the FFI threading/tie-up generators. Overlays the (already generated)
+  /// [genThreading] patch at [endStart] (null = leave threading), [genTieup] (null = leave the tie-up),
+  /// and/or a straight treadling of [picks] picks (one treadle per pick, wrapping [effTreadles]) at
+  /// [pickStart], OVER [base] — preserving the base's colors/thickness (resized to the new dimensions)
+  /// and any untouched regions. A liftplan base is converted to treadled iff the drive is touched.
+  static DraftDoc applyBasicStructure({
+    required DraftDoc base,
+    required int effShafts,
+    List<List<int>>? genThreading,
+    List<List<int>>? genTieup,
+    bool applyTreadling = false,
+    int effTreadles = 0,
+    int picks = 0,
+    int endStart = 0,
+    int pickStart = 0,
+  }) {
+    // THREADING: overlay the generated draw at [endStart, endStart + len).
+    final threadingRows = [for (final r in base.threading) r.toList()];
+    if (genThreading != null) {
+      final need = endStart + genThreading.length;
+      while (threadingRows.length < need) {
+        threadingRows.add(<int>[1]); // grow with a default shaft-1 end
+      }
+      for (var i = 0; i < genThreading.length; i++) {
+        threadingRows[endStart + i] = genThreading[i].toList();
+      }
+    }
+
+    // DRIVE: touching the tie-up or treadling yields a treadled drive (a liftplan base is converted).
+    final baseDrive = base.drive;
+    var tieupRows =
+        baseDrive is DraftTreadled ? [for (final r in baseDrive.tieup) r.toList()] : <List<int>>[];
+    var treadlingRows = baseDrive is DraftTreadled
+        ? [for (final r in baseDrive.treadling) r.toList()]
+        : <List<int>>[];
+    final touchesDrive = genTieup != null || applyTreadling;
+    if (genTieup != null) {
+      tieupRows = [for (final r in genTieup) r.toList()];
+    }
+    if (applyTreadling) {
+      final need = pickStart + picks;
+      while (treadlingRows.length < need) {
+        treadlingRows.add(<int>[1]);
+      }
+      for (var i = 0; i < picks; i++) {
+        treadlingRows[pickStart + i] = [effTreadles == 0 ? 0 : (i % effTreadles) + 1];
+      }
+    }
+
+    final newEnds = threadingRows.length;
+    final DraftDrive newDrive =
+        touchesDrive ? DraftTreadled(tieup: tieupRows, treadling: treadlingRows) : base.drive;
+    final newPicks = touchesDrive ? treadlingRows.length : base.picks;
+    final newShafts = (genThreading != null || genTieup != null) ? effShafts : base.shafts;
+    final newTreadles =
+        touchesDrive ? (tieupRows.isNotEmpty ? tieupRows.length : base.treadles) : base.treadles;
+
+    // Colors + thickness: PRESERVE the base, resized to the new dimensions. A fresh cloth (no weft
+    // colors yet) seeds its weft with the contrasting palette index 1 so the drawdown reads; an
+    // existing cloth keeps its colors and pads any new threads with 0.
+    List<int> resizeInts(List<int> src, int len, int pad) => src.length == len
+        ? src.toList()
+        : (src.length > len
+            ? src.sublist(0, len)
+            : [...src, ...List<int>.filled(len - src.length, pad)]);
+    List<double> resizeDbls(List<double> src, int len) => src.isEmpty
+        ? const <double>[] // empty == "all 1.0"; keep it uniform rather than materialize
+        : (src.length == len
+            ? src.toList()
+            : (src.length > len
+                ? src.sublist(0, len)
+                : [...src, ...List<double>.filled(len - src.length, 1.0)]));
+    final weftPad = base.weftColors.isEmpty ? (base.palette.length > 1 ? 1 : 0) : 0;
+
     return base.copyWith(
-      shafts: effShafts,
-      treadles: treadles,
-      threading: [for (final r in threadingRows) r.toList()],
-      drive: DraftTreadled(
-        tieup: [for (final r in tieupRows) r.toList()],
-        treadling: treadling,
-      ),
-      warpColors: List<int>.filled(ends, 0),
-      weftColors: List<int>.filled(picks, weftIdx),
-      // A generated structure is a wholesale new cloth, so any per-thread arrays from the base
-      // (thickness sized to the OLD ends/picks, or unmodeled [WARP …] retained sections) no longer
-      // apply — clear them rather than carry a stale array.
-      warpThickness: const <double>[],
-      weftThickness: const <double>[],
-      retained: const <RetainedSection>[],
+      shafts: newShafts,
+      treadles: newTreadles,
+      threading: threadingRows,
+      drive: newDrive,
+      warpColors: resizeInts(base.warpColors, newEnds, 0),
+      weftColors: resizeInts(base.weftColors, newPicks, weftPad),
+      warpThickness: resizeDbls(base.warpThickness, newEnds),
+      weftThickness: resizeDbls(base.weftThickness, newPicks),
+      // Per-thread retained WARP/WEFT sections desync if a dimension changed; drop them then, else
+      // keep (passing null leaves base.retained untouched).
+      retained: (newEnds != base.ends || newPicks != base.picks) ? const <RetainedSection>[] : null,
     );
   }
 

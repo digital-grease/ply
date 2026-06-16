@@ -18,6 +18,27 @@ Future<void> showStructureSheet(BuildContext context) {
   return showAdaptiveSheet<void>(context, child: const StructureSheet());
 }
 
+/// The last-used structure choices, so reopening the sheet restores them ("remember & re-tweak").
+/// Persists for the app session; ends/picks are intentionally NOT remembered (they re-seed from the
+/// current draft's size, which is more useful).
+typedef _StructureParams = ({
+  StructureFamily family,
+  ThreadingKind threading,
+  String over,
+  String under,
+  String shafts,
+  String counter,
+  String block,
+  bool shadowTwill,
+  bool applyThreading,
+  bool applyTieup,
+  bool applyTreadling,
+  String endStart,
+  String pickStart,
+});
+
+final _lastStructureParamsProvider = StateProvider<_StructureParams?>((ref) => null);
+
 class StructureSheet extends ConsumerStatefulWidget {
   const StructureSheet({super.key});
 
@@ -37,13 +58,50 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
   final _counter = TextEditingController(text: '2');
   final _ends = TextEditingController(text: '16');
   final _picks = TextEditingController(text: '16');
+  // Block width (overshot) / color-phase block (shadow weave); the twill-ground toggle for shadow.
+  final _block = TextEditingController(text: '4');
+  bool _shadowTwill = false;
+
+  // Composable application (basic families): which components a Generate (re)writes, and where the
+  // generated patch is placed (so a structure can be laid into a band / one component swapped).
+  bool _applyThreading = true;
+  bool _applyTieup = true;
+  bool _applyTreadling = true;
+  final _endStart = TextEditingController(text: '0');
+  final _pickStart = TextEditingController(text: '0');
 
   bool _generating = false;
+
+  /// Whole-draft structures: the engine builds the whole interdependent draft (threading + tie-up +
+  /// treadling + warp/weft colors), so the family/threading/shaft params don't apply — only ends,
+  /// picks, and the structure's own knobs (block, ground).
+  static const _wholeDraft = {
+    StructureFamily.overshot,
+    StructureFamily.shadowWeave,
+    StructureFamily.doubleWeave,
+  };
 
   @override
   void initState() {
     super.initState();
-    // Seed ends/picks from the current draft when it already has a cloth (overridable).
+    // Restore the last-used structure choices (family, params, components, offsets) if any.
+    final last = ref.read(_lastStructureParamsProvider);
+    if (last != null) {
+      _family = last.family;
+      _threading = last.threading;
+      _over.text = last.over;
+      _under.text = last.under;
+      _shafts.text = last.shafts;
+      _counter.text = last.counter;
+      _block.text = last.block;
+      _shadowTwill = last.shadowTwill;
+      _applyThreading = last.applyThreading;
+      _applyTieup = last.applyTieup;
+      _applyTreadling = last.applyTreadling;
+      _endStart.text = last.endStart;
+      _pickStart.text = last.pickStart;
+    }
+    // Seed ends/picks from the current draft when it already has a cloth (overridable, not remembered).
     final draft = ref.read(draftEditorProvider).draft;
     if (draft.ends > 0) _ends.text = '${draft.ends}';
     if (draft.picks > 0) _picks.text = '${draft.picks}';
@@ -51,7 +109,7 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
 
   @override
   void dispose() {
-    for (final c in [_over, _under, _shafts, _counter, _ends, _picks]) {
+    for (final c in [_over, _under, _shafts, _counter, _ends, _picks, _block, _endStart, _pickStart]) {
       c.dispose();
     }
     super.dispose();
@@ -104,6 +162,21 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
     return v > _maxThreads ? 'Too many' : null;
   }
 
+  /// Block width (overshot) / color-phase block (shadow weave): needs >= 2 (a block alternates a pair
+  /// of shafts / two colors), capped well below the thread ceiling.
+  String? _blockCount(String? s) {
+    final v = int.tryParse((s ?? '').trim());
+    if (v == null || v < 2) return 'At least 2';
+    return v > 64 ? 'Too large' : null;
+  }
+
+  /// Patch offset (start at end / start at pick): 0 or more.
+  String? _offset(String? s) {
+    final v = int.tryParse((s ?? '').trim());
+    if (v == null || v < 0) return '0 or more';
+    return v > _maxThreads ? 'Too large' : null;
+  }
+
   /// Switch families, seeding VALID defaults so a generate on the defaults always yields good cloth
   /// (the satin defaults must be coprime; the prior shafts default of 4 has no valid satin).
   void _onFamily(StructureFamily f) {
@@ -134,6 +207,12 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
           .showSnackBar(const SnackBar(content: Text('That many shafts exceeds the loom (max 200).')));
       return;
     }
+    // Basic families apply one or more components; with none selected a Generate would do nothing.
+    if (!_wholeDraft.contains(_family) && !_applyThreading && !_applyTieup && !_applyTreadling) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Pick at least one component to apply.')));
+      return;
+    }
     setState(() => _generating = true);
     final navigator = Navigator.of(context);
     try {
@@ -150,9 +229,32 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
         counter: int.tryParse(_counter.text.trim()) ?? 2,
         ends: int.tryParse(_ends.text.trim()) ?? 16,
         picks: int.tryParse(_picks.text.trim()) ?? 16,
+        block: int.tryParse(_block.text.trim()) ?? 4,
+        twill: _shadowTwill,
+        applyThreading: _applyThreading,
+        applyTieup: _applyTieup,
+        applyTreadling: _applyTreadling,
+        endStart: int.tryParse(_endStart.text.trim()) ?? 0,
+        pickStart: int.tryParse(_pickStart.text.trim()) ?? 0,
       );
       if (!mounted) return;
-      notifier.commitEdit(doc); // one undo entry; replaces the cloth with the generated structure
+      notifier.commitEdit(doc); // one undo entry: applies the structure into the draft
+      // Remember the choices so reopening the sheet restores them.
+      ref.read(_lastStructureParamsProvider.notifier).state = (
+        family: _family,
+        threading: _threading,
+        over: _over.text,
+        under: _under.text,
+        shafts: _shafts.text,
+        counter: _counter.text,
+        block: _block.text,
+        shadowTwill: _shadowTwill,
+        applyThreading: _applyThreading,
+        applyTieup: _applyTieup,
+        applyTreadling: _applyTreadling,
+        endStart: _endStart.text,
+        pickStart: _pickStart.text,
+      );
       navigator.pop();
     } catch (e) {
       if (mounted) {
@@ -169,6 +271,9 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
     final text = Theme.of(context).textTheme;
     final isTwill = _family == StructureFamily.twill;
     final isSatin = _family == StructureFamily.satin;
+    final isWhole = _wholeDraft.contains(_family);
+    final isOvershot = _family == StructureFamily.overshot;
+    final isShadow = _family == StructureFamily.shadowWeave;
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -181,7 +286,10 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
             children: [
               Text('Generate structure', style: text.titleMedium),
               const SizedBox(height: 4),
-              Text('Replaces the threading, tie-up, and treadling with a generated weave.',
+              Text(
+                  isWhole
+                      ? 'Replaces the cloth with a complete generated weave (its colors included).'
+                      : 'Applies the chosen parts into the draft — non-destructive, so your colors and any untouched areas stay.',
                   style: text.bodySmall
                       ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 16),
@@ -194,10 +302,15 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
                   DropdownMenuItem(value: StructureFamily.plain, child: Text('Plain weave')),
                   DropdownMenuItem(value: StructureFamily.twill, child: Text('Twill')),
                   DropdownMenuItem(value: StructureFamily.satin, child: Text('Satin')),
+                  DropdownMenuItem(value: StructureFamily.overshot, child: Text('Overshot')),
+                  DropdownMenuItem(
+                      value: StructureFamily.shadowWeave, child: Text('Shadow weave')),
+                  DropdownMenuItem(
+                      value: StructureFamily.doubleWeave, child: Text('Double weave')),
                 ],
               ),
 
-              // Family-specific parameters.
+              // Tie-up family parameters (plain / twill / satin).
               if (isTwill)
                 Row(
                   children: [
@@ -206,21 +319,38 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
                     Expanded(child: _numField(_under, 'Under')),
                   ],
                 ),
-              if (!isTwill)
+              if (!isTwill && !isWhole)
                 _numField(_shafts, 'Shafts', _structureShafts),
               if (isSatin)
                 _numField(_counter, 'Counter (satin move)', _satinCounter),
 
-              const SizedBox(height: 4),
-              DropdownButtonFormField<ThreadingKind>(
-                initialValue: _threading,
-                decoration: const InputDecoration(labelText: 'Threading'),
-                onChanged: (v) => setState(() => _threading = v ?? ThreadingKind.straight),
-                items: const [
-                  DropdownMenuItem(value: ThreadingKind.straight, child: Text('Straight draw')),
-                  DropdownMenuItem(value: ThreadingKind.point, child: Text('Point draw')),
-                ],
-              ),
+              // Whole-draft structure knobs.
+              if (isOvershot)
+                _numField(_block, 'Block width', _blockCount),
+              if (isShadow) ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Twill ground'),
+                  subtitle: const Text('2/2 twill instead of plain weave'),
+                  value: _shadowTwill,
+                  onChanged: (v) => setState(() => _shadowTwill = v),
+                ),
+                _numField(_block, 'Color block', _blockCount),
+              ],
+
+              // Threading applies only to the tie-up families; the whole-draft structures fix theirs.
+              if (!isWhole) ...[
+                const SizedBox(height: 4),
+                DropdownButtonFormField<ThreadingKind>(
+                  initialValue: _threading,
+                  decoration: const InputDecoration(labelText: 'Threading'),
+                  onChanged: (v) => setState(() => _threading = v ?? ThreadingKind.straight),
+                  items: const [
+                    DropdownMenuItem(value: ThreadingKind.straight, child: Text('Straight draw')),
+                    DropdownMenuItem(value: ThreadingKind.point, child: Text('Point draw')),
+                  ],
+                ),
+              ],
 
               Row(
                 children: [
@@ -229,6 +359,43 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
                   Expanded(child: _numField(_picks, 'Picks', _threadCount)),
                 ],
               ),
+
+              // Composable application (basic families): which components to (re)write, and where to
+              // place the generated patch — so a structure can be mixed into a band (Start at end/pick)
+              // or one part swapped (deselect the others), without disturbing the rest.
+              if (!isWhole) ...[
+                const SizedBox(height: 16),
+                Text('Apply', style: text.labelLarge),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    FilterChip(
+                      label: const Text('Threading'),
+                      selected: _applyThreading,
+                      onSelected: (v) => setState(() => _applyThreading = v),
+                    ),
+                    FilterChip(
+                      label: const Text('Tie-up'),
+                      selected: _applyTieup,
+                      onSelected: (v) => setState(() => _applyTieup = v),
+                    ),
+                    FilterChip(
+                      label: const Text('Treadling'),
+                      selected: _applyTreadling,
+                      onSelected: (v) => setState(() => _applyTreadling = v),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(child: _numField(_endStart, 'Start at end', _offset)),
+                    const SizedBox(width: 12),
+                    Expanded(child: _numField(_pickStart, 'Start at pick', _offset)),
+                  ],
+                ),
+              ],
+
               const SizedBox(height: 16),
               Align(
                 alignment: Alignment.centerRight,

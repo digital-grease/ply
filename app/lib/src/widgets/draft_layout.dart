@@ -19,17 +19,23 @@
 // One content coordinate space, origin top-left (Flutter native). Bottom-origin axes are honoured
 // ONLY inside the cell<->pixel maps (a row flip), never by a second coordinate space.
 //
-// LAYOUT (flush; NO gutter between threading and drawdown — the warp column reads pixel-continuous):
+// LAYOUT: a cross-shaped GUTTER (see [gutter]) separates the four regions so the drawdown reads as
+// its own panel. The vertical gutter sits between the left column (threading/drawdown) and the right
+// column (tie-up/treadling); the horizontal gutter between the top row (threading/tie-up) and the
+// bottom row (drawdown/treadling). The warp/weft color bands stay flush with their cloth column/row.
 //
-//        x: [ threading: ends*S ][ right band: rightCols*S ]
-//        y0 +------------------+ +-------------------------+
-//           |    threading     | |   tie-up (treadled)     |  rows = shafts
-//           +------------------+ +-------------------------+
-//           |    drawdown      | |  treadling / liftplan   |  rows = picks
-//           +------------------+ +-------------------------+
+//        x: [ threading: ends*S ] G [ right band: rightCols*S ]
+//        y0 +------------------+   +-------------------------+
+//           |    threading     |   |   tie-up (treadled)     |  rows = shafts
+//           +------------------+   +-------------------------+
+//                  G (horizontal gutter)
+//           +------------------+   +-------------------------+
+//           |    drawdown      |   |  treadling / liftplan   |  rows = picks
+//           +------------------+   +-------------------------+
 //
-// Shared edges are the SAME expression (threadingRect.width and drawdownRect.width are both
-// ends*cell, etc.), so 4-region alignment is structural, not asserted.
+// Within a region, widths/heights are UNCHANGED by the gutter (it only offsets the right column's X
+// and the bottom row's Y), and those offsets are applied identically to both members of each shared
+// axis — so per-axis alignment stays structural, not asserted.
 
 import 'dart:ui' show Offset, Rect, Size;
 
@@ -148,18 +154,35 @@ class DraftLayout {
   double get _leftPad => picks > 0 ? cell : 0; // weft-color band column
   double get _topPad => ends > 0 ? cell : 0; // warp-color band row
 
-  // --- region rects in CANVAS space. The four core regions shift right/down past the bands. ---
+  /// Fraction of a cell used for the gutter that separates the four regions. Tunable; proportional
+  /// so the gap reads the same at every zoom pitch.
+  static const double _gutterFraction = 0.4;
+
+  /// The gutter (logical px) inserted BOTH between the left column (threading/drawdown) and the right
+  /// column (tie-up/treadling) AND between the top row (threading/tie-up) and the bottom row
+  /// (drawdown/treadling), so the drawdown reads as its own panel separated from the structural grids.
+  /// Rounded to an integer logical px (cell is integer-valued) so region edges stay crisp. Collapses
+  /// to 0 on a degenerate/placeholder draft (any zero axis) so those paths stay flush at the origin
+  /// exactly as before.
+  double get gutter => (ends > 0 && picks > 0 && shafts > 0)
+      ? (cell * _gutterFraction).roundToDouble()
+      : 0;
+
+  // --- region rects in CANVAS space. The four core regions shift past the bands; the right column
+  // and bottom row shift a further [gutter] so the drawdown stands apart from the structural grids. --
   Rect get threadingRect => Rect.fromLTWH(_leftPad, _topPad, _warpW, _shaftH);
-  Rect get tieupRect => Rect.fromLTWH(_leftPad + _warpW, _topPad, _rightW, _shaftH);
-  Rect get drawdownRect => Rect.fromLTWH(_leftPad, _topPad + _shaftH, _warpW, _pickH);
-  Rect get rightRect => Rect.fromLTWH(_leftPad + _warpW, _topPad + _shaftH, _rightW, _pickH);
+  Rect get tieupRect => Rect.fromLTWH(_leftPad + _warpW + gutter, _topPad, _rightW, _shaftH);
+  Rect get drawdownRect => Rect.fromLTWH(_leftPad, _topPad + _shaftH + gutter, _warpW, _pickH);
+  Rect get rightRect =>
+      Rect.fromLTWH(_leftPad + _warpW + gutter, _topPad + _shaftH + gutter, _rightW, _pickH);
 
   /// Warp colors: a top strip ABOVE threading, sharing the warp column's X + width with both
-  /// threading and the drawdown (the alignment that matters).
+  /// threading and the drawdown (the alignment that matters). Stays flush with threading (no gutter).
   Rect get warpColorRect => Rect.fromLTWH(_leftPad, 0, _warpW, _topPad);
 
-  /// Weft colors: a left strip beside the drawdown, sharing the drawdown's Y + height.
-  Rect get weftColorRect => Rect.fromLTWH(0, _topPad + _shaftH, _leftPad, _pickH);
+  /// Weft colors: a left strip beside the drawdown, sharing the drawdown's Y + height (so it shifts
+  /// down by the same [gutter] as the drawdown). Stays flush with the drawdown (no gutter between).
+  Rect get weftColorRect => Rect.fromLTWH(0, _topPad + _shaftH + gutter, _leftPad, _pickH);
 
   Rect rectOf(DraftRegion r) => switch (r) {
         DraftRegion.threading => threadingRect,
@@ -170,8 +193,10 @@ class DraftLayout {
         DraftRegion.drawdown => drawdownRect,
       };
 
-  /// Fixed-pitch canvas size; the scrollable SizedBox uses exactly this.
-  Size get totalSize => Size(_leftPad + _warpW + _rightW, _topPad + _shaftH + _pickH);
+  /// Fixed-pitch canvas size; the scrollable SizedBox uses exactly this. Includes the [gutter]
+  /// inserted once between the columns and once between the rows.
+  Size get totalSize =>
+      Size(_leftPad + _warpW + gutter + _rightW, _topPad + _shaftH + gutter + _pickH);
 
   /// The largest pitch in [levels] whose whole [totalSize] fits within [available] on BOTH axes — a
   /// "zoom to fit" so a freshly-opened draft fills the viewport instead of always starting at a fixed

@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Camera: for attaching project photos (on-device only; gallery uses the system photo picker). -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Internet: ONLY for the optional, off-by-default Ravelry connector. The rest of Ply is offline. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="Ply"
         android:name="${applicationName}"

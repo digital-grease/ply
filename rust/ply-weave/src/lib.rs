@@ -12,6 +12,7 @@ pub mod draft;
 pub mod drawdown;
 pub mod error;
 pub mod profile;
+pub mod structure;
 pub mod validate;
 pub mod wif;
 

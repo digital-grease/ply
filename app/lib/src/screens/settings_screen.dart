@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/theme_providers.dart';
 import '../theme/spacing.dart';
+import 'ravelry_screen.dart';
 
 /// App settings — appearance for M4 (theme mode, Material You, accent). Reads + writes the persisted
 /// [appSettingsProvider]; every change applies live and survives a relaunch.
@@ -81,6 +82,21 @@ class SettingsScreen extends ConsumerWidget {
                     onTap: () => notifier.setAccentSeed(seed),
                   ),
               ],
+            ),
+          ),
+          const Divider(height: PlySpacing.lg),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(PlySpacing.md, PlySpacing.xs, PlySpacing.md, PlySpacing.xs),
+            child: Text('Connections',
+                style: text.titleSmall?.copyWith(color: Theme.of(context).colorScheme.primary)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.cloud_outlined),
+            title: const Text('Ravelry'),
+            subtitle: const Text('Optional, online — search patterns with your own Ravelry key'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const RavelryScreen()),
             ),
           ),
         ],

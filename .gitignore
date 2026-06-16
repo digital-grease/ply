@@ -23,3 +23,8 @@ CLAUDE.md
 
 # Local prior-art reference clones (e.g. Treadl). Read-only study material, not part of Ply.
 /reference/
+
+# Android signing — never commit the release keystore or its properties.
+*.jks
+*.keystore
+key.properties

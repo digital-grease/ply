@@ -29,18 +29,20 @@ void main() {
       );
 
   group('DraftLayout region rects (flush, structural alignment)', () {
-    test('rects tile the canvas; the color bands reserve a left/top strip', () {
-      final l = treadled(); // leftPad=topPad=cell=10
-      // The four core regions shift right/down past the bands.
+    test('rects tile the canvas; the color bands reserve a left/top strip; gutter separates regions', () {
+      final l = treadled(); // leftPad=topPad=cell=10; gutter = round(10*0.4) = 4
+      expect(l.gutter, 4);
+      // The four core regions shift right/down past the bands; the right column (+x) and bottom row
+      // (+y) shift a further `gutter`.
       expect(l.threadingRect, const Rect.fromLTWH(10, 10, 40, 20));
-      expect(l.tieupRect, const Rect.fromLTWH(50, 10, 50, 20));
-      expect(l.drawdownRect, const Rect.fromLTWH(10, 30, 40, 30));
-      expect(l.rightRect, const Rect.fromLTWH(50, 30, 50, 30));
-      // Warp colors: top strip, ends wide, sharing the warp column's X+width.
+      expect(l.tieupRect, const Rect.fromLTWH(54, 10, 50, 20)); // +4 gutter in x
+      expect(l.drawdownRect, const Rect.fromLTWH(10, 34, 40, 30)); // +4 gutter in y
+      expect(l.rightRect, const Rect.fromLTWH(54, 34, 50, 30)); // +4 in both
+      // Warp colors: top strip, ends wide, sharing the warp column's X+width (flush with threading).
       expect(l.warpColorRect, const Rect.fromLTWH(10, 0, 40, 10));
-      // Weft colors: left strip, picks tall, sharing the drawdown's Y+height.
-      expect(l.weftColorRect, const Rect.fromLTWH(0, 30, 10, 30));
-      expect(l.totalSize, const Size(100, 60));
+      // Weft colors: left strip, picks tall, sharing the drawdown's Y+height (shifts with it).
+      expect(l.weftColorRect, const Rect.fromLTWH(0, 34, 10, 30));
+      expect(l.totalSize, const Size(104, 64)); // +4 gutter on each axis
     });
 
     test('color bands are column/row aligned with the cloth', () {
@@ -196,7 +198,8 @@ void main() {
 
   group('DraftLayout.fitCellLevel (auto-fit the open pitch to the viewport)', () {
     // Same dims as treadled(): width = (1 + ends 4 + treadles 5) = 10 cells, height = (1 + shafts 2
-    // + picks 3) = 6 cells, so totalSize at pitch S is (10S, 6S).
+    // + picks 3) = 6 cells, plus the gutter G = round(0.4S), so totalSize at pitch S is
+    // (10S + G, 6S + G). E.g. S=16 -> G=6 -> (166, 102); S=12 -> G=5 -> (125, 77).
     int fit(Size available) => DraftLayout.fitCellLevel(
           ends: 4,
           picks: 3,
@@ -208,19 +211,19 @@ void main() {
         );
 
     test('a roomy viewport picks the LARGEST level that fits', () {
-      expect(fit(const Size(1000, 1000)), 48); // 480x288 fits
+      expect(fit(const Size(1000, 1000)), 48); // 499x307 fits
     });
     test('a tight WIDTH binds the level', () {
-      expect(fit(const Size(200, 1000)), 16); // 16 -> 160x96 fits; 24 -> 240 wide overflows
+      expect(fit(const Size(200, 1000)), 16); // 16 -> 166 wide fits; 24 -> 250 wide overflows
     });
     test('a tight HEIGHT binds the level', () {
-      expect(fit(const Size(1000, 100)), 16); // 16 -> 96 tall fits; 24 -> 144 tall overflows
+      expect(fit(const Size(1000, 100)), 12); // 12 -> 77 tall fits; 16 -> 102 tall overflows
     });
     test('exact fit is inclusive (<=)', () {
-      expect(fit(const Size(160, 96)), 16); // 10x6 cells at pitch 16 == 160x96 exactly
+      expect(fit(const Size(166, 102)), 16); // pitch 16 with gutter: 166x102 exactly
     });
     test('falls back to the SMALLEST level when even it overflows (the draft then scrolls)', () {
-      expect(fit(const Size(50, 50)), 8); // 8 -> 80x48 overflows 50 but is the floor
+      expect(fit(const Size(50, 50)), 8); // 8 -> 83x51 overflows 50 but is the floor
     });
   });
 }

@@ -76,52 +76,21 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
             return Color.fromARGB(255, c.r, c.g, c.b);
           }();
     final enabled = !_resizing;
+    // A non-scrolling, CENTERED WRAP so every control is reachable without a sideways scroll: the
+    // dimension steppers come FIRST (the primary controls), then the tool chips, flowing onto as many
+    // rows as the width needs. Paired with the editor body letting the cloth shrink, this panel sits
+    // in the space that used to be empty under the drawdown.
     return Material(
       elevation: 2,
       child: SafeArea(
         top: false,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 4,
+            runSpacing: 4,
             children: [
-              // Opens the palette editor sheet; the leading dot is the active brush color. Leads the
-              // dimension steppers; the row already scrolls horizontally, so it never overflows.
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: ActionChip(
-                  avatar: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: brushColor,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: cs.outlineVariant),
-                    ),
-                  ),
-                  label: Text('Colors ${palette.length}'),
-                  onPressed: () => showPaletteSheet(context),
-                ),
-              ),
-              // Opens the planning calculator (sett + warp-yarn estimate). A sibling of the Colors
-              // chip; the row scrolls so it never overflows.
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: ActionChip(
-                  avatar: const Icon(Icons.calculate_outlined, size: 18),
-                  label: const Text('Calculator'),
-                  onPressed: () => showPlanningSheet(context),
-                ),
-              ),
-              // Generate a plain/twill/satin structure into the draft (one undo entry).
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: ActionChip(
-                  avatar: const Icon(Icons.grid_4x4, size: 18),
-                  label: const Text('Structure'),
-                  onPressed: () => showStructureSheet(context),
-                ),
-              ),
               _Stepper(
                   label: 'Ends',
                   value: ends,
@@ -154,6 +123,31 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                     max: _maxDim,
                     enabled: enabled,
                     onChange: (v) => _resize(treadles: v)),
+              // Tool chips: the palette editor (the leading dot is the active brush color), the
+              // planning calculator, and the structure generator.
+              ActionChip(
+                avatar: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: brushColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: cs.outlineVariant),
+                  ),
+                ),
+                label: Text('Colors ${palette.length}'),
+                onPressed: () => showPaletteSheet(context),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.calculate_outlined, size: 18),
+                label: const Text('Calculator'),
+                onPressed: () => showPlanningSheet(context),
+              ),
+              ActionChip(
+                avatar: const Icon(Icons.grid_4x4, size: 18),
+                label: const Text('Structure'),
+                onPressed: () => showStructureSheet(context),
+              ),
             ],
           ),
         ),
@@ -196,31 +190,30 @@ class _Stepper extends StatelessWidget {
     // definition, sourced from docs/GLOSSARY.md. Falls back to a bare label if the term is absent.
     final Widget labelText =
         Text('$label $value', style: Theme.of(context).textTheme.labelLarge);
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            iconSize: 20,
-            tooltip: 'Fewer $label',
-            onPressed: enabled && value > min ? () => onChange(value - 1) : null,
-            icon: const Icon(Icons.remove),
-          ),
-          if (def == null)
-            labelText
-          else
-            Tooltip(message: '$concept: $def', triggerMode: TooltipTriggerMode.tap, child: labelText),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            iconSize: 20,
-            tooltip: 'More $label',
-            onPressed: enabled && value < max ? () => onChange(value + 1) : null,
-            icon: const Icon(Icons.add),
-          ),
-        ],
-      ),
+    // No self-padding: the parent Wrap spaces the steppers. mainAxisSize.min keeps each stepper as
+    // tight as its content so the Wrap packs as many per row as fit.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          iconSize: 20,
+          tooltip: 'Fewer $label',
+          onPressed: enabled && value > min ? () => onChange(value - 1) : null,
+          icon: const Icon(Icons.remove),
+        ),
+        if (def == null)
+          labelText
+        else
+          Tooltip(message: '$concept: $def', triggerMode: TooltipTriggerMode.tap, child: labelText),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          iconSize: 20,
+          tooltip: 'More $label',
+          onPressed: enabled && value < max ? () => onChange(value + 1) : null,
+          icon: const Icon(Icons.add),
+        ),
+      ],
     );
   }
 }

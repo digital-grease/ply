@@ -87,7 +87,14 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     // context.size shrink-wraps its scrolling axis to content, which would defeat the fit.
     return LayoutBuilder(builder: (context, constraints) {
       _maybeAutoFit(dims, constraints.biggest);
-      return _canvas(layout, physics, pencil, notifier);
+      // Cap the canvas to its CONTENT height (not the whole viewport) so that when the cloth fits
+      // with room to spare — e.g. a small/new draft on a tall phone — the editor's Column can pull
+      // the dimension controls up into the freed space instead of leaving a gap under the cloth. In
+      // a tight parent (the tablet rail's Expanded) the SizedBox is forced to fill, unchanged; only
+      // a LOOSE parent (the phone body's Flexible) lets it shrink. Taller-than-viewport drafts cap
+      // to maxHeight and scroll as before.
+      final h = layout.totalSize.height.clamp(0.0, constraints.maxHeight);
+      return SizedBox(height: h, child: _canvas(layout, physics, pencil, notifier));
     });
   }
 

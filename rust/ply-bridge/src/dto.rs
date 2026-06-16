@@ -41,12 +41,17 @@ pub enum UnitKind {
     Centimeters,
 }
 
-/// Which weave-structure family the "Generate structure" action builds a tie-up for. Flat C-like
-/// enum so frb mirrors it as a plain Dart enum.
+/// Which weave-structure family the "Generate structure" action builds. Plain/Twill/Satin generate a
+/// tie-up (composed Dart-side with a threading + straight treadling); Overshot/ShadowWeave/DoubleWeave
+/// are interdependent WHOLE-DRAFT structures built in the engine and returned as a complete `DraftDto`
+/// via [`generate_structure_dto`]. Flat C-like enum so frb mirrors it as a plain Dart enum.
 pub enum StructureFamily {
     Plain,
     Twill,
     Satin,
+    Overshot,
+    ShadowWeave,
+    DoubleWeave,
 }
 
 /// Which threading the "Generate structure" action lays down. Flat C-like enum.

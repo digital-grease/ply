@@ -189,8 +189,41 @@ pub fn generate_tieup_dto(
         StructureFamily::Plain => weave::draft::TieUp::plain(shafts),
         StructureFamily::Twill => weave::draft::TieUp::twill(over, under),
         StructureFamily::Satin => weave::draft::TieUp::satin(shafts, counter),
+        // The whole-draft families (overshot/shadow/double) route through `generate_structure_dto`
+        // and never reach here; a plain tie-up is a harmless default if ever misrouted.
+        StructureFamily::Overshot | StructureFamily::ShadowWeave | StructureFamily::DoubleWeave => {
+            weave::draft::TieUp::plain(shafts)
+        }
     };
     tieup.0.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
+}
+
+/// Generate a COMPLETE draft for a whole-draft weave structure (overshot, shadow weave, double weave).
+/// Unlike plain/twill/satin — whose tie-up + threading are composed Dart-side — these three are
+/// interdependent (the threading, tie-up, treadling, AND warp/weft colors must agree), so they are
+/// built whole in the engine and returned as a ready-to-edit `DraftDto`. `block` is the block width
+/// (overshot) or the log-cabin color-phase block (shadow weave); `twill` selects shadow weave's 2/2
+/// twill ground over plain weave. Plain/Twill/Satin are not expected here (they use the tie-up path);
+/// a plain weave is returned as a harmless fallback.
+pub fn generate_structure_dto(
+    family: StructureFamily,
+    ends: u32,
+    picks: u32,
+    block: u32,
+    twill: bool,
+) -> DraftDto {
+    let e = ends as usize;
+    let p = picks as usize;
+    let b = (block as usize).max(2);
+    let draft = match family {
+        StructureFamily::Overshot => weave::structure::overshot(e, p, b),
+        StructureFamily::ShadowWeave => weave::structure::shadow_weave(e, p, twill, b),
+        StructureFamily::DoubleWeave => weave::structure::double_weave(e, p),
+        StructureFamily::Plain | StructureFamily::Twill | StructureFamily::Satin => {
+            weave::structure::plain_weave(e, p)
+        }
+    };
+    DraftDto::from(&draft)
 }
 
 /// Generate a threading (per warp end, the 1-based shaft it threads) for the chosen draw over

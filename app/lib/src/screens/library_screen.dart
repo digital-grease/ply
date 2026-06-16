@@ -245,7 +245,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // there to avoid offering the same two actions twice. They return once a pattern exists.
     //
     // No AppBar: this is the Weaving TAB inside HomeScreen, which owns the shared chrome (title,
-    // Glossary, Settings). The inner Scaffold here exists only to host the FAB + body within the tab.
+    // Help, Settings). The inner Scaffold here exists only to host the FAB + body within the tab.
     return FutureBuilder<List<DraftEntry>>(
       future: _entriesFuture,
       builder: (context, snapshot) {

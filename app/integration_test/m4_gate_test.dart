@@ -61,21 +61,24 @@ void main() {
     final repo = DraftRepository();
     await tester.pumpWidget(
       ProviderScope(
-        // The unified home (Weaving | Knitting tabs) owns the shared chrome since the M5 library
-        // unification; Glossary + Settings live on its AppBar.
+        // The unified home (Weaving | Knitting | Nalbinding tabs) owns the shared chrome since the M5
+        // library unification; Help & FAQ + Settings live on its AppBar, and the Glossary opens from
+        // Help.
         child: MaterialApp(home: HomeScreen(repository: repo)),
       ),
     );
     await tester.pumpAndSettle();
 
     // Both AppBar destinations render at tablet width without overflow.
-    expect(find.byTooltip('Glossary'), findsOneWidget);
+    expect(find.byTooltip('Help & FAQ'), findsOneWidget);
     expect(find.byTooltip('Settings'), findsOneWidget);
 
-    // The in-app glossary opens and lists terms on the device.
-    await tester.tap(find.byTooltip('Glossary'));
+    // Help ("?") opens the FAQ + Glossary hub; the glossary opens from there and lists terms.
+    await tester.tap(find.byTooltip('Help & FAQ'));
     await tester.pumpAndSettle();
-    expect(find.text('Glossary'), findsOneWidget, reason: 'the Glossary screen is shown');
-    expect(find.text('Warp'), findsOneWidget, reason: 'terms are listed on device');
+    expect(find.text('What is Ply?'), findsOneWidget, reason: 'the FAQ is shown in Help');
+    await tester.tap(find.text('Glossary'));
+    await tester.pumpAndSettle();
+    expect(find.text('Warp'), findsOneWidget, reason: 'glossary terms are listed on device');
   });
 }

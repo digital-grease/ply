@@ -5,7 +5,7 @@ import '../models/draft_doc.dart' show DraftColor;
 import '../models/draft_meta.dart';
 import '../models/knit_stitches.dart';
 import '../rust/dto.dart' show ColorDto, SeverityKind;
-import '../rust/knit_dto.dart' show KnitIssueDto;
+import '../rust/knit_dto.dart' show KnitIssueDto, KnitPatternDto;
 import '../state/knit_editor_providers.dart';
 import '../state/knit_editor_state.dart';
 import '../theme/ply_colors.dart';
@@ -24,10 +24,14 @@ enum _EditorMenu { zoomIn, zoomOut, written, planning, settings }
 /// live stitch-count validation, and save to the on-device knit library. The knit analog of the
 /// weaving `EditorScreen`; the gauge/yardage panel and cable placement layer on next.
 class KnitEditorScreen extends ConsumerStatefulWidget {
-  const KnitEditorScreen({this.openId, super.key});
+  const KnitEditorScreen({this.openId, this.initialPattern, super.key});
 
   /// When non-null, open this SAVED pattern (by id) instead of a fresh blank starter.
   final String? openId;
+
+  /// When non-null (and [openId] is null), start editing this freshly-built pattern (from the New
+  /// pattern setup screen) instead of the default blank 8x8.
+  final KnitPatternDto? initialPattern;
 
   @override
   ConsumerState<KnitEditorScreen> createState() => _KnitEditorScreenState();
@@ -59,6 +63,9 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
         _name = entry.meta.name;
         _savedAt = entry.meta.savedAt;
         ref.read(knitEditorProvider.notifier).load(pattern);
+      } else if (widget.initialPattern != null) {
+        // Built by the New pattern setup screen (size / gauge / construction / starting stitch).
+        ref.read(knitEditorProvider.notifier).load(widget.initialPattern!);
       } else {
         // A fresh pattern: the engine blank carries the builtin legend; start it as an 8x8 grid on a
         // clean state so the starter has no undo history.
@@ -440,41 +447,66 @@ class _KnitColorRow extends ConsumerWidget {
 
     return SizedBox(
       height: 34,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
+      child: Row(
         children: [
-          // "Symbol only" — paint an uncolored (symbol) cell.
-          _Swatch(
-            selected: active == null,
-            tooltip: 'Symbol only (no colorwork)',
-            onTap: () => ref.read(activeKnitColorProvider.notifier).state = null,
-            child: Icon(Icons.format_color_reset_outlined, size: 16, color: cs.onSurfaceVariant),
-          ),
-          for (var i = 0; i < palette.length; i++)
-            _Swatch(
-              selected: active == i,
-              fill: Color.fromARGB(255, palette[i].r, palette[i].g, palette[i].b),
-              tooltip: 'Color ${i + 1} (long-press to edit)',
-              onTap: () => ref.read(activeKnitColorProvider.notifier).state = i,
-              onLongPress: () async {
-                final c = palette[i];
-                final picked = await showRgbColorPicker(context,
-                    initial: DraftColor(r: c.r, g: c.g, b: c.b), title: 'Edit color');
-                if (picked != null) {
-                  notifier.setPaletteColor(i, ColorDto(r: picked.r, g: picked.g, b: picked.b));
-                }
-              },
+          // A leading label so the colorwork palette is DISCOVERABLE: without it the row reads as a
+          // lone white square + plus (owner feedback 2026-06-15 — "didn't realize it was there").
+          // "Colors" mirrors the weave editor's color affordance; the tooltip explains colorwork.
+          Tooltip(
+            message: 'Yarn colors for colorwork: pick one, then paint cells. '
+                '"Symbol only" leaves a cell uncolored.',
+            child: Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.palette_outlined, size: 18, color: cs.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Text('Colors', style: Theme.of(context).textTheme.labelMedium),
+                ],
+              ),
             ),
-          _Swatch(
-            tooltip: 'Add color',
-            onTap: () async {
-              final picked = await showRgbColorPicker(context,
-                  initial: const DraftColor(r: 128, g: 128, b: 128), title: 'Add color');
-              if (picked != null) {
-                notifier.addPaletteColor(ColorDto(r: picked.r, g: picked.g, b: picked.b));
-              }
-            },
-            child: Icon(Icons.add, size: 16, color: cs.onSurfaceVariant),
+          ),
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                // "Symbol only" — paint an uncolored (symbol) cell.
+                _Swatch(
+                  selected: active == null,
+                  tooltip: 'Symbol only (no colorwork)',
+                  onTap: () => ref.read(activeKnitColorProvider.notifier).state = null,
+                  child: Icon(Icons.format_color_reset_outlined,
+                      size: 16, color: cs.onSurfaceVariant),
+                ),
+                for (var i = 0; i < palette.length; i++)
+                  _Swatch(
+                    selected: active == i,
+                    fill: Color.fromARGB(255, palette[i].r, palette[i].g, palette[i].b),
+                    tooltip: 'Color ${i + 1} (long-press to edit)',
+                    onTap: () => ref.read(activeKnitColorProvider.notifier).state = i,
+                    onLongPress: () async {
+                      final c = palette[i];
+                      final picked = await showRgbColorPicker(context,
+                          initial: DraftColor(r: c.r, g: c.g, b: c.b), title: 'Edit color');
+                      if (picked != null) {
+                        notifier.setPaletteColor(i, ColorDto(r: picked.r, g: picked.g, b: picked.b));
+                      }
+                    },
+                  ),
+                _Swatch(
+                  tooltip: 'Add color',
+                  onTap: () async {
+                    final picked = await showRgbColorPicker(context,
+                        initial: const DraftColor(r: 128, g: 128, b: 128), title: 'Add color');
+                    if (picked != null) {
+                      notifier.addPaletteColor(ColorDto(r: picked.r, g: picked.g, b: picked.b));
+                    }
+                  },
+                  child: Icon(Icons.add, size: 16, color: cs.onSurfaceVariant),
+                ),
+              ],
+            ),
           ),
         ],
       ),

@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/knit_entry.dart';
+import '../rust/knit_dto.dart' show KnitPatternDto;
 import '../state/knit_editor_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/name_input_dialog.dart';
 import 'knit_editor_screen.dart';
+import 'new_knit_setup_screen.dart';
 
 /// The on-device knitting-pattern library: a grid of saved `.plyknit` patterns with thumbnails, plus
 /// a New-pattern FAB. The knit analog of [LibraryScreen]; kept SEPARATE from the weave library for
@@ -54,12 +56,16 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
 
   // --- Actions ---------------------------------------------------------------
 
-  /// Start a fresh pattern. The editor saves in place (it does not pop a result), so just re-scan on
-  /// return to pick up anything saved.
+  /// Start a fresh pattern: collect setup (size / gauge / construction / starting stitch) first, then
+  /// open the editor on the built pattern. The editor saves in place, so just re-scan on return.
   Future<void> _newPattern() async {
     final navigator = Navigator.of(context);
+    final pattern = await navigator.push<KnitPatternDto>(
+      MaterialPageRoute(builder: (_) => const NewKnitSetupScreen()),
+    );
+    if (pattern == null) return; // setup was cancelled (back)
     await navigator.push(
-      MaterialPageRoute<void>(builder: (_) => const KnitEditorScreen()),
+      MaterialPageRoute<void>(builder: (_) => KnitEditorScreen(initialPattern: pattern)),
     );
     await _refresh();
   }
