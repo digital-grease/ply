@@ -7,7 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/glossary_lookup.dart';
+import '../models/double_weave_layers.dart';
 import '../models/draft_doc.dart';
+import '../screens/layer_inspector_screen.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import 'palette_sheet.dart';
@@ -65,6 +67,10 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
               s.draft.drive is DraftTreadled,
             )));
     final palette = ref.watch(draftEditorProvider.select((s) => s.draft.palette));
+    // Whether to surface the double-weave layer view (4+ shafts used). Watched directly so the chip
+    // appears/disappears as the draft changes — and it reads the threading's real shaft usage, not
+    // just the header, so a generated/composed double weave reliably offers it.
+    final canLayers = ref.watch(draftEditorProvider.select((s) => supportsLayerView(s.draft)));
     final active = ref.watch(activePaletteColorProvider);
     final cs = Theme.of(context).colorScheme;
     // The chip's leading dot is the active BRUSH color, so the chosen color is visible without
@@ -148,6 +154,17 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                 label: const Text('Structure'),
                 onPressed: () => showStructureSheet(context),
               ),
+              // Double-weave only: a VISIBLE entry to the layer inspector (Combined/Front/Back), so
+              // switching layers doesn't require hunting the AppBar overflow.
+              if (canLayers)
+                ActionChip(
+                  avatar: const Icon(Icons.layers_outlined, size: 18),
+                  label: const Text('Layers'),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) =>
+                        LayerInspectorScreen(draft: ref.read(draftEditorProvider).draft),
+                  )),
+                ),
             ],
           ),
         ),

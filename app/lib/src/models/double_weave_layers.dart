@@ -10,10 +10,20 @@ import 'draft_doc.dart';
 /// each kept pick still raises the same shafts) reproduces exactly that one layer's cloth, with no new
 /// engine code.
 
-/// Whether [doc] can offer the layered double-weave view: at least 4 shafts (two 2-shaft layers) and a
-/// non-empty cloth. The split assumes the odd/even convention above, so it is EXACT for generated
-/// double weave and a best-effort heuristic for hand-built or imported cloth.
-bool supportsLayerView(DraftDoc doc) => doc.shafts >= 4 && doc.ends > 0 && doc.picks > 0;
+/// Whether [doc] can offer the layered double-weave view: a non-empty cloth that uses at least 4
+/// shafts (two 2-shaft layers). The split assumes the odd/even convention above, so it is EXACT for
+/// generated double weave and a best-effort heuristic for hand-built or imported cloth.
+///
+/// Gates on the shafts the THREADING actually uses (max of the header and any threaded shaft), not the
+/// `shafts` header alone: a composed or edited draft can leave the header below its real shaft usage
+/// (e.g. overlaying a small structure), which would otherwise wrongly hide the layer view on a genuine
+/// 4-shaft double weave.
+bool supportsLayerView(DraftDoc doc) {
+  if (doc.ends == 0 || doc.picks == 0) return false;
+  final maxShaft = doc.threading
+      .fold<int>(doc.shafts, (m, row) => row.fold<int>(m, (a, s) => s > a ? s : a));
+  return maxShaft >= 4;
+}
 
 /// The two layers of a double weave.
 enum DoubleWeaveLayer { front, back }

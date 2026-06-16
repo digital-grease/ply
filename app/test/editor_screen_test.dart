@@ -628,6 +628,23 @@ void main() {
     expect(find.textContaining("isn't supported yet"), findsOneWidget);
   });
 
+  testWidgets('a 4-shaft (double-weave) draft surfaces View layers in the overflow menu',
+      (tester) async {
+    // The loaded fixture is a 4-shaft, 4-pick cloth (the same shape a generated double weave has), so
+    // the layer inspector must be reachable. Proves the menu logic; the alpha "no way to switch
+    // layers" report is therefore about discoverability (it lives in the ⋮ overflow), not absence.
+    await pumpEditor(tester, FakeRepo());
+    await openOverflow(tester);
+    expect(find.text('View layers'), findsOneWidget);
+  });
+
+  testWidgets('a double-weave draft shows a VISIBLE Layers chip (not just the overflow)',
+      (tester) async {
+    await pumpEditor(tester, FakeRepo()); // 4-shaft loaded draft
+    expect(find.widgetWithText(ActionChip, 'Layers'), findsOneWidget,
+        reason: 'layer switching is discoverable without opening the overflow menu');
+  });
+
   // --- Phase 3.4: Save error-gating ------------------------------------------
 
   testWidgets('saving a draft with an Error warns, then Save anyway proceeds', (tester) async {

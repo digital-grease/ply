@@ -11,7 +11,7 @@
 //! a knitter TILES it, not part of the motif's internal stitch count), so the continuity pass runs on
 //! the literal cells.
 
-use crate::pattern::{builtin, KnitPattern, Row, StitchLegend};
+use crate::pattern::{builtin, KnitPattern, Row, Side, StitchLegend};
 
 /// Issue severity. Errors are hard problems (a save gate should refuse); warnings are advisory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +45,9 @@ pub fn validate(pattern: &KnitPattern) -> Vec<KnitIssue> {
     let mut totals: Vec<(u32, u32)> = Vec::with_capacity(pattern.chart.rows.len());
     for (r, row) in pattern.chart.rows.iter().enumerate() {
         let rownum = r + 1; // 1-based for human-facing messages
+        // Number stitches in READING/WORKING order so a reported "col" names the same stitch the
+        // written instructions and the knitter count to (a right-side row is worked right-to-left).
+        let rs = matches!(pattern.row_side(r), Side::Rs);
 
         if row.cells.len() != width {
             issues.push(KnitIssue::error(format!(
@@ -54,7 +57,7 @@ pub fn validate(pattern: &KnitPattern) -> Vec<KnitIssue> {
         }
 
         for (c, cell) in row.cells.iter().enumerate() {
-            let col = c + 1;
+            let col = reading_col(rs, width, c);
             if legend.get(cell.stitch).is_none() {
                 issues.push(KnitIssue::error(format!(
                     "row {rownum} col {col} references stitch #{} which is not in the legend",
@@ -79,7 +82,7 @@ pub fn validate(pattern: &KnitPattern) -> Vec<KnitIssue> {
             }
         }
 
-        check_cable_spans(legend, row, rownum, width, &mut issues);
+        check_cable_spans(legend, row, rownum, width, rs, &mut issues);
         totals.push(row_totals(legend, row));
     }
 
@@ -113,6 +116,19 @@ fn row_totals(legend: &StitchLegend, row: &Row) -> (u32, u32) {
     (consumes, produces)
 }
 
+/// The 1-based column number to SHOW for storage index `idx`, in READING ORDER: a right-side (RS) row
+/// is worked, read, and written right-to-left, so its rightmost stitch is column 1; a wrong-side (WS)
+/// row is worked left-to-right (column = idx + 1). This mirrors `written.rs` so a validation "col N"
+/// names the same stitch the written instructions and the knitter count to. The `width > idx` guard
+/// keeps a ragged over-wide row (already error-flagged) from underflowing.
+fn reading_col(rs: bool, width: usize, idx: usize) -> usize {
+    if rs && width > idx {
+        width - idx
+    } else {
+        idx + 1
+    }
+}
+
 /// A cable cell must fit the width and be followed by `span - 1` no-stitch cells (the columns it
 /// covers), and its declared consumes/produces must equal its span (count-neutral).
 fn check_cable_spans(
@@ -120,12 +136,13 @@ fn check_cable_spans(
     row: &Row,
     rownum: usize,
     width: usize,
+    rs: bool,
     issues: &mut Vec<KnitIssue>,
 ) {
     for (c, cell) in row.cells.iter().enumerate() {
         let Some(def) = legend.get(cell.stitch) else { continue };
         let Some(cable) = def.cable else { continue };
-        let col = c + 1;
+        let col = reading_col(rs, width, c);
         let span = cable.span() as usize;
         if span == 0 {
             continue;
@@ -151,7 +168,7 @@ fn check_cable_spans(
                 _ => {
                     issues.push(KnitIssue::error(format!(
                         "row {rownum} col {col}: a {span}-wide cable must be followed by no-stitch cells (col {} is not)",
-                        c + k + 1
+                        reading_col(rs, width, c + k)
                     )));
                     break;
                 }
@@ -264,6 +281,40 @@ mod tests {
         assert!(
             issues.iter().any(|i| i.message.contains("must be followed by no-stitch")),
             "{issues:?}"
+        );
+    }
+
+    #[test]
+    fn rs_row_numbers_stitches_right_to_left() {
+        // On a right-side row the RIGHTMOST stitch is worked (and read, and written) first = column 1,
+        // and the leftmost last; a validation "col" must match that reading order rather than the
+        // left-origin storage index (the bug the alpha user hit: errors numbered the opposite way).
+        let leftmost_bad = pattern(
+            4,
+            vec![Row::plain(vec![Cell { stitch: 999, color: None }, k(), k(), k()])],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        assert!(
+            validate(&leftmost_bad)
+                .iter()
+                .any(|i| i.message.contains("col 4") && i.message.contains("#999")),
+            "leftmost stitch on an RS row is worked LAST -> col 4: {:?}",
+            validate(&leftmost_bad)
+        );
+
+        let rightmost_bad = pattern(
+            4,
+            vec![Row::plain(vec![k(), k(), k(), Cell { stitch: 999, color: None }])],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        assert!(
+            validate(&rightmost_bad)
+                .iter()
+                .any(|i| i.message.contains("col 1") && i.message.contains("#999")),
+            "rightmost stitch on an RS row is worked FIRST -> col 1: {:?}",
+            validate(&rightmost_bad)
         );
     }
 

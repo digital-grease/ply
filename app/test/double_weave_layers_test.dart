@@ -39,6 +39,13 @@ void main() {
       expect(supportsLayerView(DraftDoc.blank(shafts: 4, treadles: 4)), isFalse,
           reason: 'blank is 0x0');
     });
+
+    test('detects a 4-shaft double weave even when the shafts header is stale (below usage)', () {
+      // A genuine 4-shaft cloth whose header was left at 2 (e.g. by a composed structure) must still
+      // offer the layer view — the gate reads the threading's real shaft usage, not the header.
+      final staleHeader = doubleWeave().copyWith(shafts: 2);
+      expect(supportsLayerView(staleHeader), isTrue);
+    });
   });
 
   group('doubleWeaveLayerDraft', () {
