@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/draft_repository.dart';
 import '../models/draft_issue.dart';
+import '../models/loom_type.dart';
 import 'draft_editor_notifier.dart';
 
 /// The app's single [DraftRepository] (the sole owner of the FFI bridge and on-device storage).
@@ -53,10 +54,26 @@ int clampBrush(int index, int paletteLength) =>
     paletteLength == 0 ? 0 : index.clamp(0, paletteLength - 1);
 
 /// Discrete on-screen cell sizes (logical px) the integrated view can zoom through. Discrete +
-/// integer so cells stay crisp and the tap math is scroll-/zoom-invariant.
+/// integer so cells stay crisp and the tap math is scroll-/zoom-invariant. These are the SNAP points
+/// the +/- buttons step through; pinch-zoom is continuous and clamps to [minCellPx]/[maxCellPx]
+/// instead (kept off this list so adding a bigger step would not move the open-time auto-fit).
 const List<int> zoomCellLevels = [8, 12, 16, 24, 32, 48];
 
-/// The on-screen pixels-per-cell (the shared grid pitch). Stepped through [zoomCellLevels].
+/// Pinch-zoom pitch bounds (logical px/cell). Wider than [zoomCellLevels] so a pinch can push past the
+/// largest button step or below the smallest; still integer, so the drawdown bitmap stays crisp.
+const int minCellPx = 6;
+const int maxCellPx = 64;
+
+/// Step the cell pitch to the next/previous [zoomCellLevels] step from [cur] (dir +1 / -1). Snaps an
+/// OFF-level [cur] (e.g. an exact pitch a pinch left behind) to the nearest level in the step
+/// direction, and saturates at [maxCellPx]/[minCellPx] past the ends of the list. Pure so the AppBar
+/// overflow and the on-canvas controls step identically.
+int stepZoomLevel(int cur, int dir) => dir > 0
+    ? zoomCellLevels.firstWhere((l) => l > cur, orElse: () => maxCellPx)
+    : zoomCellLevels.reversed.firstWhere((l) => l < cur, orElse: () => minCellPx);
+
+/// The on-screen pixels-per-cell (the shared grid pitch). Stepped through [zoomCellLevels] by the
+/// buttons, set freely (within [minCellPx]..[maxCellPx]) by a pinch.
 final zoomCellProvider = StateProvider<int>((ref) => 16);
 
 /// Whether the user has taken MANUAL control of the zoom (stepped it from the AppBar). Until then the
@@ -65,6 +82,12 @@ final zoomCellProvider = StateProvider<int>((ref) => 16);
 /// overrides their choice. Reset to false on each draft load so a freshly-opened draft re-fits.
 /// Ephemeral view chrome, off EditorState like [zoomCellProvider].
 final zoomUserSetProvider = StateProvider<bool>((ref) => false);
+
+/// The loom type of the open draft. Seeded on [DraftEditorNotifier.load] from the sidecar
+/// [DraftMeta] (a saved draft) or the new-draft choice, written back into the sidecar on save.
+/// Ephemeral editor chrome (like [zoomCellProvider]) — it is metadata, not part of the rendered
+/// cloth, so it lives off EditorState; picking a type applies its shed/drive PRESET to the draft.
+final loomTypeProvider = StateProvider<LoomType>((ref) => LoomType.jack);
 
 /// Whether the live drawdown draws cell-boundary gridlines. Ephemeral VIEW CHROME (like
 /// [zoomCellProvider]): it changes only how the cloth is rasterized for display, never the document,

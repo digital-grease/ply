@@ -6,9 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../data/draft_repository.dart';
-import '../models/draft_doc.dart';
 import '../models/draft_meta.dart';
+import '../models/loom_type.dart';
 import '../util/responsive.dart';
+import '../widgets/loom_type_picker.dart';
 import 'editor_screen.dart';
 import 'preview_screen.dart';
 
@@ -98,14 +99,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
-  /// Start a from-scratch draft: open the editor on a blank document (no source WIF, no meta). The
-  /// editor prompts for name/author/notes on its first save and pops `true` when it lands in the
-  /// library.
+  /// Start a from-scratch draft: pick the loom type, then open the editor on a blank document set up
+  /// for it (no source WIF, no meta). The editor prompts for name/author/notes on its first save and
+  /// pops `true` when it lands in the library.
   Future<void> _newDraft() async {
+    final loom = await showLoomTypePicker(context, current: LoomType.jack);
+    if (loom == null || !mounted) return; // dismissed the picker -> no new draft
     final navigator = Navigator.of(context);
     final saved = await navigator.push<bool>(
       MaterialPageRoute(
-        builder: (_) => EditorScreen(initialDoc: DraftDoc.blank(), title: 'New draft'),
+        builder: (_) => EditorScreen(
+          initialDoc: blankDraftForLoom(loom),
+          initialLoomType: loom,
+          title: 'New draft',
+        ),
       ),
     );
     if (saved == true) {

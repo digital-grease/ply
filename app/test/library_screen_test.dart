@@ -9,6 +9,7 @@ import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/models/draft_issue.dart';
 import 'package:ply/src/models/draft_meta.dart';
+import 'package:ply/src/models/loom_type.dart';
 import 'package:ply/src/screens/editor_screen.dart';
 import 'package:ply/src/screens/library_screen.dart';
 import 'package:ply/src/state/editor_providers.dart';
@@ -113,6 +114,8 @@ void main() {
   testWidgets('the New-draft FAB pushes the editor on a fresh blank doc (no meta)', (tester) async {
     await pumpLibrary(tester, FakeLibraryRepo([_entry('a')]));
     await tester.tap(find.widgetWithText(FloatingActionButton, 'New draft'));
+    await tester.pumpAndSettle(); // the loom-type picker
+    await tester.tap(find.text('Jack (floor loom)'));
     await tester.pump(); // start the push
     await tester.pump(const Duration(milliseconds: 30));
 
@@ -121,11 +124,14 @@ void main() {
     expect(editor.wifText, isNull);
     expect(editor.meta, isNull, reason: 'no meta -> the editor prompts on first save');
     expect(editor.id, isNull, reason: 'a new draft mints its id at save');
+    expect(editor.initialLoomType, LoomType.jack, reason: 'the chosen loom flows into the editor');
   });
 
   testWidgets('the empty-state New-draft button also pushes the editor', (tester) async {
     await pumpLibrary(tester, FakeLibraryRepo(const []));
     await tester.tap(find.widgetWithText(FilledButton, 'New draft'));
+    await tester.pumpAndSettle(); // the loom-type picker
+    await tester.tap(find.text('Table loom'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 30));
     expect(find.byType(EditorScreen), findsOneWidget);

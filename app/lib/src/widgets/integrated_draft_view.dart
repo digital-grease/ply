@@ -19,6 +19,7 @@ import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import 'draft_grids.dart';
 import 'draft_layout.dart';
+import 'editor_view_controls.dart';
 
 class IntegratedDraftView extends ConsumerStatefulWidget {
   const IntegratedDraftView({super.key});
@@ -33,15 +34,27 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
   /// Plain field, not setState: it only steers later pointer events, never the build output.
   int? _activePointer;
 
+  /// Every pointer currently down on the canvas, in content space. Drives the HAND-mode pinch (two
+  /// live pointers). Plain field: it only steers later pointer events, never the build output.
+  final Map<int, Offset> _pointers = {};
+
+  /// True while a two-finger pinch-zoom is in progress (HAND mode). It freezes the scroll physics so
+  /// the fingers only zoom, so it DOES gate the build output — toggled via setState.
+  bool _pinching = false;
+  double _pinchStartDist = 0;
+  int _pinchStartPitch = 16;
+
   @override
   Widget build(BuildContext context) {
-    // If the user flips to HAND while a stroke is open, the pencil handlers go null and no
-    // pointer-up would fire, so seal the stroke here.
+    // If the user flips to HAND while a stroke is open, the pencil handlers stop painting and no
+    // pointer-up would seal it, so seal the stroke here. Flipping to PENCIL ends any live pinch (the
+    // single pointer is about to paint); the editorTool watch below rebuilds, so no setState needed.
     ref.listen(editorToolProvider, (_, tool) {
       if (tool != EditorTool.pencil && _activePointer != null) {
         _activePointer = null;
         ref.read(draftEditorProvider.notifier).endStroke();
       }
+      if (tool == EditorTool.pencil) _pinching = false;
     });
 
     // Watch ONLY what changes the geometry; cell pitch + tool from their own providers.
@@ -80,7 +93,13 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     }
 
     final notifier = ref.read(draftEditorProvider.notifier);
-    final physics = pencil ? const NeverScrollableScrollPhysics() : null;
+    // Watch the user-set guard so the on-canvas "Fit to view" control (which clears it) rebuilds us
+    // and re-runs the open-time auto-fit below.
+    ref.watch(zoomUserSetProvider);
+    // Freeze scrolling in PENCIL (the Listener owns drags) AND during a pinch (so the two fingers
+    // only zoom, never also scroll). At rest in HAND both are false, so the draft pans normally.
+    final physics =
+        (pencil || _pinching) ? const NeverScrollableScrollPhysics() : null;
 
     // Size the pitch to fill the viewport on open (one-shot per load, until the user zooms manually).
     // A LayoutBuilder gives the TRUE bounded viewport on both axes; the scroll view's own
@@ -94,7 +113,22 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       // a LOOSE parent (the phone body's Flexible) lets it shrink. Taller-than-viewport drafts cap
       // to maxHeight and scroll as before.
       final h = layout.totalSize.height.clamp(0.0, constraints.maxHeight);
-      return SizedBox(height: h, child: _canvas(layout, physics, pencil, notifier));
+      // The zoom/pan control cluster floats over the cloth's bottom-right corner so it travels with
+      // the draft area in BOTH layouts (cloth-on-top phone / cloth-beside-rail tablet) and never
+      // covers the structural grids (top-left). It sits OUTSIDE the scroll views, so it is fixed to
+      // the viewport, not the scrolling content.
+      return SizedBox(
+        height: h,
+        // Clip.none so the floating controls are never cut off when the cloth area is shorter than
+        // the pill (a tiny draft); anchored at bottom:8 they still never spill BELOW the canvas.
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(child: _canvas(layout, physics, pencil, notifier)),
+            const Positioned(right: 8, bottom: 8, child: EditorViewControls()),
+          ],
+        ),
+      );
     });
   }
 
@@ -117,36 +151,13 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
           size: layout.totalSize,
           child: Listener(
             behavior: HitTestBehavior.opaque,
-            onPointerDown: pencil
-                ? (e) {
-                    if (_activePointer != null) return; // already stroking with another pointer
-                    final hit = layout.hitTest(e.localPosition);
-                    if (hit == null) return;
-                    _activePointer = e.pointer;
-                    notifier.beginStroke(hit);
-                  }
-                : null,
-            onPointerMove: pencil
-                ? (e) {
-                    if (e.pointer != _activePointer) return;
-                    final hit = layout.hitTest(e.localPosition);
-                    if (hit != null) notifier.paintAt(hit);
-                  }
-                : null,
-            onPointerUp: pencil
-                ? (e) {
-                    if (e.pointer != _activePointer) return;
-                    _activePointer = null;
-                    notifier.endStroke();
-                  }
-                : null,
-            onPointerCancel: pencil
-                ? (e) {
-                    if (e.pointer != _activePointer) return;
-                    _activePointer = null;
-                    notifier.endStroke();
-                  }
-                : null,
+            // Handlers are always attached so HAND mode can observe pointers for the pinch; a Listener
+            // does NOT enter the gesture arena, so this never steals the scroll views' pan. Each
+            // handler branches on the tool internally.
+            onPointerDown: (e) => _onPointerDown(e, layout, pencil, notifier),
+            onPointerMove: (e) => _onPointerMove(e, layout, pencil, notifier),
+            onPointerUp: (e) => _onPointerEnd(e, pencil, notifier),
+            onPointerCancel: (e) => _onPointerEnd(e, pencil, notifier),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
@@ -189,6 +200,71 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       ),
     );
   }
+
+  // --- pointer routing: PENCIL paints (single pointer), HAND pinch-zooms (two pointers) ---
+
+  void _onPointerDown(
+      PointerDownEvent e, DraftLayout layout, bool pencil, DraftEditorNotifier notifier) {
+    _pointers[e.pointer] = e.localPosition;
+    if (pencil) {
+      if (_activePointer != null) return; // already stroking with another pointer
+      final hit = layout.hitTest(e.localPosition);
+      if (hit == null) return;
+      _activePointer = e.pointer;
+      notifier.beginStroke(hit);
+    } else if (_pointers.length == 2 && !_pinching) {
+      _beginPinch();
+    }
+  }
+
+  void _onPointerMove(
+      PointerMoveEvent e, DraftLayout layout, bool pencil, DraftEditorNotifier notifier) {
+    if (_pointers.containsKey(e.pointer)) _pointers[e.pointer] = e.localPosition;
+    if (pencil) {
+      if (e.pointer != _activePointer) return;
+      final hit = layout.hitTest(e.localPosition);
+      if (hit != null) notifier.paintAt(hit);
+    } else if (_pinching && _pointers.length >= 2) {
+      _updatePinch();
+    }
+  }
+
+  void _onPointerEnd(PointerEvent e, bool pencil, DraftEditorNotifier notifier) {
+    _pointers.remove(e.pointer);
+    if (pencil) {
+      if (e.pointer != _activePointer) return;
+      _activePointer = null;
+      notifier.endStroke();
+    } else if (_pinching && _pointers.length < 2) {
+      _endPinch();
+    }
+  }
+
+  /// Pinch-to-zoom, HAND mode only (where the paint Listener is idle). Implemented off the raw
+  /// [Listener] — which OBSERVES pointers without entering the gesture arena — so it never fights the
+  /// scroll views that pan the draft; while a pinch is live the scroll physics freeze ([_pinching]) so
+  /// the two fingers only zoom. The pitch is rounded to an integer (crisp nearest-neighbor bitmap)
+  /// and clamped to [minCellPx]..[maxCellPx].
+  void _beginPinch() {
+    final p = _pointers.values.toList();
+    _pinchStartDist = (p[0] - p[1]).distance;
+    _pinchStartPitch = ref.read(zoomCellProvider);
+    setState(() => _pinching = true);
+  }
+
+  void _updatePinch() {
+    final p = _pointers.values.toList();
+    final dist = (p[0] - p[1]).distance;
+    if (_pinchStartDist <= 0 || dist <= 0) return;
+    final next =
+        (_pinchStartPitch * dist / _pinchStartDist).round().clamp(minCellPx, maxCellPx);
+    if (next != ref.read(zoomCellProvider)) {
+      ref.read(zoomCellProvider.notifier).state = next;
+      ref.read(zoomUserSetProvider.notifier).state = true; // a manual zoom; auto-fit yields
+    }
+  }
+
+  void _endPinch() => setState(() => _pinching = false);
 
   /// Size the pitch to the viewport ONCE when a draft opens (until the user zooms manually). Fed the
   /// TRUE viewport [available] from [build]'s LayoutBuilder; the provider WRITE is deferred to a

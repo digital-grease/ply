@@ -9,6 +9,7 @@ import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/models/draft_issue.dart';
 import 'package:ply/src/models/draft_meta.dart';
+import 'package:ply/src/models/loom_type.dart';
 import 'package:ply/src/screens/editor_screen.dart';
 import 'package:ply/src/state/draft_editor_notifier.dart';
 import 'package:ply/src/state/editor_providers.dart';
@@ -553,6 +554,78 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pump();
     expect(find.byType(VerticalDivider), findsNothing, reason: 'narrow -> vertical stack');
+  });
+
+  testWidgets('the overflow Sinking shed item flips the draft shed as one undo entry', (tester) async {
+    final container = await pumpEditor(tester, FakeRepo()); // loaded draft is rising-shed
+    expect(container.read(draftEditorProvider).draft.shed, Shed.rising);
+
+    await openOverflow(tester);
+    await tester.tap(find.text('Sinking shed'));
+    await tester.pumpAndSettle();
+
+    final st = container.read(draftEditorProvider);
+    expect(st.draft.shed, Shed.sinking, reason: 'the toggle set sinking');
+    expect(st.undo.length, 1, reason: 'one undo entry for the shed change');
+    expect(st.dirtyStructural, isTrue, reason: 'a shed change is structural');
+  });
+
+  testWidgets('Loom type -> Counterbalance applies a sinking shed and records the type',
+      (tester) async {
+    final container = await pumpEditor(tester, FakeRepo()); // loaded jack/rising/treadled
+    expect(container.read(loomTypeProvider), LoomType.jack);
+
+    await openOverflow(tester);
+    await tester.tap(find.text('Loom type…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Counterbalance (floor loom)'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(draftEditorProvider).draft.shed, Shed.sinking);
+    expect(container.read(loomTypeProvider), LoomType.counterbalance);
+  });
+
+  testWidgets('Loom type -> Table converts a treadled draft to a liftplan (after confirm)',
+      (tester) async {
+    final container = await pumpEditor(tester, FakeRepo());
+    expect(container.read(draftEditorProvider).draft.drive, isA<DraftTreadled>());
+
+    await openOverflow(tester);
+    await tester.tap(find.text('Loom type…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Table loom'));
+    await tester.pumpAndSettle(); // the loom requires a liftplan -> convert-confirm dialog
+    expect(find.text('Convert to liftplan?'), findsOneWidget);
+    await tester.tap(find.text('Convert'));
+    await letAsyncSettle(tester);
+
+    expect(container.read(draftEditorProvider).draft.drive, isA<DraftLiftplan>());
+    expect(container.read(loomTypeProvider), LoomType.table);
+  });
+
+  testWidgets('Loom type -> a floor loom is refused on a liftplan draft (one-way limit)',
+      (tester) async {
+    final container = await pumpEditor(tester, FakeRepo());
+    // Drive it to a liftplan (table/dobby) first.
+    container.read(draftEditorProvider.notifier).commitEdit(
+        container.read(draftEditorProvider).draft.copyWith(
+            drive: DraftLiftplan(liftplan: const [
+              [1],
+            ]),
+            treadles: 0));
+    container.read(loomTypeProvider.notifier).state = LoomType.dobby;
+    await tester.pump();
+
+    await openOverflow(tester);
+    await tester.tap(find.text('Loom type…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Jack (floor loom)'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(draftEditorProvider).draft.drive, isA<DraftLiftplan>(),
+        reason: 'still a liftplan — the floor-loom switch was refused');
+    expect(container.read(loomTypeProvider), LoomType.dobby, reason: 'loom type unchanged');
+    expect(find.textContaining("isn't supported yet"), findsOneWidget);
   });
 
   // --- Phase 3.4: Save error-gating ------------------------------------------

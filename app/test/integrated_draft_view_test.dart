@@ -423,4 +423,100 @@ void main() {
       expect(c.read(zoomCellProvider), 8, reason: 'auto-fit must not stomp the user pitch');
     });
   });
+
+  group('stepZoomLevel (pure)', () {
+    test('steps up/down through the levels', () {
+      expect(stepZoomLevel(16, 1), 24);
+      expect(stepZoomLevel(16, -1), 12);
+    });
+    test('an off-level pitch (e.g. left by a pinch) snaps to the nearest level in the step direction',
+        () {
+      expect(stepZoomLevel(40, 1), 48, reason: 'next level above 40');
+      expect(stepZoomLevel(40, -1), 32, reason: 'next level below 40');
+    });
+    test('saturates at the pinch bounds past the ends of the level list', () {
+      expect(stepZoomLevel(48, 1), maxCellPx, reason: 'no level above 48 -> max');
+      expect(stepZoomLevel(8, -1), minCellPx, reason: 'no level below 8 -> min');
+      expect(stepZoomLevel(maxCellPx, 1), maxCellPx);
+      expect(stepZoomLevel(minCellPx, -1), minCellPx);
+    });
+  });
+
+  group('on-canvas view controls', () {
+    testWidgets('Zoom in / Zoom out step the pitch', (tester) async {
+      final c = await pumpView(tester); // pitch pinned at kCell = 16
+      await tester.tap(find.byTooltip('Zoom in'));
+      await tester.pump();
+      expect(c.read(zoomCellProvider), 24);
+      await tester.tap(find.byTooltip('Zoom out'));
+      await tester.pump();
+      expect(c.read(zoomCellProvider), 16);
+    });
+
+    testWidgets('Fit to view re-fits the pitch to the viewport', (tester) async {
+      final c = await pumpView(tester); // user-set pitch 16 in an 800x600 viewport
+      await tester.tap(find.byTooltip('Fit to view'));
+      await tester.pumpAndSettle();
+      expect(c.read(zoomCellProvider), 48, reason: 'the 7x7 fixture fits at the largest level');
+      expect(c.read(zoomUserSetProvider), isTrue, reason: 're-fit re-claims the guard');
+    });
+
+    testWidgets('the pan/draw toggle flips the editor tool', (tester) async {
+      final c = await pumpView(tester); // starts in pencil
+      await tester.tap(find.byTooltip('Pan the draft'));
+      await tester.pump();
+      expect(c.read(editorToolProvider), EditorTool.hand);
+      await tester.tap(find.byTooltip('Draw on the draft'));
+      await tester.pump();
+      expect(c.read(editorToolProvider), EditorTool.pencil);
+    });
+  });
+
+  group('pinch-to-zoom (HAND mode, via the raw Listener)', () {
+    // Two pointers in the read-only drawdown area so PENCIL never starts a paint stroke; the pinch
+    // uses only the DISTANCE between pointers, so the canvas origin offset is irrelevant.
+    Offset a(WidgetTester t) => _origin(t) + const Offset(20, 70);
+    Offset b(WidgetTester t) => _origin(t) + const Offset(40, 70); // 20px from a
+
+    testWidgets('a two-finger spread zooms in', (tester) async {
+      final c = await pumpView(tester, tool: EditorTool.hand);
+      expect(c.read(zoomCellProvider), kCell);
+      final f1 = await tester.startGesture(a(tester), pointer: 1);
+      final f2 = await tester.startGesture(b(tester), pointer: 2); // dist 20
+      await tester.pump();
+      await f2.moveTo(_origin(tester) + const Offset(60, 70)); // dist 40 -> 2x
+      await tester.pump();
+      expect(c.read(zoomCellProvider), greaterThan(kCell), reason: 'spreading fingers zooms in');
+      await f1.up();
+      await f2.up();
+      await tester.pump();
+    });
+
+    testWidgets('pinching fingers together zooms out', (tester) async {
+      final c = await pumpView(tester, tool: EditorTool.hand);
+      final f1 = await tester.startGesture(a(tester), pointer: 1);
+      final f2 = await tester.startGesture(
+          _origin(tester) + const Offset(60, 70), pointer: 2); // dist 40
+      await tester.pump();
+      await f2.moveTo(b(tester)); // dist 20 -> 0.5x
+      await tester.pump();
+      expect(c.read(zoomCellProvider), lessThan(kCell), reason: 'closing fingers zooms out');
+      await f1.up();
+      await f2.up();
+      await tester.pump();
+    });
+
+    testWidgets('a two-finger gesture in PENCIL mode does NOT pinch-zoom', (tester) async {
+      final c = await pumpView(tester); // pencil
+      final f1 = await tester.startGesture(a(tester), pointer: 1);
+      final f2 = await tester.startGesture(b(tester), pointer: 2);
+      await tester.pump();
+      await f2.moveTo(_origin(tester) + const Offset(80, 70));
+      await tester.pump();
+      expect(c.read(zoomCellProvider), kCell, reason: 'pinch is HAND-only; pencil holds the pitch');
+      await f1.up();
+      await f2.up();
+      await tester.pump();
+    });
+  });
 }

@@ -14,6 +14,8 @@
 //
 // No generated bridge symbols are imported here on purpose: this file is pure data.
 
+import 'loom_type.dart';
+
 /// Metadata describing one saved draft, serialized to `<id>.json`.
 class DraftMeta {
   DraftMeta({
@@ -21,6 +23,7 @@ class DraftMeta {
     this.craft = 'Weaving',
     this.author,
     this.notes = '',
+    this.loomType = LoomType.jack,
     required DateTime savedAt,
     required DateTime lastOpened,
     this.schemaVersion = 1,
@@ -44,6 +47,10 @@ class DraftMeta {
   /// Free-form notes; empty string when absent (mirrors the Rust `String`, not `Option`).
   final String notes;
 
+  /// The loom this draft is built for (shed + drive preset). App-only; serde tolerates it as an
+  /// unknown field. Defaults to [LoomType.jack] when absent (older sidecar).
+  final LoomType loomType;
+
   /// When the draft was first saved.
   final DateTime savedAt;
 
@@ -58,6 +65,7 @@ class DraftMeta {
     String? craft,
     String? author,
     String? notes,
+    LoomType? loomType,
     DateTime? savedAt,
     DateTime? lastOpened,
     int? schemaVersion,
@@ -67,6 +75,7 @@ class DraftMeta {
       craft: craft ?? this.craft,
       author: author ?? this.author,
       notes: notes ?? this.notes,
+      loomType: loomType ?? this.loomType,
       savedAt: savedAt ?? this.savedAt,
       lastOpened: lastOpened ?? this.lastOpened,
       schemaVersion: schemaVersion ?? this.schemaVersion,
@@ -80,6 +89,7 @@ class DraftMeta {
         'craft': craft,
         if (author != null) 'author': author,
         'notes': notes,
+        'loomType': loomType.serialName,
         'savedAt': savedAt.toIso8601String(),
         'lastOpened': lastOpened.toIso8601String(),
         'schemaVersion': schemaVersion,
@@ -94,6 +104,7 @@ class DraftMeta {
       craft: (json['craft'] as String?) ?? 'Weaving',
       author: json['author'] as String?,
       notes: (json['notes'] as String?) ?? '',
+      loomType: loomTypeFromSerial(json['loomType'] as String?),
       savedAt: savedAt,
       // Fall back to savedAt so sort order is still sensible if lastOpened is absent.
       lastOpened: _parseDate(json['lastOpened'], fallback: savedAt),
@@ -110,6 +121,7 @@ class DraftMeta {
           craft == other.craft &&
           author == other.author &&
           notes == other.notes &&
+          loomType == other.loomType &&
           savedAt == other.savedAt &&
           lastOpened == other.lastOpened &&
           schemaVersion == other.schemaVersion;
@@ -120,6 +132,7 @@ class DraftMeta {
         craft,
         author,
         notes,
+        loomType,
         savedAt,
         lastOpened,
         schemaVersion,

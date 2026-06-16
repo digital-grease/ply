@@ -61,6 +61,12 @@ class DraftEditorNotifier extends Notifier<EditorState> {
     state = state.fillWeftStripe(sequence);
   }
 
+  /// Set the loom's shed direction (rising vs sinking), committed as ONE undo entry (no-op when
+  /// unchanged). Sinking inverts which shafts a treadle raises — the engine's `raised_shafts` handles
+  /// the complement — so the cloth re-renders; no FFI is needed here because renderDto/validateDto/
+  /// saveDto already carry `shed` through the DTO.
+  void setShed(Shed shed) => commitEdit(state.draft.copyWith(shed: shed));
+
   /// Restore the most recent pre-edit snapshot.
   void undo() => state = state.undoEdit();
 

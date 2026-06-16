@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
+import '../models/loom_type.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/dimensions_bar.dart';
 import '../widgets/draft_layout.dart';
 import '../widgets/integrated_draft_view.dart';
+import '../widgets/loom_type_picker.dart';
 import '../widgets/save_draft_dialog.dart';
 import '../widgets/validation_panel.dart';
 import '../widgets/woven_preview.dart';
@@ -19,7 +21,7 @@ enum _LeaveAction { keepEditing, discard, save }
 
 /// The less-frequent AppBar actions tucked into the overflow (⋮) menu. The two `toggle*` entries
 /// are view-chrome switches (gridlines / long-float highlight) rather than one-shot actions.
-enum _OverflowAction { zoomIn, zoomOut, convert, toggleGridlines, toggleFloats }
+enum _OverflowAction { zoomIn, zoomOut, loomType, convert, toggleShed, toggleGridlines, toggleFloats }
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
 /// tie-up cell toggles it and the drawdown re-renders live (engine recompute is microseconds;
@@ -32,6 +34,7 @@ class EditorScreen extends ConsumerStatefulWidget {
     required this.title,
     this.id,
     this.meta,
+    this.initialLoomType,
     super.key,
   }) : assert((wifText == null) != (initialDoc == null),
             'provide exactly one of wifText (import/open) or initialDoc (new draft)');
@@ -54,6 +57,10 @@ class EditorScreen extends ConsumerStatefulWidget {
 
   /// Existing sidecar metadata for a saved draft, preserved across save.
   final DraftMeta? meta;
+
+  /// The loom type chosen for a from-scratch draft (the new-draft flow). Ignored when editing a saved
+  /// draft (its loom type comes from [meta]); defaults to [LoomType.jack] when null.
+  final LoomType? initialLoomType;
 
   @override
   ConsumerState<EditorScreen> createState() => _EditorScreenState();
@@ -120,6 +127,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // Re-arm the open-time auto-fit so THIS draft sizes its pitch to the viewport (a prior draft's
       // manual zoom would otherwise stick).
       ref.read(zoomUserSetProvider.notifier).state = false;
+      // Seed the loom type: a saved draft carries it in the sidecar meta; a from-scratch draft uses
+      // the new-draft choice (or jack). Persisted back into the sidecar on save.
+      ref.read(loomTypeProvider.notifier).state =
+          widget.meta?.loomType ?? widget.initialLoomType ?? LoomType.jack;
       setState(() => _loading = false);
     } catch (e) {
       if (!mounted) return;
@@ -207,8 +218,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // (below), so its WIF carries a [TEXT] Title matching the sidecar — without that, write_wif
       // would emit no name and a reopen would default to "Untitled". An edit keeps its doc as-is.
       var docToSave = state.draft;
+      final loomType = ref.read(loomTypeProvider);
       if (widget.meta != null) {
-        meta = widget.meta!.copyWith(lastOpened: DateTime.now());
+        meta = widget.meta!.copyWith(loomType: loomType, lastOpened: DateTime.now());
       } else {
         final input = await showSaveDraftDialog(context, initialName: widget.title);
         if (input == null || !mounted) return; // cancelled the name prompt
@@ -218,6 +230,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           craft: 'Weaving',
           author: input.author,
           notes: input.notes,
+          loomType: loomType,
           savedAt: now,
           lastOpened: now,
         );
@@ -454,6 +467,41 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
+  /// Pick a loom type and apply its preset to the open draft. The chosen type is remembered in
+  /// [loomTypeProvider] and persisted to the sidecar on save.
+  Future<void> _chooseLoomType() async {
+    final current = ref.read(loomTypeProvider);
+    final picked = await showLoomTypePicker(context, current: current);
+    if (picked == null || picked == current || !mounted) return;
+    await _applyLoomType(picked);
+  }
+
+  /// Apply [loom]'s preset: set the shed direction, and switch the drive when the loom demands it.
+  /// Table/dobby are liftplan-driven, so moving TO them converts the tie-up + treadling to a liftplan
+  /// (one-way, via the existing confirm). The reverse — a liftplan back to a tie-up loom — can't be
+  /// refactored yet, so moving a liftplan draft to a floor loom is refused with an explanation rather
+  /// than silently mislabeling it.
+  Future<void> _applyLoomType(LoomType loom) async {
+    final isLiftplan = ref.read(draftEditorProvider).draft.drive is DraftLiftplan;
+    if (!loom.prefersLiftplan && isLiftplan) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("This is a liftplan draft (table/dobby style); converting it back to a "
+              "tie-up loom isn't supported yet.")));
+      return;
+    }
+    if (loom.prefersLiftplan && !isLiftplan) {
+      await _convertToLiftplan(); // one-way, confirmed
+      // Bail if the user cancelled the confirm (or an error left it treadled): don't relabel it.
+      if (!mounted || ref.read(draftEditorProvider).draft.drive is! DraftLiftplan) return;
+    }
+    ref.read(draftEditorProvider.notifier).setShed(loom.defaultShed);
+    ref.read(loomTypeProvider.notifier).state = loom;
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Loom type: ${loom.label}')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ready = !_loading && _error == null;
@@ -528,8 +576,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _zoom(1);
                       case _OverflowAction.zoomOut:
                         _zoom(-1);
+                      case _OverflowAction.loomType:
+                        _chooseLoomType();
                       case _OverflowAction.convert:
                         _convertToLiftplan();
+                      case _OverflowAction.toggleShed:
+                        final cur = ref.read(draftEditorProvider).draft.shed;
+                        notifier.setShed(
+                            cur == Shed.sinking ? Shed.rising : Shed.sinking);
                       case _OverflowAction.toggleGridlines:
                         final p = ref.read(showGridlinesProvider.notifier);
                         p.state = !p.state;
@@ -549,6 +603,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       child: ListTile(
                           dense: true, leading: Icon(Icons.zoom_out), title: Text('Zoom out')),
                     ),
+                    const PopupMenuItem(
+                      value: _OverflowAction.loomType,
+                      child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.precision_manufacturing_outlined),
+                          title: Text('Loom type…')),
+                    ),
                     PopupMenuItem(
                       value: _OverflowAction.convert,
                       enabled: isTreadled && !_converting,
@@ -556,6 +617,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           dense: true,
                           leading: Icon(Icons.swap_horiz),
                           title: Text('Convert to liftplan')),
+                    ),
+                    // Shed direction: rising (jack/table/dobby) raises the tied shafts; sinking
+                    // (counterbalance/countermarch) lowers them, so the engine raises the complement
+                    // and the cloth inverts. Fully modeled + round-trips through WIF; this is its
+                    // first UI. Checked = sinking.
+                    CheckedPopupMenuItem(
+                      value: _OverflowAction.toggleShed,
+                      checked: ref.read(draftEditorProvider).draft.shed == Shed.sinking,
+                      child: const Text('Sinking shed'),
                     ),
                     const PopupMenuDivider(),
                     // View overlays (checkable): reflect the current toggle state at open time.
@@ -579,13 +649,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
-  /// Step the on-screen cell pitch up (+1) or down (-1) through [zoomCellLevels]. A manual zoom
-  /// claims control of the pitch so the open-time auto-fit never overrides the user afterward.
+  /// Step the on-screen cell pitch up (+1) or down (-1) through the zoom levels (snapping an off-level
+  /// pitch a pinch may have left). A manual zoom claims control of the pitch so the open-time auto-fit
+  /// never overrides the user afterward. Shares [stepZoomLevel] with the on-canvas zoom controls.
   void _zoom(int dir) {
-    final cur = ref.read(zoomCellProvider);
-    final idx = zoomCellLevels.indexOf(cur);
-    final next = ((idx < 0 ? 2 : idx) + dir).clamp(0, zoomCellLevels.length - 1);
-    ref.read(zoomCellProvider.notifier).state = zoomCellLevels[next];
+    ref.read(zoomCellProvider.notifier).state =
+        stepZoomLevel(ref.read(zoomCellProvider), dir);
     ref.read(zoomUserSetProvider.notifier).state = true;
   }
 
@@ -607,13 +676,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // height instead of being crushed by the bar below it. The DimensionsBar still scrolls
     // horizontally within the rail; the validation band sits under it.
     if (isWide(context)) {
-      return const Row(
+      // The control rail takes a SHARE of the width (clamped to a usable band) rather than a fixed
+      // 320: on a small tablet a fixed rail crowded the cloth, on a large one it wasted space the
+      // cloth could use. The cloth Expanded then gets every remaining pixel and grows/pans within it.
+      final railWidth = (MediaQuery.sizeOf(context).width * 0.30).clamp(280.0, 360.0);
+      return Row(
         children: [
-          Expanded(child: IntegratedDraftView()),
-          VerticalDivider(width: 1),
+          const Expanded(child: IntegratedDraftView()),
+          const VerticalDivider(width: 1),
           SizedBox(
-            width: 320,
-            child: Column(
+            width: railWidth,
+            child: const Column(
               children: [
                 DimensionsBar(),
                 ValidationPanel(),
