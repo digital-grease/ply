@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/double_weave_layers.dart';
 import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
@@ -15,13 +16,23 @@ import '../widgets/loom_type_picker.dart';
 import '../widgets/save_draft_dialog.dart';
 import '../widgets/validation_panel.dart';
 import '../widgets/woven_preview.dart';
+import 'layer_inspector_screen.dart';
 
 /// What the user chose when leaving the editor with unsaved edits (see `_confirmLeave`).
 enum _LeaveAction { keepEditing, discard, save }
 
 /// The less-frequent AppBar actions tucked into the overflow (⋮) menu. The two `toggle*` entries
 /// are view-chrome switches (gridlines / long-float highlight) rather than one-shot actions.
-enum _OverflowAction { zoomIn, zoomOut, loomType, convert, toggleShed, toggleGridlines, toggleFloats }
+enum _OverflowAction {
+  zoomIn,
+  zoomOut,
+  loomType,
+  convert,
+  viewLayers,
+  toggleShed,
+  toggleGridlines,
+  toggleFloats
+}
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
 /// tie-up cell toggles it and the drawdown re-renders live (engine recompute is microseconds;
@@ -467,6 +478,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
+  /// Open the read-only double-weave layer inspector on a snapshot of the current draft.
+  void _openLayers() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => LayerInspectorScreen(draft: ref.read(draftEditorProvider).draft),
+    ));
+  }
+
   /// Pick a loom type and apply its preset to the open draft. The chosen type is remembered in
   /// [loomTypeProvider] and persisted to the sidecar on save.
   Future<void> _chooseLoomType() async {
@@ -580,6 +598,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _chooseLoomType();
                       case _OverflowAction.convert:
                         _convertToLiftplan();
+                      case _OverflowAction.viewLayers:
+                        _openLayers();
                       case _OverflowAction.toggleShed:
                         final cur = ref.read(draftEditorProvider).draft.shed;
                         notifier.setShed(
@@ -618,6 +638,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           leading: Icon(Icons.swap_horiz),
                           title: Text('Convert to liftplan')),
                     ),
+                    // Layered double-weave inspector — only for drafts that can carry two layers.
+                    if (supportsLayerView(ref.read(draftEditorProvider).draft))
+                      const PopupMenuItem(
+                        value: _OverflowAction.viewLayers,
+                        child: ListTile(
+                            dense: true,
+                            leading: Icon(Icons.layers_outlined),
+                            title: Text('View layers')),
+                      ),
                     // Shed direction: rising (jack/table/dobby) raises the tied shafts; sinking
                     // (counterbalance/countermarch) lowers them, so the engine raises the complement
                     // and the cloth inverts. Fully modeled + round-trips through WIF; this is its
