@@ -12,6 +12,7 @@ import '../models/draft_doc.dart';
 import '../screens/layer_inspector_screen.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import 'editor_view_controls.dart';
 import 'palette_sheet.dart';
 import 'planning_sheet.dart';
 import 'structure_sheet.dart';
@@ -165,6 +166,9 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                         LayerInspectorScreen(draft: ref.read(draftEditorProvider).draft),
                   )),
                 ),
+              // Zoom / fit / pan controls live here, off the cloth, so they no longer overlap editable
+              // cells (the cloth itself now pans/zooms by direct gesture).
+              const EditorViewControls(),
             ],
           ),
         ),

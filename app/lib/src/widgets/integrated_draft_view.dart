@@ -19,7 +19,6 @@ import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import 'draft_grids.dart';
 import 'draft_layout.dart';
-import 'editor_view_controls.dart';
 
 class IntegratedDraftView extends ConsumerStatefulWidget {
   const IntegratedDraftView({super.key});
@@ -29,20 +28,34 @@ class IntegratedDraftView extends ConsumerStatefulWidget {
 }
 
 class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
-  /// The single pointer that owns the in-progress stroke. A drag-paint is SINGLE-TOUCH: a second
+  /// The single pointer that owns the in-progress paint stroke. A drag-paint is SINGLE-TOUCH: a second
   /// finger is ignored so it cannot split the stroke (the notifier holds one stroke's scratch).
   /// Plain field, not setState: it only steers later pointer events, never the build output.
   int? _activePointer;
 
-  /// Every pointer currently down on the canvas, in content space. Drives the HAND-mode pinch (two
-  /// live pointers). Plain field: it only steers later pointer events, never the build output.
+  /// Every pointer currently down on the canvas, in GLOBAL (screen) coordinates — scroll-invariant, so
+  /// they drive the two-finger navigate gesture (pinch distance + pan focal) regardless of pan offset.
+  /// Plain field: it only steers later pointer events, never the build output.
   final Map<int, Offset> _pointers = {};
 
-  /// True while a two-finger pinch-zoom is in progress (HAND mode). It freezes the scroll physics so
-  /// the fingers only zoom, so it DOES gate the build output — toggled via setState.
-  bool _pinching = false;
-  double _pinchStartDist = 0;
-  int _pinchStartPitch = 16;
+  /// Controllers for the two nested scroll views, so a two-finger PAN can drive the offset directly
+  /// while they are frozen during the gesture. Owned here; disposed in [dispose].
+  final ScrollController _hCtrl = ScrollController();
+  final ScrollController _vCtrl = ScrollController();
+
+  /// True while a two-finger NAVIGATE (pinch-zoom + pan) is in progress, in ANY tool. It freezes the
+  /// scroll physics so the two fingers own the gesture, so it DOES gate the build output (setState).
+  bool _navigating = false;
+  double _navStartDist = 0;
+  int _navStartPitch = 16;
+  Offset _navFocal = Offset.zero;
+
+  @override
+  void dispose() {
+    _hCtrl.dispose();
+    _vCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +67,6 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
         _activePointer = null;
         ref.read(draftEditorProvider.notifier).endStroke();
       }
-      if (tool == EditorTool.pencil) _pinching = false;
     });
 
     // Watch ONLY what changes the geometry; cell pitch + tool from their own providers.
@@ -93,13 +105,14 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     }
 
     final notifier = ref.read(draftEditorProvider.notifier);
-    // Watch the user-set guard so the on-canvas "Fit to view" control (which clears it) rebuilds us
-    // and re-runs the open-time auto-fit below.
+    // Watch the user-set guard so the "Fit to view" control (which clears it) rebuilds us and re-runs
+    // the open-time auto-fit below.
     ref.watch(zoomUserSetProvider);
-    // Freeze scrolling in PENCIL (the Listener owns drags) AND during a pinch (so the two fingers
-    // only zoom, never also scroll). At rest in HAND both are false, so the draft pans normally.
+    // Freeze scrolling in PENCIL (the Listener owns single-finger drags to paint) AND during a
+    // two-finger navigate (the gesture drives pan + zoom directly). At rest in HAND both are false, so
+    // a single finger pans via the scroll views.
     final physics =
-        (pencil || _pinching) ? const NeverScrollableScrollPhysics() : null;
+        (pencil || _navigating) ? const NeverScrollableScrollPhysics() : null;
 
     // Size the pitch to fill the viewport on open (one-shot per load, until the user zooms manually).
     // A LayoutBuilder gives the TRUE bounded viewport on both axes; the scroll view's own
@@ -113,22 +126,10 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       // a LOOSE parent (the phone body's Flexible) lets it shrink. Taller-than-viewport drafts cap
       // to maxHeight and scroll as before.
       final h = layout.totalSize.height.clamp(0.0, constraints.maxHeight);
-      // The zoom/pan control cluster floats over the cloth's bottom-right corner so it travels with
-      // the draft area in BOTH layouts (cloth-on-top phone / cloth-beside-rail tablet) and never
-      // covers the structural grids (top-left). It sits OUTSIDE the scroll views, so it is fixed to
-      // the viewport, not the scrolling content.
-      return SizedBox(
-        height: h,
-        // Clip.none so the floating controls are never cut off when the cloth area is shorter than
-        // the pill (a tiny draft); anchored at bottom:8 they still never spill BELOW the canvas.
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned.fill(child: _canvas(layout, physics, pencil, notifier)),
-            const Positioned(right: 8, bottom: 8, child: EditorViewControls()),
-          ],
-        ),
-      );
+      // The cloth fills its area; pan/zoom is now BY GESTURE directly on it (pinch + two-finger drag),
+      // with the zoom/fit buttons living in the dimensions bar (off the grid) rather than floating over
+      // editable cells.
+      return SizedBox(height: h, child: _canvas(layout, physics, pencil, notifier));
     });
   }
 
@@ -142,9 +143,11 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     DraftEditorNotifier notifier,
   ) {
     return SingleChildScrollView(
+      controller: _vCtrl,
       scrollDirection: Axis.vertical,
       physics: physics,
       child: SingleChildScrollView(
+        controller: _hCtrl,
         scrollDirection: Axis.horizontal,
         physics: physics,
         child: SizedBox.fromSize(
@@ -201,70 +204,100 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     );
   }
 
-  // --- pointer routing: PENCIL paints (single pointer), HAND pinch-zooms (two pointers) ---
+  // --- pointer routing: one finger PAINTS (pencil) or pans (hand); TWO fingers navigate (any tool) ---
 
   void _onPointerDown(
       PointerDownEvent e, DraftLayout layout, bool pencil, DraftEditorNotifier notifier) {
-    _pointers[e.pointer] = e.localPosition;
+    _pointers[e.pointer] = e.position; // global (scroll-invariant) — for the navigate gesture
+    if (_pointers.length >= 2) {
+      // Two fingers anywhere on the cloth = navigate (pinch-zoom + pan), in ANY tool. Seal an open
+      // paint stroke first so its cells commit as their own undo entry instead of dangling.
+      if (_activePointer != null) {
+        _activePointer = null;
+        notifier.endStroke();
+      }
+      if (!_navigating) _beginNavigate();
+      return;
+    }
+    // Single finger: PENCIL paints; HAND lets the scroll views pan (nothing to do here).
     if (pencil) {
-      if (_activePointer != null) return; // already stroking with another pointer
+      if (_activePointer != null) return;
       final hit = layout.hitTest(e.localPosition);
       if (hit == null) return;
       _activePointer = e.pointer;
       notifier.beginStroke(hit);
-    } else if (_pointers.length == 2 && !_pinching) {
-      _beginPinch();
     }
   }
 
   void _onPointerMove(
       PointerMoveEvent e, DraftLayout layout, bool pencil, DraftEditorNotifier notifier) {
-    if (_pointers.containsKey(e.pointer)) _pointers[e.pointer] = e.localPosition;
-    if (pencil) {
-      if (e.pointer != _activePointer) return;
+    if (_pointers.containsKey(e.pointer)) _pointers[e.pointer] = e.position; // global
+    if (_navigating && _pointers.length >= 2) {
+      _updateNavigate();
+      return;
+    }
+    if (pencil && e.pointer == _activePointer) {
       final hit = layout.hitTest(e.localPosition);
       if (hit != null) notifier.paintAt(hit);
-    } else if (_pinching && _pointers.length >= 2) {
-      _updatePinch();
     }
   }
 
   void _onPointerEnd(PointerEvent e, bool pencil, DraftEditorNotifier notifier) {
     _pointers.remove(e.pointer);
-    if (pencil) {
-      if (e.pointer != _activePointer) return;
+    if (_navigating) {
+      // A leftover single finger after a navigate is inert (it never began a stroke), so it won't
+      // suddenly paint or scroll; it just ends the gesture once we drop below two pointers.
+      if (_pointers.length < 2) _endNavigate();
+      return;
+    }
+    if (pencil && e.pointer == _activePointer) {
       _activePointer = null;
       notifier.endStroke();
-    } else if (_pinching && _pointers.length < 2) {
-      _endPinch();
     }
   }
 
-  /// Pinch-to-zoom, HAND mode only (where the paint Listener is idle). Implemented off the raw
-  /// [Listener] — which OBSERVES pointers without entering the gesture arena — so it never fights the
-  /// scroll views that pan the draft; while a pinch is live the scroll physics freeze ([_pinching]) so
-  /// the two fingers only zoom. The pitch is rounded to an integer (crisp nearest-neighbor bitmap)
-  /// and clamped to [minCellPx]..[maxCellPx].
-  void _beginPinch() {
-    final p = _pointers.values.toList();
-    _pinchStartDist = (p[0] - p[1]).distance;
-    _pinchStartPitch = ref.read(zoomCellProvider);
-    setState(() => _pinching = true);
+  /// Two-finger NAVIGATE (pinch-zoom + pan), in ANY tool. Implemented off the raw [Listener] — which
+  /// observes pointers without entering the gesture arena — and driving the scroll controllers
+  /// directly, so it coexists with single-finger paint/scroll without an arena fight. The pitch stays
+  /// an integer (crisp nearest-neighbor bitmap), clamped to [minCellPx]..[maxCellPx].
+  void _beginNavigate() {
+    final g = _pointers.values.toList();
+    _navStartDist = (g[0] - g[1]).distance;
+    _navStartPitch = ref.read(zoomCellProvider);
+    _navFocal = (g[0] + g[1]) / 2;
+    setState(() => _navigating = true);
   }
 
-  void _updatePinch() {
-    final p = _pointers.values.toList();
-    final dist = (p[0] - p[1]).distance;
-    if (_pinchStartDist <= 0 || dist <= 0) return;
-    final next =
-        (_pinchStartPitch * dist / _pinchStartDist).round().clamp(minCellPx, maxCellPx);
-    if (next != ref.read(zoomCellProvider)) {
-      ref.read(zoomCellProvider.notifier).state = next;
-      ref.read(zoomUserSetProvider.notifier).state = true; // a manual zoom; auto-fit yields
+  void _updateNavigate() {
+    final g = _pointers.values.toList();
+    // PAN: move the view opposite the focal-point travel so the cloth follows the fingers.
+    final focal = (g[0] + g[1]) / 2;
+    _panBy(_navFocal - focal);
+    _navFocal = focal;
+    // ZOOM: set the pitch from the pinch-distance ratio.
+    final dist = (g[0] - g[1]).distance;
+    if (_navStartDist > 0 && dist > 0) {
+      final next =
+          (_navStartPitch * dist / _navStartDist).round().clamp(minCellPx, maxCellPx);
+      if (next != ref.read(zoomCellProvider)) {
+        ref.read(zoomCellProvider.notifier).state = next;
+        ref.read(zoomUserSetProvider.notifier).state = true; // a manual zoom; auto-fit yields
+      }
     }
   }
 
-  void _endPinch() => setState(() => _pinching = false);
+  /// Translate the scroll offsets by [delta] (clamped to the scrollable range). A no-op for an axis
+  /// with no overflow (maxScrollExtent 0), so panning a draft that already fits does nothing.
+  void _panBy(Offset delta) {
+    if (_hCtrl.hasClients) {
+      _hCtrl.jumpTo((_hCtrl.offset + delta.dx).clamp(0.0, _hCtrl.position.maxScrollExtent));
+    }
+    if (_vCtrl.hasClients) {
+      _vCtrl.jumpTo((_vCtrl.offset + delta.dy).clamp(0.0, _vCtrl.position.maxScrollExtent));
+    }
+  }
+
+  void _endNavigate() => setState(() => _navigating = false);
 
   /// Size the pitch to the viewport ONCE when a draft opens (until the user zooms manually). Fed the
   /// TRUE viewport [available] from [build]'s LayoutBuilder; the provider WRITE is deferred to a

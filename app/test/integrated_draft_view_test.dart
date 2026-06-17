@@ -12,6 +12,7 @@ import 'package:ply/src/state/editor_providers.dart';
 import 'package:ply/src/widgets/dimensions_bar.dart';
 import 'package:ply/src/widgets/draft_grids.dart';
 import 'package:ply/src/widgets/draft_layout.dart';
+import 'package:ply/src/widgets/editor_view_controls.dart';
 import 'package:ply/src/widgets/integrated_draft_view.dart';
 
 // Host widget tests for the integrated view's INTERACTION: a tap/drag routes through the real
@@ -248,24 +249,26 @@ void main() {
         reason: 'the cell is unchanged');
   });
 
-  testWidgets('a SECOND finger does not corrupt or split the single stroke', (tester) async {
+  testWidgets('a SECOND finger seals the stroke and starts navigate (no paint corruption)',
+      (tester) async {
     final c = await pumpView(tester);
-    final f1 = await tester.startGesture(threadingC(tester, 1, 2), pointer: 1);
+    final f1 = await tester.startGesture(threadingC(tester, 1, 2), pointer: 1); // paints end 1
     await tester.pump();
-    // A second finger lands on a different cell mid-stroke; it must be ignored.
+    // A second finger lands: two fingers = navigate (any tool), so it must SEAL the one-cell stroke
+    // and take over as a gesture rather than extend or split the paint.
     final f2 = await tester.startGesture(threadingC(tester, 4, 2), pointer: 2);
     await tester.pump();
-    await f1.moveTo(threadingC(tester, 2, 2));
+    await f1.moveTo(threadingC(tester, 2, 2)); // now part of the 2-finger gesture -> no paint
     await tester.pump();
     await f1.up();
     await f2.up();
     await tester.pump();
 
     final th = c.read(draftEditorProvider).draft.threading;
-    expect(th[0], equals([2]), reason: 'finger 1 painted end 1');
-    expect(th[1], equals([2]), reason: 'finger 1 painted end 2');
-    expect(th[3], equals([1]), reason: 'the second finger (end 4) was ignored');
-    expect(c.read(draftEditorProvider).undo.length, 1, reason: 'one stroke -> one undo entry');
+    expect(th[0], equals([2]), reason: 'end 1 was painted before the 2nd finger landed');
+    expect(th[1], equals([1]), reason: 'end 2 NOT painted — the 2nd finger started navigate');
+    expect(th[3], equals([1]), reason: 'the 2nd finger never painted end 4');
+    expect(c.read(draftEditorProvider).undo.length, 1, reason: 'one sealed stroke -> one undo entry');
   });
 
   testWidgets('an ERASE drag holds the erase value across a mixed run (no per-cell re-invert)',
@@ -442,9 +445,21 @@ void main() {
     });
   });
 
-  group('on-canvas view controls', () {
+  group('view controls (now in the dimensions bar)', () {
+    Future<ProviderContainer> pumpControls(WidgetTester tester) async {
+      final c = ProviderContainer();
+      addTearDown(c.dispose);
+      c.read(zoomCellProvider.notifier).state = 16;
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: c,
+        child: const MaterialApp(home: Scaffold(body: Center(child: EditorViewControls()))),
+      ));
+      await tester.pump();
+      return c;
+    }
+
     testWidgets('Zoom in / Zoom out step the pitch', (tester) async {
-      final c = await pumpView(tester); // pitch pinned at kCell = 16
+      final c = await pumpControls(tester);
       await tester.tap(find.byTooltip('Zoom in'));
       await tester.pump();
       expect(c.read(zoomCellProvider), 24);
@@ -453,16 +468,17 @@ void main() {
       expect(c.read(zoomCellProvider), 16);
     });
 
-    testWidgets('Fit to view re-fits the pitch to the viewport', (tester) async {
-      final c = await pumpView(tester); // user-set pitch 16 in an 800x600 viewport
+    testWidgets('Fit to view re-arms the auto-fit guard', (tester) async {
+      final c = await pumpControls(tester);
+      c.read(zoomUserSetProvider.notifier).state = true;
       await tester.tap(find.byTooltip('Fit to view'));
-      await tester.pumpAndSettle();
-      expect(c.read(zoomCellProvider), 48, reason: 'the 7x7 fixture fits at the largest level');
-      expect(c.read(zoomUserSetProvider), isTrue, reason: 're-fit re-claims the guard');
+      await tester.pump();
+      expect(c.read(zoomUserSetProvider), isFalse,
+          reason: 'Fit clears the guard so the draft view re-fits on its next build');
     });
 
     testWidgets('the pan/draw toggle flips the editor tool', (tester) async {
-      final c = await pumpView(tester); // starts in pencil
+      final c = await pumpControls(tester);
       await tester.tap(find.byTooltip('Pan the draft'));
       await tester.pump();
       expect(c.read(editorToolProvider), EditorTool.hand);
@@ -472,13 +488,13 @@ void main() {
     });
   });
 
-  group('pinch-to-zoom (HAND mode, via the raw Listener)', () {
-    // Two pointers in the read-only drawdown area so PENCIL never starts a paint stroke; the pinch
-    // uses only the DISTANCE between pointers, so the canvas origin offset is irrelevant.
+  group('two-finger navigate (pinch-zoom, any tool, via the raw Listener)', () {
+    // Two pointers in the read-only drawdown area so a single-finger PENCIL touch never paints; the
+    // navigate uses only the DISTANCE between pointers, so the canvas origin offset is irrelevant.
     Offset a(WidgetTester t) => _origin(t) + const Offset(20, 70);
     Offset b(WidgetTester t) => _origin(t) + const Offset(40, 70); // 20px from a
 
-    testWidgets('a two-finger spread zooms in', (tester) async {
+    testWidgets('a two-finger spread zooms in (HAND)', (tester) async {
       final c = await pumpView(tester, tool: EditorTool.hand);
       expect(c.read(zoomCellProvider), kCell);
       final f1 = await tester.startGesture(a(tester), pointer: 1);
@@ -492,7 +508,7 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('pinching fingers together zooms out', (tester) async {
+    testWidgets('pinching fingers together zooms out (HAND)', (tester) async {
       final c = await pumpView(tester, tool: EditorTool.hand);
       final f1 = await tester.startGesture(a(tester), pointer: 1);
       final f2 = await tester.startGesture(
@@ -506,14 +522,16 @@ void main() {
       await tester.pump();
     });
 
-    testWidgets('a two-finger gesture in PENCIL mode does NOT pinch-zoom', (tester) async {
-      final c = await pumpView(tester); // pencil
+    testWidgets('a two-finger spread ALSO zooms in PENCIL mode (direct gesture, any tool)',
+        (tester) async {
+      final c = await pumpView(tester); // pencil: one finger draws, two fingers navigate
       final f1 = await tester.startGesture(a(tester), pointer: 1);
-      final f2 = await tester.startGesture(b(tester), pointer: 2);
+      final f2 = await tester.startGesture(b(tester), pointer: 2); // dist 20
       await tester.pump();
-      await f2.moveTo(_origin(tester) + const Offset(80, 70));
+      await f2.moveTo(_origin(tester) + const Offset(80, 70)); // dist 60 -> 3x
       await tester.pump();
-      expect(c.read(zoomCellProvider), kCell, reason: 'pinch is HAND-only; pencil holds the pitch');
+      expect(c.read(zoomCellProvider), greaterThan(kCell),
+          reason: 'two fingers navigate even in pencil mode');
       await f1.up();
       await f2.up();
       await tester.pump();
