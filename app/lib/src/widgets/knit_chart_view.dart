@@ -3,9 +3,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/knit_editor_providers.dart';
 
+/// Width (px) of the right gutter that carries row numbers, and height of the bottom gutter that
+/// carries stitch numbers. Fixed so 3-digit counts (up to a few hundred rows) fit.
+const double _rowGutter = 28;
+const double _colGutter = 16;
+
+/// The 1-based number shown for cell index [i] on an axis of [count] cells. A ROW counts UP from the
+/// bottom (`i + 1`, since row 0 draws at the bottom); a STITCH counts RIGHT-TO-LEFT (`count - i`, so
+/// the rightmost column is 1) to match the knitting reading order — the same order the written
+/// instructions and the validation columns use.
+int axisNumberAt({required bool row, required int i, required int count}) => row ? i + 1 : count - i;
+
 /// The editable knitting chart: the engine-rendered RGBA chart (symbols + colorwork + cable spans)
 /// shown 1:1, with tap-to-paint. Rows draw BOTTOM-TO-TOP (row 0 at the bottom, the knitting reading
-/// order), so a tap's pixel row is flipped back to a chart row.
+/// order), so a tap's pixel row is flipped back to a chart row. Numbered gutters sit to the RIGHT (row
+/// numbers, 1 at the bottom) and ALONG THE BOTTOM (stitch numbers, 1 at the right — the RS reading
+/// start), keeping the chart itself at the top-left origin so the tap math is unchanged.
 class KnitChartView extends ConsumerWidget {
   const KnitChartView({super.key});
 
@@ -32,34 +45,103 @@ class KnitChartView extends ConsumerWidget {
 
     final w = (cols * cell).toDouble();
     final h = (rows * cell).toDouble();
+    final labelColor = Theme.of(context).colorScheme.onSurfaceVariant;
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: SizedBox(
-          width: w,
-          height: h,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapUp: (d) {
-              final col = d.localPosition.dx ~/ cell;
-              final rowFromTop = d.localPosition.dy ~/ cell;
-              final row = rows - 1 - rowFromTop; // row 0 is at the BOTTOM
-              if (col < 0 || col >= cols || row < 0 || row >= rows) return;
-              final stitch = ref.read(activeKnitStitchProvider);
-              final color = ref.read(activeKnitColorProvider);
-              ref.read(knitEditorProvider.notifier).paintCell(row, col, stitch, color);
-            },
-            child: Semantics(
-              label: 'Knitting chart, $cols stitches by $rows rows',
-              image: true,
-              child: const RepaintBoundary(child: _KnitChartImage()),
-            ),
+          width: w + _rowGutter,
+          height: h + _colGutter,
+          child: Stack(
+            children: [
+              // The chart bitmap + tap target, at the top-left origin (unchanged geometry).
+              Positioned(
+                left: 0,
+                top: 0,
+                width: w,
+                height: h,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (d) {
+                    final col = d.localPosition.dx ~/ cell;
+                    final rowFromTop = d.localPosition.dy ~/ cell;
+                    final row = rows - 1 - rowFromTop; // row 0 is at the BOTTOM
+                    if (col < 0 || col >= cols || row < 0 || row >= rows) return;
+                    final stitch = ref.read(activeKnitStitchProvider);
+                    final color = ref.read(activeKnitColorProvider);
+                    ref.read(knitEditorProvider.notifier).paintCell(row, col, stitch, color);
+                  },
+                  child: Semantics(
+                    label: 'Knitting chart, $cols stitches by $rows rows',
+                    image: true,
+                    child: const RepaintBoundary(child: _KnitChartImage()),
+                  ),
+                ),
+              ),
+              // Row numbers down the right side (1 at the bottom, counting up).
+              Positioned(
+                left: w,
+                top: 0,
+                width: _rowGutter,
+                height: h,
+                child: CustomPaint(
+                  painter: _AxisNumbers(count: rows, cell: cell.toDouble(), color: labelColor, row: true),
+                ),
+              ),
+              // Stitch numbers along the bottom (1 at the right, counting left).
+              Positioned(
+                left: 0,
+                top: h,
+                width: w,
+                height: _colGutter,
+                child: CustomPaint(
+                  painter: _AxisNumbers(count: cols, cell: cell.toDouble(), color: labelColor, row: false),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+/// Paints the numbers for one axis into its gutter. For ROWS the strip is vertical (number `i+1` at
+/// the center of row `i`, row 0 at the BOTTOM); for STITCHES it is horizontal (number counts
+/// right-to-left, so the rightmost column is 1). Labels thin out when cells are small so they stay
+/// legible: every cell at a comfortable zoom, every 5th/10th when tight.
+class _AxisNumbers extends CustomPainter {
+  _AxisNumbers({required this.count, required this.cell, required this.color, required this.row});
+
+  final int count;
+  final double cell;
+  final Color color;
+  final bool row;
+
+  static int _step(double cell) => cell >= 16 ? 1 : (cell >= 10 ? 5 : 10);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final step = _step(cell);
+    final fontSize = (cell * 0.5).clamp(8.0, 12.0);
+    for (var i = 0; i < count; i++) {
+      final number = axisNumberAt(row: row, i: i, count: count);
+      if (number != 1 && number % step != 0) continue;
+      final tp = TextPainter(
+        text: TextSpan(text: '$number', style: TextStyle(color: color, fontSize: fontSize)),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final Offset center = row
+          ? Offset(size.width / 2, size.height - (i + 0.5) * cell) // row 0 at the bottom
+          : Offset((i + 0.5) * cell, size.height / 2);
+      tp.paint(canvas, center - Offset(tp.width / 2, tp.height / 2));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AxisNumbers old) =>
+      old.count != count || old.cell != cell || old.color != color || old.row != row;
 }
 
 /// The engine-rendered chart bitmap. During a re-render the previous frame stays
