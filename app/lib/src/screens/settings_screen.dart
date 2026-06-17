@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/draft_doc.dart' show MeasureUnit;
 import '../state/theme_providers.dart';
 import '../theme/spacing.dart';
 import 'diagnostics_screen.dart';
@@ -83,6 +84,31 @@ class SettingsScreen extends ConsumerWidget {
                     onTap: () => notifier.setAccentSeed(seed),
                   ),
               ],
+            ),
+          ),
+          const Divider(height: PlySpacing.lg),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(PlySpacing.md, PlySpacing.xs, PlySpacing.md, PlySpacing.xs),
+            child: Text('Measurements',
+                style: text.titleSmall?.copyWith(color: Theme.of(context).colorScheme.primary)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(PlySpacing.md, 0, PlySpacing.md, PlySpacing.xs),
+            child: Text('Units shown by the planning calculators.',
+                style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: PlySpacing.md, vertical: PlySpacing.xs),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<MeasureUnit>(
+                segments: const [
+                  ButtonSegment(value: MeasureUnit.inches, label: Text('Imperial')),
+                  ButtonSegment(value: MeasureUnit.centimeters, label: Text('Metric')),
+                ],
+                selected: {settings.unit},
+                onSelectionChanged: (s) => notifier.setUnit(s.first),
+              ),
             ),
           ),
           const Divider(height: PlySpacing.lg),

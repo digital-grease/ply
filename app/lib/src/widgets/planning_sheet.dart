@@ -12,7 +12,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import '../state/theme_providers.dart';
 import 'adaptive_sheet.dart';
+
+/// Craft Yarn Council weights with their approximate wraps-per-inch midpoint (mirrors
+/// `ply_common::YarnWeight::typical_wpi`), used to SEED the WPI field so a weaver who hasn't measured
+/// their own can start from a rule of thumb.
+const List<(String, double)> _yarnWeightWpi = [
+  ('Lace (0)', 18),
+  ('Super fine (1) · fingering', 14),
+  ('Fine (2) · sport', 12),
+  ('Light (3) · DK', 11),
+  ('Medium (4) · worsted/aran', 9),
+  ('Bulky (5)', 7),
+  ('Super bulky (6)', 5),
+  ('Jumbo (7)', 3),
+];
 
 /// Open the planning calculator. Call from a context inside the editor's ProviderScope (the
 /// DimensionsBar chip) so the sheet's `ref` resolves the draft. Adaptive: a bottom sheet on phones,
@@ -35,7 +50,7 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
 
   final _wpi = TextEditingController();
   String _structure = 'plain';
-  double? _sett;
+  final _sett = TextEditingController(); // editable: "Suggest" fills it, the weaver can override
 
   final _finished = TextEditingController();
   final _items = TextEditingController(text: '1');
@@ -62,7 +77,7 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
   @override
   void dispose() {
     for (final c in [
-      _wpi, _finished, _items, _ends, _loomWaste, _takeup, //
+      _wpi, _sett, _finished, _items, _ends, _loomWaste, _takeup, //
       _ppi, _width, _wovenLength, _weftItems, _weftTakeup,
     ]) {
       c.dispose();
@@ -70,14 +85,22 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
     super.dispose();
   }
 
-  String get _unit =>
-      ref.read(draftEditorProvider).draft.unit == MeasureUnit.centimeters ? 'cm' : 'in';
+  /// The GLOBAL unit preference (Settings), not the draft's stored unit: the calculator is a planning
+  /// aid the weaver enters numbers into, so it follows their chosen units.
+  bool get _metric => ref.watch(appSettingsProvider).unit == MeasureUnit.centimeters;
+  String get _unit => _metric ? 'cm' : 'in';
+
+  /// Long-length display for the warp/weft totals, which run to many yards: metric -> meters (÷100),
+  /// imperial -> yards (÷36). Inputs stay in [_unit]; only these long outputs convert.
+  String get _longUnit => _metric ? 'm' : 'yd';
+  double _toLong(double v) => v / (_metric ? 100 : 36);
 
   Future<void> _suggestSett() async {
     if (!_settForm.currentState!.validate()) return;
     final wpi = double.parse(_wpi.text.trim());
     final sett = await ref.read(repositoryProvider).suggestSettCalc(wpi, _structure);
-    if (mounted) setState(() => _sett = sett);
+    // Fill the editable sett field; a WPI too low to suggest a usable sett leaves it blank.
+    if (mounted) setState(() => _sett.text = sett >= 1 ? _fmt(sett) : '');
   }
 
   Future<void> _estimateWarp() async {
@@ -120,7 +143,23 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
             const SizedBox(height: 16),
 
             // --- Sett (ends/in) — independent of the draft, usable on a blank draft. ---
-            Text('Suggest a sett', style: text.titleSmall),
+            Text('Sett (ends per inch)', style: text.titleSmall),
+            const SizedBox(height: 4),
+            // Optional shortcut: seed the WPI field from a yarn weight when you haven't measured your
+            // own. Momentary (value stays null), so it acts like a button per option.
+            DropdownButton<int>(
+              isExpanded: true,
+              value: null,
+              hint: const Text('Seed WPI from yarn weight (optional)'),
+              items: [
+                for (var i = 0; i < _yarnWeightWpi.length; i++)
+                  DropdownMenuItem(value: i, child: Text(_yarnWeightWpi[i].$1)),
+              ],
+              onChanged: (i) {
+                if (i != null) setState(() => _wpi.text = _fmt(_yarnWeightWpi[i].$2));
+              },
+            ),
+            const SizedBox(height: 4),
             Form(
               key: _settForm,
               child: Row(
@@ -153,20 +192,27 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
             ),
             const SizedBox(height: 8),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                FilledButton.tonal(onPressed: _suggestSett, child: const Text('Suggest sett')),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: FilledButton.tonal(
+                      onPressed: _suggestSett, child: const Text('Suggest sett')),
+                ),
                 const SizedBox(width: 16),
-                if (_sett != null)
-                  Expanded(
-                    child: Semantics(
-                      liveRegion: true,
-                      // A small WPI rounds to a 0 sett; say so rather than show a useless "0 ends/in".
-                      child: Text(
-                        _sett! < 1 ? 'WPI too low to suggest a sett' : '${_fmt(_sett!)} ends/in',
-                        style: text.titleMedium,
-                      ),
+                // The sett is EDITABLE: "Suggest" fills it from WPI + structure, but the weaver can
+                // type their own preferred sett over it.
+                Expanded(
+                  child: TextField(
+                    controller: _sett,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    decoration: const InputDecoration(
+                      labelText: 'Sett (ends/in)',
+                      hintText: 'or enter your own',
                     ),
                   ),
+                ),
               ],
             ),
             // The sett rules of thumb are imperial; WPI is per-inch regardless of the draft's unit.
@@ -204,8 +250,9 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Warp length: ${_fmt(_warp!.$1)} $_unit', style: text.bodyLarge),
-                      Text('Total warp yarn: ${_fmt(_warp!.$2)} $_unit', style: text.bodyLarge),
+                      Text('Warp length: ${_fmt(_toLong(_warp!.$1))} $_longUnit', style: text.bodyLarge),
+                      Text('Total warp yarn: ${_fmt(_toLong(_warp!.$2))} $_longUnit',
+                          style: text.bodyLarge),
                     ],
                   ),
                 ),
@@ -245,7 +292,8 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Total picks: ${_weft!.$1}', style: text.bodyLarge),
-                      Text('Total weft yarn: ${_fmt(_weft!.$2)} $_unit', style: text.bodyLarge),
+                      Text('Total weft yarn: ${_fmt(_toLong(_weft!.$2))} $_longUnit',
+                          style: text.bodyLarge),
                     ],
                   ),
                 ),

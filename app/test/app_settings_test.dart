@@ -4,20 +4,26 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/app_settings_repository.dart';
 import 'package:ply/src/models/app_settings.dart';
+import 'package:ply/src/models/draft_doc.dart' show MeasureUnit;
 
 void main() {
   group('AppSettings json', () {
     test('round-trips through toJson/fromJson', () {
       const s = AppSettings(
-          themeMode: ThemeMode.dark, accentSeed: 0xFF00696E, useDynamicColor: false);
+        themeMode: ThemeMode.dark,
+        accentSeed: 0xFF00696E,
+        useDynamicColor: false,
+        unit: MeasureUnit.centimeters,
+      );
       expect(AppSettings.fromJson(s.toJson()), s);
     });
 
     test('falls back to defaults on missing / odd fields', () {
-      final s = AppSettings.fromJson({'themeMode': 'bogus'});
+      final s = AppSettings.fromJson({'themeMode': 'bogus', 'unit': 'furlongs'});
       expect(s.themeMode, ThemeMode.system);
       expect(s.accentSeed, AppSettings.defaultAccent);
       expect(s.useDynamicColor, true);
+      expect(s.unit, MeasureUnit.inches, reason: 'unknown/absent unit defaults to imperial');
     });
   });
 

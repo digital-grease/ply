@@ -5,6 +5,7 @@ import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/state/draft_editor_notifier.dart';
 import 'package:ply/src/state/editor_providers.dart';
+import 'package:ply/src/state/theme_providers.dart';
 import 'package:ply/src/widgets/planning_sheet.dart';
 
 // The planning calculator's UI logic: seeding ends from the draft, parsing/validating inputs, calling
@@ -84,6 +85,11 @@ DraftDoc fourEnds() => DraftDoc(
     );
 
 Future<ProviderContainer> pumpSheet(WidgetTester t, FakePlanningRepo repo, {DraftDoc? doc}) async {
+  // A tall viewport so the whole sheet (now with the yarn-weight seed + editable sett) is on-screen.
+  t.view.physicalSize = const Size(800, 1600);
+  t.view.devicePixelRatio = 1.0;
+  addTearDown(t.view.resetPhysicalSize);
+  addTearDown(t.view.resetDevicePixelRatio);
   final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(repo)]);
   addTearDown(c.dispose);
   c.read(draftEditorProvider.notifier).load(doc ?? fourEnds());
@@ -97,10 +103,14 @@ Future<ProviderContainer> pumpSheet(WidgetTester t, FakePlanningRepo repo, {Draf
   return c;
 }
 
+/// The current text of the editable sett field.
+String settFieldText(WidgetTester t) =>
+    t.widget<TextField>(find.widgetWithText(TextField, 'Sett (ends/in)')).controller!.text;
+
 void main() {
   testWidgets('renders all three sections and seeds warp ends from the draft', (t) async {
     await pumpSheet(t, FakePlanningRepo()); // 4 ends
-    expect(find.text('Suggest a sett'), findsOneWidget);
+    expect(find.text('Sett (ends per inch)'), findsOneWidget);
     expect(find.text('Estimate warp yarn'), findsOneWidget);
     expect(find.text('Estimate weft yarn'), findsOneWidget);
     // The "Warp ends" field is pre-filled with the draft's ends.
@@ -116,7 +126,25 @@ void main() {
     await t.pump();
     expect(repo.settWpi, 20.0);
     expect(repo.settStructure, 'plain');
-    expect(find.text('12 ends/in'), findsOneWidget);
+    expect(settFieldText(t), '12', reason: 'the suggestion fills the editable sett field');
+  });
+
+  testWidgets('the sett is editable: typing your own overrides the suggestion', (t) async {
+    final repo = FakePlanningRepo();
+    await pumpSheet(t, repo);
+    await t.enterText(find.widgetWithText(TextField, 'Sett (ends/in)'), '18');
+    await t.pump();
+    expect(settFieldText(t), '18', reason: 'a weaver can set their own sett');
+  });
+
+  testWidgets('the yarn-weight dropdown seeds the WPI field', (t) async {
+    await pumpSheet(t, FakePlanningRepo());
+    await t.tap(find.text('Seed WPI from yarn weight (optional)'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Medium (4) · worsted/aran').last); // typical WPI 9
+    await t.pumpAndSettle();
+    final wpi = t.widget<TextFormField>(find.widgetWithText(TextFormField, 'Wraps per inch'));
+    expect(wpi.controller!.text, '9');
   });
 
   testWidgets('invalid WPI shows an inline error and does NOT call the engine', (t) async {
@@ -138,7 +166,7 @@ void main() {
     await t.tap(find.text('Suggest sett'));
     await t.pump();
     expect(repo.settWpi, 24.0);
-    expect(find.text('12 ends/in'), findsOneWidget);
+    expect(settFieldText(t), '12');
   });
 
   testWidgets('Estimate warp passes the parsed fields (take-up as a percent) and shows the result',
@@ -156,8 +184,9 @@ void main() {
     expect(repo.warpArgs!.ends, 4);
     expect(repo.warpArgs!.loomWaste, 0.5);
     expect(repo.warpArgs!.takeupPercent, 10.0, reason: 'entered as a percent; the repo divides by 100');
-    expect(find.text('Warp length: 27 in'), findsOneWidget);
-    expect(find.text('Total warp yarn: 270 in'), findsOneWidget);
+    // Long outputs convert inches -> yards (÷36): 27 in -> 0.75 yd, 270 in -> 7.5 yd.
+    expect(find.text('Warp length: 0.75 yd'), findsOneWidget);
+    expect(find.text('Total warp yarn: 7.50 yd'), findsOneWidget);
   });
 
   testWidgets('an empty required warp field blocks the estimate', (t) async {
@@ -204,24 +233,29 @@ void main() {
     expect(repo.settStructure, 'twill');
   });
 
-  testWidgets('a too-small WPI shows a "too low" message, not "0 ends/in"', (t) async {
+  testWidgets('a WPI too low to suggest a usable sett leaves the field blank', (t) async {
     final repo = FakePlanningRepo()..settReturn = 0.0; // a tiny WPI rounds to 0
     await pumpSheet(t, repo);
     await t.enterText(find.widgetWithText(TextFormField, 'Wraps per inch'), '1');
     await t.tap(find.text('Suggest sett'));
     await t.pump();
-    expect(find.textContaining('too low'), findsOneWidget);
-    expect(find.text('0 ends/in'), findsNothing);
+    expect(settFieldText(t), isEmpty, reason: 'no usable sett -> blank field, not "0"');
   });
 
-  testWidgets('a centimeters draft labels warp + weft lengths in cm', (t) async {
-    await pumpSheet(t, FakePlanningRepo(), doc: fourEnds().copyWith(unit: MeasureUnit.centimeters));
+  testWidgets('the global metric setting labels inputs in cm and long outputs in m', (t) async {
+    final repo = FakePlanningRepo();
+    final c = await pumpSheet(t, repo);
+    c.read(appSettingsProvider.notifier).setUnit(MeasureUnit.centimeters);
+    await t.pump();
     expect(find.widgetWithText(TextFormField, 'Finished length (cm)'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Loom waste (cm)'), findsOneWidget);
-    // The weft "picks per unit" tracks the draft unit (the engine multiplies it by woven_length in
-    // the same unit), so it reads "per cm", not a hardcoded "per inch".
     expect(find.widgetWithText(TextFormField, 'Picks per cm'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Woven width (cm)'), findsOneWidget);
+    // A warp estimate's long output converts cm -> meters (÷100): 27 cm -> 0.27 m.
+    await t.enterText(find.widgetWithText(TextFormField, 'Finished length (cm)'), '2');
+    await t.tap(find.text('Estimate warp'));
+    await t.pump();
+    expect(find.text('Warp length: 0.27 m'), findsOneWidget);
   });
 
   testWidgets('Estimate weft passes the parsed fields (take-up as a percent) and shows the result',
@@ -242,7 +276,8 @@ void main() {
     expect(repo.weftArgs!.items, 1);
     expect(repo.weftArgs!.takeupPercent, 10.0, reason: 'entered as a percent; the repo divides by 100');
     expect(find.text('Total picks: 720'), findsOneWidget);
-    expect(find.text('Total weft yarn: 15840 in'), findsOneWidget);
+    // 15840 in -> yards (÷36) = 440 yd.
+    expect(find.text('Total weft yarn: 440 yd'), findsOneWidget);
   });
 
   testWidgets('an empty required weft field blocks the estimate', (t) async {

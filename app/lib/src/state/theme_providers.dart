@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_settings_repository.dart';
 import '../models/app_settings.dart';
+import '../models/draft_doc.dart' show MeasureUnit;
 
 /// The settings store (overridable in tests).
 final appSettingsRepositoryProvider =
@@ -42,6 +43,7 @@ class AppSettingsNotifier extends Notifier<AppSettings> {
   void setThemeMode(ThemeMode mode) => _update(state.copyWith(themeMode: mode));
   void setAccentSeed(int seed) => _update(state.copyWith(accentSeed: seed));
   void setUseDynamicColor(bool value) => _update(state.copyWith(useDynamicColor: value));
+  void setUnit(MeasureUnit unit) => _update(state.copyWith(unit: unit));
 }
 
 final appSettingsProvider =
