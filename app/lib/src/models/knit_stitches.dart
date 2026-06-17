@@ -18,26 +18,33 @@ class KnitStitch {
   static const int slip = 11;
 }
 
-/// A paintable stitch in the editor's brush picker: its builtin id, a label, and the shorthand symbol.
+/// A paintable stitch in the editor's brush picker: its builtin id, a label, the shorthand symbol, and
+/// a plain-language [description] (used by the in-editor stitch legend).
 class KnitBrush {
-  const KnitBrush(this.id, this.label, this.symbol);
+  const KnitBrush(this.id, this.label, this.symbol, this.description);
   final int id;
   final String label;
   final String symbol;
+  final String description;
 }
 
 /// The brushes the editor offers, in picker order. Cables/custom stitches are a later addition (they
-/// need the multi-column placement UI); v1 paints the single-column builtins.
+/// need the multi-column placement UI); v1 paints the single-column builtins. The [description]s back
+/// the in-editor stitch legend / abbreviation key.
 const List<KnitBrush> kKnitBrushes = [
-  KnitBrush(KnitStitch.knit, 'Knit', 'k'),
-  KnitBrush(KnitStitch.purl, 'Purl', 'p'),
-  KnitBrush(KnitStitch.yo, 'Yarn over', 'yo'),
-  KnitBrush(KnitStitch.k2tog, 'K2tog', 'k2tog'),
-  KnitBrush(KnitStitch.ssk, 'Ssk', 'ssk'),
-  KnitBrush(KnitStitch.cdd, 'Centered dec', 'cdd'),
-  KnitBrush(KnitStitch.m1l, 'Make 1 L', 'm1l'),
-  KnitBrush(KnitStitch.m1r, 'Make 1 R', 'm1r'),
-  KnitBrush(KnitStitch.kfb, 'Kfb', 'kfb'),
-  KnitBrush(KnitStitch.slip, 'Slip', 'sl'),
-  KnitBrush(KnitStitch.noStitch, 'No stitch', 'ns'),
+  KnitBrush(KnitStitch.knit, 'Knit', 'k', 'Knit stitch — smooth "V" on the right side.'),
+  KnitBrush(KnitStitch.purl, 'Purl', 'p', 'Purl stitch — the bump; the reverse of a knit.'),
+  KnitBrush(KnitStitch.yo, 'Yarn over', 'yo', 'Yarn over — wrap the yarn to add a stitch (an eyelet).'),
+  KnitBrush(KnitStitch.k2tog, 'K2tog', 'k2tog',
+      'Knit two together — a right-leaning decrease (2 stitches become 1).'),
+  KnitBrush(KnitStitch.ssk, 'Ssk', 'ssk',
+      'Slip, slip, knit — a left-leaning decrease (2 stitches become 1).'),
+  KnitBrush(KnitStitch.cdd, 'Centered dec', 'cdd',
+      'Centered double decrease — 3 stitches become 1, centered.'),
+  KnitBrush(KnitStitch.m1l, 'Make 1 L', 'm1l', 'Make one left — a left-leaning increase (adds 1).'),
+  KnitBrush(KnitStitch.m1r, 'Make 1 R', 'm1r', 'Make one right — a right-leaning increase (adds 1).'),
+  KnitBrush(KnitStitch.kfb, 'Kfb', 'kfb', 'Knit front and back — an increase (1 stitch becomes 2).'),
+  KnitBrush(KnitStitch.slip, 'Slip', 'sl', 'Slip stitch — move a stitch to the other needle, unworked.'),
+  KnitBrush(KnitStitch.noStitch, 'No stitch', 'ns',
+      'No stitch — a chart placeholder (no stitch worked there).'),
 ];

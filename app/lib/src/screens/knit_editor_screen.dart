@@ -11,6 +11,7 @@ import '../state/knit_editor_state.dart';
 import '../theme/ply_colors.dart';
 import '../widgets/cable_builder_dialog.dart';
 import '../widgets/knit_chart_view.dart';
+import '../widgets/knit_legend_sheet.dart';
 import '../widgets/knit_planning_sheet.dart';
 import '../widgets/knit_settings_sheet.dart';
 import '../widgets/name_input_dialog.dart';
@@ -18,7 +19,7 @@ import '../widgets/rgb_color_picker.dart';
 import 'knit_written_screen.dart';
 
 /// The knit editor's overflow-menu actions.
-enum _EditorMenu { zoomIn, zoomOut, written, planning, settings }
+enum _EditorMenu { zoomIn, zoomOut, written, legend, planning, settings }
 
 /// The knitting chart editor (M5): paint a chart of stitch symbols, resize the grid, undo/redo, see
 /// live stitch-count validation, and save to the on-device knit library. The knit analog of the
@@ -172,6 +173,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
               _EditorMenu.written => Navigator.of(context).push(
                   MaterialPageRoute<void>(builder: (_) => const KnitWrittenScreen()),
                 ),
+              _EditorMenu.legend => showKnitLegendSheet(context),
               _EditorMenu.planning => showKnitPlanningSheet(context),
               _EditorMenu.settings => showKnitSettingsSheet(context),
             },
@@ -198,6 +200,14 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
                 child: ListTile(
                   leading: Icon(Icons.format_list_numbered),
                   title: Text('Written instructions'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: _EditorMenu.legend,
+                child: ListTile(
+                  leading: Icon(Icons.menu_book_outlined),
+                  title: Text('Stitch key'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),

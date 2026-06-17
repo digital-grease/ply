@@ -52,4 +52,34 @@ void main() {
     final stock = starterChart(base, KnitStarter.stockinette);
     expect(stock.rows.every((row) => row.cells.every((c) => c.stitch == KnitStitch.knit)), isTrue);
   });
+
+  test('ribbing honors a custom knit×purl ratio (1×2)', () {
+    // 1×2 rib across the columns: K P P  K P P ...
+    int at(int c) => starterStitchAt(KnitStarter.ribbing, 0, c, knitRun: 1, purlRun: 2);
+    expect(at(0), KnitStitch.knit);
+    expect(at(1), KnitStitch.purl);
+    expect(at(2), KnitStitch.purl);
+    expect(at(3), KnitStitch.knit, reason: 'the 1×2 pattern repeats every 3 columns');
+  });
+
+  test('starterChart passes the rib ratio through (2×2)', () {
+    final rib = starterChart(allKnit(6, 1), KnitStarter.ribbing, knitRun: 2, purlRun: 2);
+    expect(rib.rows[0].cells.map((c) => c.stitch).toList(), const [
+      KnitStitch.knit,
+      KnitStitch.knit,
+      KnitStitch.purl,
+      KnitStitch.purl,
+      KnitStitch.knit,
+      KnitStitch.knit,
+    ]);
+  });
+
+  test('a starter band limits the pattern to the first N rows, then stockinette', () {
+    final cuff = starterChart(allKnit(4, 4), KnitStarter.ribbing, bandRows: 2);
+    expect(cuff.rows[0].cells[1].stitch, KnitStitch.purl, reason: 'row 0 is in the band');
+    expect(cuff.rows[1].cells[1].stitch, KnitStitch.purl, reason: 'row 1 is in the band');
+    expect(cuff.rows[2].cells.every((c) => c.stitch == KnitStitch.knit), isTrue,
+        reason: 'beyond the band -> stockinette');
+    expect(cuff.rows[3].cells.every((c) => c.stitch == KnitStitch.knit), isTrue);
+  });
 }

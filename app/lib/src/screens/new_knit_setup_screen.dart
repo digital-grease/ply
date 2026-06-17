@@ -10,30 +10,49 @@ import '../state/knit_editor_state.dart';
 /// A starting stitch-pattern fill for a fresh chart.
 enum KnitStarter { stockinette, garter, ribbing, seed }
 
-/// The stitch id at chart (row, col) for a starting pattern. Pure + host-testable.
-int starterStitchAt(KnitStarter s, int r, int c) {
+/// The stitch id at chart (row, col) for a starting pattern. Pure + host-testable. [knitRun]/[purlRun]
+/// configure the RIBBING ratio (knit columns then purl columns, e.g. 1+1 = 1×1, 1+2 = 1×2); they are
+/// ignored by the other patterns.
+int starterStitchAt(KnitStarter s, int r, int c, {int knitRun = 1, int purlRun = 1}) {
   switch (s) {
     case KnitStarter.stockinette:
       return KnitStitch.knit;
     case KnitStarter.garter:
       return r.isOdd ? KnitStitch.purl : KnitStitch.knit; // alternating ridges
     case KnitStarter.ribbing:
-      return c.isOdd ? KnitStitch.purl : KnitStitch.knit; // 1x1 vertical ribs
+      final period = knitRun + purlRun;
+      if (period <= 0) return KnitStitch.knit;
+      return (c % period) < knitRun ? KnitStitch.knit : KnitStitch.purl; // k×p vertical ribs
     case KnitStarter.seed:
       return (r + c).isOdd ? KnitStitch.purl : KnitStitch.knit; // checkerboard
   }
 }
 
 /// Re-paint [base]'s cells for [starter] in ONE pass, preserving each row's repeat info + cell colors.
-/// Pure; the setup screen runs this on the engine's resized all-knit chart.
-ChartDto starterChart(ChartDto base, KnitStarter starter) => ChartDto(
+/// [bandRows] limits the starter to the first N rows (e.g. a ribbed cuff), leaving the rest plain
+/// stockinette; null applies it to the whole chart. [knitRun]/[purlRun] set the ribbing ratio. Pure;
+/// the setup screen runs this on the engine's resized all-knit chart.
+ChartDto starterChart(
+  ChartDto base,
+  KnitStarter starter, {
+  int? bandRows,
+  int knitRun = 1,
+  int purlRun = 1,
+}) =>
+    ChartDto(
       width: base.width,
       rows: [
         for (var r = 0; r < base.rows.length; r++)
           RowDto(
             cells: [
               for (var c = 0; c < base.rows[r].cells.length; c++)
-                CellDto(stitch: starterStitchAt(starter, r, c), color: base.rows[r].cells[c].color),
+                CellDto(
+                  // Beyond the starter band, fall back to plain stockinette (knit).
+                  stitch: (bandRows == null || r < bandRows)
+                      ? starterStitchAt(starter, r, c, knitRun: knitRun, purlRun: purlRun)
+                      : KnitStitch.knit,
+                  color: base.rows[r].cells[c].color,
+                ),
             ],
             repeats: base.rows[r].repeats,
           ),
@@ -54,24 +73,36 @@ class NewKnitSetupScreen extends ConsumerStatefulWidget {
 class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
   final _sts = TextEditingController(text: '20');
   final _rows = TextEditingController(text: '24');
+  final _bandRows = TextEditingController(); // blank = the whole chart
   YarnWeightKind _yarn = YarnWeightKind.medium;
   ConstructionKind _construction = ConstructionKind.flat;
   SideKind _side = SideKind.rs;
   KnitStarter _starter = KnitStarter.stockinette;
+  int _ribKnit = 1;
+  int _ribPurl = 1;
   bool _creating = false;
 
   static const int _maxSts = 200;
   static const int _maxRows = 400;
+  static const int _maxRib = 8;
 
   @override
   void dispose() {
     _sts.dispose();
     _rows.dispose();
+    _bandRows.dispose();
     super.dispose();
   }
 
   int get _w => (int.tryParse(_sts.text.trim()) ?? 20).clamp(1, _maxSts);
   int get _h => (int.tryParse(_rows.text.trim()) ?? 24).clamp(1, _maxRows);
+
+  /// The starter band height (first N rows), or null = the whole chart. Clamped to the chart height.
+  int? get _bandRowsValue {
+    final n = int.tryParse(_bandRows.text.trim());
+    if (n == null || n < 1) return null;
+    return n.clamp(1, _h);
+  }
 
   Future<void> _create() async {
     if (_creating) return;
@@ -95,7 +126,14 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
         gauge: base.gauge,
         palette: base.palette,
         legend: base.legend,
-        chart: starterChart(base.chart, _starter), // re-paint for the starting pattern in one pass
+        // Re-paint for the starting pattern in one pass: the rib ratio + an optional starter band.
+        chart: starterChart(
+          base.chart,
+          _starter,
+          bandRows: _bandRowsValue,
+          knitRun: _ribKnit,
+          purlRun: _ribPurl,
+        ),
         notes: base.notes,
       );
       if (!mounted) return;
@@ -122,7 +160,7 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
   static String _starterLabel(KnitStarter s) => switch (s) {
         KnitStarter.stockinette => 'Stockinette',
         KnitStarter.garter => 'Garter',
-        KnitStarter.ribbing => '1×1 ribbing',
+        KnitStarter.ribbing => 'Ribbing',
         KnitStarter.seed => 'Seed',
       };
 
@@ -189,6 +227,44 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
                 DropdownMenuItem(value: s, child: Text(_starterLabel(s))),
             ],
           ),
+          if (_starter == KnitStarter.ribbing) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _RibStepper(
+                    label: 'Knit',
+                    value: _ribKnit,
+                    max: _maxRib,
+                    onChange: (v) => setState(() => _ribKnit = v),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _RibStepper(
+                    label: 'Purl',
+                    value: _ribPurl,
+                    max: _maxRib,
+                    onChange: (v) => setState(() => _ribPurl = v),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('$_ribKnit×$_ribPurl rib',
+                  style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ),
+          ],
+          if (_starter != KnitStarter.stockinette) ...[
+            const SizedBox(height: 12),
+            _numField(_bandRows, 'Starter rows (blank = all)'),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('Limit the pattern to the first N rows (e.g. a ribbed cuff), then stockinette.',
+                  style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+            ),
+          ],
           const SizedBox(height: 28),
           FilledButton(
             onPressed: _creating ? null : _create,
@@ -205,4 +281,41 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9]'))],
         decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
       );
+}
+
+/// A compact +/- stepper for the ribbing knit/purl run counts (min 1).
+class _RibStepper extends StatelessWidget {
+  const _RibStepper({
+    required this.label,
+    required this.value,
+    required this.max,
+    required this.onChange,
+  });
+
+  final String label;
+  final int value;
+  final int max;
+  final void Function(int) onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          tooltip: 'Fewer $label',
+          onPressed: value > 1 ? () => onChange(value - 1) : null,
+          icon: const Icon(Icons.remove),
+        ),
+        Text('$label $value', style: Theme.of(context).textTheme.labelLarge),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          tooltip: 'More $label',
+          onPressed: value < max ? () => onChange(value + 1) : null,
+          icon: const Icon(Icons.add),
+        ),
+      ],
+    );
+  }
 }
