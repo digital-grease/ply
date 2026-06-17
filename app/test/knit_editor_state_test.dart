@@ -50,6 +50,52 @@ void main() {
     expect(identical(s.paintCell(0, 0, KnitStitch.knit, null), s), isTrue, reason: 'no change');
   });
 
+  test('fillRegion fills a rectangle as one undo entry; cells outside are untouched', () {
+    final s = KnitEditorState(pattern: pattern(4, 4)).fillRegion(1, 1, 2, 2, KnitStitch.purl, null);
+    for (final r in [1, 2]) {
+      for (final c in [1, 2]) {
+        expect(s.pattern.chart.rows[r].cells[c].stitch, KnitStitch.purl, reason: 'cell $r,$c filled');
+      }
+    }
+    expect(s.pattern.chart.rows[0].cells[0].stitch, KnitStitch.knit, reason: 'outside the rect');
+    expect(s.pattern.chart.rows[3].cells[3].stitch, KnitStitch.knit);
+    expect(s.undo.length, 1, reason: 'one undo entry for the whole fill');
+  });
+
+  test('fillRegion normalizes corner order and clamps to the chart', () {
+    // Corners given bottom-right -> top-left, and a column past the right edge.
+    final s = KnitEditorState(pattern: pattern(3, 3)).fillRegion(2, 9, 0, 1, KnitStitch.purl, null);
+    expect(s.pattern.chart.rows[0].cells[1].stitch, KnitStitch.purl);
+    expect(s.pattern.chart.rows[2].cells[2].stitch, KnitStitch.purl, reason: 'col 9 clamped to 2');
+    expect(s.pattern.chart.rows[0].cells[0].stitch, KnitStitch.knit, reason: 'col 0 outside the rect');
+  });
+
+  test('fillRegion with a cable brush is a no-op (cables span columns)', () {
+    final p = pattern(3, 3);
+    final withCable = KnitPatternDto(
+      name: p.name,
+      construction: p.construction,
+      firstRowSide: p.firstRowSide,
+      gauge: p.gauge,
+      palette: p.palette,
+      legend: const StitchLegendDto(stitches: [
+        StitchDefDto(
+          symbol: '1/1',
+          consumes: 2,
+          produces: 2,
+          cable: CableDefDto(
+              front: 1, back: 1, direction: CrossKind.right, frontPurl: false, backPurl: false),
+          macroRows: 1,
+        ),
+      ]),
+      chart: p.chart,
+      notes: p.notes,
+    );
+    final base = KnitEditorState(pattern: withCable);
+    expect(identical(base.fillRegion(0, 0, 1, 1, 0, null), base), isTrue,
+        reason: 'cable id 0 is not a regular fill -> no-op');
+  });
+
   test('resizeChart grows with knit padding and keeps existing cells', () {
     var s = KnitEditorState(pattern: pattern(2, 2)).paintCell(0, 0, KnitStitch.purl, null);
     final grown = s.resizeChart(3, 3);

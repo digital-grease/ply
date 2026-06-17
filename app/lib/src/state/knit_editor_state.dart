@@ -60,6 +60,35 @@ class KnitEditorState {
     return _commit(next);
   }
 
+  /// Fill the rectangular region rows [r0]..[r1] × cols [c0]..[c1] (corners in any order) with the
+  /// regular [stitch] + optional colorwork [color], committed as ONE undo entry. Cable brushes span
+  /// columns and aren't fillable, so a cable [stitch] is a no-op; any cable overlapping a filled column
+  /// is cleared first so no orphan fillers remain. Coordinates are clamped to the chart.
+  KnitEditorState fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color) {
+    if (_legendCableSpan(pattern.legend, stitch) != null) return this; // not a regular stitch
+    final rows = pattern.chart.rows;
+    final width = pattern.chart.width;
+    if (rows.isEmpty || width == 0) return this;
+    final rLo = (r0 < r1 ? r0 : r1).clamp(0, rows.length - 1);
+    final rHi = (r0 < r1 ? r1 : r0).clamp(0, rows.length - 1);
+    final cLo = (c0 < c1 ? c0 : c1).clamp(0, width - 1);
+    final cHi = (c0 < c1 ? c1 : c0).clamp(0, width - 1);
+    // Defense in depth: drop a colorwork index past the palette rather than write a dangling ref.
+    final col = (color != null && color >= pattern.palette.length) ? null : color;
+    final cell = CellDto(stitch: stitch, color: col);
+    final newRows = [...rows];
+    for (var row = rLo; row <= rHi; row++) {
+      final r = newRows[row];
+      // Clear cables overlapping the filled span, then set the columns.
+      final cells = _clearCablesOverlapping(pattern.legend, r.cells, cLo, cHi + 1);
+      for (var c = cLo; c <= cHi && c < cells.length; c++) {
+        cells[c] = cell;
+      }
+      newRows[row] = RowDto(cells: cells, repeats: r.repeats);
+    }
+    return _commit(_withChart(pattern, ChartDto(width: width, rows: newRows)));
+  }
+
   /// Resize the chart grid to [width] columns x [rows] rows: existing cells are kept, new cells are
   /// knit, extras are truncated.
   KnitEditorState resizeChart(int width, int rows) =>

@@ -45,17 +45,30 @@ class KnitChartView extends ConsumerWidget {
 
     final w = (cols * cell).toDouble();
     final h = (rows * cell).toDouble();
-    final labelColor = Theme.of(context).colorScheme.onSurfaceVariant;
+    final cs = Theme.of(context).colorScheme;
+    final labelColor = cs.onSurfaceVariant;
+    final select = ref.watch(knitToolProvider) == KnitTool.select;
+    final selection = ref.watch(knitSelectionProvider);
+    // Map a pointer position (chart-local) to a clamped (row, col); row 0 is at the BOTTOM.
+    (int, int) cellAt(Offset p) {
+      final col = (p.dx ~/ cell).clamp(0, cols - 1);
+      final rowFromTop = (p.dy ~/ cell).clamp(0, rows - 1);
+      return (rows - 1 - rowFromTop, col);
+    }
+
     return SingleChildScrollView(
       scrollDirection: Axis.vertical,
+      // SELECT freezes the scroll so a drag selects a region instead of scrolling.
+      physics: select ? const NeverScrollableScrollPhysics() : null,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
+        physics: select ? const NeverScrollableScrollPhysics() : null,
         child: SizedBox(
           width: w + _rowGutter,
           height: h + _colGutter,
           child: Stack(
             children: [
-              // The chart bitmap + tap target, at the top-left origin (unchanged geometry).
+              // The chart bitmap + tap/drag target, at the top-left origin (unchanged geometry).
               Positioned(
                 left: 0,
                 top: 0,
@@ -64,14 +77,31 @@ class KnitChartView extends ConsumerWidget {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTapUp: (d) {
-                    final col = d.localPosition.dx ~/ cell;
-                    final rowFromTop = d.localPosition.dy ~/ cell;
-                    final row = rows - 1 - rowFromTop; // row 0 is at the BOTTOM
-                    if (col < 0 || col >= cols || row < 0 || row >= rows) return;
+                    final (row, col) = cellAt(d.localPosition);
+                    if (select) {
+                      ref.read(knitSelectionProvider.notifier).state =
+                          KnitSelection(row, col, row, col);
+                      return;
+                    }
                     final stitch = ref.read(activeKnitStitchProvider);
                     final color = ref.read(activeKnitColorProvider);
                     ref.read(knitEditorProvider.notifier).paintCell(row, col, stitch, color);
                   },
+                  onPanStart: select
+                      ? (d) {
+                          final (row, col) = cellAt(d.localPosition);
+                          ref.read(knitSelectionProvider.notifier).state =
+                              KnitSelection(row, col, row, col);
+                        }
+                      : null,
+                  onPanUpdate: select
+                      ? (d) {
+                          final sel = ref.read(knitSelectionProvider);
+                          if (sel == null) return;
+                          final (row, col) = cellAt(d.localPosition);
+                          ref.read(knitSelectionProvider.notifier).state = sel.toCurrent(row, col);
+                        }
+                      : null,
                   child: Semantics(
                     label: 'Knitting chart, $cols stitches by $rows rows',
                     image: true,
@@ -79,6 +109,24 @@ class KnitChartView extends ConsumerWidget {
                   ),
                 ),
               ),
+              // The selection rectangle (SELECT tool), drawn over the cloth and ignoring pointers.
+              if (selection != null)
+                Positioned(
+                  left: selection.colMin.clamp(0, cols - 1) * cell.toDouble(),
+                  top: (rows - 1 - selection.rowMax.clamp(0, rows - 1)) * cell.toDouble(),
+                  width: (selection.colMax.clamp(0, cols - 1) - selection.colMin.clamp(0, cols - 1) + 1) *
+                      cell.toDouble(),
+                  height: (selection.rowMax.clamp(0, rows - 1) - selection.rowMin.clamp(0, rows - 1) + 1) *
+                      cell.toDouble(),
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.18),
+                        border: Border.all(color: cs.primary, width: 2),
+                      ),
+                    ),
+                  ),
+                ),
               // Row numbers down the right side (1 at the bottom, counting up).
               Positioned(
                 left: w,

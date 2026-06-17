@@ -138,16 +138,56 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
     }
   }
 
+  /// Fill the current selection with the active stitch + color (one undo entry), then clear it. A cable
+  /// brush spans columns and can't fill a region, so it is blocked with a hint instead of a silent
+  /// no-op.
+  void _fillSelection() {
+    final sel = ref.read(knitSelectionProvider);
+    if (sel == null) return;
+    final stitch = ref.read(activeKnitStitchProvider);
+    final legend = ref.read(knitEditorProvider).pattern.legend.stitches;
+    final isCable = stitch >= 0 && stitch < legend.length && legend[stitch].cable != null;
+    if (isCable) {
+      _snack('Cables span columns and can’t fill a region — pick a single stitch.');
+      return;
+    }
+    final color = ref.read(activeKnitColorProvider);
+    ref
+        .read(knitEditorProvider.notifier)
+        .fillRegion(sel.rowMin, sel.colMin, sel.rowMax, sel.colMax, stitch, color);
+    ref.read(knitSelectionProvider.notifier).state = null; // clear after filling
+  }
 
   @override
   Widget build(BuildContext context) {
     final canUndo = ref.watch(knitEditorProvider.select((s) => s.canUndo));
     final canRedo = ref.watch(knitEditorProvider.select((s) => s.canRedo));
+    final select = ref.watch(knitToolProvider) == KnitTool.select;
+    final selection = ref.watch(knitSelectionProvider);
     return Scaffold(
       appBar: AppBar(
         title: Text(_name),
         actions: [
           IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: select ? 'Selecting (tap to draw)' : 'Drawing (tap to select)',
+            isSelected: select,
+            icon: Icon(select ? Icons.select_all : Icons.edit_outlined),
+            onPressed: () {
+              final next = select ? KnitTool.paint : KnitTool.select;
+              ref.read(knitToolProvider.notifier).state = next;
+              if (next == KnitTool.paint) ref.read(knitSelectionProvider.notifier).state = null;
+            },
+          ),
+          if (select && selection != null)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Fill selection',
+              icon: const Icon(Icons.format_color_fill),
+              onPressed: _fillSelection,
+            ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: 'Save',
             icon: _saving
                 ? const SizedBox(
@@ -156,11 +196,13 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
             onPressed: _saving ? null : _save,
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: 'Undo',
             icon: const Icon(Icons.undo),
             onPressed: canUndo ? () => ref.read(knitEditorProvider.notifier).undo() : null,
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             tooltip: 'Redo',
             icon: const Icon(Icons.redo),
             onPressed: canRedo ? () => ref.read(knitEditorProvider.notifier).redo() : null,

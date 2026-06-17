@@ -30,6 +30,45 @@ final activeKnitStitchProvider = StateProvider<int>((ref) => KnitStitch.knit);
 /// The active colorwork color (a palette index), or null to paint a symbol-only (uncolored) cell.
 final activeKnitColorProvider = StateProvider<int?>((ref) => null);
 
+/// The chart interaction tool: PAINT taps single cells (and lets the chart scroll); SELECT drags out a
+/// rectangular region to fill in one go (the chart scroll is frozen so the drag selects).
+enum KnitTool { paint, select }
+
+/// The current chart tool. Default paint, so a freshly-opened chart is immediately editable.
+final knitToolProvider = StateProvider<KnitTool>((ref) => KnitTool.paint);
+
+/// A rectangular chart selection (inclusive), stored as the drag's ANCHOR cell + its CURRENT cell;
+/// [rowMin]/[rowMax]/[colMin]/[colMax] normalize it. Null when nothing is selected.
+class KnitSelection {
+  const KnitSelection(this.rowA, this.colA, this.rowB, this.colB);
+  final int rowA;
+  final int colA;
+  final int rowB;
+  final int colB;
+
+  int get rowMin => rowA < rowB ? rowA : rowB;
+  int get rowMax => rowA < rowB ? rowB : rowA;
+  int get colMin => colA < colB ? colA : colB;
+  int get colMax => colA < colB ? colB : colA;
+
+  /// The same anchor with a new current corner (during a drag).
+  KnitSelection toCurrent(int row, int col) => KnitSelection(rowA, colA, row, col);
+
+  @override
+  bool operator ==(Object other) =>
+      other is KnitSelection &&
+      other.rowA == rowA &&
+      other.colA == colA &&
+      other.rowB == rowB &&
+      other.colB == colB;
+
+  @override
+  int get hashCode => Object.hash(rowA, colA, rowB, colB);
+}
+
+/// The current rectangular selection (SELECT tool), or null.
+final knitSelectionProvider = StateProvider<KnitSelection?>((ref) => null);
+
 /// The single source of truth for the open pattern + its undo history.
 class KnitEditorNotifier extends Notifier<KnitEditorState> {
   @override
@@ -44,6 +83,9 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
 
   void paintCell(int row, int col, int stitch, int? color) =>
       state = state.paintCell(row, col, stitch, color);
+
+  void fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color) =>
+      state = state.fillRegion(r0, c0, r1, c1, stitch, color);
 
   void resizeChart(int width, int rows) => state = state.resizeChart(width, rows);
 

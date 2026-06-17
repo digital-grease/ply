@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/knit_repository.dart';
-import 'package:ply/src/rust/dto.dart' show SeverityKind;
+import 'package:ply/src/models/knit_stitches.dart';
+import 'package:ply/src/rust/dto.dart' show SeverityKind, ColorDto, UnitKind;
 import 'package:ply/src/rust/knit_dto.dart';
 import 'package:ply/src/screens/knit_editor_screen.dart';
 import 'package:ply/src/state/knit_editor_providers.dart';
@@ -39,6 +40,27 @@ class FakeEditorRepo extends KnitRepository {
   @override
   Future<List<KnitIssueDto>> validate(KnitPatternDto pattern) async => issues;
 }
+
+/// A 4×4 all-knit pattern to load over the blank placeholder so the chart + fill have cells.
+KnitPatternDto _fourByFour() => KnitPatternDto(
+      name: 'x',
+      construction: ConstructionKind.flat,
+      firstRowSide: SideKind.rs,
+      gauge: const GaugeDto(sts: 18, rows: 24, unit: UnitKind.inches),
+      palette: const [ColorDto(r: 255, g: 255, b: 255)],
+      legend: const StitchLegendDto(stitches: []),
+      chart: ChartDto(
+        width: 4,
+        rows: List.generate(
+          4,
+          (_) => RowDto(
+            cells: List.generate(4, (_) => const CellDto(stitch: KnitStitch.knit)),
+            repeats: const [],
+          ),
+        ),
+      ),
+      notes: '',
+    );
 
 Future<ProviderContainer> pumpEditor(WidgetTester tester, FakeEditorRepo repo) async {
   final c = ProviderContainer(overrides: [knitRepositoryProvider.overrideWithValue(repo)]);
@@ -89,6 +111,26 @@ void main() {
     await pumpEditor(tester, FakeEditorRepo());
     expect(find.byIcon(Icons.error_outline), findsNothing);
     expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+  });
+
+  testWidgets('select mode + Fill applies the active stitch to the selection, then clears it',
+      (tester) async {
+    final c = await pumpEditor(tester, FakeEditorRepo());
+    c.read(knitEditorProvider.notifier).load(_fourByFour());
+    c.read(activeKnitStitchProvider.notifier).state = KnitStitch.purl;
+    c.read(knitToolProvider.notifier).state = KnitTool.select;
+    c.read(knitSelectionProvider.notifier).state = const KnitSelection(0, 0, 1, 1);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Fill selection'));
+    await tester.pumpAndSettle();
+
+    final chart = c.read(knitEditorProvider).pattern.chart;
+    expect(chart.rows[0].cells[0].stitch, KnitStitch.purl);
+    expect(chart.rows[1].cells[1].stitch, KnitStitch.purl);
+    expect(chart.rows[2].cells[2].stitch, KnitStitch.knit, reason: 'outside the selection');
+    expect(c.read(knitSelectionProvider), isNull, reason: 'the selection clears after filling');
+    expect(c.read(knitEditorProvider).undo.length, 1, reason: 'one undo entry for the fill');
   });
 
   testWidgets('the overflow Zoom in action steps the chart zoom', (tester) async {
