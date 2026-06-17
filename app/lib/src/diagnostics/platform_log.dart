@@ -18,4 +18,17 @@ class PlatformLog {
       return null;
     }
   }
+
+  /// Hand [text] to the OS share sheet (Android `ACTION_SEND`). Returns true when the share UI was
+  /// shown, false where it is not available (iOS / desktop / no handler), so the caller can fall back
+  /// to the clipboard.
+  static Future<bool> shareText(String text, {String subject = 'Ply diagnostics'}) async {
+    try {
+      final ok = await channel
+          .invokeMethod<bool>('shareText', {'text': text, 'subject': subject});
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

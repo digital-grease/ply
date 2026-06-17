@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/diagnostics/crash_report_url_builder.dart';
@@ -7,11 +8,18 @@ import 'package:ply/src/diagnostics/crash_reporter.dart';
 import 'package:ply/src/diagnostics/log_buffer.dart';
 import 'package:ply/src/diagnostics/log_scrubber.dart';
 import 'package:ply/src/diagnostics/platform_log.dart';
+import 'package:ply/src/screens/diagnostics_screen.dart';
 
 /// Install a fake handler for the platform-log channel ([reply] null simulates iOS / unavailable).
 void _mockPlatformLog(Future<String?> Function() reply) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(PlatformLog.channel, (call) async => reply());
+}
+
+/// Install a full fake handler for the diagnostics channel (sees the method + args).
+void _mockDiagnostics(Future<Object?> Function(MethodCall) handler) {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(PlatformLog.channel, handler);
 }
 
 void main() {
@@ -129,6 +137,53 @@ void main() {
       final report = (await CrashReporter.instance.read())!;
       expect(report, contains('=== Device log ==='));
       expect(report, contains('native warning before the crash'));
+    });
+  });
+
+  group('PlatformLog.shareText', () {
+    test('returns true when the platform shares it', () async {
+      _mockDiagnostics((call) async => call.method == 'shareText');
+      expect(await PlatformLog.shareText('hello'), isTrue);
+    });
+
+    test('returns false when sharing is unavailable (iOS / no handler)', () async {
+      _mockDiagnostics((call) async => throw MissingPluginException());
+      expect(await PlatformLog.shareText('hello'), isFalse);
+    });
+  });
+
+  group('DiagnosticsScreen export', () {
+    testWidgets('Export logs bundles the activity log and hands it to the share sheet',
+        (tester) async {
+      String? sharedText;
+      await tester.runAsync(() async {
+        final docs = await Directory.systemTemp.createTemp('ply_diag_export');
+        CrashReporter.instance.docsOverride = docs; // no crash file -> the report is null
+        addTearDown(() async {
+          CrashReporter.instance.docsOverride = null;
+          await docs.delete(recursive: true);
+        });
+        PlyLog.instance.clear();
+        PlyLog.instance.info('exported a thing');
+
+        _mockDiagnostics((call) async {
+          if (call.method == 'shareText') {
+            sharedText = (call.arguments as Map)['text'] as String?;
+            return true;
+          }
+          return null;
+        });
+
+        await tester.pumpWidget(const MaterialApp(home: DiagnosticsScreen()));
+        await tester.pump();
+        await tester.tap(find.text('Export logs'));
+        await Future<void>.delayed(Duration.zero);
+        await tester.pump();
+      });
+
+      expect(sharedText, isNotNull);
+      expect(sharedText, contains('=== Activity log ==='));
+      expect(sharedText, contains('exported a thing'));
     });
   });
 }

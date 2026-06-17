@@ -1,5 +1,6 @@
 package com.digitalgrease.ply
 
+import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -18,6 +19,11 @@ class MainActivity : FlutterActivity() {
                         val lines = call.argument<Int>("lines") ?: 500
                         result.success(readOwnLogcat(lines))
                     }
+                    "shareText" -> {
+                        val text = call.argument<String>("text") ?: ""
+                        val subject = call.argument<String>("subject") ?: "Ply diagnostics"
+                        result.success(shareText(text, subject))
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -33,6 +39,20 @@ class MainActivity : FlutterActivity() {
      * trusted Int from the method channel and is clamped to a sane range; arguments are passed as a
      * fixed argv to ProcessBuilder (no shell), so there is no command-injection surface.
      */
+    /** Hand [text] to the OS share sheet via ACTION_SEND. Returns false (the Dart side falls back to
+     *  the clipboard) if no app can handle it or the activity is gone. */
+    private fun shareText(text: String, subject: String): Boolean = try {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, subject))
+        true
+    } catch (e: Exception) {
+        false
+    }
+
     private fun readOwnLogcat(lines: Int): String? = try {
         val count = lines.coerceIn(1, 2000)
         val process = ProcessBuilder("logcat", "-d", "-v", "time", "-t", count.toString())

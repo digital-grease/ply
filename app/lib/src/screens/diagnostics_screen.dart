@@ -59,6 +59,45 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     }
   }
 
+  /// Bundle everything (crash report + activity log + the device log, if captured), all scrubbed, and
+  /// hand it to the OS share sheet. Falls back to the clipboard where sharing isn't available.
+  Future<void> _exportAll() async {
+    final crash = await _crash; // already-scrubbed crash report, or null
+    if (!mounted) return;
+    final buf = StringBuffer()
+      ..writeln('=== Ply diagnostics ===')
+      ..writeln('App: Ply $kPlyAppVersion')
+      ..writeln('Device: $_device')
+      ..writeln();
+    if (crash != null && crash.isNotEmpty) {
+      buf
+        ..writeln(crash)
+        ..writeln();
+    }
+    buf
+      ..writeln('=== Activity log ===')
+      ..writeln(LogScrubber.scrub(PlyLog.instance.dump()));
+    final dev = _deviceLog;
+    if (dev != null && dev.isNotEmpty) {
+      buf
+        ..writeln()
+        ..writeln('=== Device log ===')
+        ..writeln(dev);
+    }
+    var text = buf.toString();
+    const maxExport = 200 * 1024; // stay well under the platform's share-intent size limit
+    if (text.length > maxExport) {
+      text = '${text.substring(0, maxExport)}\n…(truncated)';
+    }
+    final shared = await PlatformLog.shareText(text);
+    if (!mounted || shared) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Sharing is not available here — diagnostics copied to the clipboard.')));
+    }
+  }
+
   Future<void> _dismissCrash() async {
     await CrashReporter.instance.dismiss();
     if (mounted) setState(() => _crash = CrashReporter.instance.read());
@@ -109,6 +148,18 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          FilledButton.icon(
+            onPressed: _exportAll,
+            icon: const Icon(Icons.ios_share),
+            label: const Text('Export logs'),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Share the crash report + activity log (and the device log, if captured) as one scrubbed '
+            'bundle.',
+            style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
           FutureBuilder<String?>(
             future: _crash,
             builder: (context, snap) {
