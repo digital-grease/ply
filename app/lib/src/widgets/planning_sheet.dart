@@ -15,18 +15,33 @@ import '../state/editor_providers.dart';
 import '../state/theme_providers.dart';
 import 'adaptive_sheet.dart';
 
-/// Craft Yarn Council weights with their approximate wraps-per-inch midpoint (mirrors
-/// `ply_common::YarnWeight::typical_wpi`), used to SEED the WPI field so a weaver who hasn't measured
-/// their own can start from a rule of thumb.
-const List<(String, double)> _yarnWeightWpi = [
-  ('Lace (0)', 18),
-  ('Super fine (1) · fingering', 14),
-  ('Fine (2) · sport', 12),
-  ('Light (3) · DK', 11),
-  ('Medium (4) · worsted/aran', 9),
-  ('Bulky (5)', 7),
-  ('Super bulky (6)', 5),
-  ('Jumbo (7)', 3),
+/// Common WEAVING yarns (count / ply notation) with their approximate wraps-per-inch, used to SEED the
+/// WPI field so a weaver who hasn't measured can start from a rule of thumb. Weaving yarns use count
+/// systems (8/2 = size 8, 2-ply), NOT the knitting CYC weights — and the SAME count is a different
+/// size in different fibers (cotton, linen, and wool use different count bases), so each fiber is
+/// listed separately. WPI is approximate (sources: the Handwoven Master Yarn Chart, Schacht's sett
+/// chart, Gist Yarn); adjust to your actual yarn.
+const List<(String, double)> _yarnCountWpi = [
+  // Cotton (cotton count; the most common weaving yarn).
+  ('3/2 cotton', 21),
+  ('5/2 cotton', 26),
+  ('8/2 cotton', 32),
+  ('10/2 cotton', 37),
+  ('16/2 cotton', 46),
+  ('20/2 cotton', 52),
+  ('8/4 cotton (carpet warp)', 21),
+  // Tencel / bamboo (cotton-count base; slick, so sett a touch closer).
+  ('8/2 Tencel', 32),
+  ('10/2 Tencel', 37),
+  // Linen (lea count — "8/2 linen" is much thicker than 8/2 cotton).
+  ('8/2 linen', 21),
+  ('16/2 linen', 30),
+  // Wool (ply/count; worsted-count base).
+  ('2/8 wool (worsted)', 22),
+  ('2/18 wool (worsted)', 38),
+  // Silk (spun, 2-ply).
+  ('2/20 silk', 40),
+  ('2/30 silk', 52),
 ];
 
 /// Open the planning calculator. Call from a context inside the editor's ProviderScope (the
@@ -150,13 +165,13 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
             DropdownButton<int>(
               isExpanded: true,
               value: null,
-              hint: const Text('Seed WPI from yarn weight (optional)'),
+              hint: const Text('Seed WPI from yarn size (optional)'),
               items: [
-                for (var i = 0; i < _yarnWeightWpi.length; i++)
-                  DropdownMenuItem(value: i, child: Text(_yarnWeightWpi[i].$1)),
+                for (var i = 0; i < _yarnCountWpi.length; i++)
+                  DropdownMenuItem(value: i, child: Text(_yarnCountWpi[i].$1)),
               ],
               onChanged: (i) {
-                if (i != null) setState(() => _wpi.text = _fmt(_yarnWeightWpi[i].$2));
+                if (i != null) setState(() => _wpi.text = _fmt(_yarnCountWpi[i].$2));
               },
             ),
             const SizedBox(height: 4),

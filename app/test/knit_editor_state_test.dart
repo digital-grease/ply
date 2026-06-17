@@ -50,6 +50,35 @@ void main() {
     expect(identical(s.paintCell(0, 0, KnitStitch.knit, null), s), isTrue, reason: 'no change');
   });
 
+  test('paintCell keepColor preserves the cell color (a symbol over a colored square)', () {
+    final colored = KnitEditorState(pattern: pattern(2, 2))
+        .addPaletteColor(const ColorDto(r: 200, g: 0, b: 0)) // palette index 1
+        .paintCell(0, 0, KnitStitch.knit, 1); // (knit, red)
+    expect(colored.pattern.chart.rows[0].cells[0].color, 1);
+
+    final withSymbol = colored.paintCell(0, 0, KnitStitch.purl, null, keepColor: true);
+    expect(withSymbol.pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl, reason: 'symbol added');
+    expect(withSymbol.pattern.chart.rows[0].cells[0].color, 1, reason: 'colorwork kept');
+  });
+
+  test('paintCell without keepColor sets the brush color, clearing colorwork on a null brush', () {
+    final colored = KnitEditorState(pattern: pattern(2, 2))
+        .addPaletteColor(const ColorDto(r: 200, g: 0, b: 0))
+        .paintCell(0, 0, KnitStitch.knit, 1);
+    final cleared = colored.paintCell(0, 0, KnitStitch.purl, null); // keepColor defaults false
+    expect(cleared.pattern.chart.rows[0].cells[0].color, isNull, reason: 'color cleared');
+  });
+
+  test('fillRegion keepColor leaves each cell color in place', () {
+    final s = KnitEditorState(pattern: pattern(3, 3))
+        .addPaletteColor(const ColorDto(r: 0, g: 0, b: 200)) // index 1
+        .paintCell(0, 0, KnitStitch.knit, 1); // (knit, blue) at 0,0
+    final filled = s.fillRegion(0, 0, 1, 1, KnitStitch.purl, null, keepColor: true);
+    expect(filled.pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl);
+    expect(filled.pattern.chart.rows[0].cells[0].color, 1, reason: 'the colored cell keeps its color');
+    expect(filled.pattern.chart.rows[1].cells[1].color, isNull, reason: 'an uncolored cell stays so');
+  });
+
   test('fillRegion fills a rectangle as one undo entry; cells outside are untouched', () {
     final s = KnitEditorState(pattern: pattern(4, 4)).fillRegion(1, 1, 2, 2, KnitStitch.purl, null);
     for (final r in [1, 2]) {

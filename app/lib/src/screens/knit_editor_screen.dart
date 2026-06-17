@@ -151,10 +151,16 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
       _snack('Cables span columns and can’t fill a region — pick a single stitch.');
       return;
     }
-    final color = ref.read(activeKnitColorProvider);
-    ref
-        .read(knitEditorProvider.notifier)
-        .fillRegion(sel.rowMin, sel.colMin, sel.rowMax, sel.colMax, stitch, color);
+    final brush = ref.read(activeKnitColorProvider);
+    ref.read(knitEditorProvider.notifier).fillRegion(
+          sel.rowMin,
+          sel.colMin,
+          sel.rowMax,
+          sel.colMax,
+          stitch,
+          brush >= 0 ? brush : null,
+          keepColor: brush == knitColorKeep,
+        );
     ref.read(knitSelectionProvider.notifier).state = null; // clear after filling
   }
 
@@ -505,8 +511,8 @@ class _KnitColorRow extends ConsumerWidget {
           // lone white square + plus (owner feedback 2026-06-15 — "didn't realize it was there").
           // "Colors" mirrors the weave editor's color affordance; the tooltip explains colorwork.
           Tooltip(
-            message: 'Yarn colors for colorwork: pick one, then paint cells. '
-                '"Symbol only" leaves a cell uncolored.',
+            message: 'Yarn colors for colorwork: pick one, then paint cells. "Keep" adds a symbol '
+                'without changing a cell\'s color; "No color" clears it.',
             child: Padding(
               padding: const EdgeInsets.only(right: 10),
               child: Row(
@@ -523,11 +529,19 @@ class _KnitColorRow extends ConsumerWidget {
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                // "Symbol only" — paint an uncolored (symbol) cell.
+                // "Keep" — paint the stitch symbol but leave the cell's existing color untouched
+                // (so a symbol can be added over a colored square). The default brush.
                 _Swatch(
-                  selected: active == null,
-                  tooltip: 'Symbol only (no colorwork)',
-                  onTap: () => ref.read(activeKnitColorProvider.notifier).state = null,
+                  selected: active == knitColorKeep,
+                  tooltip: 'Keep color (add a symbol without changing the cell color)',
+                  onTap: () => ref.read(activeKnitColorProvider.notifier).state = knitColorKeep,
+                  child: Icon(Icons.edit_outlined, size: 16, color: cs.onSurfaceVariant),
+                ),
+                // "No color" — clear a cell's colorwork (a symbol-only cell).
+                _Swatch(
+                  selected: active == knitColorNone,
+                  tooltip: 'No color (clear the cell colorwork)',
+                  onTap: () => ref.read(activeKnitColorProvider.notifier).state = knitColorNone,
                   child: Icon(Icons.format_color_reset_outlined,
                       size: 16, color: cs.onSurfaceVariant),
                 ),

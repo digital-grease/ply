@@ -137,14 +137,14 @@ void main() {
     expect(settFieldText(t), '18', reason: 'a weaver can set their own sett');
   });
 
-  testWidgets('the yarn-weight dropdown seeds the WPI field', (t) async {
+  testWidgets('the yarn-size dropdown seeds the WPI field (weaving count system)', (t) async {
     await pumpSheet(t, FakePlanningRepo());
-    await t.tap(find.text('Seed WPI from yarn weight (optional)'));
+    await t.tap(find.text('Seed WPI from yarn size (optional)'));
     await t.pumpAndSettle();
-    await t.tap(find.text('Medium (4) · worsted/aran').last); // typical WPI 9
+    await t.tap(find.text('8/2 cotton').last); // ~32 WPI (Gist / Master Yarn Chart)
     await t.pumpAndSettle();
     final wpi = t.widget<TextFormField>(find.widgetWithText(TextFormField, 'Wraps per inch'));
-    expect(wpi.controller!.text, '9');
+    expect(wpi.controller!.text, '32');
   });
 
   testWidgets('invalid WPI shows an inline error and does NOT call the engine', (t) async {

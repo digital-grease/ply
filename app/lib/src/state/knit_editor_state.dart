@@ -46,13 +46,16 @@ class KnitEditorState {
   /// it overlaps, and is a no-op if the span would run off the row's right edge. Painting a regular
   /// stitch onto a cell that belongs to a cable clears that whole cable first (so no orphan fillers
   /// are ever left, which validate would otherwise flag).
-  KnitEditorState paintCell(int row, int col, int stitch, int? color) {
+  KnitEditorState paintCell(int row, int col, int stitch, int? color, {bool keepColor = false}) {
     final rows = pattern.chart.rows;
     if (row < 0 || row >= rows.length) return this;
     if (col < 0 || col >= rows[row].cells.length) return this;
+    // keepColor preserves the cell's CURRENT color (so a stitch symbol can be added without wiping the
+    // colorwork under it); otherwise the brush [color] is applied.
+    final wanted = keepColor ? rows[row].cells[col].color : color;
     // Defense in depth: never persist a color index past the palette (a stale brush color) — drop it
     // to a symbol-only cell rather than write a dangling reference.
-    final c = (color != null && color >= pattern.palette.length) ? null : color;
+    final c = (wanted != null && wanted >= pattern.palette.length) ? null : wanted;
     final span = _legendCableSpan(pattern.legend, stitch);
     final next = span != null
         ? _placeCable(pattern, row, col, stitch, span, c)
@@ -64,7 +67,8 @@ class KnitEditorState {
   /// regular [stitch] + optional colorwork [color], committed as ONE undo entry. Cable brushes span
   /// columns and aren't fillable, so a cable [stitch] is a no-op; any cable overlapping a filled column
   /// is cleared first so no orphan fillers remain. Coordinates are clamped to the chart.
-  KnitEditorState fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color) {
+  KnitEditorState fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color,
+      {bool keepColor = false}) {
     if (_legendCableSpan(pattern.legend, stitch) != null) return this; // not a regular stitch
     final rows = pattern.chart.rows;
     final width = pattern.chart.width;
@@ -74,15 +78,17 @@ class KnitEditorState {
     final cLo = (c0 < c1 ? c0 : c1).clamp(0, width - 1);
     final cHi = (c0 < c1 ? c1 : c0).clamp(0, width - 1);
     // Defense in depth: drop a colorwork index past the palette rather than write a dangling ref.
-    final col = (color != null && color >= pattern.palette.length) ? null : color;
-    final cell = CellDto(stitch: stitch, color: col);
+    int? clamp(int? i) => (i != null && i >= pattern.palette.length) ? null : i;
+    final setColor = clamp(color);
+    // keepColor leaves each cell's OWN color in place (fill a region of stitch symbols without
+    // touching the colorwork); otherwise the brush color is applied to every cell.
     final newRows = [...rows];
     for (var row = rLo; row <= rHi; row++) {
       final r = newRows[row];
       // Clear cables overlapping the filled span, then set the columns.
       final cells = _clearCablesOverlapping(pattern.legend, r.cells, cLo, cHi + 1);
       for (var c = cLo; c <= cHi && c < cells.length; c++) {
-        cells[c] = cell;
+        cells[c] = CellDto(stitch: stitch, color: keepColor ? clamp(cells[c].color) : setColor);
       }
       newRows[row] = RowDto(cells: cells, repeats: r.repeats);
     }

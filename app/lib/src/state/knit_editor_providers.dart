@@ -27,8 +27,13 @@ final knitIssuesExpandedProvider = StateProvider<bool>((ref) => false);
 /// The active brush stitch (a builtin legend id) painted on tap. Default knit.
 final activeKnitStitchProvider = StateProvider<int>((ref) => KnitStitch.knit);
 
-/// The active colorwork color (a palette index), or null to paint a symbol-only (uncolored) cell.
-final activeKnitColorProvider = StateProvider<int?>((ref) => null);
+/// Sentinel brush values for [activeKnitColorProvider] (any value >= 0 is a palette index).
+const int knitColorKeep = -2; // keep a painted cell's existing color (add a stitch symbol only)
+const int knitColorNone = -1; // clear the color (a symbol-only / uncolored cell)
+
+/// The active colorwork brush: [knitColorKeep], [knitColorNone], or a palette index (>= 0). Defaults
+/// to KEEP so painting a stitch symbol never wipes the colorwork already under it.
+final activeKnitColorProvider = StateProvider<int>((ref) => knitColorKeep);
 
 /// The chart interaction tool: PAINT taps single cells (and lets the chart scroll); SELECT drags out a
 /// rectangular region to fill in one go (the chart scroll is frozen so the drag selects).
@@ -78,14 +83,15 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
   /// stale palette index from a prior session can't paint a dangling colorwork reference.
   void load(KnitPatternDto pattern) {
     state = KnitEditorState(pattern: pattern);
-    ref.read(activeKnitColorProvider.notifier).state = null;
+    ref.read(activeKnitColorProvider.notifier).state = knitColorKeep;
   }
 
-  void paintCell(int row, int col, int stitch, int? color) =>
-      state = state.paintCell(row, col, stitch, color);
+  void paintCell(int row, int col, int stitch, int? color, {bool keepColor = false}) =>
+      state = state.paintCell(row, col, stitch, color, keepColor: keepColor);
 
-  void fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color) =>
-      state = state.fillRegion(r0, c0, r1, c1, stitch, color);
+  void fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color,
+          {bool keepColor = false}) =>
+      state = state.fillRegion(r0, c0, r1, c1, stitch, color, keepColor: keepColor);
 
   void resizeChart(int width, int rows) => state = state.resizeChart(width, rows);
 

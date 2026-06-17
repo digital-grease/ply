@@ -84,8 +84,14 @@ class KnitChartView extends ConsumerWidget {
                       return;
                     }
                     final stitch = ref.read(activeKnitStitchProvider);
-                    final color = ref.read(activeKnitColorProvider);
-                    ref.read(knitEditorProvider.notifier).paintCell(row, col, stitch, color);
+                    final brush = ref.read(activeKnitColorProvider);
+                    ref.read(knitEditorProvider.notifier).paintCell(
+                          row,
+                          col,
+                          stitch,
+                          brush >= 0 ? brush : null,
+                          keepColor: brush == knitColorKeep,
+                        );
                   },
                   onPanStart: select
                       ? (d) {
