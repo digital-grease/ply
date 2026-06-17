@@ -11,7 +11,7 @@ import 'platform_log.dart';
 
 /// App version stamped into crash reports + the GitHub issue form. Keep in sync with pubspec on
 /// release (there is no package_info plugin — Ply avoids extra native deps).
-const String kPlyAppVersion = '0.1.1';
+const String kPlyAppVersion = '0.1.2';
 
 /// Captures UNCAUGHT Dart/Flutter errors, writes a scrubbed crash report to disk (surviving a
 /// restart), and exposes it for the Diagnostics screen to surface on the next launch. Everything is
