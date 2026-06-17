@@ -3,7 +3,7 @@ import 'package:ply/src/models/double_weave_layers.dart';
 import 'package:ply/src/models/draft_doc.dart';
 
 /// A 4-shaft, 4-pick double weave like the engine generator: straight threading, layer colors by
-/// shaft/pick parity.
+/// shaft/pick parity, a tie-up where the even picks clear both bottom shafts {2,4} (top picks).
 DraftDoc doubleWeave() => DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
       threading: const [
         [1],
@@ -39,36 +39,66 @@ void main() {
       expect(supportsLayerView(DraftDoc.blank(shafts: 4, treadles: 4)), isFalse,
           reason: 'blank is 0x0');
     });
-
     test('detects a 4-shaft double weave even when the shafts header is stale (below usage)', () {
-      // A genuine 4-shaft cloth whose header was left at 2 (e.g. by a composed structure) must still
-      // offer the layer view — the gate reads the threading's real shaft usage, not the header.
       final staleHeader = doubleWeave().copyWith(shafts: 2);
       expect(supportsLayerView(staleHeader), isTrue);
     });
   });
 
-  group('doubleWeaveLayerDraft', () {
-    test('FRONT keeps odd-shaft ends and even-index picks', () {
-      final f = doubleWeaveLayerDraft(doubleWeave(), DoubleWeaveLayer.front);
-      expect(f.ends, 2, reason: 'ends on shafts 1 and 3');
-      expect(f.picks, 2, reason: 'picks 0 and 2');
-      expect(f.threading, const [
+  group('defaultTopShafts', () {
+    test('is the odd shafts', () {
+      expect(defaultTopShafts(doubleWeave()), {1, 3});
+    });
+  });
+
+  group('raisedShafts (mirrors the engine shed logic)', () {
+    test('treadled rising = union of the tie-up rows for the pick treadles', () {
+      final d = doubleWeave(); // rising
+      expect(raisedShafts(d, 0), {1, 2, 4}); // treadle 1 -> tieup[0]
+      expect(raisedShafts(d, 1), {2}); // treadle 2 -> tieup[1]
+    });
+    test('sinking shed raises the complement within 1..shafts', () {
+      final d = doubleWeave().copyWith(shed: Shed.sinking);
+      expect(raisedShafts(d, 1), {1, 3, 4}, reason: 'tied {2} -> complement in 1..4');
+    });
+    test('liftplan lists raised shafts directly (shed ignored)', () {
+      final lp = DraftDoc.blank(shafts: 4, treadles: 0).copyWith(
+        threading: const [
+          [1],
+          [2],
+          [3],
+          [4],
+        ],
+        drive: DraftLiftplan(liftplan: const [
+          [1, 2, 4],
+          [2],
+        ]),
+      );
+      expect(raisedShafts(lp, 0), {1, 2, 4});
+    });
+  });
+
+  group('doubleWeaveLayerDraft (default top = odd shafts {1,3})', () {
+    test('TOP keeps the top-shaft ends and the picks that clear the bottom', () {
+      final t = doubleWeaveLayerDraft(doubleWeave(), topShafts: {1, 3}, top: true);
+      expect(t.ends, 2, reason: 'ends on shafts 1 and 3');
+      expect(t.picks, 2, reason: 'picks 0 and 2 (both bottom shafts raised)');
+      expect(t.threading, const [
         [1],
         [3],
       ]);
-      expect((f.drive as DraftTreadled).treadling, const [
+      expect((t.drive as DraftTreadled).treadling, const [
         [1],
         [3],
       ]);
-      expect((f.drive as DraftTreadled).tieup.length, 4, reason: 'the tie-up is preserved whole');
-      expect(f.warpColors, const [0, 0]);
-      expect(f.weftColors, const [0, 0]);
-      expect(f.shafts, 4, reason: 'the header shaft count is unchanged');
+      expect((t.drive as DraftTreadled).tieup.length, 4, reason: 'the tie-up is preserved whole');
+      expect(t.warpColors, const [0, 0]);
+      expect(t.weftColors, const [0, 0]);
+      expect(t.shafts, 4, reason: 'the header shaft count is unchanged');
     });
 
-    test('BACK keeps even-shaft ends and odd-index picks', () {
-      final b = doubleWeaveLayerDraft(doubleWeave(), DoubleWeaveLayer.back);
+    test('BOTTOM keeps the bottom-shaft ends and the picks that leave the top down', () {
+      final b = doubleWeaveLayerDraft(doubleWeave(), topShafts: {1, 3}, top: false);
       expect(b.ends, 2);
       expect(b.picks, 2);
       expect(b.threading, const [
@@ -88,34 +118,34 @@ void main() {
         warpThickness: const [1.0, 2.0, 3.0, 4.0],
         weftThickness: const [1.0, 2.0, 3.0, 4.0],
       );
-      final f = doubleWeaveLayerDraft(d, DoubleWeaveLayer.front);
-      expect(f.warpThickness, const [1.0, 3.0], reason: 'ends 0 and 2');
-      expect(f.weftThickness, const [1.0, 3.0], reason: 'picks 0 and 2');
+      final t = doubleWeaveLayerDraft(d, topShafts: {1, 3}, top: true);
+      expect(t.warpThickness, const [1.0, 3.0], reason: 'ends 0 and 2');
+      expect(t.weftThickness, const [1.0, 3.0], reason: 'picks 0 and 2');
     });
 
     test('uniform (empty) thickness stays empty', () {
-      final f = doubleWeaveLayerDraft(doubleWeave(), DoubleWeaveLayer.front);
-      expect(f.warpThickness, isEmpty);
-      expect(f.weftThickness, isEmpty);
+      final t = doubleWeaveLayerDraft(doubleWeave(), topShafts: {1, 3}, top: true);
+      expect(t.warpThickness, isEmpty);
+      expect(t.weftThickness, isEmpty);
     });
 
     test('a color band shorter than the threading does not throw (missing -> 0)', () {
       final d = doubleWeave().copyWith(warpColors: const [5]); // only end 0 has a color
-      final f = doubleWeaveLayerDraft(d, DoubleWeaveLayer.front); // keeps ends 0 and 2
-      expect(f.warpColors, const [5, 0], reason: 'end 0 -> 5, the missing end 2 -> 0 (like the engine)');
+      final t = doubleWeaveLayerDraft(d, topShafts: {1, 3}, top: true); // keeps ends 0 and 2
+      expect(t.warpColors, const [5, 0], reason: 'end 0 -> 5, the missing end 2 -> 0 (like the engine)');
     });
 
-    test('an unthreaded end is assigned to the FRONT layer (front+back partition every end)', () {
+    test('an unthreaded end is assigned to the TOP layer (top+bottom partition every end)', () {
       final d = doubleWeave().copyWith(threading: const [
         <int>[],
         [2],
         [3],
         [4],
       ]);
-      final f = doubleWeaveLayerDraft(d, DoubleWeaveLayer.front);
-      final b = doubleWeaveLayerDraft(d, DoubleWeaveLayer.back);
-      expect(f.threading, const [<int>[], [3]], reason: 'the unthreaded end 0 goes to front');
-      expect(b.threading, const [[2], [4]], reason: 'and not to back');
+      final t = doubleWeaveLayerDraft(d, topShafts: {1, 3}, top: true);
+      final b = doubleWeaveLayerDraft(d, topShafts: {1, 3}, top: false);
+      expect(t.threading, const [<int>[], [3]], reason: 'the unthreaded end 0 goes to top');
+      expect(b.threading, const [[2], [4]], reason: 'and not to bottom');
     });
 
     test('a liftplan draft narrows its liftplan rows to the layer picks', () {
@@ -135,16 +165,28 @@ void main() {
         warpColors: const [0, 1, 0, 1],
         weftColors: const [0, 1, 0, 1],
       );
-      final f = doubleWeaveLayerDraft(lp, DoubleWeaveLayer.front);
-      expect(f.drive, isA<DraftLiftplan>());
-      expect((f.drive as DraftLiftplan).liftplan, const [
+      final t = doubleWeaveLayerDraft(lp, topShafts: {1, 3}, top: true);
+      expect(t.drive, isA<DraftLiftplan>());
+      expect((t.drive as DraftLiftplan).liftplan, const [
         [1, 2, 4],
         [2, 3, 4],
-      ], reason: 'rows 0 and 2 (the front picks)');
-      expect(f.threading, const [
+      ], reason: 'rows 0 and 2 (the top picks)');
+      expect(t.threading, const [
         [1],
         [3],
       ]);
+    });
+  });
+
+  group('doubleWeaveLayerDraft with a CUSTOM shaft assignment', () {
+    test('moving a shaft to the top layer changes the top warp', () {
+      // Reassign shaft 4 to the top: the top warp now also includes end 3 (threaded on shaft 4).
+      final t = doubleWeaveLayerDraft(doubleWeave(), topShafts: {1, 3, 4}, top: true);
+      expect(t.threading, const [
+        [1],
+        [3],
+        [4],
+      ], reason: 'ends on shafts 1, 3, and now 4');
     });
   });
 }

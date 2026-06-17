@@ -10,10 +10,9 @@ import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/screens/layer_inspector_screen.dart';
 import 'package:ply/src/state/editor_providers.dart';
 
-/// Captures the draft handed to the renderer so a test can assert WHICH cloth (combined vs a layer)
-/// the inspector asked to render.
+/// Records every draft handed to the renderer so a test can assert which layer cloths were drawn.
 class CapturingRepo extends DraftRepository {
-  DraftDoc? lastRendered;
+  final List<DraftDoc> rendered = [];
 
   @override
   Future<ui.Image> renderDto(
@@ -22,7 +21,7 @@ class CapturingRepo extends DraftRepository {
     bool gridlines = false,
     int floatThreshold = 0,
   }) {
-    lastRendered = doc;
+    rendered.add(doc);
     final c = Completer<ui.Image>();
     ui.decodeImageFromPixels(
         Uint8List.fromList(const [0, 0, 0, 255]), 1, 1, ui.PixelFormat.rgba8888, c.complete);
@@ -55,81 +54,53 @@ DraftDoc doubleWeave() => DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
       weftColors: const [0, 1, 0, 1],
     );
 
-/// Bounded pump (NOT pumpAndSettle: the inspector shows a CircularProgressIndicator while a render is
-/// in flight, an infinite animation pumpAndSettle would wait on forever) to let the stub render decode.
+/// The kept threading of a rendered layer, flattened to a comparable string.
+String th(DraftDoc d) => [for (final r in d.threading) ...r].join(',');
+
+/// Bounded pump (NOT pumpAndSettle: the inspector shows a CircularProgressIndicator while rendering).
+/// Generous iteration count because a render now does TWO sequential image decodes (top + bottom).
 Future<void> settle(WidgetTester t) async {
   await t.pump();
-  for (var i = 0; i < 8; i++) {
+  for (var i = 0; i < 24; i++) {
     await t.pump(const Duration(milliseconds: 20));
   }
 }
 
 Future<CapturingRepo> pump(WidgetTester tester) async {
   final repo = CapturingRepo();
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [repositoryProvider.overrideWithValue(repo)],
-      child: MaterialApp(home: LayerInspectorScreen(draft: doubleWeave())),
-    ),
-  );
+  await tester.pumpWidget(ProviderScope(
+    overrides: [repositoryProvider.overrideWithValue(repo)],
+    child: MaterialApp(home: LayerInspectorScreen(draft: doubleWeave())),
+  ));
   await settle(tester);
   return repo;
 }
 
 void main() {
-  testWidgets('opens on the Combined cloth (the whole draft)', (tester) async {
+  testWidgets('renders BOTH layers at once and a chip per shaft', (tester) async {
     final repo = await pump(tester);
-    expect(find.byWidgetPredicate((w) => w is SegmentedButton), findsOneWidget);
-    expect(find.text('Combined'), findsOneWidget);
-    expect(find.text('Front'), findsOneWidget);
-    expect(find.text('Back'), findsOneWidget);
-    expect(repo.lastRendered!.ends, 4, reason: 'combined renders the whole 4-end cloth');
+    expect(find.byType(FilterChip), findsNWidgets(4), reason: 'one chip per shaft (1..4)');
+    expect(repo.rendered.any((d) => th(d) == '1,3'), isTrue, reason: 'top layer (shafts 1,3) drawn');
+    expect(repo.rendered.any((d) => th(d) == '2,4'), isTrue, reason: 'bottom layer (shafts 2,4) drawn');
   });
 
-  testWidgets('Front renders only the front layer (half the ends/picks)', (tester) async {
+  testWidgets('toggling a shaft re-splits the layers', (tester) async {
     final repo = await pump(tester);
-    await tester.tap(find.text('Front'));
+    repo.rendered.clear();
+    await tester.tap(find.widgetWithText(FilterChip, '2')); // move shaft 2 to the top
     await settle(tester);
-    expect(repo.lastRendered!.ends, 2, reason: 'front = ends on shafts 1 and 3');
-    expect(repo.lastRendered!.picks, 2);
+    expect(repo.rendered.any((d) => th(d) == '1,2,3'), isTrue,
+        reason: 'shaft 2 now joins the top warp (ends on shafts 1,2,3)');
   });
 
-  testWidgets('Back renders only the back layer', (tester) async {
-    final repo = await pump(tester);
-    await tester.tap(find.text('Back'));
+  testWidgets('an empty layer shows a message instead of a 0x0 cloth', (tester) async {
+    await pump(tester);
+    // Move every shaft to the top -> the bottom layer has no shafts, so both layers are empty.
+    await tester.tap(find.widgetWithText(FilterChip, '2'));
     await settle(tester);
-    expect(repo.lastRendered!.ends, 2, reason: 'back = ends on shafts 2 and 4');
-    expect(repo.lastRendered!.picks, 2);
-  });
-
-  testWidgets('a layer with no threads shows a message instead of a 0x0 cloth', (tester) async {
-    // A single-pick draft: pick 0 is a FRONT pick, so the BACK layer has no picks at all.
-    final oneRow = DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
-      threading: const [
-        [1],
-        [2],
-        [3],
-        [4],
-      ],
-      drive: DraftTreadled(tieup: const [
-        [1, 2, 4],
-        [2],
-        [2, 3, 4],
-        [4],
-      ], treadling: const [
-        [1],
-      ]),
-      warpColors: const [0, 1, 0, 1],
-      weftColors: const [0],
-    );
-    await tester.pumpWidget(ProviderScope(
-      overrides: [repositoryProvider.overrideWithValue(CapturingRepo())],
-      child: MaterialApp(home: LayerInspectorScreen(draft: oneRow)),
-    ));
+    await tester.tap(find.widgetWithText(FilterChip, '4'));
     await settle(tester);
-    await tester.tap(find.text('Back'));
-    await settle(tester);
-    expect(find.text('This layer has no threads.'), findsOneWidget);
-    expect(tester.takeException(), isNull, reason: 'no NaN AspectRatio from a 0x0 image');
+    expect(find.text('No threads on this layer.'), findsWidgets);
+    expect(tester.takeException(), isNull, reason: 'no NaN AspectRatio from an empty layer');
   });
 }
