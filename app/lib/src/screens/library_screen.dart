@@ -123,13 +123,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Future<void> _open(DraftEntry entry) async {
     final navigator = Navigator.of(context);
-    await navigator.push(
+    final messenger = ScaffoldMessenger.of(context);
+    // Open a saved draft STRAIGHT into the editor (the working view), not the read-only preview —
+    // the editor is the default for a tapped draft. Load its WIF the same way the preview's Edit
+    // action did, and bump `lastOpened` via repository.open so the grid re-sorts on return.
+    final String wifText;
+    final DraftEntry opened;
+    try {
+      opened = await widget.repository.open(entry.id);
+      wifText = await widget.repository.readWif(entry.id);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not open draft: $e')));
+      return;
+    }
+    await navigator.push<bool>(
       MaterialPageRoute(
-        builder: (_) =>
-            PreviewScreen.saved(repository: widget.repository, id: entry.id),
+        builder: (_) => EditorScreen(
+          wifText: wifText,
+          title: opened.meta.name,
+          id: entry.id,
+          meta: opened.meta,
+        ),
       ),
     );
-    // lastOpened was bumped by opening → re-sort the grid (_refresh self-guards mounted).
     await _refresh();
   }
 

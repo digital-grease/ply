@@ -122,21 +122,23 @@ pub fn shadow_weave(ends: usize, picks: usize, twill: bool, block: usize) -> Dra
 }
 
 /// DOUBLE WEAVE — two INDEPENDENT plain-weave layers woven at once on 4 shafts: the top layer on
-/// shafts {1,3}, the bottom on {2,4}, threaded straight (1,2,3,4 …). The tie-up must (a) plain-weave
-/// each layer on its own two shafts AND (b) CLEAR the other layer out of the way each pick — on a top
-/// pick both bottom shafts {2,4} ride up so the top weft passes over the whole bottom layer; on a
-/// bottom pick both top shafts {1,3} stay down so the bottom weft passes under the whole top layer.
-/// (Naively raising a layer's BOTH shafts together collapses to single-layer tabby.) The two layers
-/// get distinct colors so the layering reads in the drawdown.
+/// shafts {1,3}, the bottom on {2,4}, threaded straight (1,2,3,4 …). The textbook rising-shed
+/// (jack/liftplan) form: a TOP pick raises ONE top shaft and leaves the bottom layer DOWN (it sits
+/// below the top weft); a BOTTOM pick raises BOTH top shafts (lifting the whole top layer up out of
+/// the way) plus one bottom shaft, so the bottom weft passes under the top layer. This keeps the
+/// {1,3} (color 0) layer physically on top, matching the warp-colour legend — so the flat drawdown
+/// reads as the top layer's face rather than the inverted, muddled mix the both-bottom-shafts-up
+/// variant produces. Each layer reads cleanly on its own in the layer inspector. (Naively raising a
+/// layer's BOTH shafts together collapses to single-layer tabby.)
 pub fn double_weave(ends: usize, picks: usize) -> Draft {
     let threading = Threading::straight(ends, 4);
-    // 4 distinct sheds (verified): top picks raise one top shaft + BOTH bottom shafts; bottom picks
-    // raise one bottom shaft only (both top shafts down).
+    // 4 distinct sheds (top,bottom,top,bottom): a top pick raises one top shaft (bottom stays down,
+    // below); a bottom pick raises BOTH top shafts + one bottom shaft (top lifted clear, above).
     let tieup = TieUp(vec![
-        vec![ShaftId(1), ShaftId(2), ShaftId(4)], // top weft, top end on shaft 1 up; bottom cleared up
-        vec![ShaftId(2)],                          // bottom weft, only shaft 2 up; top cleared down
-        vec![ShaftId(2), ShaftId(3), ShaftId(4)], // top weft, top end on shaft 3 up
-        vec![ShaftId(4)],                          // bottom weft, only shaft 4 up
+        vec![ShaftId(1)],                          // top weft, top end on shaft 1 up; bottom down
+        vec![ShaftId(1), ShaftId(2), ShaftId(3)], // bottom weft, top {1,3} lifted clear + shaft 2 up
+        vec![ShaftId(3)],                          // top weft, top end on shaft 3 up; bottom down
+        vec![ShaftId(1), ShaftId(3), ShaftId(4)], // bottom weft, top {1,3} lifted clear + shaft 4 up
     ]);
     let treadling = Treadling(
         (0..picks).map(|p| vec![TreadleId((p % 4) as u16 + 1)]).collect(),
@@ -259,7 +261,7 @@ mod tests {
         let d = double_weave(8, 4);
         if let Drive::Treadled { tieup, treadling } = &d.drive {
             let tu: Vec<Vec<u16>> = tieup.0.iter().map(|r| r.iter().map(|s| s.0).collect()).collect();
-            assert_eq!(tu, vec![vec![1, 2, 4], vec![2], vec![2, 3, 4], vec![4]]);
+            assert_eq!(tu, vec![vec![1], vec![1, 2, 3], vec![3], vec![1, 3, 4]]);
             let tr: Vec<Vec<u16>> =
                 treadling.0.iter().map(|r| r.iter().map(|t| t.0).collect()).collect();
             assert_eq!(tr, vec![vec![1], vec![2], vec![3], vec![4]]);
@@ -268,23 +270,27 @@ mod tests {
         }
         // TOP layer = shafts {1,3}: over its picks (0,2) exactly ONE of {1,3} is up each pick, and
         // they swap -> plain weave.
-        assert_eq!(raised(&d, 0), vec![1, 2, 4]);
-        assert_eq!(raised(&d, 2), vec![2, 3, 4]);
+        assert_eq!(raised(&d, 0), vec![1]);
+        assert_eq!(raised(&d, 2), vec![3]);
         assert!(d.raised_shafts(0).contains(&ShaftId(1)) && !d.raised_shafts(0).contains(&ShaftId(3)));
         assert!(!d.raised_shafts(2).contains(&ShaftId(1)) && d.raised_shafts(2).contains(&ShaftId(3)));
         // BOTTOM layer = shafts {2,4}: over its picks (1,3) exactly one of {2,4} is up, swapping.
-        assert_eq!(raised(&d, 1), vec![2]);
-        assert_eq!(raised(&d, 3), vec![4]);
-        // CLEARING: on bottom picks both top shafts {1,3} are DOWN; on top picks both bottom {2,4} up.
-        for &bottom_pick in &[1usize, 3] {
-            assert!(!d.raised_shafts(bottom_pick).contains(&ShaftId(1))
-                && !d.raised_shafts(bottom_pick).contains(&ShaftId(3)),
-                "top layer must clear DOWN under a bottom pick");
-        }
+        assert_eq!(raised(&d, 1), vec![1, 2, 3]);
+        assert_eq!(raised(&d, 3), vec![1, 3, 4]);
+        assert!(d.raised_shafts(1).contains(&ShaftId(2)) && !d.raised_shafts(1).contains(&ShaftId(4)));
+        assert!(!d.raised_shafts(3).contains(&ShaftId(2)) && d.raised_shafts(3).contains(&ShaftId(4)));
+        // CLEARING (top layer {1,3} stays on top): on a TOP pick the bottom layer {2,4} is fully
+        // DOWN (it sits below the top weft); on a BOTTOM pick the top layer {1,3} is fully UP (lifted
+        // clear so the bottom weft passes under it).
         for &top_pick in &[0usize, 2] {
-            assert!(d.raised_shafts(top_pick).contains(&ShaftId(2))
-                && d.raised_shafts(top_pick).contains(&ShaftId(4)),
-                "bottom layer must clear UP under a top pick");
+            assert!(!d.raised_shafts(top_pick).contains(&ShaftId(2))
+                && !d.raised_shafts(top_pick).contains(&ShaftId(4)),
+                "bottom layer must stay DOWN under a top pick");
+        }
+        for &bottom_pick in &[1usize, 3] {
+            assert!(d.raised_shafts(bottom_pick).contains(&ShaftId(1))
+                && d.raised_shafts(bottom_pick).contains(&ShaftId(3)),
+                "top layer must lift UP clear of a bottom pick");
         }
         assert!(validate(&d).is_empty(), "double-weave golden must validate: {:?}", validate(&d));
     }

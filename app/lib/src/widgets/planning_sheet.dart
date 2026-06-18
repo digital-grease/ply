@@ -279,10 +279,13 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
               key: _warpForm,
               child: Column(
                 children: [
-                  _numField(_finished, 'Finished length ($_unit)', _positive),
+                  // Warp planning runs LONG, so its lengths are in the long unit (yd/m) — the same
+                  // unit the warp-length + total outputs report, so the whole section is consistent
+                  // (no inch inputs feeding a yardage result).
+                  _numField(_finished, 'Finished length ($_longUnit)', _positive),
                   _numField(_items, 'Items', _positiveInt, decimal: false),
                   _numField(_ends, 'Warp ends', _positiveInt, decimal: false),
-                  _numField(_loomWaste, 'Loom waste ($_unit)', _nonNegative),
+                  _numField(_loomWaste, 'Loom waste ($_longUnit)', _nonNegative),
                   _numField(_takeup, 'Take-up + shrinkage (%)', _nonNegative),
                 ],
               ),
@@ -302,9 +305,10 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Warp length: ${_fmt(_toLong(_warp!.$1))} $_longUnit', style: text.bodyLarge),
-                      Text('Total warp yarn: ${_fmt(_toLong(_warp!.$2))} $_longUnit',
-                          style: text.bodyLarge),
+                      // Inputs are already in the long unit, so the engine's result is too — show it
+                      // directly (no _toLong, which is for sections whose inputs are in the short unit).
+                      Text('Warp length: ${_fmt(_warp!.$1)} $_longUnit', style: text.bodyLarge),
+                      Text('Total warp yarn: ${_fmt(_warp!.$2)} $_longUnit', style: text.bodyLarge),
                     ],
                   ),
                 ),

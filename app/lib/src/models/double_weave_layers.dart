@@ -9,8 +9,9 @@ import 'draft_doc.dart';
 /// same shafts) reproduces exactly that one layer's cloth, with no new engine code.
 ///
 /// The user chooses which shafts are the TOP layer; the rest are the bottom. Which PICKS weave each
-/// layer is derived from the structure: a TOP pick lifts the whole bottom layer clear (every bottom
-/// shaft raised), a BOTTOM pick leaves the top layer down (no top shaft raised).
+/// layer is derived from the structure (the textbook top-on-top double weave): a TOP pick leaves the
+/// bottom layer down (no bottom shaft raised — it sits below the top weft), a BOTTOM pick lifts the
+/// whole top layer clear (every top shaft raised) so the bottom weft passes under it.
 
 /// The highest shaft the cloth uses (max of the header and any threaded shaft) — the number of shafts
 /// the layer picker offers.
@@ -58,8 +59,8 @@ Set<int> raisedShafts(DraftDoc doc, int pick) {
 /// bottom). For the requested layer ([top] = top vs bottom):
 ///   - WARP: ends threaded on the layer's shafts (an UNTHREADED end goes to the top so the two layers
 ///     still partition every end).
-///   - WEFT: the picks that weave THIS layer — a TOP pick lifts the whole bottom layer clear (every
-///     bottom shaft raised); a BOTTOM pick leaves the top layer down (no top shaft raised). A pick
+///   - WEFT: the picks that weave THIS layer — a TOP pick leaves the bottom layer down (no bottom
+///     shaft raised); a BOTTOM pick lifts the whole top layer clear (every top shaft raised). A pick
 ///     that fits neither (a malformed / non-double-weave draft) is dropped from both layers.
 /// The tie-up + shed and the header counts are preserved; only the threading, drive rows, and the
 /// per-thread colors AND thickness are narrowed to the layer (so the kept threads keep their widths).
@@ -77,8 +78,8 @@ DraftDoc doubleWeaveLayerDraft(DraftDoc doc, {required Set<int> topShafts, requi
   bool pickOnLayer(int pick) {
     final raised = raisedShafts(doc, pick);
     return top
-        ? bottomShafts.isNotEmpty && bottomShafts.every(raised.contains) // bottom lifted clear
-        : topShafts.every((s) => !raised.contains(s)); // top stays down
+        ? bottomShafts.isNotEmpty && bottomShafts.every((s) => !raised.contains(s)) // bottom stays down
+        : topShafts.isNotEmpty && topShafts.every(raised.contains); // top lifted clear
   }
 
   final keepEnds = [for (var e = 0; e < doc.ends; e++) if (endOnLayer(e)) e];

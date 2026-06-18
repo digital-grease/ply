@@ -184,8 +184,8 @@ void main() {
       (t) async {
     final repo = FakePlanningRepo();
     await pumpSheet(t, repo);
-    await t.enterText(find.widgetWithText(TextFormField, 'Finished length (in)'), '2');
-    await t.enterText(find.widgetWithText(TextFormField, 'Loom waste (in)'), '0.5');
+    await t.enterText(find.widgetWithText(TextFormField, 'Finished length (yd)'), '2');
+    await t.enterText(find.widgetWithText(TextFormField, 'Loom waste (yd)'), '0.5');
     // items default '1', ends seeded '4', take-up default '10'.
     await t.tap(find.text('Estimate warp'));
     await t.pump();
@@ -195,9 +195,9 @@ void main() {
     expect(repo.warpArgs!.ends, 4);
     expect(repo.warpArgs!.loomWaste, 0.5);
     expect(repo.warpArgs!.takeupPercent, 10.0, reason: 'entered as a percent; the repo divides by 100');
-    // Long outputs convert inches -> yards (÷36): 27 in -> 0.75 yd, 270 in -> 7.5 yd.
-    expect(find.text('Warp length: 0.75 yd'), findsOneWidget);
-    expect(find.text('Total warp yarn: 7.50 yd'), findsOneWidget);
+    // Warp lengths are entered AND reported in yards, so the engine result shows directly (no ÷36).
+    expect(find.text('Warp length: 27 yd'), findsOneWidget);
+    expect(find.text('Total warp yarn: 270 yd'), findsOneWidget);
   });
 
   testWidgets('an empty required warp field blocks the estimate', (t) async {
@@ -212,7 +212,7 @@ void main() {
   testWidgets('an over-large count is rejected with an inline error, NOT silently truncated', (t) async {
     final repo = FakePlanningRepo();
     await pumpSheet(t, repo);
-    await t.enterText(find.widgetWithText(TextFormField, 'Finished length (in)'), '2');
+    await t.enterText(find.widgetWithText(TextFormField, 'Finished length (yd)'), '2');
     await t.enterText(find.widgetWithText(TextFormField, 'Warp ends'), '5000000000'); // > u32
     await t.tap(find.text('Estimate warp'));
     await t.pump();
@@ -253,20 +253,21 @@ void main() {
     expect(settFieldText(t), isEmpty, reason: 'no usable sett -> blank field, not "0"');
   });
 
-  testWidgets('the global metric setting labels inputs in cm and long outputs in m', (t) async {
+  testWidgets('the global metric setting labels warp lengths in m and weft dimensions in cm', (t) async {
     final repo = FakePlanningRepo();
     final c = await pumpSheet(t, repo);
     c.read(appSettingsProvider.notifier).setUnit(MeasureUnit.centimeters);
     await t.pump();
-    expect(find.widgetWithText(TextFormField, 'Finished length (cm)'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Loom waste (cm)'), findsOneWidget);
+    // Warp planning lengths are in the long unit (m); weft cloth dimensions stay in the short unit (cm).
+    expect(find.widgetWithText(TextFormField, 'Finished length (m)'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Loom waste (m)'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Picks per cm'), findsOneWidget);
     expect(find.widgetWithText(TextFormField, 'Woven width (cm)'), findsOneWidget);
-    // A warp estimate's long output converts cm -> meters (÷100): 27 cm -> 0.27 m.
-    await t.enterText(find.widgetWithText(TextFormField, 'Finished length (cm)'), '2');
+    // Warp lengths are entered AND reported in meters, so the engine result shows directly.
+    await t.enterText(find.widgetWithText(TextFormField, 'Finished length (m)'), '2');
     await t.tap(find.text('Estimate warp'));
     await t.pump();
-    expect(find.text('Warp length: 0.27 m'), findsOneWidget);
+    expect(find.text('Warp length: 27 m'), findsOneWidget);
   });
 
   testWidgets('Estimate weft passes the parsed fields (take-up as a percent) and shows the result',

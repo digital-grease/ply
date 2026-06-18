@@ -3,7 +3,8 @@ import 'package:ply/src/models/double_weave_layers.dart';
 import 'package:ply/src/models/draft_doc.dart';
 
 /// A 4-shaft, 4-pick double weave like the engine generator: straight threading, layer colors by
-/// shaft/pick parity, a tie-up where the even picks clear both bottom shafts {2,4} (top picks).
+/// shaft/pick parity, the textbook top-on-top tie-up — even picks leave the bottom layer down (top
+/// picks), odd picks lift the whole top layer {1,3} clear (bottom picks).
 DraftDoc doubleWeave() => DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
       threading: const [
         [1],
@@ -13,10 +14,10 @@ DraftDoc doubleWeave() => DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
       ],
       drive: DraftTreadled(
         tieup: const [
-          [1, 2, 4],
-          [2],
-          [2, 3, 4],
-          [4],
+          [1],
+          [1, 2, 3],
+          [3],
+          [1, 3, 4],
         ],
         treadling: const [
           [1],
@@ -54,12 +55,12 @@ void main() {
   group('raisedShafts (mirrors the engine shed logic)', () {
     test('treadled rising = union of the tie-up rows for the pick treadles', () {
       final d = doubleWeave(); // rising
-      expect(raisedShafts(d, 0), {1, 2, 4}); // treadle 1 -> tieup[0]
-      expect(raisedShafts(d, 1), {2}); // treadle 2 -> tieup[1]
+      expect(raisedShafts(d, 0), {1}); // treadle 1 -> tieup[0] (top pick, bottom stays down)
+      expect(raisedShafts(d, 1), {1, 2, 3}); // treadle 2 -> tieup[1] (bottom pick, top lifted clear)
     });
     test('sinking shed raises the complement within 1..shafts', () {
       final d = doubleWeave().copyWith(shed: Shed.sinking);
-      expect(raisedShafts(d, 1), {1, 3, 4}, reason: 'tied {2} -> complement in 1..4');
+      expect(raisedShafts(d, 1), {4}, reason: 'tied {1,2,3} -> complement in 1..4');
     });
     test('liftplan lists raised shafts directly (shed ignored)', () {
       final lp = DraftDoc.blank(shafts: 4, treadles: 0).copyWith(
@@ -82,7 +83,7 @@ void main() {
     test('TOP keeps the top-shaft ends and the picks that clear the bottom', () {
       final t = doubleWeaveLayerDraft(doubleWeave(), topShafts: {1, 3}, top: true);
       expect(t.ends, 2, reason: 'ends on shafts 1 and 3');
-      expect(t.picks, 2, reason: 'picks 0 and 2 (both bottom shafts raised)');
+      expect(t.picks, 2, reason: 'picks 0 and 2 (the bottom layer stays down)');
       expect(t.threading, const [
         [1],
         [3],
@@ -157,10 +158,10 @@ void main() {
           [4],
         ],
         drive: DraftLiftplan(liftplan: const [
-          [1, 2, 4],
-          [2],
-          [2, 3, 4],
-          [4],
+          [1],
+          [1, 2, 3],
+          [3],
+          [1, 3, 4],
         ]),
         warpColors: const [0, 1, 0, 1],
         weftColors: const [0, 1, 0, 1],
@@ -168,8 +169,8 @@ void main() {
       final t = doubleWeaveLayerDraft(lp, topShafts: {1, 3}, top: true);
       expect(t.drive, isA<DraftLiftplan>());
       expect((t.drive as DraftLiftplan).liftplan, const [
-        [1, 2, 4],
-        [2, 3, 4],
+        [1],
+        [3],
       ], reason: 'rows 0 and 2 (the top picks)');
       expect(t.threading, const [
         [1],

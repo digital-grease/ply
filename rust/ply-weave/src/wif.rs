@@ -180,7 +180,11 @@ pub fn parse(text: &str) -> Result<Draft> {
     let palette_range = ini
         .section("COLOR PALETTE")
         .and_then(|s| s.get("Range"))
-        .and_then(|v| v.parse::<u32>().ok())
+        // WIF writes `Range` as a `min,max` PAIR (e.g. `0,999`); a few files give just the max. Take
+        // the LAST comma component as the scale. A bare `parse::<u32>()` chokes on the comma, silently
+        // falls back to 255, and then scale8 clips every 0..max component with `.min(255)` — washing
+        // out bright colors and collapsing distinct light ones onto white (the import-color bug).
+        .and_then(|v| v.rsplit(',').next()?.trim().parse::<u32>().ok())
         .filter(|&r| r > 0)
         .unwrap_or(255);
     let palette = ini
@@ -636,6 +640,21 @@ Threads=4
         let text = write(&d);
         assert!(text.contains("Range=255"));
         assert_eq!(parse(&text).unwrap().colors.palette[0], c); // colors survive the round-trip
+    }
+
+    /// WIF writes `[COLOR PALETTE] Range` as a `min,max` PAIR (`0,999`) — the common real-world form.
+    /// Regression: the parser used to `parse::<u32>()` the whole `"0,999"`, fail on the comma, fall
+    /// back to 255, and clip every 0..999 component — so two distinct light colors collapsed onto
+    /// white (colors "lost"). The pair must scale by its MAX so imported colors are preserved.
+    #[test]
+    fn palette_range_pair_min_max_is_scaled_by_its_max() {
+        let wif = "[WEAVING]\nShafts=1\nTreadles=1\n[THREADING]\n1=1\n\
+                   [COLOR PALETTE]\nRange=0,999\nForm=RGB\n[COLOR TABLE]\n1=999,0,500\n2=600,600,600\n";
+        let d = parse(wif).unwrap();
+        // 999->255, 0->0, round(500/999*255)=128 — NOT the broken (255,0,255)-style clip.
+        assert_eq!((d.colors.palette[0].r, d.colors.palette[0].g, d.colors.palette[0].b), (255, 0, 128));
+        // round(600/999*255)=153 — a mid grey that the clip bug would have flattened to white (255).
+        assert_eq!((d.colors.palette[1].r, d.colors.palette[1].g, d.colors.palette[1].b), (153, 153, 153));
     }
 
     const RETAIN_WIF: &str = "[WEAVING]\nShafts=2\nTreadles=2\n[WARP]\nThreads=2\n\
