@@ -4,7 +4,7 @@ members = ["ply-common", "ply-weave", "ply-knit", "ply-nalbind", "ply-bridge"]
 
 [workspace.package]
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license = "AGPL-3.0-or-later"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -160,6 +160,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
           stitch,
           brush >= 0 ? brush : null,
           keepColor: brush == knitColorKeep,
+          keepStitch: stitch == knitStitchKeep,
         );
     ref.read(knitSelectionProvider.notifier).state = null; // clear after filling
   }
@@ -436,6 +437,18 @@ class _KnitToolBar extends ConsumerWidget {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
+                  // "Keep" — paint only the color, leaving the cell's stitch symbol in place (the
+                  // mirror of the color row's "Keep").
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: const Text('Keep'),
+                      tooltip: 'Keep the stitch — paint only the color',
+                      selected: active == knitStitchKeep,
+                      onSelected: (_) =>
+                          ref.read(activeKnitStitchProvider.notifier).state = knitStitchKeep,
+                    ),
+                  ),
                   for (final b in kKnitBrushes)
                     Padding(
                       padding: const EdgeInsets.only(right: 6),

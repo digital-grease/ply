@@ -24,7 +24,12 @@ const int kKnitZoomStep = 4;
 /// Whether the inline validation band is expanded to its full issue list (vs the one-line summary).
 final knitIssuesExpandedProvider = StateProvider<bool>((ref) => false);
 
-/// The active brush stitch (a builtin legend id) painted on tap. Default knit.
+/// Sentinel for [activeKnitStitchProvider]: KEEP a painted cell's existing stitch (change only its
+/// colorwork color), the mirror of [knitColorKeep]. Any value >= 0 is a real legend stitch id.
+const int knitStitchKeep = -1;
+
+/// The active brush stitch: a builtin/cable legend id (>= 0) painted on tap, or [knitStitchKeep] to
+/// leave a cell's stitch untouched and paint only its color. Default knit.
 final activeKnitStitchProvider = StateProvider<int>((ref) => KnitStitch.knit);
 
 /// Sentinel brush values for [activeKnitColorProvider] (any value >= 0 is a palette index).
@@ -86,12 +91,14 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
     ref.read(activeKnitColorProvider.notifier).state = knitColorKeep;
   }
 
-  void paintCell(int row, int col, int stitch, int? color, {bool keepColor = false}) =>
-      state = state.paintCell(row, col, stitch, color, keepColor: keepColor);
+  void paintCell(int row, int col, int stitch, int? color,
+          {bool keepColor = false, bool keepStitch = false}) =>
+      state = state.paintCell(row, col, stitch, color, keepColor: keepColor, keepStitch: keepStitch);
 
   void fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color,
-          {bool keepColor = false}) =>
-      state = state.fillRegion(r0, c0, r1, c1, stitch, color, keepColor: keepColor);
+          {bool keepColor = false, bool keepStitch = false}) =>
+      state = state.fillRegion(r0, c0, r1, c1, stitch, color,
+          keepColor: keepColor, keepStitch: keepStitch);
 
   void resizeChart(int width, int rows) => state = state.resizeChart(width, rows);
 

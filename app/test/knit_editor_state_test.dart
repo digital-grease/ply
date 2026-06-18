@@ -69,6 +69,26 @@ void main() {
     expect(cleared.pattern.chart.rows[0].cells[0].color, isNull, reason: 'color cleared');
   });
 
+  test('paintCell keepStitch sets only the color, leaving the symbol (color under a symbol)', () {
+    final s = KnitEditorState(pattern: pattern(2, 2))
+        .paintCell(0, 0, KnitStitch.k2tog, null) // (k2tog, no color)
+        .addPaletteColor(const ColorDto(r: 0, g: 200, b: 0)); // palette index 1
+    final colored = s.paintCell(0, 0, KnitStitch.knit, 1, keepStitch: true); // stitch arg ignored
+    expect(colored.pattern.chart.rows[0].cells[0].stitch, KnitStitch.k2tog, reason: 'symbol kept');
+    expect(colored.pattern.chart.rows[0].cells[0].color, 1, reason: 'color applied');
+  });
+
+  test('fillRegion keepStitch colors a region without changing the symbols', () {
+    final s = KnitEditorState(pattern: pattern(3, 2))
+        .paintCell(0, 0, KnitStitch.purl, null) // (purl, no color) at 0,0
+        .addPaletteColor(const ColorDto(r: 0, g: 0, b: 200)); // index 1
+    final filled = s.fillRegion(0, 0, 1, 2, KnitStitch.knit, 1, keepStitch: true);
+    expect(filled.pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl, reason: 'symbol kept');
+    expect(filled.pattern.chart.rows[0].cells[0].color, 1, reason: 'color applied');
+    expect(filled.pattern.chart.rows[0].cells[1].stitch, KnitStitch.knit, reason: 'others keep knit');
+    expect(filled.pattern.chart.rows[0].cells[1].color, 1);
+  });
+
   test('fillRegion keepColor leaves each cell color in place', () {
     final s = KnitEditorState(pattern: pattern(3, 3))
         .addPaletteColor(const ColorDto(r: 0, g: 0, b: 200)) // index 1

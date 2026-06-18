@@ -46,16 +46,26 @@ class KnitEditorState {
   /// it overlaps, and is a no-op if the span would run off the row's right edge. Painting a regular
   /// stitch onto a cell that belongs to a cable clears that whole cable first (so no orphan fillers
   /// are ever left, which validate would otherwise flag).
-  KnitEditorState paintCell(int row, int col, int stitch, int? color, {bool keepColor = false}) {
+  KnitEditorState paintCell(int row, int col, int stitch, int? color,
+      {bool keepColor = false, bool keepStitch = false}) {
     final rows = pattern.chart.rows;
     if (row < 0 || row >= rows.length) return this;
     if (col < 0 || col >= rows[row].cells.length) return this;
+    final existing = rows[row].cells[col];
     // keepColor preserves the cell's CURRENT color (so a stitch symbol can be added without wiping the
     // colorwork under it); otherwise the brush [color] is applied.
-    final wanted = keepColor ? rows[row].cells[col].color : color;
+    final wanted = keepColor ? existing.color : color;
     // Defense in depth: never persist a color index past the palette (a stale brush color) — drop it
     // to a symbol-only cell rather than write a dangling reference.
     final c = (wanted != null && wanted >= pattern.palette.length) ? null : wanted;
+    // keepStitch leaves the cell's stitch (and any cable it belongs to) untouched, painting only the
+    // color — the mirror of keepColor, so a color can be added under an existing symbol.
+    if (keepStitch) {
+      if (existing.color == c) return this; // nothing changes
+      final cells = [...rows[row].cells]..[col] = CellDto(stitch: existing.stitch, color: c);
+      final newRows = [...rows]..[row] = RowDto(cells: cells, repeats: rows[row].repeats);
+      return _commit(_withChart(pattern, ChartDto(width: pattern.chart.width, rows: newRows)));
+    }
     final span = _legendCableSpan(pattern.legend, stitch);
     final next = span != null
         ? _placeCable(pattern, row, col, stitch, span, c)
@@ -68,8 +78,9 @@ class KnitEditorState {
   /// columns and aren't fillable, so a cable [stitch] is a no-op; any cable overlapping a filled column
   /// is cleared first so no orphan fillers remain. Coordinates are clamped to the chart.
   KnitEditorState fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color,
-      {bool keepColor = false}) {
-    if (_legendCableSpan(pattern.legend, stitch) != null) return this; // not a regular stitch
+      {bool keepColor = false, bool keepStitch = false}) {
+    // A cable brush spans columns and isn't a regular fill — unless keepStitch (we touch only colors).
+    if (!keepStitch && _legendCableSpan(pattern.legend, stitch) != null) return this;
     final rows = pattern.chart.rows;
     final width = pattern.chart.width;
     if (rows.isEmpty || width == 0) return this;
@@ -80,15 +91,18 @@ class KnitEditorState {
     // Defense in depth: drop a colorwork index past the palette rather than write a dangling ref.
     int? clamp(int? i) => (i != null && i >= pattern.palette.length) ? null : i;
     final setColor = clamp(color);
-    // keepColor leaves each cell's OWN color in place (fill a region of stitch symbols without
-    // touching the colorwork); otherwise the brush color is applied to every cell.
+    // keepColor leaves each cell's OWN color in place; keepStitch leaves each cell's stitch (and its
+    // cables) in place and only sets the color. Otherwise the brush stitch + color fill every cell.
     final newRows = [...rows];
     for (var row = rLo; row <= rHi; row++) {
       final r = newRows[row];
-      // Clear cables overlapping the filled span, then set the columns.
-      final cells = _clearCablesOverlapping(pattern.legend, r.cells, cLo, cHi + 1);
+      // Don't disturb cables when only colors are changing.
+      final cells = keepStitch ? [...r.cells] : _clearCablesOverlapping(pattern.legend, r.cells, cLo, cHi + 1);
       for (var c = cLo; c <= cHi && c < cells.length; c++) {
-        cells[c] = CellDto(stitch: stitch, color: keepColor ? clamp(cells[c].color) : setColor);
+        cells[c] = CellDto(
+          stitch: keepStitch ? cells[c].stitch : stitch,
+          color: keepColor ? clamp(cells[c].color) : setColor,
+        );
       }
       newRows[row] = RowDto(cells: cells, repeats: r.repeats);
     }

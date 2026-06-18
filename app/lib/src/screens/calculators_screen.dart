@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/draft_doc.dart' show MeasureUnit;
 import '../models/knit_calculators.dart';
+import '../state/theme_providers.dart';
 
 /// The Calculators tab: standalone knitting maths usable WITHOUT an open pattern. A shared gauge feeds
 /// the cast-on, yardage, and resize calculators; everything computes live. The maths live in
 /// `knit_calculators.dart` (pure, host-tested). References: worldknits.com + knitterskitchen.com.
-class CalculatorsScreen extends StatefulWidget {
+///
+/// Units follow the GLOBAL Imperial/Metric preference (Settings), shared with the weaving calculator;
+/// the in/cm toggle here just sets that same preference.
+class CalculatorsScreen extends ConsumerStatefulWidget {
   const CalculatorsScreen({super.key});
 
   @override
-  State<CalculatorsScreen> createState() => _CalculatorsScreenState();
+  ConsumerState<CalculatorsScreen> createState() => _CalculatorsScreenState();
 }
 
-class _CalculatorsScreenState extends State<CalculatorsScreen> {
-  bool _metric = false;
-
+class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
   final _gaugeSts = TextEditingController(text: '20');
   // Cast-on.
   final _coWidth = TextEditingController(text: '20');
@@ -46,6 +50,8 @@ class _CalculatorsScreenState extends State<CalculatorsScreen> {
   double _d(TextEditingController c) => double.tryParse(c.text.trim()) ?? 0;
   int _i(TextEditingController c, [int fallback = 0]) => int.tryParse(c.text.trim()) ?? fallback;
 
+  /// The GLOBAL unit preference (Settings), shared with the weaving calculator.
+  bool get _metric => ref.watch(appSettingsProvider).unit == MeasureUnit.centimeters;
   String get _unit => _metric ? 'cm' : 'in';
   String get _window => _metric ? '10 cm' : '4 in';
 
@@ -91,7 +97,9 @@ class _CalculatorsScreenState extends State<CalculatorsScreen> {
                       ButtonSegment(value: true, label: Text('cm')),
                     ],
                     selected: {_metric},
-                    onSelectionChanged: (s) => setState(() => _metric = s.first),
+                    // Writes the GLOBAL preference, so the whole app's calculators stay in one unit.
+                    onSelectionChanged: (s) => ref.read(appSettingsProvider.notifier).setUnit(
+                        s.first ? MeasureUnit.centimeters : MeasureUnit.inches),
                   ),
                 ],
               ),

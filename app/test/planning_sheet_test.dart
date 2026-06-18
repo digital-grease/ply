@@ -137,6 +137,17 @@ void main() {
     expect(settFieldText(t), '18', reason: 'a weaver can set their own sett');
   });
 
+  testWidgets('sett × cloth width fills the warp ends field', (t) async {
+    await pumpSheet(t, FakePlanningRepo());
+    await t.enterText(find.widgetWithText(TextField, 'Sett (ends/in)'), '18');
+    await t.enterText(find.widgetWithText(TextFormField, 'Cloth width (in)'), '10');
+    await t.pump();
+    await t.tap(find.text('Use 180 warp ends')); // 18 ends/in × 10 in
+    await t.pump();
+    final ends = t.widget<TextFormField>(find.widgetWithText(TextFormField, 'Warp ends'));
+    expect(ends.controller!.text, '180');
+  });
+
   testWidgets('the yarn-size dropdown seeds the WPI field (weaving count system)', (t) async {
     await pumpSheet(t, FakePlanningRepo());
     await t.tap(find.text('Seed WPI from yarn size (optional)'));

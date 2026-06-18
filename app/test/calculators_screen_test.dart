@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/screens/calculators_screen.dart';
 
@@ -13,7 +14,8 @@ Future<void> _pump(WidgetTester t) async {
     t.view.resetPhysicalSize();
     t.view.resetDevicePixelRatio();
   });
-  await t.pumpWidget(const MaterialApp(home: CalculatorsScreen()));
+  // A ProviderScope for the global unit preference (defaults to imperial).
+  await t.pumpWidget(const ProviderScope(child: MaterialApp(home: CalculatorsScreen())));
 }
 
 void main() {
@@ -30,5 +32,14 @@ void main() {
     await t.tap(find.text('Decrease'));
     await t.pump();
     expect(find.text('Work decrease every 10 sts, 6 times.'), findsOneWidget);
+  });
+
+  testWidgets('the in/cm toggle drives the unit labels (global preference)', (t) async {
+    await _pump(t);
+    expect(find.text('Width (in)'), findsWidgets);
+    await t.tap(find.text('cm'));
+    await t.pump();
+    expect(find.text('Width (cm)'), findsWidgets);
+    expect(find.text('Width (in)'), findsNothing);
   });
 }

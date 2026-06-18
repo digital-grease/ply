@@ -1,10 +1,13 @@
 # Ply
 
-A local-first pattern tool for **weaving, knitting, and nalbinding** — create, modify,
+A local-first pattern tool for **weaving, knitting, and nalbinding**. Create, modify,
 store, and preview fiber-craft patterns on Android and iOS. No backend, no accounts;
 patterns live as files on your device.
 
-Weaving ships first. Knitting and nalbinding are designed-for but not yet built.
+All three crafts are usable today. Weaving is the most complete (a full draft editor with
+WIF import/export). Knitting has a chart editor with live written instructions, validation,
+colorwork, and calculators. Nalbinding ships a stitch reference and per-stitch visualizer
+with project notes.
 
 > **Name:** *Ply* — twisting strands together, and "to ply a craft." Fiber-universal,
 > not locked to weaving. (App bundle IDs are set when you run `flutter create .`.)
@@ -24,18 +27,20 @@ Weaving ships first. Knitting and nalbinding are designed-for but not yet built.
 
 | Path | What |
 |---|---|
-| `rust/ply-common` | Shared pure types (color, yarn, units, craft kind) |
-| `rust/ply-weave`  | Weaving engine: draft model, drawdown, WIF I/O, calculators, validation |
-| `rust/ply-bridge` | The only FFI crate; thin surface over the engine for Flutter |
-| `app/`              | Flutter app (UI) |
-| `docs/`             | Architecture, data model, WIF mapping, FFI rules, glossary |
+| `rust/ply-common`  | Shared pure types (color, yarn, units, craft kind) |
+| `rust/ply-weave`   | Weaving engine: draft model, drawdown, WIF I/O, calculators, validation |
+| `rust/ply-knit`    | Knitting engine: chart model, stitch legend, written instructions, validation, render |
+| `rust/ply-nalbind` | Nalbinding engine: Hansen stitch grammar, stitch reference and visualization |
+| `rust/ply-bridge`  | The only FFI crate; a thin surface over the engines for Flutter |
+| `app/`             | Flutter app (UI) |
+| `docs/`            | Architecture, data model, WIF mapping, FFI rules, glossary |
 
 ## Quickstart
 
 ```bash
-# 1. Verify the engine (no Flutter toolchain required):
+# 1. Verify the engines (no Flutter toolchain required):
 cd rust
-cargo test -p ply-common -p ply-weave        # 9 tests, all green
+cargo test                                       # all crates: weave, knit, nalbind, common, bridge
 
 # 2. Generate the Dart<->Rust bindings:
 cargo install flutter_rust_bridge_codegen        # if not already installed
@@ -49,10 +54,20 @@ flutter run
 
 ## Status
 
-The **weaving engine is real and tested** (drawdown, RGBA preview render, sett and
-warp/yarn calculators, draft validation, WIF import/export). The **bridge compiles**
-against frb v2. The **Flutter app is a skeleton** to be wired after codegen. See
-`CLAUDE.md` for the build-vs-stub breakdown and `ROADMAP.md` for what's next.
+Ply is a working, multi-craft app, released as test builds. See the
+[Releases](https://github.com/digital-grease/ply/releases) page for signed Android APKs.
+
+- **Weaving:** a full draft editor (threading, tie-up, treadling, live drawdown with zoom and
+  pan), loom types, a double-weave layer view, planning calculators (sett, warp and weft
+  yardage), validation, and WIF import/export.
+- **Knitting:** a chart editor with colorwork, a stitch key, live written instructions and
+  validation, row and stitch numbering, a fill-a-region tool, and standalone calculators.
+- **Nalbinding:** a stitch reference and per-stitch visualizer with project notes.
+- **Shared:** an on-device pattern library, light and dark plus Material You theming, an in-app
+  glossary, and on-device crash reporting and log export.
+
+The engines are pure Rust with extensive tests (drawdown golden rasters, WIF round-trips,
+property tests). See `CLAUDE.md` for the architecture and `ROADMAP.md` for what is next.
 
 ## License
 

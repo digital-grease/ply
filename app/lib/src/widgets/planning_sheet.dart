@@ -66,6 +66,7 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
   final _wpi = TextEditingController();
   String _structure = 'plain';
   final _sett = TextEditingController(); // editable: "Suggest" fills it, the weaver can override
+  final _settWidth = TextEditingController(); // a width to turn the sett into a warp-end count
 
   final _finished = TextEditingController();
   final _items = TextEditingController(text: '1');
@@ -87,17 +88,35 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
     // Seed the warp "ends" from the open draft (overridable).
     final ends = ref.read(draftEditorProvider).draft.ends;
     if (ends > 0) _ends.text = '$ends';
+    // Recompute the sett -> ends helper as either input changes.
+    _sett.addListener(_onSettInputs);
+    _settWidth.addListener(_onSettInputs);
+  }
+
+  void _onSettInputs() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     for (final c in [
-      _wpi, _sett, _finished, _items, _ends, _loomWaste, _takeup, //
+      _wpi, _sett, _settWidth, _finished, _items, _ends, _loomWaste, _takeup, //
       _ppi, _width, _wovenLength, _weftItems, _weftTakeup,
     ]) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// Warp ends for the entered sett over the entered width: `sett (ends/in) × width`. The width is
+  /// taken in the display unit and converted to inches (the sett is an imperial ends-per-inch value).
+  /// Null until both a positive sett and width are entered.
+  int? get _settEnds {
+    final sett = double.tryParse(_sett.text.trim());
+    final width = double.tryParse(_settWidth.text.trim());
+    if (sett == null || sett <= 0 || width == null || width <= 0) return null;
+    final widthInches = _metric ? width / 2.54 : width;
+    return (sett * widthInches).round();
   }
 
   /// The GLOBAL unit preference (Settings), not the draft's stored unit: the calculator is a planning
@@ -230,8 +249,26 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            // Turn the sett into a warp-end count for a planned cloth width, then push it into the warp
+            // estimate's "Warp ends" below.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _numField(_settWidth, 'Cloth width ($_unit)', _positive)),
+                const SizedBox(width: 12),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: FilledButton.tonal(
+                    onPressed:
+                        _settEnds == null ? null : () => setState(() => _ends.text = '$_settEnds'),
+                    child: Text(_settEnds == null ? 'Warp ends' : 'Use $_settEnds warp ends'),
+                  ),
+                ),
+              ],
+            ),
             // The sett rules of thumb are imperial; WPI is per-inch regardless of the draft's unit.
-            Text('Ends per inch (imperial rule of thumb).',
+            Text('Ends per inch (imperial rule of thumb). Width × sett gives the warp-end count.',
                 style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
 
             const Divider(height: 32),

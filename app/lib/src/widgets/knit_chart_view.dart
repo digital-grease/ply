@@ -91,6 +91,7 @@ class KnitChartView extends ConsumerWidget {
                           stitch,
                           brush >= 0 ? brush : null,
                           keepColor: brush == knitColorKeep,
+                          keepStitch: stitch == knitStitchKeep,
                         );
                   },
                   onPanStart: select
