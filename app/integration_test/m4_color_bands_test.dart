@@ -89,20 +89,20 @@ void main() {
     const px = 12;
 
     final before = await rawBytes(await repo.renderDto(src, cellPx: px));
-    // fillWarpStripe([1,2]) -> warpColors [1,2] = red, green. end0 (leftmost column) becomes red.
+    // fillWarpStripe([1,2]) -> warpColors [1,2] = red, green. end0 (rightmost column) becomes red.
     final painted = EditorState(draft: src).fillWarpStripe([1, 2]).draft;
     expect(painted.warpColors, const [1, 2]);
     expect(painted.warpColors.length, painted.ends, reason: 'warp length stays == ends');
 
     final after = await repo.renderDto(painted, cellPx: px);
     final afterBytes = await rawBytes(after);
-    expect(pixelAt(after, afterBytes, px ~/ 2, after.height ~/ 2), (255, 0, 0),
+    expect(pixelAt(after, afterBytes, after.width - px ~/ 2, after.height ~/ 2), (255, 0, 0),
         reason: 'end0 painted red');
     expect(afterBytes, isNot(equals(before)), reason: 'the cloth re-rendered');
     after.dispose();
   });
 
-  testWidgets('painting a weft stripe updates the rendered cloth (pick-0 bottom)', (tester) async {
+  testWidgets('painting a weft stripe updates the rendered cloth (pick-0 top)', (tester) async {
     final repo = DraftRepository();
     final src = allWeft();
     const px = 12;
@@ -113,9 +113,9 @@ void main() {
 
     final after = await repo.renderDto(painted, cellPx: px);
     final afterBytes = await rawBytes(after);
-    // pick 0 is the BOTTOM row.
-    expect(pixelAt(after, afterBytes, px ~/ 2, after.height - px ~/ 2), (255, 0, 0),
-        reason: 'pick 0 (bottom) painted red');
+    // pick 0 is the TOP row.
+    expect(pixelAt(after, afterBytes, px ~/ 2, px ~/ 2), (255, 0, 0),
+        reason: 'pick 0 (top) painted red');
     expect(afterBytes, isNot(equals(before)));
     after.dispose();
   });

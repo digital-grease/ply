@@ -45,13 +45,14 @@ fn plain_weave_golden() {
     assert_eq!((img.width, img.height), (8, 8));
     assert_eq!(img.pixels.len(), 8 * 8 * 4);
 
-    // Corner pixels prove interlacement AND that pick 0 is at the BOTTOM (rows y=4..7):
-    //   bottom band (pick 0): end0 warp-up=BLACK, end1 weft-up=WHITE
-    //   top band    (pick 1): end0 weft-up=WHITE, end1 warp-up=BLACK
-    assert_eq!(px(&img, 0, 4), BLACK, "bottom-left = pick0/end0 warp-up");
-    assert_eq!(px(&img, 4, 4), WHITE, "bottom-right = pick0/end1 weft-up");
-    assert_eq!(px(&img, 0, 0), WHITE, "top-left = pick1/end0 weft-up");
-    assert_eq!(px(&img, 4, 0), BLACK, "top-right = pick1/end1 warp-up");
+    // Corner pixels prove interlacement AND the conventional orientation: pick 0 at the TOP (rows
+    // y=0..3) and end 0 at the RIGHT (cols x=4..7).
+    //   top band    (pick 0): end0 warp-up=BLACK (right), end1 weft-up=WHITE (left)
+    //   bottom band (pick 1): end0 weft-up=WHITE (right), end1 warp-up=BLACK (left)
+    assert_eq!(px(&img, 6, 2), BLACK, "top-right = pick0/end0 warp-up");
+    assert_eq!(px(&img, 2, 2), WHITE, "top-left = pick0/end1 weft-up");
+    assert_eq!(px(&img, 6, 6), WHITE, "bottom-right = pick1/end0 weft-up");
+    assert_eq!(px(&img, 2, 6), BLACK, "bottom-left = pick1/end1 warp-up");
 
     // Balanced plain weave: exactly half the pixels are warp-up (black).
     assert_eq!(count(&img, BLACK), 8 * 8 / 2);
@@ -64,13 +65,14 @@ fn twill_2_2_golden() {
     //
     //   pick | raised shafts | warp-up (black) ends | image row band (cell=4, picks=4)
     //   -----+---------------+----------------------+---------------------------------
-    //    0   | {1,2}         | {0,1}                | y = 12..15  (BOTTOM)
-    //    1   | {2,3}         | {1,2}                | y =  8..11
-    //    2   | {3,4}         | {2,3}                | y =  4..7
-    //    3   | {1,4}         | {0,3}                | y =  0..3   (TOP)
+    //    0   | {1,2}         | {0,1}                | y =  0..3   (TOP)
+    //    1   | {2,3}         | {1,2}                | y =  4..7
+    //    2   | {3,4}         | {2,3}                | y =  8..11
+    //    3   | {1,4}         | {0,3}                | y = 12..15  (BOTTOM)
     //
-    // The black run shifts RIGHT as the band moves UP -> an ascending-to-the-right
-    // diagonal, which only reads correctly because pick 0 is at the bottom (no flip).
+    // End 0 is the RIGHT column (x=12..15); ends increase leftward. pick 0 is the TOP band; picks
+    // increase downward. The conventional weaving-draft orientation (end 1 right, pick 1 top),
+    // applied as a final 180° flip in render_rgba.
     let d = wif::parse(include_str!("fixtures/twill_2_2.wif")).expect("twill fixture parses");
     assert_eq!((d.ends(), d.picks()), (4, 4));
 
@@ -86,21 +88,21 @@ fn twill_2_2_golden() {
     let img = render_rgba(&d, 4);
     assert_eq!((img.width, img.height), (16, 16));
 
-    // Sample the middle of representative cells per pick band (any pixel within a cell
-    // is uniform): y selects the band, x = end*4 + 1 selects the end.
-    // pick 0 (BOTTOM, y=13): end0 black, end2 white
-    assert_eq!(px(&img, 1, 13), BLACK);
-    assert_eq!(px(&img, 9, 13), WHITE);
-    // pick 1 (y=9): end1 black, end0 white
-    assert_eq!(px(&img, 5, 9), BLACK);
-    assert_eq!(px(&img, 1, 9), WHITE);
-    // pick 2 (y=5): end3 black, end0 white
-    assert_eq!(px(&img, 13, 5), BLACK);
-    assert_eq!(px(&img, 1, 5), WHITE);
-    // pick 3 (TOP, y=1): end0 black, end1 white, end3 black
-    assert_eq!(px(&img, 1, 1), BLACK);
-    assert_eq!(px(&img, 5, 1), WHITE);
+    // Sample the middle of representative cells per pick band (any pixel within a cell is uniform):
+    // y selects the band (pick k at y=k*4), x selects the end (end k at column (3-k), so x=(3-end)*4+1).
+    // pick 0 (TOP, y=1): end0 black (right), end2 white
     assert_eq!(px(&img, 13, 1), BLACK);
+    assert_eq!(px(&img, 5, 1), WHITE);
+    // pick 1 (y=5): end1 black, end0 white
+    assert_eq!(px(&img, 9, 5), BLACK);
+    assert_eq!(px(&img, 13, 5), WHITE);
+    // pick 2 (y=9): end3 black (left), end0 white
+    assert_eq!(px(&img, 1, 9), BLACK);
+    assert_eq!(px(&img, 13, 9), WHITE);
+    // pick 3 (BOTTOM, y=13): end0 black, end1 white, end3 black
+    assert_eq!(px(&img, 13, 13), BLACK);
+    assert_eq!(px(&img, 9, 13), WHITE);
+    assert_eq!(px(&img, 1, 13), BLACK);
 
     // Balanced 2/2 twill: exactly half warp-up (black).
     assert_eq!(count(&img, BLACK), 16 * 16 / 2);

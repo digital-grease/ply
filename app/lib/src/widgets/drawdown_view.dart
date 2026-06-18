@@ -40,8 +40,8 @@ class DrawdownView extends StatelessWidget {
 }
 
 /// Blits the drawdown image, scaled to fit with nearest-neighbor sampling so weave
-/// cells stay crisp squares. No vertical flip — the engine already put pick 0 at the
-/// bottom (see the orientation contract in DraftRepository.renderDrawdown).
+/// cells stay crisp squares. No flip here — the engine already emits the conventional
+/// orientation (end 1 right, pick 1 top); see the contract in DraftRepository.renderDrawdown.
 class DrawdownPainter extends CustomPainter {
   DrawdownPainter(this.image);
 

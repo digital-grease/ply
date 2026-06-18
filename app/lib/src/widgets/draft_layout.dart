@@ -4,17 +4,17 @@
 // the old TieupGeometry/tieupCellAt (fit-to-box + shaft-1-at-TOP): there is now exactly ONE
 // geometry, so the four regions cannot drift and the tie-up shares its math with everything else.
 //
-// AXES (chosen + justified in the Phase 3.1 design synthesis):
-//   ends:     warp end 1 at the LEFT, increasing RIGHT.   Conforms to the engine drawdown bitmap
-//             (render_rgba puts end 0 in the LEFT column), so the bitmap blits 1:1 with NO Dart
-//             mirror. The weaving-convention end-1-at-RIGHT becomes a future display toggle that
-//             flips BOTH this map AND a matching engine render flag together (M4), never a Dart
-//             bitmap mirror alone. Shared X axis: threading <-> drawdown.
-//   shafts:   shaft 1 at the BOTTOM, increasing UP.        Matches the engine vertical flip + the
-//             chosen layout. Shared Y axis: threading <-> tie-up.
+// AXES (the conventional weaving-draft orientation — end 1 at the right, pick 1 at the top — so a
+// newly appended end shows on the LEFT and a newly appended pick at the BOTTOM):
+//   ends:     warp end 1 at the RIGHT, increasing LEFT.   The engine's render_rgba emits the bitmap
+//             in this orientation (a final 180° flip puts end 0 in the RIGHT column), so it blits 1:1
+//             with NO Dart mirror; the map's [rightOrigin] matches it. Shared X axis: threading <->
+//             drawdown.
+//   shafts:   shaft 1 at the BOTTOM, increasing UP.        Matches the engine + the chosen layout.
+//             Shared Y axis: threading <-> tie-up.
 //   treadles: treadle 1 at the LEFT, increasing RIGHT.     Shared X axis: tie-up <-> right band.
-//   picks:    pick 0 at the BOTTOM, increasing UP.         Matches the engine flip (no Dart flip).
-//             Shared Y axis: right band <-> drawdown.
+//   picks:    pick 0 at the TOP, increasing DOWN.          Matches the engine flip (pick 0 is the top
+//             bitmap row); the map is top-origin. Shared Y axis: right band <-> drawdown.
 //
 // One content coordinate space, origin top-left (Flutter native). Bottom-origin axes are honoured
 // ONLY inside the cell<->pixel maps (a row flip), never by a second coordinate space.
@@ -231,7 +231,7 @@ class DraftLayout {
 
   // --- per-grid geometry in each grid's LOCAL space ---
 
-  /// Threading: ends columns (end 1 at LEFT, conforming to the engine bitmap), shafts rows
+  /// Threading: ends columns (end 1 at RIGHT, conforming to the flipped engine bitmap), shafts rows
   /// (shaft 1 at BOTTOM).
   RegionGeom get threading => RegionGeom(
         cols: ends,
@@ -240,6 +240,7 @@ class DraftLayout {
         colBase: 1,
         rowBase: 1,
         bottomOrigin: true,
+        rightOrigin: true,
       );
 
   /// Tie-up: treadles columns (treadle 1 at LEFT), shafts rows (shaft 1 at BOTTOM). SAME rows as
@@ -254,17 +255,17 @@ class DraftLayout {
       );
 
   /// Right band: treadled -> treadles columns x picks rows (col = treadle 1-based);
-  /// liftplan -> shafts columns x picks rows (col = shaft 1-based). Picks are 0-based at BOTTOM.
+  /// liftplan -> shafts columns x picks rows (col = shaft 1-based). Picks are 0-based at the TOP.
   RegionGeom get right => RegionGeom(
         cols: rightCols,
         rows: picks,
         cell: cell,
         colBase: 1,
         rowBase: 0,
-        bottomOrigin: true,
+        bottomOrigin: false,
       );
 
-  /// Warp-color band: ends columns (end 1 at LEFT, sharing threading/drawdown X), a single row.
+  /// Warp-color band: ends columns (end 1 at RIGHT, sharing threading/drawdown X), a single row.
   RegionGeom get warpColor => RegionGeom(
         cols: ends,
         rows: 1,
@@ -272,16 +273,17 @@ class DraftLayout {
         colBase: 1,
         rowBase: 0,
         bottomOrigin: false,
+        rightOrigin: true,
       );
 
-  /// Weft-color band: a single column, picks rows (pick 0 at BOTTOM, sharing drawdown/right Y).
+  /// Weft-color band: a single column, picks rows (pick 0 at TOP, sharing drawdown/right Y).
   RegionGeom get weftColor => RegionGeom(
         cols: 1,
         rows: picks,
         cell: cell,
         colBase: 1,
         rowBase: 0,
-        bottomOrigin: true,
+        bottomOrigin: false,
       );
 
   RegionGeom geomOf(DraftRegion r) => switch (r) {

@@ -351,18 +351,17 @@ impl Draft {
         }
     }
 
-    /// A copy resized to the given dimensions. The END and PICK axes GROW at their LOW index — a new
-    /// end appears on the LEFT (end 1) and a new pick at the BOTTOM (pick 0), matching how weavers
-    /// extend a draft (and the editor's `+end` / `+pick`); the existing pattern keeps its order, just
-    /// shifted away from the growth edge. The TREADLE axis (tie-up) still pads at the back. SHRINKING
-    /// drops from the same edge it grows from AND prunes every shaft/treadle reference the new, smaller
-    /// header no longer has, so a resize NEVER leaves a dangling reference the user must hand-fix (the
-    /// resized draft `validate()`s with no new `Error`). Warp/weft color lengths stay coupled
-    /// (`warp.len() == ends`, `weft.len() == picks`). The palette is untouched. This is the canonical,
-    /// tested resize the editor's resize reducer routes through.
+    /// A copy resized to the given dimensions. GROWING pads with blanks (empty threading / empty
+    /// picks / color index 0); SHRINKING truncates AND prunes every shaft/treadle reference the
+    /// new, smaller header no longer has, so a resize NEVER leaves a dangling reference the user
+    /// must hand-fix (the resized draft `validate()`s with no new `Error`). Warp/weft color
+    /// lengths stay coupled (`warp.len() == ends`, `weft.len() == picks`). The palette is
+    /// untouched. This is the canonical, tested resize the editor's resize reducer routes through.
+    /// (Growth lands at the HIGH index; the editor DISPLAYS end 1 at the right / pick 1 at the top,
+    /// so a new high-index end shows on the LEFT and a new high-index pick at the BOTTOM.)
     pub fn resized(&self, ends: usize, picks: usize, shafts: u16, treadles: u16) -> Draft {
         let threading = Threading(
-            resize_rows_front(&self.threading.0, ends, Vec::new)
+            resize_rows(&self.threading.0, ends, Vec::new)
                 .into_iter()
                 .map(|row| prune_shafts(row, shafts))
                 .collect(),
@@ -377,14 +376,14 @@ impl Draft {
                         .collect(),
                 ),
                 treadling: Treadling(
-                    resize_rows_front(&treadling.0, picks, Vec::new)
+                    resize_rows(&treadling.0, picks, Vec::new)
                         .into_iter()
                         .map(|row| prune_treadles(row, treadles))
                         .collect(),
                 ),
             },
             Drive::Liftplan(lp) => Drive::Liftplan(Liftplan(
-                resize_rows_front(&lp.0, picks, Vec::new)
+                resize_rows(&lp.0, picks, Vec::new)
                     .into_iter()
                     .map(|row| prune_shafts(row, shafts))
                     .collect(),
@@ -417,8 +416,8 @@ impl Draft {
             drive,
             colors: ColorPlan {
                 palette: self.colors.palette.clone(),
-                warp: resize_rows_front(&self.colors.warp, ends, || 0),
-                weft: resize_rows_front(&self.colors.weft, picks, || 0),
+                warp: resize_rows(&self.colors.warp, ends, || 0),
+                weft: resize_rows(&self.colors.weft, picks, || 0),
             },
             // Per-thread thickness stays length-coupled like the colors (growing pads the default
             // 1.0); an empty "all-default" slice stays empty rather than materializing 1.0s.
@@ -448,29 +447,14 @@ fn resize_rows<T: Clone>(rows: &[T], len: usize, pad: impl FnMut() -> T) -> Vec<
     out
 }
 
-/// Like [`resize_rows`] but operating at the FRONT: growing PREPENDS `pad()` rows (existing rows keep
-/// their order, shifted to higher indices) and shrinking drops from the front (keeps the LAST `len`).
-/// Used for the end + pick axes so a new end/pick lands at the low index — the LEFT (end 1) / BOTTOM
-/// (pick 0) edge — where weavers extend a draft.
-fn resize_rows_front<T: Clone>(rows: &[T], len: usize, mut pad: impl FnMut() -> T) -> Vec<T> {
-    if rows.len() >= len {
-        rows[rows.len() - len..].to_vec() // shrink: keep the last `len`
-    } else {
-        let mut out: Vec<T> = (0..len - rows.len()).map(|_| pad()).collect(); // grow: prepend blanks
-        out.extend(rows.iter().cloned());
-        out
-    }
-}
-
 /// Resize a per-thread thickness slice, preserving the "empty == all-default 1.0" convention: an
 /// empty slice stays empty (no need to materialize a uniform grid); a set one is length-coupled,
-/// padding new threads with 1.0. Front-padded to stay aligned with the end/pick axes (a new thread's
-/// width lands at the same low-index edge as its new end/pick).
+/// padding new threads with 1.0.
 fn resize_thickness(t: &[f32], len: usize) -> Vec<f32> {
     if t.is_empty() {
         Vec::new()
     } else {
-        resize_rows_front(t, len, || 1.0)
+        resize_rows(t, len, || 1.0)
     }
 }
 
@@ -770,19 +754,17 @@ mod tests {
     }
 
     #[test]
-    fn resize_grows_ends_and_picks_padding_blanks_at_the_low_edge() {
-        // Growing adds the new end/pick at the LOW index (the left / bottom edge); the existing
-        // pattern keeps its order, shifted up to the higher indices.
-        let d = resize_fixture().resized(6, 5, 4, 4); // ends 4->6 (prepend 2), picks 4->5 (prepend 1)
+    fn resize_grows_ends_and_picks_padding_blanks() {
+        // Growth lands at the HIGH index (the editor displays end 1 right / pick 1 top, so a new
+        // high-index end shows on the LEFT and a new high-index pick at the BOTTOM).
+        let d = resize_fixture().resized(6, 5, 4, 4);
         assert_eq!(d.ends(), 6);
         assert_eq!(d.picks(), 5);
-        assert_eq!(d.threading.0[0], Vec::<ShaftId>::new(), "new (leftmost) end is unthreaded");
-        assert_eq!(d.threading.0[2], vec![ShaftId(1)], "the original first end shifted up to index 2");
+        assert_eq!(d.threading.0[5], Vec::<ShaftId>::new(), "new end is unthreaded");
         assert_eq!(d.colors.warp.len(), 6);
-        assert_eq!(d.colors.warp[0], 0, "new warp color padded with index 0 at the low edge");
+        assert_eq!(d.colors.warp[5], 0, "new warp color padded with index 0");
         assert_eq!(d.colors.weft.len(), 5);
-        assert_eq!(d.colors.weft[0], 0, "new (bottom) pick color padded with index 0");
-        assert_eq!(d.colors.weft[1], 1, "the original first pick color shifted up to index 1");
+        assert_eq!(d.colors.weft[4], 0);
         assert!(no_errors(&d));
     }
 

@@ -130,7 +130,7 @@ void main() {
     expect(undone, equals(after), reason: 'undo brings back the previous drawdown');
   });
 
-  testWidgets('drawdown orientation: end-0 LEFT, pick-0 BOTTOM (no mirror or flip)',
+  testWidgets('drawdown orientation: end-0 RIGHT, pick-0 TOP (engine emits the final 180° flip)',
       (tester) async {
     final repo = DraftRepository();
     // A draft where EXACTLY ONE intersection is warp: end 0 (on shaft 1) raised only on pick 0;
@@ -168,14 +168,14 @@ void main() {
       return bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 0; // black
     }
 
-    // end 0 / pick 0 must be the BOTTOM-LEFT cell. A horizontal mirror moves it bottom-right; a
-    // vertical flip moves it top-left; either would fail.
-    expect(isWarp(px ~/ 2, img.height - px ~/ 2), isTrue,
-        reason: 'end 0 / pick 0 warp is bottom-LEFT');
-    expect(isWarp(img.width - px ~/ 2, px ~/ 2), isFalse, reason: 'top-right is weft');
+    // end 0 / pick 0 must be the TOP-RIGHT cell: the engine emits the conventional weaving
+    // orientation (end 1 right, pick 1 top) via a final 180° flip, so the first end/pick sits there.
+    expect(isWarp(img.width - px ~/ 2, px ~/ 2), isTrue,
+        reason: 'end 0 / pick 0 warp is top-RIGHT');
+    expect(isWarp(px ~/ 2, img.height - px ~/ 2), isFalse, reason: 'bottom-left is weft');
+    expect(isWarp(px ~/ 2, px ~/ 2), isFalse, reason: 'top-left is weft');
     expect(isWarp(img.width - px ~/ 2, img.height - px ~/ 2), isFalse,
-        reason: 'bottom-right is weft (not horizontally mirrored)');
-    expect(isWarp(px ~/ 2, px ~/ 2), isFalse, reason: 'top-left is weft (not vertically flipped)');
+        reason: 'bottom-right is weft');
     img.dispose();
   });
 

@@ -20,7 +20,7 @@ import '../rust/dto.dart';
 /// Screens and editor state depend on this repository, never on `api.dart`/`dto.dart`
 /// directly. It owns:
 ///   - the render path (WIF text or [DraftDoc] -> decoded [ui.Image]) including the
-///     no-flip orientation contract,
+///     orientation contract (the engine emits the final end-1-right / pick-1-top bitmap),
 ///   - the ONLY mapping between the domain [DraftDoc] and the wire `DraftDto` (so the
 ///     generated symbols never leak into the model/UI/state layers),
 ///   - on-device persistence as a `<documents>/drafts/<id>.{wif,json,png}` triplet,
@@ -395,10 +395,11 @@ class DraftRepository {
   /// Decode an engine [PreviewImage] into a [ui.Image].
   ///
   /// ORIENTATION CONTRACT (the single place it lives): `PreviewImage.rgba` is RGBA8,
-  /// row-major, TOP-TO-BOTTOM — `render_rgba` (ply-weave) already applied the vertical
-  /// flip so pick 0 is the bottom row. So decode width x height as-is and do NOT flip;
-  /// alpha is always 255. frb maps the Rust `Vec<u8>` to a tightly-packed `Uint8List`
-  /// (stride = width*4), exactly what `decodeImageFromPixels` wants (no rowBytes).
+  /// row-major, TOP-TO-BOTTOM — `render_rgba` (ply-weave) already emits the conventional
+  /// weaving orientation (end 1 at the right, pick 1 at the top) via a final 180° flip. So
+  /// decode width x height as-is and do NOT flip again; alpha is always 255. frb maps the Rust
+  /// `Vec<u8>` to a tightly-packed `Uint8List` (stride = width*4), exactly what
+  /// `decodeImageFromPixels` wants (no rowBytes).
   Future<ui.Image> _decodePreview(PreviewImage preview) {
     // A zero-area bitmap (a 0-end or 0-pick draft, e.g. an ungrown blank) has an empty
     // pixel buffer; `decodeImageFromPixels` never invokes its callback for it, so a bare

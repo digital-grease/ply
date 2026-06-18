@@ -1,7 +1,8 @@
 // The integrated weaving draft view: threading across the top, tie-up top-right, the engine
 // drawdown bitmap filling the main area, treadling/liftplan down the right side, all sharing ONE
 // cell pitch (DraftLayout) so they stay pixel-aligned. See draft_layout.dart for the geometry and
-// the axis decisions (end-1-at-LEFT, shaft-1/pick-0-at-BOTTOM, conforming to the engine bitmap).
+// the axis decisions (the conventional end-1-at-RIGHT, pick-1-at-TOP, shaft-1-at-BOTTOM orientation,
+// conforming to the engine bitmap).
 //
 // INTERACTION. One content-space [Listener] routes a pointer to the right region via
 // [DraftLayout.hitTest] and drives the editor's drag-paint stroke (begin/paint/end on the

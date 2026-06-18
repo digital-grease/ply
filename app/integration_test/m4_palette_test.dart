@@ -67,10 +67,10 @@ void main() {
     final doc = referencedPaletteDraft();
     const px = 12;
 
-    // BEFORE: end0 (leftmost column, end-0-LEFT) is RED.
+    // BEFORE: end0 (rightmost column, end-0-RIGHT) is RED.
     final before = await repo.renderDto(doc, cellPx: px);
     final beforeBytes = await rawBytes(before);
-    expect(pixelAt(before, beforeBytes, px ~/ 2, before.height ~/ 2), (255, 0, 0),
+    expect(pixelAt(before, beforeBytes, before.width - px ~/ 2, before.height ~/ 2), (255, 0, 0),
         reason: 'end0 starts red');
     before.dispose();
 
@@ -87,7 +87,7 @@ void main() {
     // AFTER: end0 re-colors to palette[0] (BLACK), NOT silent white.
     final after = await repo.renderDto(removed, cellPx: px);
     final afterBytes = await rawBytes(after);
-    final end0 = pixelAt(after, afterBytes, px ~/ 2, after.height ~/ 2);
+    final end0 = pixelAt(after, afterBytes, after.width - px ~/ 2, after.height ~/ 2);
     expect(end0, (0, 0, 0), reason: 'the remapped thread shows palette[0] (black)');
     expect(end0, isNot((255, 255, 255)), reason: 'never the silent-white mis-render');
     after.dispose();

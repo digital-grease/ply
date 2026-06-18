@@ -6,7 +6,7 @@
 // is Saved through the structural-dirty path (write_wif), reopened from disk via a FRESH
 // repository (a relaunch), and renders BYTE-IDENTICAL to the in-memory edited cloth while
 // validating clean. Undo walks the whole mixed history back to the import; redo returns it. A new
-// blank draft then grows + round-trips. (The end-0-LEFT / pick-0-BOTTOM orientation contract is
+// blank draft then grows + round-trips. (The end-0-RIGHT / pick-0-TOP orientation contract is
 // pinned separately by m2_editor_test.)
 //
 //   flutter test integration_test/m6_e2e_test.dart -d emulator-5554

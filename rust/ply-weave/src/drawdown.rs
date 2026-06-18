@@ -134,8 +134,11 @@ pub fn render_rgba(draft: &Draft, cell_px: u32) -> RgbaImage {
 /// This is the function the FFI bridge calls for live preview: compute the **whole**
 /// buffer in Rust and hand it across in one shot. Never marshal per cell across FFI.
 ///
-/// Pick 0 is the first row woven; cloth grows upward, so it is drawn at the bottom of
-/// the image (the last pick becomes the top row of pixels).
+/// The output uses the CONVENTIONAL weaving-draft orientation: end 1 at the RIGHT (ends increase
+/// leftward) and pick 1 at the TOP (picks increase downward), so a newly-appended end shows on the
+/// left and a newly-appended pick at the bottom. The buffer is built in the natural raster order
+/// (end 0 left, pick 0 bottom) and turned 180° as a final step; the UI grids use the matching
+/// right/top origins, so the bitmap blits 1:1 with NO second flip on the Dart side.
 pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> RgbaImage {
     let dd = compute(draft);
     if dd.ends == 0 || dd.picks == 0 {
@@ -212,6 +215,18 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
 
     if opts.gridlines {
         draw_gridlines(&mut px, w, h, &col_left, &row_top, dd.ends, dd.picks);
+    }
+
+    // Turn the finished buffer 180° to the conventional weaving orientation (end 1 right, pick 1 top).
+    // A 180° turn (H-flip + V-flip together) is exactly the pixel sequence reversed, so swap the i-th
+    // 4-byte pixel with the (n-1-i)-th. Overlays drawn above ride along with the cloth. Independent of
+    // the variable per-thread cell sizes — a whole-image reflection preserves every cell's extent.
+    let n = w * h;
+    for i in 0..n / 2 {
+        let (a, b) = (i * 4, (n - 1 - i) * 4);
+        for k in 0..4 {
+            px.swap(a + k, b + k);
+        }
     }
 
     RgbaImage { width: w as u32, height: h as u32, pixels: px }
@@ -407,25 +422,25 @@ mod tests {
         // end 0 -> 4 px, end 1 -> 8 px; both picks stay 4 px tall.
         assert_eq!((img.width, img.height), (12, 8));
 
-        // Sample the top row: end 0 occupies x in [0,4), end 1 in [4,12). Read the cell colors
-        // there straight from the palette to prove the wide band is genuinely end 1's column.
+        // After the 180° flip end 1 (the fat 8px band) is on the LEFT, x in [0,8); end 0 (4px) on the
+        // RIGHT, x in [8,12). Read straight from the buffer to prove the wide band is genuinely end 1's.
         let pixel = |x: usize, y: usize| -> [u8; 3] {
             let o = (y * img.width as usize + x) * 4;
             [img.pixels[o], img.pixels[o + 1], img.pixels[o + 2]]
         };
-        // Top image row is the last pick (pick 1); end 0 = WeftUp, end 1 = WarpUp there.
-        let end0 = pixel(2, 0);
-        let end1_a = pixel(5, 0);
-        let end1_b = pixel(10, 0); // still inside the widened end-1 band
+        // The top image row is now pick 0; there end 0 = WarpUp and end 1 = WeftUp.
+        let end1_a = pixel(2, 0);
+        let end1_b = pixel(6, 0); // still inside the widened end-1 band
+        let end0 = pixel(10, 0);
         assert_eq!(end1_a, end1_b, "the whole widened band is one color");
         assert_ne!(end0, end1_a, "end 0 and the fat end 1 differ");
     }
 
-    /// A fatter weft pick draws a taller row, and the bottom-anchored flip is preserved.
+    /// A fatter weft pick draws a taller row; the image dimensions are flip-invariant.
     #[test]
     fn fat_weft_pick_heightens_its_row() {
         let mut d = plain_2x2();
-        d.weft_thickness = vec![3.0, 1.0]; // pick 0 (bottom) is 3x tall
+        d.weft_thickness = vec![3.0, 1.0]; // pick 0 is 3x tall (now the TOP row after the flip)
         let img = render_rgba(&d, 4);
         // pick 0 -> 12 px, pick 1 -> 4 px => height 16; width unchanged at 8.
         assert_eq!((img.width, img.height), (8, 16));
@@ -452,11 +467,12 @@ mod tests {
             let o = (y * 8 + x) * 4;
             [img.pixels[o], img.pixels[o + 1], img.pixels[o + 2]]
         };
-        assert_eq!(at(4, 2), GRID_LINE, "interior vertical seam is gray");
-        assert_eq!(at(2, 4), GRID_LINE, "interior horizontal seam is gray");
+        // The final 180° flip moves the interior seams from x=4 / y=4 to x=3 / y=3.
+        assert_eq!(at(3, 1), GRID_LINE, "interior vertical seam is gray");
+        assert_eq!(at(1, 3), GRID_LINE, "interior horizontal seam is gray");
         // A cell interior keeps its cloth color (pure black/white), never the seam gray.
         assert_ne!(at(1, 1), GRID_LINE, "cell interior is untouched");
-        // No outer border: the left column (x=0) is cloth, not a seam.
+        // No outer border: the outer edge column (x=0) is cloth, not a seam.
         assert_ne!(at(0, 1), GRID_LINE, "no seam on the outer edge");
     }
 

@@ -81,12 +81,12 @@ void main() {
   });
 
   group('RegionGeom rectFor/cellAt inverse agreement', () {
-    test('threading: end 1 LEFT, shaft 1 BOTTOM; center taps back', () {
+    test('threading: end 1 RIGHT, shaft 1 BOTTOM; center taps back', () {
       final g = treadled().threading; // 4 ends x 2 shafts, cell 10
-      // end 1 at left (x 0), shaft 1 at bottom (y 10 of a 20-tall region).
-      expect(g.rectFor(1, 1), const Rect.fromLTWH(0, 10, 10, 10));
-      expect(g.rectFor(1, 2), const Rect.fromLTWH(0, 0, 10, 10)); // shaft 2 above shaft 1
-      expect(g.rectFor(4, 1), const Rect.fromLTWH(30, 10, 10, 10)); // end 4 at the right
+      // end 1 at the right (x 30), shaft 1 at bottom (y 10 of a 20-tall region).
+      expect(g.rectFor(1, 1), const Rect.fromLTWH(30, 10, 10, 10));
+      expect(g.rectFor(1, 2), const Rect.fromLTWH(30, 0, 10, 10)); // shaft 2 above shaft 1
+      expect(g.rectFor(4, 1), const Rect.fromLTWH(0, 10, 10, 10)); // end 4 at the left
       for (var end = 1; end <= 4; end++) {
         for (var shaft = 1; shaft <= 2; shaft++) {
           expect(g.cellAt(g.rectFor(end, shaft).center), (end, shaft),
@@ -95,10 +95,10 @@ void main() {
       }
     });
 
-    test('right band (treadled): treadle 1 LEFT, pick 0 BOTTOM (0-based rows)', () {
+    test('right band (treadled): treadle 1 LEFT, pick 0 TOP (0-based rows)', () {
       final g = treadled().right; // 5 treadles x 3 picks
-      expect(g.rectFor(1, 0), const Rect.fromLTWH(0, 20, 10, 10)); // pick 0 at the bottom
-      expect(g.rectFor(1, 2), const Rect.fromLTWH(0, 0, 10, 10)); // pick 2 at the top
+      expect(g.rectFor(1, 0), const Rect.fromLTWH(0, 0, 10, 10)); // pick 0 at the top
+      expect(g.rectFor(1, 2), const Rect.fromLTWH(0, 20, 10, 10)); // pick 2 at the bottom
       for (var treadle = 1; treadle <= 5; treadle++) {
         for (var pick = 0; pick < 3; pick++) {
           expect(g.cellAt(g.rectFor(treadle, pick).center), (treadle, pick),
@@ -108,11 +108,11 @@ void main() {
     });
 
     test('a cell owns its left/top edge; far-edge overshoot clamps; outside -> null', () {
-      final g = treadled().threading; // cell 10, 4x2, size 40x20
+      final g = treadled().threading; // cell 10, 4x2, size 40x20 (end-1 RIGHT, shaft-1 BOTTOM)
       expect(g.cellAt(const Offset(0, 0)), isNotNull);
       expect(g.cellAt(const Offset(9.9, 0.0)), g.cellAt(const Offset(0, 0)),
-          reason: 'still column 1');
-      expect(g.cellAt(const Offset(39.9, 19.9)), (4, 1), reason: 'far corner clamps in range');
+          reason: 'still the same (leftmost) column');
+      expect(g.cellAt(const Offset(39.9, 19.9)), (1, 1), reason: 'far corner clamps in range');
       expect(g.cellAt(const Offset(-1, 0)), isNull);
       expect(g.cellAt(const Offset(40, 0)), isNull);
       expect(g.cellAt(const Offset(0, 20)), isNull);
@@ -184,12 +184,12 @@ void main() {
 
     test('color-band rectFor/cellAt are exact inverses', () {
       final l = treadled();
-      final w = l.warpColor; // ends 4 x 1 row, end-1 LEFT
+      final w = l.warpColor; // ends 4 x 1 row, end-1 RIGHT
       for (var end = 1; end <= 4; end++) {
         expect(w.cellAt(w.rectFor(end, 0).center), (end, 0));
       }
-      final f = l.weftColor; // 1 col x picks 3, pick-0 BOTTOM
-      expect(f.rectFor(1, 0), const Rect.fromLTWH(0, 20, 10, 10), reason: 'pick 0 at the bottom');
+      final f = l.weftColor; // 1 col x picks 3, pick-0 TOP
+      expect(f.rectFor(1, 0), const Rect.fromLTWH(0, 0, 10, 10), reason: 'pick 0 at the top');
       for (var pick = 0; pick < 3; pick++) {
         expect(f.cellAt(f.rectFor(1, pick).center), (1, pick));
       }
