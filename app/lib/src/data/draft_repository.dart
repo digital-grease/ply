@@ -74,16 +74,19 @@ class DraftRepository {
   /// intersection. The live editor calls this on every edit; recompute is microseconds.
   ///
   /// [gridlines] draws cell-boundary seams; [floatThreshold] (> 0) tints floats of that length or
-  /// more. Both default OFF — a plain cloth, byte-identical to the pre-overlay render — so the
-  /// thumbnail path keeps a clean preview while the live editor toggles overlays per view.
+  /// more; [threadTexture] shades each cell as a rounded woven strand. All default OFF — a plain
+  /// cloth, byte-identical to the pre-overlay render — so the thumbnail path keeps a clean preview
+  /// while the live editor toggles overlays per view.
   Future<ui.Image> renderDto(
     DraftDoc doc, {
     required int cellPx,
     bool gridlines = false,
     int floatThreshold = 0,
+    bool threadTexture = false,
   }) async {
-    final options = (gridlines || floatThreshold > 0)
-        ? RenderOptionsDto(gridlines: gridlines, floatThreshold: floatThreshold)
+    final options = (gridlines || floatThreshold > 0 || threadTexture)
+        ? RenderOptionsDto(
+            gridlines: gridlines, floatThreshold: floatThreshold, threadTexture: threadTexture)
         : null;
     final preview =
         await renderPreviewDto(dto: toDto(doc), cellPx: cellPx, options: options);

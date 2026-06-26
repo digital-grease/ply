@@ -198,9 +198,10 @@ class DraftLayout {
   /// down by the same [gutter] as the drawdown). Stays flush with the drawdown (no gutter between).
   Rect get weftColorRect => Rect.fromLTWH(0, _topPad + _shaftH + gutter, _leftPad, _pickH);
 
-  /// Weft-color MARKERS: a read-only mirror of [weftColorRect] flush to the RIGHT of the right band
-  /// (treadling/liftplan), sharing the right band's Y + height. Display-only — it is NOT a hit-tested
-  /// region, so taps fall through; the editable weft band remains [weftColorRect].
+  /// Weft-color MARKERS: a per-RUN mirror of [weftColorRect] flush to the RIGHT of the right band
+  /// (treadling/liftplan), sharing the right band's Y + height. Editable — a tap here paints the active
+  /// brush onto the whole run (all the picks it collapses), the run-level twin of the per-pick
+  /// [weftColorRect] beside the cloth.
   Rect get weftMarkerRect => Rect.fromLTWH(
       _leftPad + _warpW + gutter + _rightW, _topPad + _shaftH + gutter, _weftMarkerW, _entryH);
 
@@ -210,6 +211,7 @@ class DraftLayout {
         DraftRegion.right => rightRect,
         DraftRegion.warpColor => warpColorRect,
         DraftRegion.weftColor => weftColorRect,
+        DraftRegion.weftMarker => weftMarkerRect,
         DraftRegion.drawdown => drawdownRect,
       };
 
@@ -309,7 +311,8 @@ class DraftLayout {
       );
 
   /// Weft-color MARKER band: a single column, ENTRY rows (sharing the compressed right band's Y), so
-  /// each run's representative weft color reads beside its treadling row. Display-only.
+  /// each run's weft color reads beside its treadling row. Editable per run (a tap paints the whole
+  /// run's weft).
   RegionGeom get weftMarker => RegionGeom(
         cols: 1,
         rows: entries,
@@ -325,6 +328,7 @@ class DraftLayout {
         DraftRegion.right => right,
         DraftRegion.warpColor => warpColor,
         DraftRegion.weftColor => weftColor,
+        DraftRegion.weftMarker => weftMarker,
         DraftRegion.drawdown => throw ArgumentError('drawdown has no editable grid geometry'),
       };
 
@@ -351,6 +355,11 @@ class DraftLayout {
     if (picks > 0 && weftColorRect.contains(content)) {
       final c = weftColor.cellAt(content - weftColorRect.topLeft);
       return c == null ? null : DraftHit(DraftRegion.weftColor, c.$1, c.$2);
+    }
+    // The per-run weft markers beside the compressed treadling: a tap paints the whole run's weft.
+    if (picks > 0 && weftMarkerRect.contains(content)) {
+      final c = weftMarker.cellAt(content - weftMarkerRect.topLeft);
+      return c == null ? null : DraftHit(DraftRegion.weftMarker, c.$1, c.$2);
     }
     // Drawdown is display-only; the dead top-left corner + everything else is a gutter / outside.
     return null;

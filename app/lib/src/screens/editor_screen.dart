@@ -31,7 +31,8 @@ enum _OverflowAction {
   viewLayers,
   toggleShed,
   toggleGridlines,
-  toggleFloats
+  toggleFloats,
+  toggleThreadTexture
 }
 
 /// The interactive weaving editor: a live drawdown and the editable tie-up grid. Tapping a
@@ -610,6 +611,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       case _OverflowAction.toggleFloats:
                         final p = ref.read(highlightFloatsProvider.notifier);
                         p.state = !p.state;
+                      case _OverflowAction.toggleThreadTexture:
+                        final p = ref.read(showThreadTextureProvider.notifier);
+                        p.state = !p.state;
                     }
                   },
                   itemBuilder: (_) => [
@@ -667,6 +671,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       value: _OverflowAction.toggleFloats,
                       checked: ref.read(highlightFloatsProvider),
                       child: const Text('Highlight long floats'),
+                    ),
+                    CheckedPopupMenuItem(
+                      value: _OverflowAction.toggleThreadTexture,
+                      checked: ref.read(showThreadTextureProvider),
+                      child: const Text('Thread texture'),
                     ),
                   ],
                 ),

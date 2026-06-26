@@ -146,6 +146,31 @@ void main() {
     expect(c.read(selectedTreadlingEntryProvider), 4, reason: 'the new last row is selected');
   });
 
+  testWidgets('the per-row Treadle stepper sets the selected run\'s treadle (overshot)',
+      (tester) async {
+    final (c, _) = await pumpBar(tester); // treadling [1],[2],[3],[4]
+    c.read(selectedTreadlingEntryProvider.notifier).state = 0; // entry 0 = treadle 1
+    await tester.pump();
+    expect(find.text('Treadle 1'), findsOneWidget, reason: 'the selected run shows its treadle');
+    // Step it up to treadle 2 (which, here, merges run 0 into its identical neighbour).
+    await tester.tap(find.byTooltip('More Treadle'));
+    await tester.pump();
+    final t = c.read(draftEditorProvider).draft.drive as DraftTreadled;
+    expect(t.treadling[0], [2], reason: 'run 0 now presses treadle 2');
+    expect(c.read(selectedTreadlingEntryProvider), 0,
+        reason: 'selection re-anchors to the run holding the edited run\'s first pick');
+  });
+
+  testWidgets('the per-row Treadle stepper down to 0 clears the run shed', (tester) async {
+    final (c, _) = await pumpBar(tester); // treadling [1],[2],[3],[4]
+    c.read(selectedTreadlingEntryProvider.notifier).state = 0; // treadle 1
+    await tester.pump();
+    await tester.tap(find.byTooltip('Fewer Treadle')); // 1 -> 0 = a blank shed
+    await tester.pump();
+    final t = c.read(draftEditorProvider).draft.drive as DraftTreadled;
+    expect(t.treadling[0], isEmpty, reason: 'treadle 0 clears the run to a blank pick');
+  });
+
   testWidgets('the Colors chip dot shows the active brush color', (tester) async {
     Color dotColor(WidgetTester t) {
       final dot = t

@@ -87,4 +87,32 @@ void main() {
     expect(c.read(knitEditorProvider).pattern.chart.rows[0].cells[1].stitch, KnitStitch.knit,
         reason: 'the bottom row is untouched');
   });
+
+  testWidgets('in SELECT mode a single tap still PAINTS the cell (not just selects)', (tester) async {
+    final c = await pump(tester);
+    c.read(knitToolProvider.notifier).state = KnitTool.select;
+    await tester.pump();
+    final origin = tester.getTopLeft(find.byType(KnitChartView));
+    await tester.tapAt(origin + const Offset(10, 150)); // col 0, row 0
+    await tester.pump();
+    expect(c.read(knitEditorProvider).pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl,
+        reason: 'a tap paints in select mode too, not merely selects');
+    expect(c.read(knitSelectionProvider), isNull, reason: 'a tap leaves no pending drag-selection');
+  });
+
+  testWidgets('in SELECT mode a single tap applies COLORWORK directly (no Fill needed)',
+      (tester) async {
+    final c = await pump(tester);
+    c.read(knitToolProvider.notifier).state = KnitTool.select;
+    // Picking a color swatch sets a colorwork brush (palette index) and drops the stitch to Keep.
+    c.read(activeKnitColorProvider.notifier).state = 0;
+    c.read(activeKnitStitchProvider.notifier).state = knitStitchKeep;
+    await tester.pump();
+    final origin = tester.getTopLeft(find.byType(KnitChartView));
+    await tester.tapAt(origin + const Offset(10, 150)); // col 0, row 0
+    await tester.pump();
+    expect(c.read(knitEditorProvider).pattern.chart.rows[0].cells[0].color, 0,
+        reason: 'a tap colors the cell in select mode too — no Fill button required');
+    expect(c.read(knitSelectionProvider), isNull, reason: 'a tap leaves no pending selection');
+  });
 }

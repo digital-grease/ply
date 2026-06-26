@@ -68,6 +68,40 @@ plain so it can double as user-facing help content.
 - **In the round** — worked as a tube on circular or double-pointed needles, so every round faces
   the right side.
 
+### Knitting abbreviations
+- **Beginning** (beg) — the start of a row or round.
+- **Decrease** (dec) — working stitches together to reduce the stitch count.
+- **Increase** (inc) — adding a stitch to widen the work.
+- **Double-pointed needles** (DPN) — short needles pointed at both ends, for knitting small tubes in the round.
+- **Follow** (foll) — work as the named row, round, or chart directs.
+- **Knitwise** (kwise) — insert the needle as if to knit.
+- **Purlwise** (pwise) — insert the needle as if to purl.
+- **Through the back loop** (tbl) — work into the back of the loop instead of the front, twisting the stitch.
+- **Together** (tog) — work the named stitches as one, as in k2tog (knit two together).
+- **Knit front and back** (kfb) — knit into the front then the back of one stitch, an increase of one.
+- **Knit back and front** (kbf) — knit into the back then the front of one stitch, the mirror of kfb.
+- **Knit three together** (k3tog) — a right-leaning double decrease, three stitches become one.
+- **Make one** (M1) — lift the strand between two stitches and work it to add a stitch.
+- **Make one left** (M1L) — a left-leaning lifted increase.
+- **Make one right** (M1R) — a right-leaning lifted increase.
+- **Make one purlwise** (M1P) — a lifted increase worked as a purl.
+- **Purl front and back** (pfb) — purl into the front then the back of one stitch, an increase of one.
+- **Purl two together** (p2tog) — a decrease worked from the purl side, two stitches become one.
+- **Slip** (sl) — move a stitch to the other needle without working it.
+- **Slip slip purl** (ssp) — a left-leaning purl-side decrease, two stitches become one.
+- **Slip, knit 2 together, pass over** (sk2po) — slip one, knit two together, pass the slipped stitch over, a double decrease.
+- **Slip 2, knit, pass over** (s2kpo) — slip two together knitwise, knit one, pass the two slipped over, a centered double decrease (the cdd in the chart).
+- **Stitch** (st) — one loop on the needle; the plural is sts.
+- **Remaining** (rem) — the stitches left on the needle.
+- **Pattern** (patt) — the established stitch sequence to repeat.
+- **Place marker** (PM) — slip a marker onto the needle to flag a position.
+- **Slip marker** (SM) — move the marker across as you reach it, working on.
+- **Reverse stockinette** (rev St st) — purl on right-side rows and knit on wrong-side rows, the bumpy face of stockinette.
+- **With yarn in back** (wyib) — hold the working yarn behind the work, often while slipping a stitch.
+- **With yarn in front** (wyif) — hold the working yarn in front of the work.
+- **Wrap and turn** (w&t) — wrap the next stitch and turn mid-row to work a short row.
+- **Left hand / right hand** (LH/RH) — which needle or hand a step refers to.
+
 ### Nalbinding
 - **Nalbinding** (nålbinding) — an ancient single-needle looping craft, worked in a spiral with
   short lengths of yarn; predates knitting and crochet, and does not unravel when cut.

@@ -191,11 +191,18 @@ pub struct RenderOptionsDto {
     pub gridlines: bool,
     /// Tint floats spanning this many cells OR MORE (warp or weft). 0 disables the cue.
     pub float_threshold: u32,
+    /// Shade each cell as a rounded thread (warp-faced = vertical, weft-faced = horizontal) so the
+    /// cloth reads as woven fabric rather than a flat color grid.
+    pub thread_texture: bool,
 }
 
 impl From<RenderOptionsDto> for RenderOptions {
     fn from(d: RenderOptionsDto) -> Self {
-        RenderOptions { gridlines: d.gridlines, float_threshold: d.float_threshold }
+        RenderOptions {
+            gridlines: d.gridlines,
+            float_threshold: d.float_threshold,
+            thread_texture: d.thread_texture,
+        }
     }
 }
 

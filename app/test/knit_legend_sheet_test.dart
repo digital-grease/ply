@@ -14,5 +14,8 @@ void main() {
     expect(find.textContaining('Knit two together'), findsOneWidget);
     expect(find.text('yo'), findsOneWidget);
     expect(find.text('ssk'), findsOneWidget);
+    expect(find.text('p2tog'), findsOneWidget, reason: 'the purl-decrease brush is in the key');
+    expect(find.text('k3tog'), findsOneWidget, reason: 'an appended shaping stitch is in the key');
+    expect(find.text('m1lp'), findsOneWidget, reason: 'a purlwise increase brush is in the key');
   });
 }

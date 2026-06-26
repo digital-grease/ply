@@ -76,6 +76,28 @@ Future<ProviderContainer> pumpEditor(WidgetTester tester, FakeEditorRepo repo) a
 }
 
 void main() {
+  testWidgets('opening with an initialPattern (the New flow) loads without a build-phase provider error',
+      (tester) async {
+    final c =
+        ProviderContainer(overrides: [knitRepositoryProvider.overrideWithValue(FakeEditorRepo())]);
+    addTearDown(c.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: c,
+        // The New pattern setup screen hands the editor a freshly-built pattern via initialPattern;
+        // this branch must defer its provider write off the build frame (Riverpod forbids mutating
+        // during initState/build).
+        child: const MaterialApp(home: KnitEditorScreen(initialPattern: KnitEditorState.placeholder)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Could not open the knitting pattern'), findsNothing,
+        reason: 'no modify-a-provider-while-building crash on the New flow');
+    expect(find.widgetWithText(ChoiceChip, 'Keep'), findsOneWidget,
+        reason: 'the editor loaded its brush toolbar');
+    expect(c.read(knitEditorProvider).pattern, KnitEditorState.placeholder);
+  });
+
   testWidgets('the validation band summarizes worst-severity and expands to the full list',
       (tester) async {
     await pumpEditor(
@@ -145,13 +167,15 @@ void main() {
 
   testWidgets('the +cable action adds a cable to the legend and makes it the active brush',
       (tester) async {
-    // Widen the viewport so the whole horizontal brush row (builtins + the +cable chip) builds.
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final c = await pumpEditor(tester, FakeEditorRepo());
+    // Cables are their own brush section now — open it, then add a cable from that section.
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Cables'));
+    await tester.pumpAndSettle();
     final cableChip = find.widgetWithText(ActionChip, 'Cable');
     await tester.ensureVisible(cableChip);
     await tester.tap(cableChip);
@@ -164,6 +188,30 @@ void main() {
     expect(stitches.where((s) => s.cable != null).length, 1, reason: 'one cable added');
     expect(c.read(activeKnitStitchProvider), stitches.length - 1,
         reason: 'the new cable is the active brush');
+  });
+
+  testWidgets('the brush picker filters stitches by the selected section', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await pumpEditor(tester, FakeEditorRepo());
+    // Default section = Basic: the knit chip shows; a decrease (k2tog) is hidden in its own section.
+    expect(find.widgetWithText(ChoiceChip, 'k'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'k2tog'), findsNothing);
+
+    // Open Decreases: k2tog now shows and the basic knit chip is gone.
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Decreases'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ChoiceChip, 'k2tog'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'k'), findsNothing);
+
+    // Open Increases: a make-one increase shows.
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Increases'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ChoiceChip, 'yo'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'k2tog'), findsNothing);
   });
 
   testWidgets('selecting a color drops the stitch brush to Keep (so color paints OVER a symbol)',

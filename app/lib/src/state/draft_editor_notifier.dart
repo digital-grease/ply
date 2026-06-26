@@ -39,6 +39,12 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   /// See [EditorState.setEntryCount]. Pure mutation behind the engine-free path.
   void setEntryCount(int index, int count) => commitEdit(state.setEntryCount(index, count).draft);
 
+  /// Set compressed-treadling row [index]'s whole run to press [ids] (treadle ids treadled, shaft ids
+  /// liftplan), committed as one undo entry — the discrete twin of the paint path's shed edit, used by
+  /// the dimensions bar's per-row treadle stepper. See [EditorState.withShedForEntry].
+  void setEntryShed(int index, List<int> ids) =>
+      commitEdit(state.withShedForEntry(index, ids).draft);
+
   /// Append a new blank treadling row (one pick, no shed) as one undo entry; see [EditorState.addEntry].
   void addEntry() => commitEdit(state.addEntry().draft);
 
@@ -107,7 +113,9 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   DraftHit? _lastCell;
 
   static bool _isColorRegion(DraftRegion r) =>
-      r == DraftRegion.warpColor || r == DraftRegion.weftColor;
+      r == DraftRegion.warpColor ||
+      r == DraftRegion.weftColor ||
+      r == DraftRegion.weftMarker;
 
   /// The active brush index clamped into the live palette (reads [state] directly — the notifier
   /// must NOT ref.read its own provider). Defends a dangling brush after a palette shrink.
@@ -150,6 +158,8 @@ class DraftEditorNotifier extends Notifier<EditorState> {
     return switch (hit.region) {
       DraftRegion.warpColor => state.withWarpColorForEnd(hit.col, idx),
       DraftRegion.weftColor => state.withWeftColorForPick(hit.row, idx),
+      // hit.row is the ENTRY (run) index; paint the whole run's weft in one tap.
+      DraftRegion.weftMarker => state.withWeftColorForEntry(hit.row, idx),
       _ => state,
     };
   }

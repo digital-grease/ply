@@ -534,6 +534,35 @@ void main() {
       ]);
       expect(s.draft.weftColors, [0]);
     });
+
+    test('withWeftColorForEntry paints EVERY pick in the run (the per-run weft marker)', () {
+      // Run 0 = picks 0,1,2 (weftColors 1,1,1); set it all to color 0. Run 1 (pick 3) stays.
+      final s = EditorState(draft: merging()).withWeftColorForEntry(0, 0);
+      expect(s.draft.weftColors, [0, 0, 0, 0]);
+    });
+
+    test('withWeftColorForEntry is a no-op when the run is already that color', () {
+      final s0 = EditorState(draft: merging()); // run 1 (pick 3) is already color 0
+      expect(identical(s0.withWeftColorForEntry(1, 0), s0), isTrue);
+    });
+
+    test('withWeftColorForEntry rejects an out-of-range entry index', () {
+      final s0 = EditorState(draft: merging());
+      expect(() => s0.withWeftColorForEntry(5, 0), throwsRangeError);
+    });
+
+    test('withShedForEntry can MERGE a run into its neighbour (entries recollapse)', () {
+      // Set run 1 (treadle 2) to also press treadle 1 -> all four picks become treadle 1 -> one run.
+      // This is the merge the dimensions-bar treadle stepper re-anchors its selection across.
+      final s = EditorState(draft: merging()).withShedForEntry(1, [1]);
+      expect((s.draft.drive as DraftTreadled).treadling, [
+        [1],
+        [1],
+        [1],
+        [1],
+      ]);
+      expect(s.entries.length, 1, reason: 'the two runs merged into one');
+    });
   });
 
   group('EditorState.commitEdit', () {

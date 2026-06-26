@@ -66,6 +66,12 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
         ref.read(knitEditorProvider.notifier).load(pattern);
       } else if (widget.initialPattern != null) {
         // Built by the New pattern setup screen (size / gauge / construction / starting stitch).
+        // Yield once so the provider write lands AFTER this build frame: `_load` is kicked off from
+        // initState (which runs DURING build), and Riverpod forbids mutating a provider then. The
+        // other two branches defer naturally by awaiting their async load first; this one has nothing
+        // to await, so it must yield explicitly or it throws "modify a provider while building".
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted) return;
         ref.read(knitEditorProvider.notifier).load(widget.initialPattern!);
       } else {
         // A fresh pattern: the engine blank carries the builtin legend; start it as an 8x8 grid on a
@@ -400,6 +406,14 @@ class _KnitValidationBar extends ConsumerWidget {
   }
 }
 
+/// The short, user-facing name of a brush-picker section.
+String _categoryLabel(KnitBrushCategory c) => switch (c) {
+      KnitBrushCategory.basic => 'Basic',
+      KnitBrushCategory.decreases => 'Decreases',
+      KnitBrushCategory.increases => 'Increases',
+      KnitBrushCategory.cables => 'Cables',
+    };
+
 /// The bottom tool bar: rows/cols steppers + the stitch brush picker.
 class _KnitToolBar extends ConsumerWidget {
   const _KnitToolBar();
@@ -412,6 +426,7 @@ class _KnitToolBar extends ConsumerWidget {
     // Watch the legend so custom cable brushes appear/select live. The legend object identity only
     // changes when a cable is added (other edits reuse it), so this rebuilds rarely.
     final legend = ref.watch(knitEditorProvider.select((s) => s.pattern.legend));
+    final category = ref.watch(knitBrushCategoryProvider);
     final cols = dims.$1;
     final rows = dims.$2;
     final notifier = ref.read(knitEditorProvider.notifier);
@@ -432,13 +447,30 @@ class _KnitToolBar extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 6),
+            // Collapsible brush SECTIONS: pick a category to show just that group of stitches, so the
+            // full vocabulary (basic + decreases + increases + cables) stays compact instead of one
+            // long scroll. The active brush is unaffected — this only filters which chips are visible.
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final cat in KnitBrushCategory.values)
+                  ChoiceChip(
+                    label: Text(_categoryLabel(cat)),
+                    selected: category == cat,
+                    onSelected: (_) =>
+                        ref.read(knitBrushCategoryProvider.notifier).state = cat,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
             SizedBox(
               height: 40,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
                   // "Keep" — paint only the color, leaving the cell's stitch symbol in place (the
-                  // mirror of the color row's "Keep").
+                  // mirror of the color row's "Keep"). Always available, in every section.
                   Padding(
                     padding: const EdgeInsets.only(right: 6),
                     child: ChoiceChip(
@@ -449,38 +481,42 @@ class _KnitToolBar extends ConsumerWidget {
                           ref.read(activeKnitStitchProvider.notifier).state = knitStitchKeep,
                     ),
                   ),
-                  for (final b in kKnitBrushes)
+                  // The selected section's stitch brushes (or, for Cables, the live legend cables).
+                  if (category == KnitBrushCategory.cables) ...[
+                    // Custom cable brushes (legend entries carrying a CableDefDto).
+                    for (var i = 0; i < legend.stitches.length; i++)
+                      if (legend.stitches[i].cable != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            avatar: const Icon(Icons.swap_calls, size: 16),
+                            label: Text(legend.stitches[i].symbol),
+                            tooltip: 'Cable ${legend.stitches[i].symbol}',
+                            selected: active == i,
+                            onSelected: (_) => _selectStitch(ref, i),
+                          ),
+                        ),
+                    // "+ cable" — define a new custom cable, which becomes the active brush.
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        label: Text(b.symbol),
-                        tooltip: b.label,
-                        selected: active == b.id,
-                        onSelected: (_) => _selectStitch(ref, b.id),
+                      child: ActionChip(
+                        avatar: const Icon(Icons.add, size: 16),
+                        label: const Text('Cable'),
+                        onPressed: () => _addCable(context, ref),
                       ),
                     ),
-                  // Custom cable brushes (legend entries carrying a CableDefDto).
-                  for (var i = 0; i < legend.stitches.length; i++)
-                    if (legend.stitches[i].cable != null)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ChoiceChip(
-                          avatar: const Icon(Icons.swap_calls, size: 16),
-                          label: Text(legend.stitches[i].symbol),
-                          tooltip: 'Cable ${legend.stitches[i].symbol}',
-                          selected: active == i,
-                          onSelected: (_) => _selectStitch(ref, i),
+                  ] else
+                    for (final b in kKnitBrushes)
+                      if (b.category == category)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(b.symbol),
+                            tooltip: b.label,
+                            selected: active == b.id,
+                            onSelected: (_) => _selectStitch(ref, b.id),
+                          ),
                         ),
-                      ),
-                  // "+ cable" — define a new custom cable, which becomes the active brush.
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ActionChip(
-                      avatar: const Icon(Icons.add, size: 16),
-                      label: const Text('Cable'),
-                      onPressed: () => _addCable(context, ref),
-                    ),
-                  ),
                 ],
               ),
             ),

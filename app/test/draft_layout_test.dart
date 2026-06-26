@@ -42,7 +42,7 @@ void main() {
       expect(l.warpColorRect, const Rect.fromLTWH(10, 0, 40, 10));
       // Weft colors: left strip, picks tall, sharing the drawdown's Y+height (shifts with it).
       expect(l.weftColorRect, const Rect.fromLTWH(0, 34, 10, 30));
-      // Weft markers: a read-only mirror flush to the RIGHT of the right band (x = rightRect.right).
+      // Weft markers: a per-run mirror flush to the RIGHT of the right band (x = rightRect.right).
       expect(l.weftMarkerRect, const Rect.fromLTWH(104, 34, 10, 30));
       expect(l.totalSize, const Size(114, 64)); // +4 gutter each axis, +10 weft-marker column
     });
@@ -157,9 +157,10 @@ void main() {
       expect(l.hitTest(const Offset(15, 25))?.region, DraftRegion.threading);
       expect(l.hitTest(const Offset(55, 15))?.region, DraftRegion.tieup);
       expect(l.hitTest(const Offset(55, 35))?.region, DraftRegion.right);
-      // The two color bands.
+      // The color bands: warp (top), the per-pick weft (left), and the per-run weft marker (right).
       expect(l.hitTest(const Offset(15, 5))?.region, DraftRegion.warpColor); // top strip
       expect(l.hitTest(const Offset(5, 35))?.region, DraftRegion.weftColor); // left strip
+      expect(l.hitTest(const Offset(108, 35))?.region, DraftRegion.weftMarker); // right strip
       // The drawdown is display-only -> null even though the point is inside drawdownRect.
       expect(l.drawdownRect.contains(const Offset(15, 35)), isTrue);
       expect(l.hitTest(const Offset(15, 35)), isNull);
@@ -192,6 +193,13 @@ void main() {
       expect(weft.region, DraftRegion.weftColor);
       expect(weft.col, 1, reason: 'weft band is a single column (col 1)');
       expect((weft.col, weft.row), l.weftColor.cellAt(const Offset(5, 35) - l.weftColorRect.topLeft));
+
+      // The per-run weft marker carries the ENTRY (run) index as its row, matching its geom.
+      final marker = l.hitTest(const Offset(108, 35))!;
+      expect(marker.region, DraftRegion.weftMarker);
+      expect(marker.col, 1, reason: 'weft marker is a single column (col 1)');
+      expect((marker.col, marker.row),
+          l.weftMarker.cellAt(const Offset(108, 35) - l.weftMarkerRect.topLeft));
     });
 
     test('a warp-band column maps to the SAME end as the cloth column below it', () {

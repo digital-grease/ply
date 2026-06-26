@@ -118,6 +118,15 @@ pub mod builtin {
     pub const M1R: StitchId = 9;
     pub const KFB: StitchId = 10;
     pub const SLIP: StitchId = 11;
+    // Appended (ids are a serialization contract — only ever add at the end).
+    pub const K3TOG: StitchId = 12;
+    pub const SK2PO: StitchId = 13;
+    pub const SSP: StitchId = 14;
+    pub const KBF: StitchId = 15;
+    pub const PFB: StitchId = 16;
+    pub const M1P: StitchId = 17;
+    pub const M1LP: StitchId = 18;
+    pub const M1RP: StitchId = 19;
 }
 
 /// The open stitch vocabulary for a pattern: built-ins plus any custom [`StitchDef`]s.
@@ -132,8 +141,9 @@ impl StitchLegend {
     }
 
     /// The common hand-knitting built-ins (lace + basic shaping), in [`builtin`] id order — a starting
-    /// vocabulary a pattern extends with custom stitches. WS pairings are approximate where a purl-side
-    /// decrease (ssp) is folded onto p2tog for the seed.
+    /// vocabulary a pattern extends with custom stitches. WS pairings are approximate where a stitch
+    /// lacks an exact built-in mirror (e.g. ssk's WS is seeded as p2tog); the appended shaping stitches
+    /// keep `ws_variant: None` (emitted as themselves), like the other increases and double decreases.
     pub fn builtin() -> Self {
         use builtin::*;
         let def = |symbol: &str, consumes: u8, produces: u8, ws: Option<StitchId>| StitchDef {
@@ -158,6 +168,15 @@ impl StitchLegend {
                 def("m1r", 0, 1, None),           // M1R   (increase)
                 def("kfb", 1, 2, None),           // KFB   (1->2 increase)
                 def("sl", 1, 1, None),            // SLIP
+                // --- appended shaping stitches (ids 12..=19) ---
+                def("k3tog", 3, 1, None),         // K3TOG (right-leaning double dec, 3->1)
+                def("sk2po", 3, 1, None),         // SK2PO (sl1-k2tog-psso, left-leaning double dec)
+                def("ssp", 2, 1, None),           // SSP   (left-leaning purl-side dec, 2->1)
+                def("kbf", 1, 2, None),           // KBF   (1->2 increase, kfb's mirror)
+                def("pfb", 1, 2, None),           // PFB   (1->2 purl-side increase)
+                def("m1p", 0, 1, None),           // M1P   (purlwise make-one increase)
+                def("m1lp", 0, 1, None),          // M1LP  (left purlwise increase)
+                def("m1rp", 0, 1, None),          // M1RP  (right purlwise increase)
             ],
         }
     }
@@ -292,6 +311,48 @@ impl KnitPattern {
         }
     }
 
+    /// Upgrade a pattern deserialized with an OLDER built-in vocabulary to the current one: splice in
+    /// any built-ins added since it was saved, shift its custom stitches (cables) up to sit after the
+    /// full current built-in set, and remap every chart cell + `ws_variant` that referenced a moved
+    /// custom.
+    ///
+    /// Built-ins are append-only and immutable, so a saved legend is always
+    /// `[current built-in prefix] ++ [custom stitches]`; this finds the prefix length `k` (the built-in
+    /// count at save time) and rebuilds on the full current set, moving each custom from old index
+    /// `k + j` to new index `n + j`. Idempotent — a pattern already on the current built-ins (`k == n`)
+    /// is left untouched — so it is safe to run on every load (see [`from_json`]).
+    pub fn upgrade_builtins(&mut self) {
+        let current = StitchLegend::builtin().stitches;
+        let n = current.len();
+        // The longest leading run of saved entries still equal to the current built-ins is the built-in
+        // count this pattern was saved with; everything from there on is a custom stitch.
+        let mut k = 0;
+        {
+            let saved = &self.legend.stitches;
+            while k < saved.len() && k < n && saved[k] == current[k] {
+                k += 1;
+            }
+        }
+        if k == n {
+            return; // already on the current built-in set; customs already sit after it.
+        }
+        let remap = |id: StitchId| -> StitchId { if id < k { id } else { n + (id - k) } };
+        // Detach the customs (old indices k..) and re-seat them after the full current built-in set.
+        let customs = self.legend.stitches.split_off(k);
+        let mut stitches = current;
+        for mut c in customs {
+            c.ws_variant = c.ws_variant.map(remap);
+            stitches.push(c);
+        }
+        self.legend = StitchLegend { stitches };
+        // Every chart cell that pointed at a moved custom follows it to its new index.
+        for row in &mut self.chart.rows {
+            for cell in &mut row.cells {
+                cell.stitch = remap(cell.stitch);
+            }
+        }
+    }
+
     /// Serialize to the native `.plyknit` format (pretty JSON). Round-trips losslessly for a valid
     /// pattern. A NaN/infinite gauge is REJECTED here: serde would emit JSON `null`, which then fails
     /// to parse back (a write-then-unreadable file), so we fail the save cleanly instead.
@@ -302,9 +363,13 @@ impl KnitPattern {
         Ok(serde_json::to_string_pretty(self)?)
     }
 
-    /// Parse the native `.plyknit` format.
+    /// Parse the native `.plyknit` format, upgrading an older saved built-in vocabulary to the current
+    /// one (see [`KnitPattern::upgrade_builtins`]) so a pattern saved before a built-in was added still
+    /// opens with the right stitches and chart.
     pub fn from_json(s: &str) -> Result<Self, KnitError> {
-        Ok(serde_json::from_str(s)?)
+        let mut p: KnitPattern = serde_json::from_str(s)?;
+        p.upgrade_builtins();
+        Ok(p)
     }
 }
 
@@ -362,6 +427,95 @@ mod tests {
         assert_eq!(leg.get(builtin::KFB).unwrap().delta(), 1, "kfb is 1->2");
         assert_eq!(leg.get(builtin::KNIT).unwrap().delta(), 0);
         assert_eq!(leg.get(builtin::NO_STITCH).unwrap().delta(), 0);
+    }
+
+    /// The appended shaping stitches sit at their contract ids with the right symbol + count change.
+    /// This locks the Rust<->Flutter id/symbol agreement (Flutter's `KnitStitch`/`kKnitBrushes` mirror
+    /// these), since the ids are part of the saved-chart serialization.
+    #[test]
+    fn appended_shaping_stitches_have_their_contract_ids_and_deltas() {
+        let leg = StitchLegend::builtin();
+        for (id, sym, delta) in [
+            (builtin::K3TOG, "k3tog", -2),
+            (builtin::SK2PO, "sk2po", -2),
+            (builtin::SSP, "ssp", -1),
+            (builtin::KBF, "kbf", 1),
+            (builtin::PFB, "pfb", 1),
+            (builtin::M1P, "m1p", 1),
+            (builtin::M1LP, "m1lp", 1),
+            (builtin::M1RP, "m1rp", 1),
+        ] {
+            let s = leg.get(id).unwrap_or_else(|| panic!("legend missing id {id} ({sym})"));
+            assert_eq!(s.symbol, sym, "id {id} symbol");
+            assert_eq!(s.delta(), delta, "id {id} ({sym}) delta");
+        }
+        assert_eq!(leg.stitches.len(), 20, "12 original builtins + 8 appended shaping stitches");
+    }
+
+    #[test]
+    fn upgrade_builtins_splices_new_builtins_into_an_old_pattern() {
+        // A pattern saved with the OLD 12-built-in legend (no customs), charting k & p.
+        let mut p = ribbing();
+        p.legend.stitches.truncate(12);
+        p.upgrade_builtins();
+        assert_eq!(p.legend.stitches.len(), 20, "the 8 newer built-ins are spliced in");
+        assert_eq!(p.legend.get(builtin::K3TOG).unwrap().symbol, "k3tog");
+        // The k/p chart cells (ids 1 & 2, below the splice point) are untouched.
+        assert_eq!(p.chart.rows[0].cells[0].stitch, builtin::KNIT);
+        assert_eq!(p.chart.rows[0].cells[1].stitch, builtin::PURL);
+    }
+
+    #[test]
+    fn upgrade_builtins_moves_a_custom_cable_and_remaps_its_cells() {
+        // OLD legend: 12 built-ins + a custom cable saved at index 12; a chart cell points at it.
+        let mut p = ribbing();
+        p.legend.stitches.truncate(12);
+        p.legend.stitches.push(StitchDef {
+            symbol: "2/2RC".into(),
+            consumes: 4,
+            produces: 4,
+            ws_variant: None,
+            cable: Some(CableDef {
+                front: 2,
+                back: 2,
+                direction: Cross::Right,
+                front_purl: false,
+                back_purl: false,
+            }),
+            macro_rows: 1,
+        });
+        p.chart = Chart {
+            width: 2,
+            rows: vec![Row::plain(vec![Cell::of(builtin::KNIT), Cell::of(12)])],
+        };
+
+        p.upgrade_builtins();
+
+        assert_eq!(p.legend.stitches.len(), 21, "20 built-ins + the one moved cable");
+        assert_eq!(p.legend.stitches[20].symbol, "2/2RC");
+        assert!(p.legend.stitches[20].cable.is_some(), "the cable now sits after the full built-in set");
+        // The knit cell is unchanged; the cable cell (old index 12) follows the cable to its new index.
+        assert_eq!(p.chart.rows[0].cells[0].stitch, builtin::KNIT);
+        assert_eq!(p.chart.rows[0].cells[1].stitch, 20);
+    }
+
+    #[test]
+    fn upgrade_builtins_is_idempotent_on_a_current_pattern() {
+        let mut p = ribbing(); // already carries the current 20-built-in legend
+        let before = p.clone();
+        p.upgrade_builtins();
+        assert_eq!(p, before, "a pattern already on the current built-ins is left untouched");
+    }
+
+    #[test]
+    fn from_json_upgrades_an_old_saved_legend_on_load() {
+        // A `.plyknit` written with the OLD 12-built-in legend must open on the current built-ins.
+        let mut old = ribbing();
+        old.legend.stitches.truncate(12);
+        let json = serde_json::to_string(&old).unwrap();
+        let back = KnitPattern::from_json(&json).unwrap();
+        assert_eq!(back.legend.stitches.len(), 20, "from_json migrates the built-in set on load");
+        assert_eq!(back.chart.rows[0].cells[0].stitch, builtin::KNIT, "the chart survives unchanged");
     }
 
     #[test]

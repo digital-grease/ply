@@ -86,11 +86,11 @@ class KnitChartView extends ConsumerWidget {
                   behavior: HitTestBehavior.opaque,
                   onTapUp: (d) {
                     final (row, col) = cellAt(d.localPosition);
-                    if (select) {
-                      ref.read(knitSelectionProvider.notifier).state =
-                          KnitSelection(row, col, row, col);
-                      return;
-                    }
+                    // A single TAP always PAINTS the cell — in BOTH tools — so a brush (a stitch OR a
+                    // colorwork color) never silently fails to apply. The SELECT tool only changes what
+                    // a DRAG does: it draws a rectangular fill region (then the header's Fill action
+                    // applies the brush across it), instead of scrolling the chart. A tap therefore
+                    // supersedes any pending drag-region.
                     final stitch = ref.read(activeKnitStitchProvider);
                     final brush = ref.read(activeKnitColorProvider);
                     ref.read(knitEditorProvider.notifier).paintCell(
@@ -101,6 +101,7 @@ class KnitChartView extends ConsumerWidget {
                           keepColor: brush == knitColorKeep,
                           keepStitch: stitch == knitStitchKeep,
                         );
+                    if (select) ref.read(knitSelectionProvider.notifier).state = null;
                   },
                   onPanStart: select
                       ? (d) {

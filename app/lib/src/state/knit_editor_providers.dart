@@ -32,6 +32,12 @@ const int knitStitchKeep = -1;
 /// leave a cell's stitch untouched and paint only its color. Default knit.
 final activeKnitStitchProvider = StateProvider<int>((ref) => KnitStitch.knit);
 
+/// Which collapsible SECTION of the brush picker is open (basic / decreases / increases / cables), so
+/// the long stitch list shows one group at a time. Pure ephemeral view chrome — it filters which
+/// brush chips are visible, never the active brush. Defaults to the basic stitches.
+final knitBrushCategoryProvider =
+    StateProvider<KnitBrushCategory>((ref) => KnitBrushCategory.basic);
+
 /// Sentinel brush values for [activeKnitColorProvider] (any value >= 0 is a palette index).
 const int knitColorKeep = -2; // keep a painted cell's existing color (add a stitch symbol only)
 const int knitColorNone = -1; // clear the color (a symbol-only / uncolored cell)

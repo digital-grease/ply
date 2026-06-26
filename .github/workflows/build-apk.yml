@@ -84,7 +84,7 @@ jobs:
 
       - name: Rust engine tests
         working-directory: rust
-        run: cargo test -p ply-common -p ply-weave -p ply_bridge
+        run: cargo test -p ply-common -p ply-weave -p ply-knit -p ply-nalbind -p ply_bridge
 
       - name: Flutter host tests
         working-directory: app

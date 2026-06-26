@@ -84,6 +84,10 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
     final selectedRaw = ref.watch(selectedTreadlingEntryProvider);
     final selectedEntry =
         (selectedRaw != null && selectedRaw >= 0 && selectedRaw < entries.length) ? selectedRaw : null;
+    // The selected run's single treadle for the per-row 'Treadle' stepper. 0 means a blank shed OR a
+    // multi-treadle shed (which the grid edits cell-by-cell); stepping from 0 sets a single treadle.
+    final selectedShed = selectedEntry != null ? entries[selectedEntry].shed : const <int>[];
+    final selectedTreadle = selectedShed.length == 1 ? selectedShed.single : 0;
     // Whether to surface the double-weave layer view (4+ shafts used). Watched directly so the chip
     // appears/disappears as the draft changes — and it reads the threading's real shaft usage, not
     // just the header, so a generated/composed double weave reliably offers it.
@@ -151,6 +155,26 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
               // selected so the resting bar keeps its height (a from-scratch draft always has a row to
               // tap to get here).
               if (isTreadled && selectedEntry != null) ...[
+                // Set which treadle the selected run presses, by hand — step it through 1..treadles
+                // (0 clears it). The fix for overshot, where you set each block's treadle directly
+                // instead of hunting the right grid cell. Re-anchors the selection if the edit merges
+                // this run into an identical neighbour.
+                _Stepper(
+                  label: 'Treadle',
+                  value: selectedTreadle,
+                  min: 0,
+                  max: treadles,
+                  enabled: enabled,
+                  onChange: (v) {
+                    final notifier = ref.read(draftEditorProvider.notifier);
+                    final startPick = entries[selectedEntry].startPick;
+                    notifier.setEntryShed(selectedEntry, v == 0 ? const <int>[] : <int>[v]);
+                    final newEntries =
+                        treadlingEntries(ref.read(draftEditorProvider).draft.drive.rows);
+                    ref.read(selectedTreadlingEntryProvider.notifier).state =
+                        entryIndexForPick(newEntries, startPick);
+                  },
+                ),
                 _Stepper(
                   label: 'Row ×',
                   value: entries[selectedEntry].count,

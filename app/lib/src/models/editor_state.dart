@@ -294,6 +294,7 @@ class EditorState {
         return i >= 0 && i < es.length && es[i].shed.contains(hit.col);
       case DraftRegion.warpColor:
       case DraftRegion.weftColor:
+      case DraftRegion.weftMarker:
         // Color cells have no on/off state; the driver routes them by region, never via isCellOn.
         return false;
       case DraftRegion.drawdown:
@@ -540,6 +541,24 @@ class EditorState {
     return next == draft ? this : copyWith(draft: next);
   }
 
+  /// Set EVERY pick in compressed-treadling entry [index]'s run to weft color [idx] — the run-level
+  /// weft setter the per-run marker band paints through (one tap colors the whole run). Pure; pads
+  /// weftColors to the pick count; returns `this` on a no-op.
+  EditorState withWeftColorForEntry(int index, int idx) {
+    final es = entries;
+    if (index < 0 || index >= es.length) throw RangeError.range(index, 0, es.length - 1, 'entry');
+    if (idx < 0 || idx >= draft.palette.length) {
+      throw RangeError.range(idx, 0, draft.palette.length - 1, 'palette index');
+    }
+    final e = es[index];
+    final wc = _padded(draft.weftColors, draft.picks, 0);
+    for (var p = e.startPick; p < e.endPick && p < wc.length; p++) {
+      wc[p] = idx;
+    }
+    final next = draft.copyWith(weftColors: wc);
+    return next == draft ? this : copyWith(draft: next);
+  }
+
   /// Apply a paint to the cell named by [hit], forcing it [on] or off, routing to the right
   /// region's value-setter so tap and drag share identical semantics.
   EditorState paintCell(DraftHit hit, {required bool on}) {
@@ -554,9 +573,10 @@ class EditorState {
         return withShedForEntry(hit.row, on ? [hit.col] : const <int>[]);
       case DraftRegion.warpColor:
       case DraftRegion.weftColor:
+      case DraftRegion.weftMarker:
         // Color regions set a palette INDEX, not an on/off bool: a mis-route here is a bug, so fail
         // loudly instead of writing a boolean into a color band. The driver paints them via
-        // withWarpColorForEnd / withWeftColorForPick.
+        // withWarpColorForEnd / withWeftColorForPick / withWeftColorForEntry.
         throw StateError('color regions are painted via the color value-setters, not paintCell');
       case DraftRegion.drawdown:
         return this; // display-only

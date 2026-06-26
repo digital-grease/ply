@@ -35,6 +35,7 @@ class FakeLibraryRepo extends DraftRepository {
     required int cellPx,
     bool gridlines = false,
     int floatThreshold = 0,
+    bool threadTexture = false,
   }) {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(

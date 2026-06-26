@@ -104,6 +104,13 @@ final showGridlinesProvider = StateProvider<bool>((ref) => false);
 /// same-face cells). Ephemeral view chrome, same rationale as [showGridlinesProvider]. Default off.
 final highlightFloatsProvider = StateProvider<bool>((ref) => false);
 
+/// Whether the live drawdown shades each cell as a rounded woven thread (warp-faced cells read as
+/// vertical strands, weft-faced as horizontal) so the cloth looks like fabric instead of a flat color
+/// grid. Ephemeral view chrome like [showGridlinesProvider], but defaults ON: it is a presentation
+/// nicety the editor wants by default (toggle it off from the editor's overflow menu). The thumbnail/
+/// library path is unaffected — it always renders plain cloth (no options).
+final showThreadTextureProvider = StateProvider<bool>((ref) => true);
+
 /// The float length (in cells) at/above which [highlightFloatsProvider] tints a float. A pragmatic
 /// default for "long enough to snag"; not user-tunable in this milestone.
 const int kLongFloatThreshold = 5;
@@ -134,6 +141,7 @@ class PreviewController extends AutoDisposeAsyncNotifier<ui.Image> {
     // the document (so undo/validation never fire). A no-op recompute is microseconds.
     final gridlines = ref.watch(showGridlinesProvider);
     final highlightFloats = ref.watch(highlightFloatsProvider);
+    final threadTexture = ref.watch(showThreadTextureProvider);
     final mySeq = ++_seq;
     // The FFI render is un-cancellable, so it can resolve after the provider is disposed
     // (navigate away mid-render). Track that so we free the orphaned image instead of leaking it.
@@ -145,6 +153,7 @@ class PreviewController extends AutoDisposeAsyncNotifier<ui.Image> {
       cellPx: previewCellPx,
       gridlines: gridlines,
       floatThreshold: highlightFloats ? kLongFloatThreshold : 0,
+      threadTexture: threadTexture,
     );
 
     if (disposed || mySeq != _seq) {

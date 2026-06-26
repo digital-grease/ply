@@ -110,11 +110,15 @@ pub struct RenderOptions {
     /// Tint every cell belonging to a float (a run of same-face cells) of this length OR MORE,
     /// flagging snag-prone long floats. `0` (or `1`) disables the cue.
     pub float_threshold: u32,
+    /// Shade each cell like a rounded thread — a warp-faced cell reads as a vertical thread, a
+    /// weft-faced cell as a horizontal one — so the cloth looks woven instead of a flat color grid
+    /// (see [`thread_shade`]). Off by default (a plain flat fill, byte-identical to the old raster).
+    pub thread_texture: bool,
 }
 
 impl Default for RenderOptions {
     fn default() -> Self {
-        RenderOptions { gridlines: false, float_threshold: 0 }
+        RenderOptions { gridlines: false, float_threshold: 0, thread_texture: false }
     }
 }
 
@@ -189,7 +193,11 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
         let top = row_top[pick];
         let ch = row_h[pick];
         for end in 0..dd.ends {
-            let base_c = match dd.cell(end, pick) {
+            let cell = dd.cell(end, pick);
+            // Warp on top => a vertical thread; weft on top => a horizontal one. Drives the texture's
+            // shading axis below.
+            let warp_up = matches!(cell, Cell::WarpUp(_));
+            let base_c = match cell {
                 Cell::WarpUp(i) | Cell::WeftUp(i) => color_at(i),
             };
             // Tint cells that belong to a long float so they read at a glance (over any palette).
@@ -204,9 +212,20 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
                 let row = ((top + dy) * w + left) * 4;
                 for dx in 0..cw {
                     let o = row + dx * 4;
-                    px[o] = c.r;
-                    px[o + 1] = c.g;
-                    px[o + 2] = c.b;
+                    // Plain flat fill unless the texture overlay is on, in which case shade the pixel
+                    // by its position across/along the thread so the cell reads as a rounded strand.
+                    let pc = if opts.thread_texture {
+                        let xt = (dx as f32 + 0.5) / cw as f32;
+                        let yt = (dy as f32 + 0.5) / ch as f32;
+                        // `perp` runs ACROSS the thread (the rounded cross-section), `along` its length.
+                        let (perp, along) = if warp_up { (xt, yt) } else { (yt, xt) };
+                        thread_shade(c, perp, along)
+                    } else {
+                        c
+                    };
+                    px[o] = pc.r;
+                    px[o + 1] = pc.g;
+                    px[o + 2] = pc.b;
                     px[o + 3] = 255;
                 }
             }
@@ -244,6 +263,32 @@ const FLOAT_HIGHLIGHT: [u8; 3] = [255, 120, 0];
 fn blend(base: Color, over: [u8; 3], a: f32) -> Color {
     let mix = |b: u8, o: u8| ((b as f32) * (1.0 - a) + (o as f32) * a).round() as u8;
     Color::rgb(mix(base.r, over[0]), mix(base.g, over[1]), mix(base.b, over[2]))
+}
+
+/// Shade one pixel of a thread cell so the cloth reads as woven strands rather than flat squares
+/// (used only when [`RenderOptions::thread_texture`] is set). `perp` and `along` are the pixel's
+/// normalized position (0..1) ACROSS and ALONG the thread:
+///   * a cylindrical cross-section darkens the two long edges toward the strand's sides — the
+///     dominant cue, brightest down the centre line (`CROSS`);
+///   * a faint quartic dip darkens the two ends, where the strand tucks under its crossing
+///     neighbour at the cell boundary (`ENDS`);
+///   * a slim additive ridge of light rides the centre line so even a near-black strand catches a
+///     little sheen instead of reading flat (`RIDGE`).
+/// All three are gentle so the cloth's color stays legible; the centre of every cell keeps
+/// essentially the base color.
+fn thread_shade(c: Color, perp: f32, along: f32) -> Color {
+    const CROSS: f32 = 0.34;
+    const ENDS: f32 = 0.12;
+    const RIDGE: f32 = 0.06;
+    let pd = 2.0 * perp - 1.0; // -1 (one side) .. 0 (centre) .. 1 (other side)
+    let ad = 2.0 * along - 1.0;
+    let cross = 1.0 - CROSS * pd * pd; // parabola: 1 at the centre line, 1-CROSS at the side edges
+    let ends = 1.0 - ENDS * ad * ad * ad * ad; // quartic: flat in the middle, dips at the two tips
+    let mul = cross * ends;
+    let r = 1.0 - pd * pd;
+    let ridge = RIDGE * r * r * r; // peaks on the centre line, vanishes at the side edges
+    let f = |ch: u8| ((ch as f32) * mul + ridge * 255.0).round().clamp(0.0, 255.0) as u8;
+    Color::rgb(f(c.r), f(c.g), f(c.b))
 }
 
 /// Mark every cell that belongs to a float — a maximal run of same-face cells along the warp (down
@@ -461,7 +506,7 @@ mod tests {
     #[test]
     fn gridlines_paint_interior_seams_only() {
         let d = plain_2x2(); // 8x8 at cell 4: one interior vertical seam (x=4), one horizontal (y=4)
-        let opts = RenderOptions { gridlines: true, float_threshold: 0 };
+        let opts = RenderOptions { gridlines: true, float_threshold: 0, thread_texture: false };
         let img = render_rgba_with(&d, 4, &opts);
         let at = |x: usize, y: usize| -> [u8; 3] {
             let o = (y * 8 + x) * 4;
@@ -508,14 +553,91 @@ mod tests {
         assert_eq!(center(&off), [0, 0, 0], "no cue => untouched cloth");
 
         // Below threshold (need 7+, float is 6): still untouched.
-        let high = render_rgba_with(&d, 4, &RenderOptions { gridlines: false, float_threshold: 7 });
+        let high = render_rgba_with(
+            &d,
+            4,
+            &RenderOptions { gridlines: false, float_threshold: 7, thread_texture: false },
+        );
         assert_eq!(center(&high), [0, 0, 0], "float shorter than threshold is untouched");
 
         // At threshold (5 <= 6): tinted toward the warm highlight (no longer pure black).
-        let on = render_rgba_with(&d, 4, &RenderOptions { gridlines: false, float_threshold: 5 });
+        let on = render_rgba_with(
+            &d,
+            4,
+            &RenderOptions { gridlines: false, float_threshold: 5, thread_texture: false },
+        );
         let c = center(&on);
         assert_ne!(c, [0, 0, 0], "a long float is tinted");
         assert!(c[0] > c[2], "tint is warm (more red than blue)");
+    }
+
+    /// One white intersection whose single warp end is RAISED (warp on top) — used to prove the
+    /// thread texture shades a warp-faced cell as a VERTICAL thread.
+    fn warp_cell() -> Draft {
+        Draft {
+            name: "warp".into(),
+            shafts: 1,
+            treadles: 0,
+            shed: ShedType::Rising,
+            unit: Unit::Inches,
+            threading: Threading(vec![vec![ShaftId(1)]]),
+            drive: Drive::Liftplan(Liftplan(vec![vec![ShaftId(1)]])),
+            colors: ColorPlan { palette: vec![Color::WHITE], warp: vec![0], weft: vec![0] },
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
+            notes: String::new(),
+            retained: Vec::new(),
+        }
+    }
+
+    /// The same single white intersection but with NOTHING raised (weft on top) — a weft-faced cell,
+    /// shaded as a HORIZONTAL thread.
+    fn weft_cell() -> Draft {
+        let mut d = warp_cell();
+        d.drive = Drive::Liftplan(Liftplan(vec![vec![]]));
+        d
+    }
+
+    /// The texture shades each cell as a rounded strand oriented by its face: a warp-faced cell varies
+    /// across its WIDTH (a vertical thread), a weft-faced cell across its HEIGHT (a horizontal one).
+    /// Off, the cell stays a flat solid fill.
+    #[test]
+    fn thread_texture_shades_along_the_thread_direction() {
+        let opts = RenderOptions { gridlines: false, float_threshold: 0, thread_texture: true };
+        let at = |img: &RgbaImage, x: usize, y: usize| -> i32 {
+            let o = (y * img.width as usize + x) * 4;
+            img.pixels[o] as i32
+        };
+
+        // Warp on top: brighter down the centre line than at a side edge, ~flat down its length.
+        let warp = render_rgba_with(&warp_cell(), 8, &opts);
+        assert_eq!((warp.width, warp.height), (8, 8));
+        assert!(
+            at(&warp, 4, 4) > at(&warp, 0, 4) + 20,
+            "vertical thread brightens toward its centre line (across the width)"
+        );
+        assert!(
+            (at(&warp, 2, 1) - at(&warp, 2, 6)).abs() <= 4,
+            "a warp thread barely changes down its length"
+        );
+
+        // Weft on top: the same, rotated — brighter at the centre line across the HEIGHT.
+        let weft = render_rgba_with(&weft_cell(), 8, &opts);
+        assert!(
+            at(&weft, 4, 4) > at(&weft, 4, 0) + 20,
+            "horizontal thread brightens toward its centre line (across the height)"
+        );
+        assert!(
+            (at(&weft, 1, 2) - at(&weft, 6, 2)).abs() <= 4,
+            "a weft thread barely changes along its length"
+        );
+
+        // Off (the default): the whole cell is one flat color — no per-pixel variation.
+        let flat = render_rgba_with(&warp_cell(), 8, &RenderOptions::default());
+        assert!(
+            flat.pixels.chunks_exact(4).all(|p| p == &flat.pixels[0..4]),
+            "texture off => flat solid fill"
+        );
     }
 
     /// A caller-supplied `cell_px` (the zoom pitch, untrusted at the FFI) must never overflow the

@@ -27,6 +27,7 @@ class FakeRepo extends DraftRepository {
     required int cellPx,
     bool gridlines = false,
     int floatThreshold = 0,
+    bool threadTexture = false,
   }) =>
       _stubImage();
 
@@ -178,6 +179,8 @@ Offset warpC(WidgetTester t, int end) =>
     _origin(t) + kLayout.warpColorRect.topLeft + kLayout.warpColor.rectFor(end, 0).center;
 Offset weftC(WidgetTester t, int pick) =>
     _origin(t) + kLayout.weftColorRect.topLeft + kLayout.weftColor.rectFor(1, pick).center;
+Offset weftMarkerC(WidgetTester t, int entry) =>
+    _origin(t) + kLayout.weftMarkerRect.topLeft + kLayout.weftMarker.rectFor(1, entry).center;
 
 void main() {
   testWidgets('tapping a warp-color cell paints the active brush onto that end', (tester) async {
@@ -197,6 +200,19 @@ void main() {
     await tester.tapAt(weftC(tester, 0)); // pick 0
     await tester.pump();
     expect(c.read(draftEditorProvider).draft.weftColors[0], 0, reason: 'pick 0 painted brush 0');
+  });
+
+  testWidgets('tapping a weft-MARKER cell paints the run weft and selects that treadling row',
+      (tester) async {
+    // fixture treadling [1],[2],[1],[2] -> four single-pick runs; weftColors [1,1,1,1].
+    final c = await pumpView(tester);
+    c.read(activePaletteColorProvider.notifier).state = 0; // brush = white (index 0)
+    await tester.pump();
+    await tester.tapAt(weftMarkerC(tester, 2)); // run 2 (== pick 2 here)
+    await tester.pump();
+    expect(c.read(draftEditorProvider).draft.weftColors[2], 0, reason: 'run 2 painted brush 0');
+    expect(c.read(selectedTreadlingEntryProvider), 2, reason: 'tapping the marker selects that row');
+    expect(c.read(draftEditorProvider).undo.length, 1, reason: 'one undo entry');
   });
 
   testWidgets('tapping a threading cell sets that end\'s shaft', (tester) async {

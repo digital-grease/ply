@@ -19,6 +19,7 @@ class FakeRepo extends DraftRepository {
     required int cellPx,
     bool gridlines = false,
     int floatThreshold = 0,
+    bool threadTexture = false,
   }) {
     final completer = Completer<ui.Image>();
     pending.add(completer);
@@ -133,9 +134,11 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         repositoryProvider.overrideWithValue(fake),
-        // Start both overlays ON so the first render already carries them.
+        // Start both overlays ON so the first render already carries them. Pin thread texture OFF so
+        // this test asserts the gridline/float forwarding independent of the texture default.
         showGridlinesProvider.overrideWith((ref) => true),
         highlightFloatsProvider.overrideWith((ref) => true),
+        showThreadTextureProvider.overrideWith((ref) => false),
       ],
     );
     addTearDown(container.dispose);
@@ -146,12 +149,18 @@ void main() {
     expect(fake.lastGridlines, isTrue, reason: 'gridline toggle reaches the render');
     expect(fake.lastFloatThreshold, kLongFloatThreshold,
         reason: 'float highlight maps to the threshold');
+    expect(fake.lastThreadTexture, isFalse, reason: 'thread-texture toggle reaches the render');
 
     // Turning floats OFF re-renders with threshold 0 (gridlines untouched).
     container.read(highlightFloatsProvider.notifier).state = false;
     await pumpEventQueue();
     expect(fake.lastGridlines, isTrue);
     expect(fake.lastFloatThreshold, 0, reason: 'float cue off => no threshold');
+
+    // Turning thread texture ON re-renders carrying it.
+    container.read(showThreadTextureProvider.notifier).state = true;
+    await pumpEventQueue();
+    expect(fake.lastThreadTexture, isTrue, reason: 'texture cue on => render carries it');
   });
 }
 
@@ -160,6 +169,7 @@ void main() {
 class _CapturingRepo extends DraftRepository {
   bool lastGridlines = false;
   int lastFloatThreshold = 0;
+  bool lastThreadTexture = false;
 
   @override
   Future<ui.Image> renderDto(
@@ -167,9 +177,11 @@ class _CapturingRepo extends DraftRepository {
     required int cellPx,
     bool gridlines = false,
     int floatThreshold = 0,
+    bool threadTexture = false,
   }) {
     lastGridlines = gridlines;
     lastFloatThreshold = floatThreshold;
+    lastThreadTexture = threadTexture;
     return makeImage();
   }
 }

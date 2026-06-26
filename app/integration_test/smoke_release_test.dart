@@ -7,6 +7,7 @@
 //
 //   flutter test integration_test/smoke_release_test.dart -d linux
 
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -102,6 +103,36 @@ void main() {
     debugPrint('SMOKE[4] written=$lines');
     expect(lines.any((l) => l.contains('MC')), isTrue, reason: 'main color labelled');
     expect(lines.any((l) => l.contains('CC')), isTrue, reason: 'contrast color labelled');
+  });
+
+  testWidgets('5: an OLDER saved knit legend re-upgrades to the current builtins on parse (real FFI)',
+      (tester) async {
+    final repo = KnitRepository();
+    final blank = await repo.blank();
+    final fullLen = blank.legend.stitches.length; // the current full builtin count
+    // Round-trip to native JSON, then SIMULATE a pattern saved before the shaping stitches existed by
+    // dropping the legend back to the original 12 builtins, and parse THAT through the real FFI.
+    final map = jsonDecode(await repo.write(blank)) as Map<String, dynamic>;
+    (map['legend'] as Map<String, dynamic>)['stitches'] =
+        (map['legend']['stitches'] as List).sublist(0, 12);
+    final reloaded = await repo.parse(jsonEncode(map));
+    debugPrint('SMOKE[5] builtins on save=$fullLen, truncated=12, reloaded='
+        '${reloaded.legend.stitches.length}');
+    expect(fullLen, 20, reason: 'a fresh pattern carries the full current builtin set');
+    expect(reloaded.legend.stitches.length, 20,
+        reason: 'parse migrates an old 12-builtin legend back to the full set (the tester\'s patterns)');
+  });
+
+  testWidgets('6: the thread-texture render option changes the drawdown bitmap (real FFI)',
+      (tester) async {
+    final repo = DraftRepository();
+    final doc = await repo.parseDoc(kLiftplanWif); // a real 4x4 cloth
+    final flat = await _rgba(await repo.renderDto(doc, cellPx: 12));
+    final textured = await _rgba(await repo.renderDto(doc, cellPx: 12, threadTexture: true));
+    final differ = !listEquals(flat, textured);
+    debugPrint('SMOKE[6] flat bytes=${flat.length}; textured differs=$differ');
+    expect(flat.length, textured.length, reason: 'same drawdown dimensions either way');
+    expect(differ, isTrue, reason: 'thread texture must shade the cloth, not leave it a flat fill');
   });
 
   // --- probes: off the happy path ---

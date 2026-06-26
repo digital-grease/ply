@@ -402,8 +402,9 @@ class RightGrid extends ConsumerWidget {
 }
 
 /// Weft-color MARKER band beside the COMPRESSED treadling: one cell per run, each showing that run's
-/// representative (first pick's) weft color, so the pick's color reads right next to the treadle you
-/// press. Read-only (ExcludeSemantics); the editable per-pick weft band stays on the left by the cloth.
+/// (first pick's) weft color, so the pick's color reads right next to the treadle you press. EDITABLE
+/// per run — a tap paints the active brush onto every pick in that run (the parent's Listener routes
+/// it); the per-pick weft band stays on the left by the cloth for finer control.
 class WeftMarkerBand extends ConsumerWidget {
   const WeftMarkerBand({required this.geom, super.key});
 
@@ -415,13 +416,15 @@ class WeftMarkerBand extends ConsumerWidget {
         .select((s) => (s.draft.drive.rows, s.draft.weftColors, s.draft.palette)));
     final entries = treadlingEntries(rows);
     final cells = <(int, int)>[for (var e = 0; e < entries.length && e < geom.rows; e++) (1, e)];
-    final colors = <Color>[
+    final indices = <int>[
       for (var e = 0; e < entries.length && e < geom.rows; e++)
-        _swatch(palette,
-            entries[e].startPick < weftColors.length ? weftColors[entries[e].startPick] : 0),
+        entries[e].startPick < weftColors.length ? weftColors[entries[e].startPick] : 0,
     ];
+    final colors = <Color>[for (final i in indices) _swatch(palette, i)];
     final cs = Theme.of(context).colorScheme;
-    return ExcludeSemantics(
+    return Semantics(
+      label: 'Weft colors by treadling row',
+      value: _bandValue(indices, indices.length, 'row'),
       child: CustomPaint(
         size: geom.size,
         painter: ColorBandPainter(

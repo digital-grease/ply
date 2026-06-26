@@ -72,12 +72,13 @@ void main() {
     expect(find.text('With 10% buffer: 275 yards'), findsOneWidget);
   });
 
-  testWidgets('seeding from a yarn weight fills the gauge fields', (tester) async {
+  testWidgets('seeding from a measured WPI fills the gauge fields', (tester) async {
     await pumpSheet(tester);
-    await tester.tap(find.text('Seed from a yarn weight'));
+    // WPI 9 classifies as Worsted (18 sts / 4 in).
+    await tester.enterText(find.widgetWithText(TextField, 'Wraps per inch'), '9');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Medium / worsted (4)').last);
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Use 18 sts (Worsted)'));
     await tester.pumpAndSettle();
-    expect(find.text('20'), findsWidgets); // the Stitches field now reads the seeded 20
+    expect(find.text('18'), findsWidgets); // the Stitches field now reads the seeded 18
   });
 }

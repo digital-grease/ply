@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/knit_calculators.dart' show YarnWeight, yarnWeightFromWpi;
 import '../rust/dto.dart' show UnitKind;
 import '../rust/knit_dto.dart';
 import '../state/knit_editor_providers.dart';
@@ -36,8 +37,9 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
   // Gauge fields (per the window: 4 in or 10 cm). Seeded from the open pattern.
   final _sts = TextEditingController();
   final _rows = TextEditingController();
+  // A measured wraps-per-inch to seed the gauge from (replaces the old yarn-weight picker).
+  final _wpi = TextEditingController();
   late UnitKind _unit;
-  YarnWeightKind? _weight;
   bool _applied = false;
 
   // Cast-on calculator.
@@ -62,7 +64,7 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
 
   @override
   void dispose() {
-    for (final c in [_sts, _rows, _castWidth, _ease, _repeat, _yardWidth, _yardLength]) {
+    for (final c in [_sts, _rows, _wpi, _castWidth, _ease, _repeat, _yardWidth, _yardLength]) {
       c.dispose();
     }
     super.dispose();
@@ -80,14 +82,16 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
     return GaugeDto(sts: s, rows: r, unit: _unit);
   }
 
-  Future<void> _seedFromWeight(YarnWeightKind w) async {
-    final g = await ref.read(knitRepositoryProvider).seedGauge(w);
-    if (!mounted) return;
+  /// Seed the gauge from a measured wraps-per-inch: classify it into a Craft Yarn Council weight band
+  /// ([yarnWeightFromWpi]) and fill the stitch field with that band's typical stockinette gauge, plus
+  /// a row estimate at the stockinette ~4:3 row:stitch ratio. An editable starting point the knitter
+  /// overrides with their own swatch. Pure (no FFI); the WPI field replaces the old yarn-weight picker.
+  void _seedFromWpi(YarnWeight w) {
+    final sts = w.stitchesPerWindow;
     setState(() {
-      _weight = w;
-      _unit = g.unit;
-      _sts.text = _fmt(g.sts);
-      _rows.text = _fmt(g.rows);
+      _unit = UnitKind.inches; // CYC gauges are per 4 in
+      _sts.text = _fmt(sts);
+      _rows.text = _fmt(sts * 4 / 3);
       _applied = false;
     });
   }
@@ -143,14 +147,23 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
             // --- Gauge: seed or type, then apply onto the pattern. ---
             Text('Gauge (per $_windowLabel)', style: text.titleSmall),
             const SizedBox(height: 8),
-            DropdownButton<YarnWeightKind>(
-              value: _weight,
-              isExpanded: true,
-              hint: const Text('Seed from a yarn weight'),
-              onChanged: (w) => w == null ? null : _seedFromWeight(w),
-              items: [
-                for (final w in YarnWeightKind.values)
-                  DropdownMenuItem(value: w, child: Text(_weightLabel(w))),
+            // Seed from a measured wraps-per-inch (replaces the yarn-weight picker): wrap the yarn
+            // snugly around a ruler for an inch, count the wraps, and seed the gauge from the inferred
+            // weight band.
+            Row(
+              children: [
+                SizedBox(
+                  width: 150,
+                  child: TextField(
+                    controller: _wpi,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(labelText: 'Wraps per inch', isDense: true),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: _wpiSeed()),
               ],
             ),
             Form(
@@ -177,7 +190,7 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
                   ),
               ],
             ),
-            Text('Seed from a yarn weight, or enter your swatch. Stitches/rows per $_windowLabel.',
+            Text('Seed from a measured WPI, or enter your swatch. Stitches/rows per $_windowLabel.',
                 style: muted),
 
             const Divider(height: 32),
@@ -270,16 +283,26 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
     );
   }
 
-  static String _weightLabel(YarnWeightKind w) => switch (w) {
-        YarnWeightKind.lace => 'Lace (0)',
-        YarnWeightKind.superFine => 'Super fine (1)',
-        YarnWeightKind.fine => 'Fine (2)',
-        YarnWeightKind.light => 'Light (3)',
-        YarnWeightKind.medium => 'Medium / worsted (4)',
-        YarnWeightKind.bulky => 'Bulky (5)',
-        YarnWeightKind.superBulky => 'Super bulky (6)',
-        YarnWeightKind.jumbo => 'Jumbo (7)',
-      };
+  /// The WPI -> yarn-weight seed beside the WPI field: once a usable WPI is typed, a tappable button
+  /// naming the inferred weight band and filling the stitch/row gauge fields; a muted hint otherwise.
+  Widget _wpiSeed() {
+    final weight = yarnWeightFromWpi(double.tryParse(_wpi.text.trim()) ?? 0);
+    final muted = Theme.of(context)
+        .textTheme
+        .bodySmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    if (weight.stitchesPerWindow <= 0) {
+      return Text('Type a WPI to estimate the yarn weight', style: muted);
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton(
+        onPressed: () => _seedFromWpi(weight),
+        child: Text('Use ${weight.stitchesPerWindow.round()} sts (${weight.name})',
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
+    );
+  }
 
   // Ceilings keep the f32 estimate finite and the u32 wire fields from truncating; the engine guards
   // again as a backstop.

@@ -180,6 +180,166 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'worked as a tube on circular or double-pointed needles, so every round faces the right side.',
   ),
   GlossaryTerm(
+    term: 'Beginning',
+    aka: 'beg',
+    definition: 'the start of a row or round.',
+  ),
+  GlossaryTerm(
+    term: 'Decrease',
+    aka: 'dec',
+    definition: 'working stitches together to reduce the stitch count.',
+  ),
+  GlossaryTerm(
+    term: 'Increase',
+    aka: 'inc',
+    definition: 'adding a stitch to widen the work.',
+  ),
+  GlossaryTerm(
+    term: 'Double-pointed needles',
+    aka: 'DPN',
+    definition: 'short needles pointed at both ends, for knitting small tubes in the round.',
+  ),
+  GlossaryTerm(
+    term: 'Follow',
+    aka: 'foll',
+    definition: 'work as the named row, round, or chart directs.',
+  ),
+  GlossaryTerm(
+    term: 'Knitwise',
+    aka: 'kwise',
+    definition: 'insert the needle as if to knit.',
+  ),
+  GlossaryTerm(
+    term: 'Purlwise',
+    aka: 'pwise',
+    definition: 'insert the needle as if to purl.',
+  ),
+  GlossaryTerm(
+    term: 'Through the back loop',
+    aka: 'tbl',
+    definition: 'work into the back of the loop instead of the front, twisting the stitch.',
+  ),
+  GlossaryTerm(
+    term: 'Together',
+    aka: 'tog',
+    definition: 'work the named stitches as one, as in k2tog (knit two together).',
+  ),
+  GlossaryTerm(
+    term: 'Knit front and back',
+    aka: 'kfb',
+    definition: 'knit into the front then the back of one stitch, an increase of one.',
+  ),
+  GlossaryTerm(
+    term: 'Knit back and front',
+    aka: 'kbf',
+    definition: 'knit into the back then the front of one stitch, the mirror of kfb.',
+  ),
+  GlossaryTerm(
+    term: 'Knit three together',
+    aka: 'k3tog',
+    definition: 'a right-leaning double decrease, three stitches become one.',
+  ),
+  GlossaryTerm(
+    term: 'Make one',
+    aka: 'M1',
+    definition: 'lift the strand between two stitches and work it to add a stitch.',
+  ),
+  GlossaryTerm(
+    term: 'Make one left',
+    aka: 'M1L',
+    definition: 'a left-leaning lifted increase.',
+  ),
+  GlossaryTerm(
+    term: 'Make one right',
+    aka: 'M1R',
+    definition: 'a right-leaning lifted increase.',
+  ),
+  GlossaryTerm(
+    term: 'Make one purlwise',
+    aka: 'M1P',
+    definition: 'a lifted increase worked as a purl.',
+  ),
+  GlossaryTerm(
+    term: 'Purl front and back',
+    aka: 'pfb',
+    definition: 'purl into the front then the back of one stitch, an increase of one.',
+  ),
+  GlossaryTerm(
+    term: 'Purl two together',
+    aka: 'p2tog',
+    definition: 'a decrease worked from the purl side, two stitches become one.',
+  ),
+  GlossaryTerm(
+    term: 'Slip',
+    aka: 'sl',
+    definition: 'move a stitch to the other needle without working it.',
+  ),
+  GlossaryTerm(
+    term: 'Slip slip purl',
+    aka: 'ssp',
+    definition: 'a left-leaning purl-side decrease, two stitches become one.',
+  ),
+  GlossaryTerm(
+    term: 'Slip, knit 2 together, pass over',
+    aka: 'sk2po',
+    definition: 'slip one, knit two together, pass the slipped stitch over, a double decrease.',
+  ),
+  GlossaryTerm(
+    term: 'Slip 2, knit, pass over',
+    aka: 's2kpo',
+    definition: 'slip two together knitwise, knit one, pass the two slipped over, a centered double decrease (the cdd in the chart).',
+  ),
+  GlossaryTerm(
+    term: 'Stitch',
+    aka: 'st',
+    definition: 'one loop on the needle; the plural is sts.',
+  ),
+  GlossaryTerm(
+    term: 'Remaining',
+    aka: 'rem',
+    definition: 'the stitches left on the needle.',
+  ),
+  GlossaryTerm(
+    term: 'Pattern',
+    aka: 'patt',
+    definition: 'the established stitch sequence to repeat.',
+  ),
+  GlossaryTerm(
+    term: 'Place marker',
+    aka: 'PM',
+    definition: 'slip a marker onto the needle to flag a position.',
+  ),
+  GlossaryTerm(
+    term: 'Slip marker',
+    aka: 'SM',
+    definition: 'move the marker across as you reach it, working on.',
+  ),
+  GlossaryTerm(
+    term: 'Reverse stockinette',
+    aka: 'rev St st',
+    definition: 'purl on right-side rows and knit on wrong-side rows, the bumpy face of stockinette.',
+  ),
+  GlossaryTerm(
+    term: 'With yarn in back',
+    aka: 'wyib',
+    definition: 'hold the working yarn behind the work, often while slipping a stitch.',
+  ),
+  GlossaryTerm(
+    term: 'With yarn in front',
+    aka: 'wyif',
+    definition: 'hold the working yarn in front of the work.',
+  ),
+  GlossaryTerm(
+    term: 'Wrap and turn',
+    aka: 'w&t',
+    definition: 'wrap the next stitch and turn mid-row to work a short row.',
+  ),
+  GlossaryTerm(
+    term: 'Left hand / right hand',
+    aka: 'LH/RH',
+    definition: 'which needle or hand a step refers to.',
+  ),
+  GlossaryTerm(
     term: 'Nalbinding',
     aka: 'nålbinding',
     definition: 'an ancient single-needle looping craft, worked in a spiral with short lengths of yarn; predates knitting and crochet, and does not unravel when cut.',

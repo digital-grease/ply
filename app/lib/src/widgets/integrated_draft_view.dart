@@ -237,10 +237,14 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       if (_activePointer != null) return;
       final hit = layout.hitTest(e.localPosition);
       if (hit == null) return;
-      // Selecting a treadling ROW arms the dimensions bar's per-row count stepper for it; painting
-      // anywhere else clears that selection (so the stepper only shows for the active row).
+      // Selecting a treadling ROW (its treadle cells OR its weft-color marker) arms the dimensions
+      // bar's per-row steppers for it; painting anywhere else clears that selection (so the steppers
+      // only show for the active row). The marker shares the right band's entry rows, so hit.row is
+      // the same entry index in both.
       ref.read(selectedTreadlingEntryProvider.notifier).state =
-          hit.region == DraftRegion.right ? hit.row : null;
+          (hit.region == DraftRegion.right || hit.region == DraftRegion.weftMarker)
+              ? hit.row
+              : null;
       _activePointer = e.pointer;
       notifier.beginStroke(hit);
     }
