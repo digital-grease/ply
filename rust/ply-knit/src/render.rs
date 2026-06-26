@@ -11,7 +11,7 @@
 //! not the full CYC/StitchMastery glyph font — that fidelity is a later refinement. The whole buffer
 //! is computed in Rust and handed across the FFI in one shot (never per cell).
 
-use crate::pattern::{builtin, Cell, KnitPattern};
+use crate::pattern::{builtin, Cell, Cross, KnitPattern};
 use ply_common::Color;
 
 /// A flat RGBA8 image buffer (same shape as weaving's, but local so `ply-knit` stays independent).
@@ -127,10 +127,21 @@ fn draw_cell(
     let cy = y0 + s / 2;
 
     // A cable is drawn across its whole span; everything else fits one cell.
-    if pattern.legend.get(stitch).and_then(|d| d.cable).is_some() {
-        // Two crossing diagonals across the span = a cable crossing.
-        draw_line(px, w, h, left, bottom, right, top, sym);
-        draw_line(px, w, h, left, top, right, bottom, sym);
+    if let Some(cable) = pattern.legend.get(stitch).and_then(|d| d.cable) {
+        // A cable crossing reads as two diagonals, but RC and LC must look different (the chart's
+        // only cue to which way the cable leans). The OVER strand is a continuous diagonal whose
+        // lean encodes the cross direction; the UNDER strand is the opposite diagonal drawn BROKEN
+        // at the crossing so it reads as passing behind. Right cross leans "/", left cross "\".
+        match cable.direction {
+            Cross::Right => {
+                draw_line(px, w, h, left, bottom, right, top, sym); // "/" over (continuous)
+                draw_broken_line(px, w, h, left, top, right, bottom, sym); // "\" under (behind)
+            }
+            Cross::Left => {
+                draw_line(px, w, h, left, top, right, bottom, sym); // "\" over (continuous)
+                draw_broken_line(px, w, h, left, bottom, right, top, sym); // "/" under (behind)
+            }
+        }
         return;
     }
 
@@ -226,6 +237,18 @@ fn draw_line(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, x1: usize,
             y0 += sy;
         }
     }
+}
+
+/// A diagonal drawn with a gap across its middle (~22% of the span): the two end stubs only, so a
+/// crossing strand reads as passing *behind* the continuous (over) strand of a cable.
+fn draw_broken_line(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, x1: usize, y1: usize, c: Color) {
+    let (x0i, y0i, x1i, y1i) = (x0 as i64, y0 as i64, x1 as i64, y1 as i64);
+    // Linear interpolate along the segment with integer math (num/den of the way from p0 to p1).
+    let lerp = |a: i64, b: i64, num: i64, den: i64| (a + (b - a) * num / den) as usize;
+    let (ax, ay) = (lerp(x0i, x1i, 39, 100), lerp(y0i, y1i, 39, 100));
+    let (bx, by) = (lerp(x0i, x1i, 61, 100), lerp(y0i, y1i, 61, 100));
+    draw_line(px, w, h, x0, y0, ax, ay, c); // first stub (start -> 39%)
+    draw_line(px, w, h, bx, by, x1, y1, c); // second stub (61% -> end)
 }
 
 /// A filled disc (midpoint, brute-force over the bounding box).
@@ -401,5 +424,29 @@ mod tests {
             assert_ne!(px_at(&img, x, 5), [NO_STITCH.r, NO_STITCH.g, NO_STITCH.b], "no grey under a cable");
         }
         assert!(saw_symbol, "the cable crossing is drawn");
+    }
+
+    #[test]
+    fn left_and_right_cross_cables_render_differently() {
+        // Same geometry, opposite cross direction -> the rasters must differ (the over strand leans
+        // the other way and the broken under strand mirrors it).
+        fn cable_img(dir: Cross) -> RgbaImage {
+            let cable = CableDef { front: 2, back: 2, direction: dir, front_purl: false, back_purl: false };
+            let mut legend = StitchLegend::builtin();
+            legend.stitches.push(StitchDef {
+                symbol: "2/2".into(), consumes: 4, produces: 4, ws_variant: None,
+                cable: Some(cable), macro_rows: 1,
+            });
+            let cable_id = legend.stitches.len() - 1;
+            let ns = Cell::of(builtin::NO_STITCH);
+            let row = Row::plain(vec![Cell::of(cable_id), ns, ns, ns]);
+            let mut p = pat(4, vec![row], vec![Color::WHITE]);
+            p.legend = legend;
+            render_rgba(&p, 12)
+        }
+        let rc = cable_img(Cross::Right);
+        let lc = cable_img(Cross::Left);
+        assert_eq!((rc.width, rc.height), (lc.width, lc.height));
+        assert_ne!(rc.pixels, lc.pixels, "a right cross must not look identical to a left cross");
     }
 }

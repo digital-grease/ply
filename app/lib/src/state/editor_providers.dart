@@ -83,6 +83,12 @@ final zoomCellProvider = StateProvider<int>((ref) => 16);
 /// Ephemeral view chrome, off EditorState like [zoomCellProvider].
 final zoomUserSetProvider = StateProvider<bool>((ref) => false);
 
+/// The SELECTED compressed-treadling entry (run) index, or null when nothing is selected. Tapping a
+/// treadling row selects it; the dimensions bar's per-row count stepper edits this entry. Ephemeral
+/// view chrome (like the zoom) — reset on load. A consumer treats an index past the live entry count
+/// (a run that merged away) as "no selection".
+final selectedTreadlingEntryProvider = StateProvider<int?>((ref) => null);
+
 /// The loom type of the open draft. Seeded on [DraftEditorNotifier.load] from the sidecar
 /// [DraftMeta] (a saved draft) or the new-draft choice, written back into the sidecar on save.
 /// Ephemeral editor chrome (like [zoomCellProvider]) — it is metadata, not part of the rendered

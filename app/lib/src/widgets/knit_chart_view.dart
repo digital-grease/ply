@@ -49,6 +49,13 @@ class KnitChartView extends ConsumerWidget {
     final labelColor = cs.onSurfaceVariant;
     final select = ref.watch(knitToolProvider) == KnitTool.select;
     final selection = ref.watch(knitSelectionProvider);
+    // The inline validation bar is a Column sibling BELOW the chart; when issues appear it steals
+    // viewport height and the preserved scroll offset would hide the bottom — the FIRST — chart row.
+    // Reserve scroll clearance below the chart sized to the bar's collapsed/expanded footprint (zero
+    // when the chart is clean) so the first row can always be scrolled clear of it.
+    final hasIssues = ref.watch(knitValidationProvider.select((v) => v.valueOrNull?.isNotEmpty ?? false));
+    final issuesExpanded = ref.watch(knitIssuesExpandedProvider);
+    final bottomClearance = !hasIssues ? 0.0 : (issuesExpanded ? 210.0 : 56.0);
     // Map a pointer position (chart-local) to a clamped (row, col); row 0 is at the BOTTOM.
     (int, int) cellAt(Offset p) {
       final col = (p.dx ~/ cell).clamp(0, cols - 1);
@@ -60,6 +67,7 @@ class KnitChartView extends ConsumerWidget {
       scrollDirection: Axis.vertical,
       // SELECT freezes the scroll so a drag selects a region instead of scrolling.
       physics: select ? const NeverScrollableScrollPhysics() : null,
+      padding: EdgeInsets.only(bottom: bottomClearance),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         physics: select ? const NeverScrollableScrollPhysics() : null,

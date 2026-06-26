@@ -430,6 +430,112 @@ void main() {
     });
   });
 
+  group('compressed treadling (entry reducers)', () {
+    // treadle 1 x3, then treadle 2 x1 -> two runs. weftColors track the picks.
+    DraftDoc merging() => paintableTreadled().copyWith(
+          drive: DraftTreadled(
+            tieup: const [
+              [1],
+              [2],
+              [3],
+              [4],
+            ],
+            treadling: const [
+              [1],
+              [1],
+              [1],
+              [2],
+            ],
+          ),
+          weftColors: const [1, 1, 1, 0],
+        );
+
+    test('entries collapse maximal runs', () {
+      final s = EditorState(draft: merging());
+      expect(s.entries.map((e) => e.shed).toList(), [
+        [1],
+        [2],
+      ]);
+      expect(s.entries.map((e) => e.count).toList(), [3, 1]);
+      expect(s.entries.map((e) => e.startPick).toList(), [0, 3]);
+    });
+
+    test('isCellOn reads the run shed (row = entry index)', () {
+      final s = EditorState(draft: merging());
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 1, 0)), isTrue);
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 2, 0)), isFalse);
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 2, 1)), isTrue);
+    });
+
+    test('painting a right cell sets the WHOLE run shed', () {
+      final s = EditorState(draft: merging())
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.right, 3, 0), on: true)
+          .endStroke();
+      expect((s.draft.drive as DraftTreadled).treadling, [
+        [3],
+        [3],
+        [3],
+        [2],
+      ]);
+      expect(s.undo.length, 1, reason: 'one undo entry for the stroke');
+    });
+
+    test('setEntryCount GROWS by inserting picks that copy the run shed + color', () {
+      final s = EditorState(draft: merging()).setEntryCount(1, 3); // treadle 2 x1 -> x3
+      final t = s.draft.drive as DraftTreadled;
+      expect(t.treadling, [
+        [1],
+        [1],
+        [1],
+        [2],
+        [2],
+        [2],
+      ]);
+      expect(s.draft.weftColors, [1, 1, 1, 0, 0, 0], reason: 'inserted picks copy the run color');
+      expect(s.draft.picks, 6);
+    });
+
+    test('setEntryCount SHRINKS by removing picks, keeping weftColors coupled', () {
+      final s = EditorState(draft: merging()).setEntryCount(0, 1); // treadle 1 x3 -> x1
+      final t = s.draft.drive as DraftTreadled;
+      expect(t.treadling, [
+        [1],
+        [2],
+      ]);
+      expect(s.draft.weftColors, [1, 0]);
+      expect(s.draft.picks, 2);
+    });
+
+    test('setEntryCount is a no-op when the count is unchanged', () {
+      final s0 = EditorState(draft: merging());
+      expect(identical(s0.setEntryCount(0, 3), s0), isTrue);
+    });
+
+    test('addEntry appends a blank one-pick row', () {
+      final s = EditorState(draft: merging()).addEntry();
+      final t = s.draft.drive as DraftTreadled;
+      expect(t.treadling, [
+        [1],
+        [1],
+        [1],
+        [2],
+        <int>[],
+      ]);
+      expect(s.draft.weftColors.length, 5);
+      expect(s.entries.length, 3);
+    });
+
+    test('removeEntry removes a run and its weftColors', () {
+      final s = EditorState(draft: merging()).removeEntry(0); // drop the treadle-1 run (3 picks)
+      final t = s.draft.drive as DraftTreadled;
+      expect(t.treadling, [
+        [2],
+      ]);
+      expect(s.draft.weftColors, [0]);
+    });
+  });
+
   group('EditorState.commitEdit', () {
     test('replaces the draft as ONE undo entry; undo restores', () {
       final s0 = EditorState(draft: paintableTreadled());

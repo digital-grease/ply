@@ -129,6 +129,11 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
   String get _longUnit => _metric ? 'm' : 'yd';
   double _toLong(double v) => v / (_metric ? 100 : 36);
 
+  /// Inverse of [_toLong]: a long-unit length (yd/m) back to the short unit (in/cm). Used where a
+  /// long-unit INPUT must feed an engine term expressed per short unit (e.g. picks-per-inch ×
+  /// woven-length must share one unit, so a woven length entered in yards converts to inches first).
+  double _fromLong(double v) => v * (_metric ? 100 : 36);
+
   Future<void> _suggestSett() async {
     if (!_settForm.currentState!.validate()) return;
     final wpi = double.parse(_wpi.text.trim());
@@ -154,7 +159,10 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
     final weft = await ref.read(repositoryProvider).estimateWeftPlan(
           picksPerUnit: double.parse(_ppi.text.trim()),
           width: double.parse(_width.text.trim()),
-          wovenLength: double.parse(_wovenLength.text.trim()),
+          // Woven length is entered in the long unit (yd/m) but picks-per-unit is per short unit, so
+          // bring it back to the short unit (in/cm) before the engine multiplies the two into a pick
+          // count.
+          wovenLength: _fromLong(double.parse(_wovenLength.text.trim())),
           items: int.parse(_weftItems.text.trim()),
           takeupPercent: double.parse(_weftTakeup.text.trim()),
         );
@@ -326,7 +334,9 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
                   // in that same unit), so label it per-unit, not a hardcoded "per inch".
                   _numField(_ppi, 'Picks per $_unit', _positive),
                   _numField(_width, 'Woven width ($_unit)', _positive),
-                  _numField(_wovenLength, 'Woven length ($_unit)', _positive),
+                  // Woven length runs long, so it is entered in the long unit (yd/m) to match the
+                  // warp section and the total-yarn output (no inch input feeding a yardage result).
+                  _numField(_wovenLength, 'Woven length ($_longUnit)', _positive),
                   _numField(_weftItems, 'Items', _positiveInt, decimal: false),
                   _numField(_weftTakeup, 'Take-up + selvedge (%)', _nonNegative),
                 ],

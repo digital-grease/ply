@@ -147,32 +147,39 @@ pub fn parse(text: &str) -> Result<Draft> {
             .collect(),
     );
 
-    // Drive: prefer an explicit LIFTPLAN, otherwise TIEUP + TREADLING.
-    let drive = if let Some(lp) = ini.section("LIFTPLAN") {
+    // Drive. A WIF may ship a treadle loom's [TIEUP]+[TREADLING], a dobby's [LIFTPLAN], or — from some
+    // exporters — BOTH. Choose by what actually carries data: prefer the authored tie-up + treadling
+    // whenever the TREADLING has data. (The old code preferred ANY present [LIFTPLAN] and so silently
+    // dropped the tie-up when both were present — the "import pasted the pattern into the treadling and
+    // left no tie-up" bug.) Fall back to the liftplan only when there is no treadling data but a
+    // [LIFTPLAN] section is present — even all-empty, since its rows still define the pick count via the
+    // [WEFT] Threads recovery.
+    let tieup = TieUp(
+        ini.section("TIEUP")
+            .map(|s| parse_indexed_lists(s, treadles as usize))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| v.into_iter().map(ShaftId).collect())
+            .collect(),
+    );
+    let treadling = Treadling(
+        ini.section("TREADLING")
+            .map(|s| parse_indexed_lists(s, weft_threads))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| v.into_iter().map(TreadleId).collect())
+            .collect(),
+    );
+    let treadling_has_data = treadling.0.iter().any(|r| !r.is_empty());
+    let drive = if treadling_has_data || ini.section("LIFTPLAN").is_none() {
+        Drive::Treadled { tieup, treadling }
+    } else {
         Drive::Liftplan(Liftplan(
-            parse_indexed_lists(lp, weft_threads)
+            parse_indexed_lists(ini.section("LIFTPLAN").unwrap(), weft_threads)
                 .into_iter()
                 .map(|v| v.into_iter().map(ShaftId).collect())
                 .collect(),
         ))
-    } else {
-        let tieup = TieUp(
-            ini.section("TIEUP")
-                .map(|s| parse_indexed_lists(s, treadles as usize))
-                .unwrap_or_default()
-                .into_iter()
-                .map(|v| v.into_iter().map(ShaftId).collect())
-                .collect(),
-        );
-        let treadling = Treadling(
-            ini.section("TREADLING")
-                .map(|s| parse_indexed_lists(s, weft_threads))
-                .unwrap_or_default()
-                .into_iter()
-                .map(|v| v.into_iter().map(TreadleId).collect())
-                .collect(),
-        );
-        Drive::Treadled { tieup, treadling }
     };
 
     // Colors. `[COLOR PALETTE] Range` (default 255) sets the color-table component scale; scale to
@@ -228,7 +235,7 @@ pub fn parse(text: &str) -> Result<Draft> {
         return Err(WeaveError::WifParse("no recognizable draft data (missing WEAVING/THREADING)".into()));
     }
 
-    Ok(Draft {
+    let draft = Draft {
         name,
         shafts,
         treadles,
@@ -241,8 +248,19 @@ pub fn parse(text: &str) -> Result<Draft> {
         weft_thickness,
         notes,
         retained,
-    })
+    };
+    // A dobby-style WIF (a [LIFTPLAN] with no tie-up) would otherwise show the whole lift pattern in
+    // the treadling column with no tie-up. When the plan is simple enough to weave on a treadle loom,
+    // factor it into the conventional tie-up + treadling (identical cloth); a too-complex plan stays a
+    // liftplan. A treadled import is left untouched (factor_liftplan returns None for it).
+    let factored = draft.factor_liftplan(MAX_FACTOR_TREADLES);
+    Ok(factored.unwrap_or(draft))
 }
+
+/// Cap on the distinct lifts a `[LIFTPLAN]`-only WIF may have for import to factor it into a tie-up +
+/// treadling (see [`Draft::factor_liftplan`]). Generous enough for hand-weaving (overshot, twills,
+/// summer-and-winter all factor to a handful of treadles); a more complex dobby plan stays a liftplan.
+const MAX_FACTOR_TREADLES: usize = 40;
 
 /// Parse a per-thread `[WARP/WEFT THICKNESS]` section (`index=value`) into a length-`n` `Vec<f32>`.
 /// Returns EMPTY when the section is absent so the "all-default uniform" convention survives. A
@@ -714,6 +732,85 @@ Threads=4
         assert!(d.warp_thickness.is_empty() && d.weft_thickness.is_empty());
         let text = write(&d);
         assert!(!text.contains("THICKNESS"));
+    }
+
+    /// A WIF that ships BOTH a [LIFTPLAN] and an authored [TIEUP]+[TREADLING] keeps the tie-up: the
+    /// old code preferred any present liftplan and dropped the tie-up (the import-loses-tieup bug).
+    #[test]
+    fn both_liftplan_and_treadling_keeps_the_authored_tieup() {
+        let wif = "\
+[WIF]
+[WEAVING]
+Shafts=4
+Treadles=2
+Rising Shed=true
+[WARP]
+Threads=4
+[WEFT]
+Threads=2
+[THREADING]
+1=1
+2=2
+3=3
+4=4
+[TIEUP]
+1=1,2
+2=3,4
+[TREADLING]
+1=1
+2=2
+[LIFTPLAN]
+1=1,2
+2=3,4
+";
+        let d = parse(wif).unwrap();
+        match &d.drive {
+            Drive::Treadled { tieup, treadling } => {
+                assert_eq!(tieup.0.len(), 2, "the authored tie-up survives");
+                assert!(tieup.0.iter().all(|t| !t.is_empty()));
+                assert_eq!(treadling.0.len(), 2);
+            }
+            _ => panic!("a WIF with TIEUP+TREADLING data must import as treadled, not liftplan"),
+        }
+    }
+
+    /// A dobby-style WIF (a [LIFTPLAN] with no tie-up) factors into the conventional tie-up +
+    /// treadling on import — so it shows a tie-up instead of the whole pattern in the treadling.
+    #[test]
+    fn liftplan_only_wif_factors_into_a_tieup() {
+        let wif = "\
+[WIF]
+[WEAVING]
+Shafts=4
+Treadles=0
+Rising Shed=true
+[WARP]
+Threads=4
+[WEFT]
+Threads=4
+[THREADING]
+1=1
+2=2
+3=3
+4=4
+[LIFTPLAN]
+1=1,2
+2=3,4
+3=1,2
+4=3,4
+";
+        let d = parse(wif).unwrap();
+        match &d.drive {
+            Drive::Treadled { tieup, treadling } => {
+                assert_eq!(tieup.0.len(), 2, "two distinct lifts -> two treadles");
+                assert_eq!(treadling.0.len(), 4);
+            }
+            _ => panic!("a simple liftplan-only WIF should factor to a treadled draft"),
+        }
+        // Cloth is unchanged: the factored tie-up raises exactly the original lift sets.
+        assert_eq!(d.raised_shafts(0), vec![ShaftId(1), ShaftId(2)]);
+        assert_eq!(d.raised_shafts(1), vec![ShaftId(3), ShaftId(4)]);
+        assert_eq!(d.raised_shafts(2), vec![ShaftId(1), ShaftId(2)]);
     }
 
     /// The editor's Treadled->Liftplan convert sets the draft structurally-dirty, so the NEXT save

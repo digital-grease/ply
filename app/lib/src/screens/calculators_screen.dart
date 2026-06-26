@@ -21,6 +21,8 @@ class CalculatorsScreen extends ConsumerStatefulWidget {
 
 class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
   final _gaugeSts = TextEditingController(text: '20');
+  // Wraps-per-inch -> a yarn-weight guess that can seed the stitch gauge above.
+  final _wpi = TextEditingController();
   // Cast-on.
   final _coWidth = TextEditingController(text: '20');
   final _coEase = TextEditingController(text: '2');
@@ -39,7 +41,7 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
   @override
   void dispose() {
     for (final c in [
-      _gaugeSts, _coWidth, _coEase, _coRepeat, _yWidth, _yLength,
+      _gaugeSts, _wpi, _coWidth, _coEase, _coRepeat, _yWidth, _yLength,
       _rzPatternGauge, _rzPatternSts, _ddCurrent, _ddChange,
     ]) {
       c.dispose();
@@ -101,6 +103,16 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
                     onSelectionChanged: (s) => ref.read(appSettingsProvider.notifier).setUnit(
                         s.first ? MeasureUnit.centimeters : MeasureUnit.inches),
                   ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Don't know your gauge? Measure WPI (wrap the yarn around a ruler for an inch) to
+              // estimate the yarn weight and seed the stitch gauge above.
+              Row(
+                children: [
+                  Expanded(child: _num(_wpi, 'Wraps per inch (WPI)')),
+                  const SizedBox(width: 12),
+                  Expanded(child: _wpiSeed()),
                 ],
               ),
             ],
@@ -211,6 +223,27 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
         onChanged: (_) => setState(() {}),
         decoration: InputDecoration(labelText: label, isDense: true),
       );
+
+  /// The WPI -> yarn-weight seed beside the WPI field: once a usable WPI is typed, a tappable button
+  /// naming the inferred weight and filling the stitch-gauge field above; a muted hint otherwise.
+  Widget _wpiSeed() {
+    final weight = yarnWeightFromWpi(_d(_wpi));
+    if (weight.stitchesPerWindow <= 0) {
+      return Text(
+        'Estimates yarn weight',
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      );
+    }
+    final sts = weight.stitchesPerWindow.round();
+    return OutlinedButton(
+      onPressed: () => setState(() => _gaugeSts.text = '$sts'),
+      child: Text('Use $sts sts (${weight.name})',
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+    );
+  }
 
   Widget _result(String text) => Padding(
         padding: const EdgeInsets.only(top: 12),

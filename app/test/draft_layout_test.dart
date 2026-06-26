@@ -42,7 +42,39 @@ void main() {
       expect(l.warpColorRect, const Rect.fromLTWH(10, 0, 40, 10));
       // Weft colors: left strip, picks tall, sharing the drawdown's Y+height (shifts with it).
       expect(l.weftColorRect, const Rect.fromLTWH(0, 34, 10, 30));
-      expect(l.totalSize, const Size(104, 64)); // +4 gutter on each axis
+      // Weft markers: a read-only mirror flush to the RIGHT of the right band (x = rightRect.right).
+      expect(l.weftMarkerRect, const Rect.fromLTWH(104, 34, 10, 30));
+      expect(l.totalSize, const Size(114, 64)); // +4 gutter each axis, +10 weft-marker column
+    });
+
+    test('the weft markers mirror the right band (same Y/height), flush to its right', () {
+      final l = treadled();
+      expect(l.weftMarkerRect.top, l.rightRect.top);
+      expect(l.weftMarkerRect.height, l.rightRect.height);
+      expect(l.weftMarkerRect.left, l.rightRect.right, reason: 'flush to the right of the treadling');
+    });
+
+    test('entries defaults to picks (uncompressed) when omitted', () {
+      final l = treadled();
+      expect(l.entries, l.picks);
+      expect(l.right.rows, l.picks);
+      expect(l.rightRect.height, l.drawdownRect.height);
+    });
+
+    test('a COMPRESSED treadling shrinks the right band; the drawdown + totalSize are unchanged', () {
+      // 3 picks collapse to 2 entry rows.
+      final l = DraftLayout(
+          ends: 4, picks: 3, shafts: 2, treadles: 5, hasTieup: true, cell: 10, entries: 2);
+      expect(l.entries, 2);
+      // Right band + its weft marker are ENTRY-tall (2 rows = 20px), shorter than the drawdown.
+      expect(l.rightRect.height, 20);
+      expect(l.right.rows, 2);
+      expect(l.weftMarkerRect.height, 20);
+      expect(l.weftMarker.rows, 2);
+      // The drawdown + left weft band stay PICK-tall; totalSize is drawdown-driven, so unchanged.
+      expect(l.drawdownRect.height, 30);
+      expect(l.weftColorRect.height, 30);
+      expect(l.totalSize, const Size(114, 64));
     });
 
     test('color bands are column/row aligned with the cloth', () {
@@ -197,9 +229,9 @@ void main() {
   });
 
   group('DraftLayout.fitCellLevel (auto-fit the open pitch to the viewport)', () {
-    // Same dims as treadled(): width = (1 + ends 4 + treadles 5) = 10 cells, height = (1 + shafts 2
-    // + picks 3) = 6 cells, plus the gutter G = round(0.4S), so totalSize at pitch S is
-    // (10S + G, 6S + G). E.g. S=16 -> G=6 -> (166, 102); S=12 -> G=5 -> (125, 77).
+    // Same dims as treadled(): width = (1 weft band + ends 4 + treadles 5 + 1 weft marker) = 11
+    // cells, height = (1 + shafts 2 + picks 3) = 6 cells, plus the gutter G = round(0.4S), so
+    // totalSize at pitch S is (11S + G, 6S + G). E.g. S=16 -> G=6 -> (182, 102); S=12 -> G=5 -> (137, 77).
     int fit(Size available) => DraftLayout.fitCellLevel(
           ends: 4,
           picks: 3,
@@ -211,19 +243,19 @@ void main() {
         );
 
     test('a roomy viewport picks the LARGEST level that fits', () {
-      expect(fit(const Size(1000, 1000)), 48); // 499x307 fits
+      expect(fit(const Size(1000, 1000)), 48); // 547x307 fits
     });
     test('a tight WIDTH binds the level', () {
-      expect(fit(const Size(200, 1000)), 16); // 16 -> 166 wide fits; 24 -> 250 wide overflows
+      expect(fit(const Size(200, 1000)), 16); // 16 -> 182 wide fits; 24 -> 274 wide overflows
     });
     test('a tight HEIGHT binds the level', () {
       expect(fit(const Size(1000, 100)), 12); // 12 -> 77 tall fits; 16 -> 102 tall overflows
     });
     test('exact fit is inclusive (<=)', () {
-      expect(fit(const Size(166, 102)), 16); // pitch 16 with gutter: 166x102 exactly
+      expect(fit(const Size(182, 102)), 16); // pitch 16 with gutter: 182x102 exactly
     });
     test('falls back to the SMALLEST level when even it overflows (the draft then scrolls)', () {
-      expect(fit(const Size(50, 50)), 8); // 8 -> 83x51 overflows 50 but is the floor
+      expect(fit(const Size(50, 50)), 8); // 8 -> 91x51 overflows 50 but is the floor
     });
   });
 }

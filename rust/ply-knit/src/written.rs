@@ -11,42 +11,47 @@
 //! chart, not the written line (the line names stitches). A `NoStitch` cell emits nothing; a cable
 //! emits its one symbol (the columns it covers are no-stitch and skipped).
 
-use crate::pattern::{builtin, Construction, KnitPattern, Side, StitchDef};
+use crate::pattern::{builtin, Construction, KnitPattern, Side};
+use std::collections::{BTreeSet, HashMap};
 
 /// One written line per chart row, bottom-to-top (row 1 = the first worked).
 pub fn to_written(pattern: &KnitPattern) -> Vec<String> {
     let legend = &pattern.legend;
+    // Colorwork labels (MC / CC / CC1.. ) — `None` when the chart is a single colour, which keeps a
+    // plain stitch line uncluttered (and matches the no-colorwork V1 behaviour).
+    let labels = color_labels(pattern);
     let mut lines = Vec::with_capacity(pattern.chart.rows.len());
 
     for (r, row) in pattern.chart.rows.iter().enumerate() {
         let side = pattern.row_side(r);
         let rs = matches!(side, Side::Rs);
 
-        // Reading order: RS right-to-left, WS left-to-right.
-        let ordered: Vec<&StitchDef> = {
-            let cells: Box<dyn Iterator<Item = usize>> = if rs {
-                Box::new((0..row.cells.len()).rev())
-            } else {
-                Box::new(0..row.cells.len())
-            };
-            cells
-                .filter_map(|c| {
-                    let cell = row.cells[c];
-                    if cell.stitch == builtin::NO_STITCH {
-                        return None;
-                    }
-                    let def = legend.get(cell.stitch)?;
-                    // WS resolution: a stitch worked on the wrong side is emitted as its ws_variant.
-                    Some(if rs {
-                        def
-                    } else {
-                        def.ws_variant.and_then(|id| legend.get(id)).unwrap_or(def)
-                    })
-                })
-                .collect()
+        // Reading order: RS right-to-left, WS left-to-right. Each kept cell becomes a
+        // (stitch symbol, resolved colour index) pair; no-stitch cells emit nothing.
+        let order: Box<dyn Iterator<Item = usize>> = if rs {
+            Box::new((0..row.cells.len()).rev())
+        } else {
+            Box::new(0..row.cells.len())
         };
+        let cells: Vec<(&str, usize)> = order
+            .filter_map(|c| {
+                let cell = row.cells[c];
+                if cell.stitch == builtin::NO_STITCH {
+                    return None;
+                }
+                let def = legend.get(cell.stitch)?;
+                // WS resolution: a stitch worked on the wrong side is emitted as its ws_variant.
+                let def = if rs {
+                    def
+                } else {
+                    def.ws_variant.and_then(|id| legend.get(id)).unwrap_or(def)
+                };
+                // A cell with no explicit colour rides the main colour (index 0).
+                Some((def.symbol.as_str(), cell.color.unwrap_or(0)))
+            })
+            .collect();
 
-        let body = collapse(ordered.iter().map(|d| d.symbol.as_str()));
+        let body = collapse(&cells, labels.as_ref());
         let label = match pattern.construction {
             Construction::InTheRound => format!("Round {}", r + 1),
             Construction::Flat => format!("Row {} ({})", r + 1, if rs { "RS" } else { "WS" }),
@@ -61,18 +66,62 @@ pub fn to_written(pattern: &KnitPattern) -> Vec<String> {
     lines
 }
 
-/// Run-length collapse a sequence of stitch symbols: `k, k, k -> "k3"`, joined with `", "`.
-fn collapse<'a>(symbols: impl Iterator<Item = &'a str>) -> String {
-    let symbols: Vec<&str> = symbols.collect();
+/// Map each palette index used in the chart to its colorwork label: index 0 is the Main Colour
+/// ("MC"); other used indices are Contrast Colours — a lone contrast is just "CC", several are
+/// numbered "CC1", "CC2", ... in palette order. Returns `None` when the chart uses a single colour
+/// (nothing to label).
+fn color_labels(pattern: &KnitPattern) -> Option<HashMap<usize, String>> {
+    let mut used: BTreeSet<usize> = BTreeSet::new();
+    for row in &pattern.chart.rows {
+        for cell in &row.cells {
+            if cell.stitch != builtin::NO_STITCH {
+                used.insert(cell.color.unwrap_or(0));
+            }
+        }
+    }
+    if used.len() < 2 {
+        return None;
+    }
+    let multi_contrast = used.iter().filter(|&&i| i != 0).count() > 1;
+    let mut map = HashMap::new();
+    let mut n = 0;
+    for &idx in &used {
+        if idx == 0 {
+            map.insert(0, "MC".to_string());
+        } else {
+            n += 1;
+            map.insert(idx, if multi_contrast { format!("CC{n}") } else { "CC".to_string() });
+        }
+    }
+    Some(map)
+}
+
+/// Run-length collapse a row's (symbol, colour) cells: `k, k, k -> "k3"`, joined with `", "`. When
+/// `labels` is `Some` (the chart is colorwork), a run is prefixed with its colour label whenever the
+/// colour changes from the previous run (e.g. `MC k2, CC1 p3`); a run only collapses across cells of
+/// the same stitch AND colour. When `labels` is `None`, colour is ignored entirely.
+fn collapse(cells: &[(&str, usize)], labels: Option<&HashMap<usize, String>>) -> String {
     let mut parts: Vec<String> = Vec::new();
+    let mut prev_color: Option<usize> = None;
     let mut i = 0;
-    while i < symbols.len() {
-        let s = symbols[i];
+    while i < cells.len() {
+        let (sym, color) = cells[i];
         let mut n = 1;
-        while i + n < symbols.len() && symbols[i + n] == s {
+        while i + n < cells.len()
+            && cells[i + n].0 == sym
+            && (labels.is_none() || cells[i + n].1 == color)
+        {
             n += 1;
         }
-        parts.push(if n > 1 { format!("{s}{n}") } else { s.to_string() });
+        let stitch = if n > 1 { format!("{sym}{n}") } else { sym.to_string() };
+        match labels {
+            Some(map) if prev_color != Some(color) => {
+                let lbl = map.get(&color).map(String::as_str).unwrap_or("MC");
+                parts.push(format!("{lbl} {stitch}"));
+                prev_color = Some(color);
+            }
+            _ => parts.push(stitch),
+        }
         i += n;
     }
     parts.join(", ")
@@ -150,5 +199,52 @@ mod tests {
             Side::Rs,
         );
         assert_eq!(to_written(&p), vec!["Row 1 (RS): k2tog, yo, k"]);
+    }
+
+    fn colored_row(spec: &[(usize, usize)]) -> Row {
+        Row::plain(spec.iter().map(|&(s, c)| Cell::colored(s, c)).collect())
+    }
+
+    #[test]
+    fn single_colour_chart_has_no_colour_labels() {
+        // Every cell is colour 0 -> not colorwork -> plain stitch line (no "MC").
+        let p = pat(vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 0)])], Construction::Flat, Side::Rs);
+        assert_eq!(to_written(&p), vec!["Row 1 (RS): k2"]);
+    }
+
+    #[test]
+    fn two_colour_chart_labels_mc_and_a_lone_cc() {
+        // Stored L->R: k(MC), k(MC), k(CC). RS reads R->L: CC k, then MC k2. One contrast -> "CC".
+        let p = pat(
+            vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 0), (builtin::KNIT, 1)])],
+            Construction::Flat,
+            Side::Rs,
+        );
+        assert_eq!(to_written(&p), vec!["Row 1 (RS): CC k, MC k2"]);
+    }
+
+    #[test]
+    fn three_colours_number_the_contrasts() {
+        // Stored L->R: k(MC), k(CC1), k(CC2). RS reads R->L: CC2, CC1, MC. Two contrasts -> numbered.
+        let p = pat(
+            vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 1), (builtin::KNIT, 2)])],
+            Construction::Flat,
+            Side::Rs,
+        );
+        assert_eq!(to_written(&p), vec!["Row 1 (RS): CC2 k, CC1 k, MC k"]);
+    }
+
+    #[test]
+    fn colour_label_only_repeats_when_it_changes() {
+        // Stored L->R all colour 1, mixed stitches. RS reads R->L: p, k, k. Lone contrast -> "CC",
+        // labelled once at the start (colour never changes).
+        let p = pat(
+            vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 1), (builtin::PURL, 1)])],
+            Construction::Flat,
+            Side::Rs,
+        );
+        // R->L: (p,1),(k,1),(k,0) -> "CC p, CC k"? no: first CC p, then CC k (same colour, no relabel),
+        // then MC k. -> "CC p, k, MC k".
+        assert_eq!(to_written(&p), vec!["Row 1 (RS): CC p, k, MC k"]);
     }
 }

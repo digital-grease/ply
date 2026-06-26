@@ -13,7 +13,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/draft_doc.dart';
+import '../models/treadling_entries.dart';
 import '../state/draft_editor_notifier.dart';
+import '../state/editor_providers.dart';
 import 'draft_layout.dart';
 
 /// Paints a region's grid lines and its filled cells (given in the region's own 1-based/0-based
@@ -69,6 +71,68 @@ class CellGridPainter extends CustomPainter {
       line != old.line ||
       background != old.background ||
       !listEquals(cells, old.cells);
+}
+
+/// A [CellGridPainter] that also overlays a PICK-REPEAT COUNT on the COMPRESSED treadling: each row is
+/// one run (overshot's "throw this shed N times"), and a run of two or more picks shows its length as
+/// a number centered in its cell. Runs of one carry no number, so a non-repeating treadling stays
+/// uncluttered.
+class CountedCellGridPainter extends CellGridPainter {
+  CountedCellGridPainter({
+    required super.cells,
+    required super.geom,
+    required super.fill,
+    required super.line,
+    required super.background,
+    required this.counts,
+    required this.countColor,
+    this.highlightRow,
+    required this.highlightColor,
+  });
+
+  /// `(col, row, value)` per annotated entry (only runs with `value >= 2`): the number [value] is drawn
+  /// centered in the single cell ([col], [row]) — its representative treadle, or column 1 for a blank
+  /// shed.
+  final List<(int, int, int)> counts;
+  final Color countColor;
+
+  /// The selected entry row to ring (the dimensions-bar count stepper edits it), or null.
+  final int? highlightRow;
+  final Color highlightColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    super.paint(canvas, size); // background + filled cells + grid lines
+    if (geom.isDegenerate) return;
+    final fontSize = (geom.cell * 0.5).clamp(8.0, 14.0);
+    for (final (col, row, value) in counts) {
+      final rect = geom.rectFor(col, row);
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '$value',
+          style: TextStyle(color: countColor, fontSize: fontSize, fontWeight: FontWeight.w700),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, rect.center - Offset(tp.width / 2, tp.height / 2));
+    }
+    final hr = highlightRow;
+    if (hr != null && hr >= 0 && hr < geom.rows) {
+      // The selected entry's whole row (all treadle columns), drawn top-origin like the band.
+      final rect = Rect.fromLTWH(0, hr * geom.cell, geom.cols * geom.cell, geom.cell).deflate(1);
+      canvas.drawRect(rect, Paint()..color = highlightColor..style = PaintingStyle.stroke..strokeWidth = 2);
+    }
+  }
+
+  @override
+  bool shouldRepaint(CellGridPainter old) {
+    if (old is! CountedCellGridPainter) return true;
+    return countColor != old.countColor ||
+        highlightRow != old.highlightRow ||
+        highlightColor != old.highlightColor ||
+        !listEquals(counts, old.counts) ||
+        super.shouldRepaint(old);
+  }
 }
 
 /// Threading grid: per warp end, the shaft(s) it threads through. Cells are (end, shaft).
@@ -294,32 +358,78 @@ class RightGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final (rows, treadled) = ref.watch(draftEditorProvider.select((s) {
-      final d = s.draft.drive;
-      return d is DraftTreadled ? (d.treadling, true) : ((d as DraftLiftplan).liftplan, false);
-    }));
+    final (rows, treadled) =
+        ref.watch(draftEditorProvider.select((s) => (s.draft.drive.rows, s.draft.drive is DraftTreadled)));
+    // COMPRESSED: one ROW per run of identical picks. Each run's shed fills its treadle/shaft cells;
+    // a run of two or more shows its pick count in the representative cell.
+    final entries = treadlingEntries(rows);
     final cells = <(int, int)>[
-      for (var pick = 0; pick < geom.rows; pick++)
-        if (pick < rows.length)
-          for (final col in rows[pick])
-            if (col >= 1 && col <= geom.cols) (col, pick),
+      for (var e = 0; e < entries.length && e < geom.rows; e++)
+        for (final id in entries[e].shed)
+          if (id >= 1 && id <= geom.cols) (id, e),
+    ];
+    final counts = <(int, int, int)>[
+      for (var e = 0; e < entries.length && e < geom.rows; e++)
+        if (entries[e].count >= 2)
+          ((entries[e].shed.isEmpty ? 1 : entries[e].shed.first).clamp(1, geom.cols), e, entries[e].count),
     ];
     final colors = Theme.of(context).colorScheme;
-    // The right band shows treadling (treadled drive) OR the liftplan; label by which variant it is
-    // (geom.rows = picks). Compact structural label only; per-cell semantics + screen-reader editing
-    // of individual picks is future work.
-    final label = treadled ? 'Treadling: ${geom.rows} picks' : 'Liftplan: ${geom.rows} picks';
+    // The selected entry (in range) is ringed so it's clear which row the count stepper edits.
+    final selected = ref.watch(selectedTreadlingEntryProvider);
+    final highlight = (selected != null && selected >= 0 && selected < entries.length) ? selected : null;
+    // Compact structural label (entry rows + total picks); per-cell semantics is future work.
+    final kind = treadled ? 'Treadling' : 'Liftplan';
+    final label = '$kind: ${entries.length} rows, ${rows.length} picks';
     return Semantics(
       label: label,
       container: true,
       child: CustomPaint(
         size: geom.size,
-        painter: CellGridPainter(
+        painter: CountedCellGridPainter(
           cells: cells,
+          counts: counts,
           geom: geom,
           fill: colors.primary,
           line: colors.outlineVariant,
           background: colors.surfaceContainerHighest,
+          countColor: colors.onPrimary,
+          highlightRow: highlight,
+          highlightColor: colors.secondary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Weft-color MARKER band beside the COMPRESSED treadling: one cell per run, each showing that run's
+/// representative (first pick's) weft color, so the pick's color reads right next to the treadle you
+/// press. Read-only (ExcludeSemantics); the editable per-pick weft band stays on the left by the cloth.
+class WeftMarkerBand extends ConsumerWidget {
+  const WeftMarkerBand({required this.geom, super.key});
+
+  final RegionGeom geom;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (rows, weftColors, palette) = ref.watch(draftEditorProvider
+        .select((s) => (s.draft.drive.rows, s.draft.weftColors, s.draft.palette)));
+    final entries = treadlingEntries(rows);
+    final cells = <(int, int)>[for (var e = 0; e < entries.length && e < geom.rows; e++) (1, e)];
+    final colors = <Color>[
+      for (var e = 0; e < entries.length && e < geom.rows; e++)
+        _swatch(palette,
+            entries[e].startPick < weftColors.length ? weftColors[entries[e].startPick] : 0),
+    ];
+    final cs = Theme.of(context).colorScheme;
+    return ExcludeSemantics(
+      child: CustomPaint(
+        size: geom.size,
+        painter: ColorBandPainter(
+          colors: colors,
+          cells: cells,
+          geom: geom,
+          line: cs.outlineVariant,
+          background: cs.surfaceContainerHighest,
         ),
       ),
     );

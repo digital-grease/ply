@@ -276,7 +276,7 @@ void main() {
     await pumpSheet(t, repo);
     await t.enterText(find.widgetWithText(TextFormField, 'Picks per in'), '12');
     await t.enterText(find.widgetWithText(TextFormField, 'Woven width (in)'), '20');
-    await t.enterText(find.widgetWithText(TextFormField, 'Woven length (in)'), '60');
+    await t.enterText(find.widgetWithText(TextFormField, 'Woven length (yd)'), '60');
     // items default '1', take-up default '10'.
     await t.ensureVisible(find.text('Estimate weft'));
     await t.tap(find.text('Estimate weft'));
@@ -284,7 +284,9 @@ void main() {
     expect(repo.weftArgs, isNotNull);
     expect(repo.weftArgs!.picksPerUnit, 12.0);
     expect(repo.weftArgs!.width, 20.0);
-    expect(repo.weftArgs!.wovenLength, 60.0);
+    // Woven length is entered in yards now, converted to inches (x36) before the engine multiplies it
+    // by picks-per-inch: 60 yd -> 2160 in.
+    expect(repo.weftArgs!.wovenLength, 2160.0);
     expect(repo.weftArgs!.items, 1);
     expect(repo.weftArgs!.takeupPercent, 10.0, reason: 'entered as a percent; the repo divides by 100');
     expect(find.text('Total picks: 720'), findsOneWidget);

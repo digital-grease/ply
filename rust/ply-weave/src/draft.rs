@@ -341,7 +341,8 @@ impl Draft {
     /// raised-shaft set per pick is baked in via `to_liftplan` (so a sinking-shed tie-up is
     /// already complemented). Because a liftplan names raised shafts *directly*, the shed
     /// becomes `Rising` (no further inversion) and `treadles` drops to 0 (a liftplan carries
-    /// no tie-up). The reverse — factoring a liftplan back into a tie-up — is deferred.
+    /// no tie-up). The reverse direction — [`factor_liftplan`](Self::factor_liftplan) — recovers a
+    /// tie-up + treadling when the lift plan is simple enough.
     pub fn to_liftplan_draft(&self) -> Draft {
         Draft {
             drive: Drive::Liftplan(self.to_liftplan()),
@@ -349,6 +350,47 @@ impl Draft {
             treadles: 0,
             ..self.clone()
         }
+    }
+
+    /// The inverse of [`to_liftplan_draft`](Self::to_liftplan_draft) WHEN the lift plan is simple
+    /// enough for a treadle loom: factor a liftplan-driven draft into a tie-up + treadling, treating
+    /// each DISTINCT lift (set of raised shafts) as one treadle in order of first appearance. Returns
+    /// `None` for a non-liftplan drive, or when the plan needs more than `max_treadles` distinct lifts
+    /// (an unwieldy tie-up, better left a liftplan). The result uses a **rising** shed so the tied set
+    /// IS the raised set — `raised_shafts` is byte-identical to the liftplan's, only the
+    /// representation changes (the cloth is untouched). This is what lets a dobby-style WIF import
+    /// (a `[LIFTPLAN]` with no tie-up) show the conventional tie-up + treadling instead of the whole
+    /// lift pattern dumped into the treadling column.
+    pub fn factor_liftplan(&self, max_treadles: usize) -> Option<Draft> {
+        let Drive::Liftplan(lp) = &self.drive else {
+            return None;
+        };
+        // Two lifts are the same SHED iff they raise the same set of shafts (order/dups irrelevant).
+        fn same_set(a: &[ShaftId], b: &[ShaftId]) -> bool {
+            a.iter().all(|s| b.contains(s)) && b.iter().all(|s| a.contains(s))
+        }
+        let mut lifts: Vec<Vec<ShaftId>> = Vec::new(); // distinct lift sets; treadle id = index + 1
+        let mut treadling: Vec<Vec<TreadleId>> = Vec::with_capacity(lp.0.len());
+        for pick in &lp.0 {
+            let idx = match lifts.iter().position(|l| same_set(l, pick)) {
+                Some(i) => i,
+                None => {
+                    if lifts.len() >= max_treadles {
+                        return None; // too many distinct lifts for a sane tie-up
+                    }
+                    lifts.push(pick.clone());
+                    lifts.len() - 1
+                }
+            };
+            treadling.push(vec![TreadleId(idx as u16 + 1)]);
+        }
+        let treadles = lifts.len() as u16;
+        Some(Draft {
+            drive: Drive::Treadled { tieup: TieUp(lifts), treadling: Treadling(treadling) },
+            shed: ShedType::Rising,
+            treadles,
+            ..self.clone()
+        })
     }
 
     /// A copy resized to the given dimensions. GROWING pads with blanks (empty threading / empty
@@ -599,6 +641,80 @@ mod tests {
         for p in 0..d.picks() {
             assert_eq!(lp.raised_shafts(p), d.raised_shafts(p), "pick {p} differs");
         }
+    }
+
+    #[test]
+    fn factor_liftplan_recovers_a_tieup_with_identical_cloth() {
+        // Bake a sinking-shed treadled draft to a liftplan, then factor it back: the factored draft
+        // must weave the SAME cloth (equal raised set per pick) with a rising, treadle-loom tie-up,
+        // and a repeated shed must collapse to ONE treadle.
+        let d = Draft {
+            name: "t".into(),
+            shafts: 4,
+            treadles: 2,
+            shed: ShedType::Sinking,
+            unit: Unit::Inches,
+            threading: Threading(vec![vec![ShaftId(1)], vec![ShaftId(2)]]),
+            drive: Drive::Treadled {
+                tieup: TieUp(vec![vec![ShaftId(1), ShaftId(2)], vec![ShaftId(3)]]),
+                treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(2)], vec![TreadleId(1)]]),
+            },
+            colors: ColorPlan {
+                palette: vec![Color::WHITE, Color::BLACK],
+                warp: vec![0, 1],
+                weft: vec![1, 0, 1],
+            },
+            notes: String::new(),
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
+            retained: Vec::new(),
+        };
+        let lp = d.to_liftplan_draft();
+        let factored = lp.factor_liftplan(40).expect("a 2-lift plan factors");
+        assert!(matches!(factored.drive, Drive::Treadled { .. }));
+        assert_eq!(factored.shed, ShedType::Rising);
+        assert_eq!(factored.treadles, 2, "two distinct sheds -> two treadles");
+        assert_eq!(factored.picks(), lp.picks());
+        if let Drive::Treadled { treadling, .. } = &factored.drive {
+            assert_eq!(treadling.0[0], treadling.0[2], "the repeated shed reuses one treadle");
+        }
+        for p in 0..lp.picks() {
+            assert_eq!(factored.raised_shafts(p), lp.raised_shafts(p), "pick {p} cloth differs");
+        }
+    }
+
+    #[test]
+    fn factor_liftplan_declines_when_unwieldy_or_not_a_liftplan() {
+        // Three picks, each a different single-shaft lift -> 3 distinct lifts.
+        let lp = Draft {
+            name: "t".into(),
+            shafts: 3,
+            treadles: 0,
+            shed: ShedType::Rising,
+            unit: Unit::Inches,
+            threading: Threading(vec![vec![ShaftId(1)], vec![ShaftId(2)], vec![ShaftId(3)]]),
+            drive: Drive::Liftplan(Liftplan(vec![
+                vec![ShaftId(1)],
+                vec![ShaftId(2)],
+                vec![ShaftId(3)],
+            ])),
+            colors: ColorPlan { palette: vec![Color::WHITE], warp: vec![0, 0, 0], weft: vec![0, 0, 0] },
+            notes: String::new(),
+            warp_thickness: Vec::new(),
+            weft_thickness: Vec::new(),
+            retained: Vec::new(),
+        };
+        assert!(lp.factor_liftplan(2).is_none(), "3 distinct lifts exceed a cap of 2");
+        assert!(lp.factor_liftplan(40).is_some(), "but they fit a generous cap");
+        // A treadled drive is never factored (it already has a tie-up).
+        let treadled = Draft {
+            drive: Drive::Treadled {
+                tieup: TieUp(vec![vec![ShaftId(1)]]),
+                treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(1)], vec![TreadleId(1)]]),
+            },
+            ..lp.clone()
+        };
+        assert!(treadled.factor_liftplan(40).is_none());
     }
 
     #[test]

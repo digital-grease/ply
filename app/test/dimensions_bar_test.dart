@@ -113,6 +113,39 @@ void main() {
     expect(find.text('Planning calculator'), findsOneWidget);
   });
 
+  testWidgets('selecting a treadling row reveals its count stepper, which grows the run', (tester) async {
+    final (c, _) = await pumpBar(tester); // treadling [1],[2],[3],[4] -> 4 single-pick rows
+    expect(find.byTooltip('More Row ×'), findsNothing, reason: 'no per-row controls until selected');
+    // Select entry 0 (treadle 1, x1).
+    c.read(selectedTreadlingEntryProvider.notifier).state = 0;
+    await tester.pump();
+    expect(find.text('Row × 1'), findsOneWidget);
+    // Grow it to x2: inserts a pick via the pure reducer (no engine resize).
+    await tester.tap(find.byTooltip('More Row ×'));
+    await tester.pump();
+    final t = c.read(draftEditorProvider).draft.drive as DraftTreadled;
+    expect(t.treadling, [
+      [1],
+      [1],
+      [2],
+      [3],
+      [4],
+    ]);
+    expect(c.read(draftEditorProvider).draft.picks, 5);
+    expect(find.text('Row × 2'), findsOneWidget);
+  });
+
+  testWidgets('Add row appends a blank treadling row and selects it', (tester) async {
+    final (c, _) = await pumpBar(tester);
+    c.read(selectedTreadlingEntryProvider.notifier).state = 0;
+    await tester.pump();
+    await tester.tap(find.widgetWithText(ActionChip, 'Row'));
+    await tester.pump();
+    final t = c.read(draftEditorProvider).draft.drive as DraftTreadled;
+    expect(t.treadling.last, isEmpty, reason: 'a blank pick is appended');
+    expect(c.read(selectedTreadlingEntryProvider), 4, reason: 'the new last row is selected');
+  });
+
   testWidgets('the Colors chip dot shows the active brush color', (tester) async {
     Color dotColor(WidgetTester t) {
       final dot = t

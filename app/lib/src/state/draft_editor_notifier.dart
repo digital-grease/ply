@@ -31,7 +31,19 @@ class DraftEditorNotifier extends Notifier<EditorState> {
     // Reset the brush so a previous draft's selection can't dangle past this (possibly smaller)
     // palette. (Clamp-on-read defends the rest; this is the tidy default.)
     ref.read(activePaletteColorProvider.notifier).state = 0;
+    // Clear any treadling-row selection from the prior draft (its run count is gone).
+    ref.read(selectedTreadlingEntryProvider.notifier).state = null;
   }
+
+  /// Set the SELECTED compressed-treadling row's pick count (>= 1), committed as one undo entry.
+  /// See [EditorState.setEntryCount]. Pure mutation behind the engine-free path.
+  void setEntryCount(int index, int count) => commitEdit(state.setEntryCount(index, count).draft);
+
+  /// Append a new blank treadling row (one pick, no shed) as one undo entry; see [EditorState.addEntry].
+  void addEntry() => commitEdit(state.addEntry().draft);
+
+  /// Remove the treadling row [index] (its whole run) as one undo entry; see [EditorState.removeEntry].
+  void removeEntry(int index) => commitEdit(state.removeEntry(index).draft);
 
   /// Toggle one tie-up cell (1-based treadle/shaft). See [EditorState.toggleTieupCell].
   void toggleTieupCell(int treadle, int shaft) {

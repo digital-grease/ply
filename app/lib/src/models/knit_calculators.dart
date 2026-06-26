@@ -9,6 +9,36 @@ import 'dart:math' as math;
 /// Stitches per single unit (inch or cm) from a gauge measured over a 4 in / 10 cm window.
 double stitchesPerUnit(double gaugeStitches, bool metric) => gaugeStitches / (metric ? 10.0 : 4.0);
 
+/// A yarn-weight band inferred from a measured wraps-per-inch, with a TYPICAL stockinette gauge
+/// ([stitchesPerWindow] stitches over the 4 in / 10 cm window) to SEED the gauge field when you have
+/// not swatched. [stitchesPerWindow] is 0 for the "unknown" band so the caller can hide the seed.
+class YarnWeight {
+  const YarnWeight(this.name, this.stitchesPerWindow);
+
+  /// The Craft Yarn Council weight name (e.g. "Worsted"), or "—" when WPI is non-positive.
+  final String name;
+
+  /// Typical stockinette stitches over a 4 in / 10 cm window for this weight (0 when unknown).
+  final double stitchesPerWindow;
+}
+
+/// Classify a yarn by its measured [wpi] (wraps per inch: wrap the yarn snugly around a ruler for one
+/// inch and count the wraps) into a weight band + a typical stockinette gauge. Thicker yarn = fewer
+/// wraps per inch = fewer stitches per window. Bands follow the Craft Yarn Council weight chart; the
+/// gauge is the middle of each band's published range. A non-positive WPI returns the "—" band.
+YarnWeight yarnWeightFromWpi(double wpi) {
+  if (wpi <= 0) return const YarnWeight('—', 0);
+  if (wpi >= 18) return const YarnWeight('Lace', 32);
+  if (wpi >= 14) return const YarnWeight('Fingering', 28);
+  if (wpi >= 12) return const YarnWeight('Sport', 25);
+  if (wpi >= 11) return const YarnWeight('DK', 22);
+  if (wpi >= 9) return const YarnWeight('Worsted', 18);
+  if (wpi >= 8) return const YarnWeight('Aran', 16);
+  if (wpi >= 7) return const YarnWeight('Bulky', 14);
+  if (wpi >= 5) return const YarnWeight('Super bulky', 10);
+  return const YarnWeight('Jumbo', 6);
+}
+
 /// Cast-on stitches for a finished [width] + [ease] (in the chosen unit) at [gaugeStitches] per window,
 /// rounded to the nearest [repeat] multiple (>= one repeat). Returns 0 for non-positive inputs.
 int castOnForWidth({

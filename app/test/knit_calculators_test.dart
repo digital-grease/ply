@@ -19,6 +19,24 @@ void main() {
     });
   });
 
+  group('yarnWeightFromWpi', () {
+    test('thicker yarn (fewer wraps) reads as a heavier weight + lower gauge', () {
+      expect(yarnWeightFromWpi(9).name, 'Worsted');
+      expect(yarnWeightFromWpi(9).stitchesPerWindow, 18);
+      expect(yarnWeightFromWpi(7).name, 'Bulky');
+      expect(yarnWeightFromWpi(20).name, 'Lace');
+    });
+    test('band edges are inclusive at the lower WPI', () {
+      expect(yarnWeightFromWpi(14).name, 'Fingering'); // 14..17
+      expect(yarnWeightFromWpi(12).name, 'Sport'); // 12..13
+      expect(yarnWeightFromWpi(11).name, 'DK'); // 11
+    });
+    test('a non-positive WPI is the unknown band (so the caller hides the seed)', () {
+      expect(yarnWeightFromWpi(0).stitchesPerWindow, 0);
+      expect(yarnWeightFromWpi(-3).name, '—');
+    });
+  });
+
   group('resizeToGauge', () {
     test('scales the stitch count by your/pattern gauge', () {
       expect(resizeToGauge(patternStitches: 100, patternGauge: 20, yourGauge: 22), 110);

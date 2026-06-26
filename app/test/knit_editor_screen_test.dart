@@ -165,4 +165,40 @@ void main() {
     expect(c.read(activeKnitStitchProvider), stitches.length - 1,
         reason: 'the new cable is the active brush');
   });
+
+  testWidgets('selecting a color drops the stitch brush to Keep (so color paints OVER a symbol)',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final c = await pumpEditor(tester, FakeEditorRepo());
+    // Start on a real stitch brush; choosing a color layer must flip the stitch to Keep so the next
+    // tap only adds color and leaves the existing symbol in place.
+    c.read(activeKnitStitchProvider.notifier).state = KnitStitch.purl;
+    final noColor = find.byTooltip('No color (clear the cell colorwork)');
+    await tester.ensureVisible(noColor);
+    await tester.tap(noColor);
+    await tester.pump();
+    expect(c.read(activeKnitColorProvider), knitColorNone);
+    expect(c.read(activeKnitStitchProvider), knitStitchKeep);
+  });
+
+  testWidgets('selecting a stitch drops the color brush to Keep (so a symbol never wipes color)',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final c = await pumpEditor(tester, FakeEditorRepo());
+    c.read(activeKnitColorProvider.notifier).state = 0; // a real palette color
+    final purl = find.byTooltip('Purl');
+    await tester.ensureVisible(purl);
+    await tester.tap(purl);
+    await tester.pump();
+    expect(c.read(activeKnitStitchProvider), KnitStitch.purl);
+    expect(c.read(activeKnitColorProvider), knitColorKeep);
+  });
 }

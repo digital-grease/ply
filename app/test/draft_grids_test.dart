@@ -91,6 +91,12 @@ List<(int, int)> cellsOf(WidgetTester t, Finder gridFinder) {
   return (cp.painter! as CellGridPainter).cells;
 }
 
+List<(int, int, int)> countsOf(WidgetTester t, Finder gridFinder) {
+  final cp = t.widget<CustomPaint>(
+      find.descendant(of: gridFinder, matching: find.byType(CustomPaint)));
+  return (cp.painter! as CountedCellGridPainter).counts;
+}
+
 void main() {
   testWidgets('ThreadingGrid maps threading[end-1] to (end, shaft) cells', (t) async {
     await pumpGrid(t, treadled(), const ThreadingGrid(geom: threadingGeom));
@@ -112,6 +118,34 @@ void main() {
       (t) async {
     await pumpGrid(t, liftplan(), const RightGrid(geom: rightGeom));
     expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (2, 1), (1, 2), (2, 3)});
+  });
+
+  testWidgets('RightGrid COMPRESSES a run of identical picks into one numbered entry row (overshot)',
+      (t) async {
+    // Treadle 1 thrown 3x, then treadle 2 once: TWO entry rows (not four pick rows). The 3 collapse
+    // to one row showing its count; the lone pick is not numbered.
+    final doc = treadled().copyWith(
+      drive: DraftTreadled(tieup: const [
+        [1],
+        [2],
+      ], treadling: const [
+        [1],
+        [1],
+        [1],
+        [2],
+      ]),
+    );
+    await pumpGrid(t, doc, const RightGrid(geom: rightGeom));
+    // Entry 0 (treadle 1) at row 0, entry 1 (treadle 2) at row 1.
+    expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (2, 1)});
+    // (col, entryRow, count) — the collapsed run shows 3 in its cell.
+    expect(countsOf(t, find.byType(RightGrid)), [(1, 0, 3)]);
+  });
+
+  testWidgets('a non-repeating treadling is one entry per pick and carries no counts', (t) async {
+    await pumpGrid(t, treadled(), const RightGrid(geom: rightGeom));
+    expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (2, 1), (1, 2), (2, 3)});
+    expect(countsOf(t, find.byType(RightGrid)), isEmpty);
   });
 
   testWidgets('an out-of-range shaft is filtered out of the cell list', (t) async {

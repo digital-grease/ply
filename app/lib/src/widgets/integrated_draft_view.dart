@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/draft_doc.dart';
+import '../models/treadling_entries.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import 'draft_grids.dart';
@@ -70,13 +71,16 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       }
     });
 
-    // Watch ONLY what changes the geometry; cell pitch + tool from their own providers.
+    // Watch ONLY what changes the geometry; cell pitch + tool from their own providers. The 6th field
+    // is the COMPRESSED treadling's row count (runs of identical picks), which sizes the right band's
+    // height — selected so a shed edit that keeps the run count doesn't rebuild the whole canvas.
     final dims = ref.watch(draftEditorProvider.select((s) => (
           s.draft.ends,
           s.draft.picks,
           s.draft.shafts,
           s.draft.treadles,
           s.draft.drive is DraftTreadled,
+          treadlingEntries(s.draft.drive.rows).length,
         )));
     final cell = ref.watch(zoomCellProvider);
     final pencil = ref.watch(editorToolProvider) == EditorTool.pencil;
@@ -87,6 +91,7 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       shafts: dims.$3,
       treadles: dims.$4,
       hasTieup: dims.$5,
+      entries: dims.$6,
       cell: cell.toDouble(),
     );
 
@@ -197,6 +202,13 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
                   rect: layout.weftColorRect,
                   child: RepaintBoundary(child: WeftColorBand(geom: layout.weftColor)),
                 ),
+                // A read-only mirror of each run's weft color flush beside the compressed treadling,
+                // so the pick's color reads right next to the treadle to press. (The editable per-pick
+                // weft band stays on the left by the cloth.)
+                Positioned.fromRect(
+                  rect: layout.weftMarkerRect,
+                  child: RepaintBoundary(child: WeftMarkerBand(geom: layout.weftMarker)),
+                ),
               ],
             ),
           ),
@@ -225,6 +237,10 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       if (_activePointer != null) return;
       final hit = layout.hitTest(e.localPosition);
       if (hit == null) return;
+      // Selecting a treadling ROW arms the dimensions bar's per-row count stepper for it; painting
+      // anywhere else clears that selection (so the stepper only shows for the active row).
+      ref.read(selectedTreadlingEntryProvider.notifier).state =
+          hit.region == DraftRegion.right ? hit.row : null;
       _activePointer = e.pointer;
       notifier.beginStroke(hit);
     }
@@ -305,7 +321,7 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
   /// post-frame callback (so it never writes during build), and [zoomUserSetProvider] makes it a
   /// one-shot per load (a manual zoom or the next [_load] flips the guard). [dims] is the live
   /// (ends, picks, shafts, treadles, hasTieup).
-  void _maybeAutoFit((int, int, int, int, bool) dims, Size available) {
+  void _maybeAutoFit((int, int, int, int, bool, int) dims, Size available) {
     if (ref.read(zoomUserSetProvider) || !available.isFinite || available.isEmpty) return;
     final fit = DraftLayout.fitCellLevel(
       ends: dims.$1,

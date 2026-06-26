@@ -134,6 +134,11 @@ sealed class DraftDrive {
   /// [DraftDoc.picks] can read it without re-matching the variant: treadling rows for a
   /// treadled draft, liftplan rows for a liftplan draft (both are "one row per pick").
   int get pickCount;
+
+  /// The per-pick rows: treadle id(s) per pick (treadled) or raised shaft id(s) per pick (liftplan).
+  /// One row per pick, so pick-indexed code (the compressed-treadling entries) can read the sequence
+  /// without re-matching the variant. The list is the sealed, frozen backing list.
+  List<List<int>> get rows;
 }
 
 /// A treadled drive: a fixed tie-up plus a per-pick treadling sequence (the loom-mechanical
@@ -168,6 +173,9 @@ final class DraftTreadled extends DraftDrive {
 
   @override
   int get pickCount => treadling.length;
+
+  @override
+  List<List<int>> get rows => treadling;
 
   /// Variant-preserving copy: returns a [DraftTreadled]. Re-seals ONLY the argument actually
   /// passed; an omitted field reuses the already-sealed `this.<field>` by reference, so a
@@ -218,6 +226,9 @@ final class DraftLiftplan extends DraftDrive {
 
   @override
   int get pickCount => liftplan.length;
+
+  @override
+  List<List<int>> get rows => liftplan;
 
   /// Variant-preserving copy: returns a [DraftLiftplan]. Re-seals only when a new list is
   /// passed (see [DraftTreadled.copyWith]).

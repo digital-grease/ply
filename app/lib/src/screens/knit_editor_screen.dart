@@ -456,8 +456,7 @@ class _KnitToolBar extends ConsumerWidget {
                         label: Text(b.symbol),
                         tooltip: b.label,
                         selected: active == b.id,
-                        onSelected: (_) =>
-                            ref.read(activeKnitStitchProvider.notifier).state = b.id,
+                        onSelected: (_) => _selectStitch(ref, b.id),
                       ),
                     ),
                   // Custom cable brushes (legend entries carrying a CableDefDto).
@@ -470,8 +469,7 @@ class _KnitToolBar extends ConsumerWidget {
                           label: Text(legend.stitches[i].symbol),
                           tooltip: 'Cable ${legend.stitches[i].symbol}',
                           selected: active == i,
-                          onSelected: (_) =>
-                              ref.read(activeKnitStitchProvider.notifier).state = i,
+                          onSelected: (_) => _selectStitch(ref, i),
                         ),
                       ),
                   // "+ cable" — define a new custom cable, which becomes the active brush.
@@ -500,7 +498,15 @@ class _KnitToolBar extends ConsumerWidget {
     final cable = await showCableBuilder(context);
     if (cable == null || !context.mounted) return;
     final id = ref.read(knitEditorProvider.notifier).addCable(cable, cableSymbol(cable));
+    _selectStitch(ref, id);
+  }
+
+  /// Select a real stitch brush AND drop the color brush to "Keep", so the next tap paints ONLY the
+  /// stitch, leaving any colorwork under it. The mirror of [_KnitColorRow._selectColor]: the two
+  /// rows act as independent layer pickers, so choosing one tool never clobbers the other layer.
+  static void _selectStitch(WidgetRef ref, int id) {
     ref.read(activeKnitStitchProvider.notifier).state = id;
+    ref.read(activeKnitColorProvider.notifier).state = knitColorKeep;
   }
 }
 
@@ -554,7 +560,7 @@ class _KnitColorRow extends ConsumerWidget {
                 _Swatch(
                   selected: active == knitColorNone,
                   tooltip: 'No color (clear the cell colorwork)',
-                  onTap: () => ref.read(activeKnitColorProvider.notifier).state = knitColorNone,
+                  onTap: () => _selectColor(ref, knitColorNone),
                   child: Icon(Icons.format_color_reset_outlined,
                       size: 16, color: cs.onSurfaceVariant),
                 ),
@@ -563,7 +569,7 @@ class _KnitColorRow extends ConsumerWidget {
                     selected: active == i,
                     fill: Color.fromARGB(255, palette[i].r, palette[i].g, palette[i].b),
                     tooltip: 'Color ${i + 1} (long-press to edit)',
-                    onTap: () => ref.read(activeKnitColorProvider.notifier).state = i,
+                    onTap: () => _selectColor(ref, i),
                     onLongPress: () async {
                       final c = palette[i];
                       final picked = await showRgbColorPicker(context,
@@ -590,6 +596,15 @@ class _KnitColorRow extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Select a colorwork brush (a palette index or "No color") AND drop the stitch brush to "Keep",
+  /// so the next tap paints ONLY the color, leaving any stitch symbol under it. The mirror of
+  /// [_KnitToolBar._selectStitch]. ("Keep color" is excluded — it means "leave the colour alone", so
+  /// it must not also pin the stitch.)
+  static void _selectColor(WidgetRef ref, int brush) {
+    ref.read(activeKnitColorProvider.notifier).state = brush;
+    ref.read(activeKnitStitchProvider.notifier).state = knitStitchKeep;
   }
 }
 

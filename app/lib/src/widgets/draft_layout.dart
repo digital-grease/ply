@@ -127,9 +127,15 @@ class DraftLayout {
     required this.treadles,
     required this.hasTieup,
     required this.cell,
+    int? entries,
   })  : assert(cell > 0),
         // Right band: treadles wide for a treadled draft, shafts wide for a liftplan (picks x shafts).
-        rightCols = hasTieup ? treadles : shafts;
+        rightCols = hasTieup ? treadles : shafts,
+        // The treadling is shown COMPRESSED (one row per run of identical picks); the right band is
+        // `entries` rows tall, NOT `picks`. Defaults to `picks` (no compression) when a caller doesn't
+        // supply the run count — fitCellLevel uses that, since the band is always <= the drawdown so
+        // totalSize is drawdown-driven and never depends on the entry count.
+        entries = entries ?? picks;
 
   final int ends;
   final int picks;
@@ -137,6 +143,9 @@ class DraftLayout {
   final int treadles;
   final int rightCols;
   final bool hasTieup;
+
+  /// The number of compressed treadling rows (runs of identical picks). Always <= [picks].
+  final int entries;
 
   /// On-screen pixels per cell (the shared pitch S). Snap to an integer logical px at the call
   /// site so S*devicePixelRatio is integer (the raster bitmap's nearest-neighbor cell boundaries
@@ -146,13 +155,18 @@ class DraftLayout {
   double get _warpW => ends * cell; // threading & drawdown width
   double get _rightW => rightCols * cell; // tie-up & right-band width
   double get _shaftH => shafts * cell; // threading & tie-up height
-  double get _pickH => picks * cell; // right-band & drawdown height
+  double get _pickH => picks * cell; // drawdown & weft-color-band height (one row per pick)
+  double get _entryH => entries * cell; // compressed treadling height (one row per run)
 
   // The color bands reserve a 1-cell strip each: the weft band a left column (width [_leftPad]), the
   // warp band a top row (height [_topPad]). They VANISH (0) on a blank axis, so the placeholder path
   // and any ends==0/picks==0 case keep the four core regions at the (0,0) origin.
   double get _leftPad => picks > 0 ? cell : 0; // weft-color band column
   double get _topPad => ends > 0 ? cell : 0; // warp-color band row
+  // A second, READ-ONLY weft-color strip mirrored to the RIGHT of the treadling/liftplan band, so the
+  // weft color for each pick reads right beside the treadles you follow while weaving (the editable
+  // weft band stays on the left by the cloth). One cell wide; vanishes on a blank pick axis.
+  double get _weftMarkerW => picks > 0 ? cell : 0;
 
   /// Fraction of a cell used for the gutter that separates the four regions. Tunable; proportional
   /// so the gap reads the same at every zoom pitch.
@@ -174,7 +188,7 @@ class DraftLayout {
   Rect get tieupRect => Rect.fromLTWH(_leftPad + _warpW + gutter, _topPad, _rightW, _shaftH);
   Rect get drawdownRect => Rect.fromLTWH(_leftPad, _topPad + _shaftH + gutter, _warpW, _pickH);
   Rect get rightRect =>
-      Rect.fromLTWH(_leftPad + _warpW + gutter, _topPad + _shaftH + gutter, _rightW, _pickH);
+      Rect.fromLTWH(_leftPad + _warpW + gutter, _topPad + _shaftH + gutter, _rightW, _entryH);
 
   /// Warp colors: a top strip ABOVE threading, sharing the warp column's X + width with both
   /// threading and the drawdown (the alignment that matters). Stays flush with threading (no gutter).
@@ -183,6 +197,12 @@ class DraftLayout {
   /// Weft colors: a left strip beside the drawdown, sharing the drawdown's Y + height (so it shifts
   /// down by the same [gutter] as the drawdown). Stays flush with the drawdown (no gutter between).
   Rect get weftColorRect => Rect.fromLTWH(0, _topPad + _shaftH + gutter, _leftPad, _pickH);
+
+  /// Weft-color MARKERS: a read-only mirror of [weftColorRect] flush to the RIGHT of the right band
+  /// (treadling/liftplan), sharing the right band's Y + height. Display-only — it is NOT a hit-tested
+  /// region, so taps fall through; the editable weft band remains [weftColorRect].
+  Rect get weftMarkerRect => Rect.fromLTWH(
+      _leftPad + _warpW + gutter + _rightW, _topPad + _shaftH + gutter, _weftMarkerW, _entryH);
 
   Rect rectOf(DraftRegion r) => switch (r) {
         DraftRegion.threading => threadingRect,
@@ -194,9 +214,9 @@ class DraftLayout {
       };
 
   /// Fixed-pitch canvas size; the scrollable SizedBox uses exactly this. Includes the [gutter]
-  /// inserted once between the columns and once between the rows.
-  Size get totalSize =>
-      Size(_leftPad + _warpW + gutter + _rightW, _topPad + _shaftH + gutter + _pickH);
+  /// inserted once between the columns and once between the rows, plus the right-side weft marker.
+  Size get totalSize => Size(
+      _leftPad + _warpW + gutter + _rightW + _weftMarkerW, _topPad + _shaftH + gutter + _pickH);
 
   /// The largest pitch in [levels] whose whole [totalSize] fits within [available] on BOTH axes — a
   /// "zoom to fit" so a freshly-opened draft fills the viewport instead of always starting at a fixed
@@ -254,11 +274,12 @@ class DraftLayout {
         bottomOrigin: true,
       );
 
-  /// Right band: treadled -> treadles columns x picks rows (col = treadle 1-based);
-  /// liftplan -> shafts columns x picks rows (col = shaft 1-based). Picks are 0-based at the TOP.
+  /// Right band (the COMPRESSED treadling): treadled -> treadles columns x ENTRY rows (col = treadle
+  /// 1-based); liftplan -> shafts columns x entry rows. Entries (runs of identical picks) are 0-based
+  /// at the TOP. Shorter than the drawdown, top-aligned with it.
   RegionGeom get right => RegionGeom(
         cols: rightCols,
-        rows: picks,
+        rows: entries,
         cell: cell,
         colBase: 1,
         rowBase: 0,
@@ -276,10 +297,22 @@ class DraftLayout {
         rightOrigin: true,
       );
 
-  /// Weft-color band: a single column, picks rows (pick 0 at TOP, sharing drawdown/right Y).
+  /// Weft-color band: a single column, picks rows (pick 0 at TOP, sharing drawdown's Y) — the
+  /// editable per-pick band beside the cloth.
   RegionGeom get weftColor => RegionGeom(
         cols: 1,
         rows: picks,
+        cell: cell,
+        colBase: 1,
+        rowBase: 0,
+        bottomOrigin: false,
+      );
+
+  /// Weft-color MARKER band: a single column, ENTRY rows (sharing the compressed right band's Y), so
+  /// each run's representative weft color reads beside its treadling row. Display-only.
+  RegionGeom get weftMarker => RegionGeom(
+        cols: 1,
+        rows: entries,
         cell: cell,
         colBase: 1,
         rowBase: 0,

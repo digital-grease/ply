@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/glossary_lookup.dart';
 import '../models/double_weave_layers.dart';
 import '../models/draft_doc.dart';
+import '../models/treadling_entries.dart';
 import '../screens/layer_inspector_screen.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
@@ -57,6 +58,15 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
     }
   }
 
+  /// Append a new blank treadling row (one pick, no shed) and select it, so its count stepper is
+  /// ready and a tap on the new row sets its shed.
+  void _addRow() {
+    final notifier = ref.read(draftEditorProvider.notifier);
+    notifier.addEntry();
+    final n = treadlingEntries(ref.read(draftEditorProvider).draft.drive.rows).length;
+    ref.read(selectedTreadlingEntryProvider.notifier).state = n - 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     final (ends, picks, shafts, treadles, isTreadled) =
@@ -68,6 +78,12 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
               s.draft.drive is DraftTreadled,
             )));
     final palette = ref.watch(draftEditorProvider.select((s) => s.draft.palette));
+    // Compressed-treadling rows (runs of identical picks). The selected row's count is editable; a
+    // selection past the live row count (a run that merged away) reads as "no selection".
+    final entries = treadlingEntries(ref.watch(draftEditorProvider.select((s) => s.draft.drive.rows)));
+    final selectedRaw = ref.watch(selectedTreadlingEntryProvider);
+    final selectedEntry =
+        (selectedRaw != null && selectedRaw >= 0 && selectedRaw < entries.length) ? selectedRaw : null;
     // Whether to surface the double-weave layer view (4+ shafts used). Watched directly so the chip
     // appears/disappears as the draft changes — and it reads the threading's real shaft usage, not
     // just the header, so a generated/composed double weave reliably offers it.
@@ -130,6 +146,38 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                     max: _maxDim,
                     enabled: enabled,
                     onChange: (v) => _resize(treadles: v)),
+              // Compressed treadling: tapping a row selects it and reveals its controls — step its pick
+              // count ("throw this shed N times"), add a new row, or delete it. Shown only when a row is
+              // selected so the resting bar keeps its height (a from-scratch draft always has a row to
+              // tap to get here).
+              if (isTreadled && selectedEntry != null) ...[
+                _Stepper(
+                  label: 'Row ×',
+                  value: entries[selectedEntry].count,
+                  min: 1,
+                  max: _maxDim,
+                  enabled: enabled,
+                  onChange: (v) =>
+                      ref.read(draftEditorProvider.notifier).setEntryCount(selectedEntry, v),
+                ),
+                ActionChip(
+                  avatar: const Icon(Icons.add, size: 18),
+                  label: const Text('Row'),
+                  onPressed: enabled ? _addRow : null,
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 20,
+                  tooltip: 'Delete row',
+                  onPressed: enabled
+                      ? () {
+                          ref.read(draftEditorProvider.notifier).removeEntry(selectedEntry);
+                          ref.read(selectedTreadlingEntryProvider.notifier).state = null;
+                        }
+                      : null,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
               // Tool chips: the palette editor (the leading dot is the active brush color), the
               // planning calculator, and the structure generator.
               ActionChip(

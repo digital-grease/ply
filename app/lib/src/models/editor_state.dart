@@ -20,6 +20,7 @@ import 'package:collection/collection.dart';
 
 import 'draft_doc.dart';
 import 'draft_region.dart';
+import 'treadling_entries.dart';
 
 /// Compares undo/redo snapshot stacks element-wise using each [DraftDoc]'s own deep `==`.
 const ListEquality<DraftDoc> _stackEq = ListEquality<DraftDoc>();
@@ -286,18 +287,11 @@ class EditorState {
         final t = hit.col;
         return t >= 1 && t <= drive.tieup.length && drive.tieup[t - 1].contains(hit.row);
       case DraftRegion.right:
-        final pick = hit.row;
-        if (drive is DraftTreadled) {
-          return pick >= 0 &&
-              pick < drive.treadling.length &&
-              drive.treadling[pick].contains(hit.col);
-        }
-        if (drive is DraftLiftplan) {
-          return pick >= 0 &&
-              pick < drive.liftplan.length &&
-              drive.liftplan[pick].contains(hit.col);
-        }
-        return false;
+        // The right band is the COMPRESSED treadling: hit.row is an ENTRY (run) index, and a cell is
+        // "on" when that run's shed presses hit.col (a treadle id, or a shaft id for a liftplan).
+        final es = entries;
+        final i = hit.row;
+        return i >= 0 && i < es.length && es[i].shed.contains(hit.col);
       case DraftRegion.warpColor:
       case DraftRegion.weftColor:
         // Color cells have no on/off state; the driver routes them by region, never via isCellOn.
@@ -383,6 +377,124 @@ class EditorState {
     return next == draft ? this : copyWith(draft: next);
   }
 
+  // --- COMPRESSED ("book") treadling: edit the per-pick model through its collapsed entries. The
+  // entries are DERIVED each call (treadlingEntries), so an edit that makes a run match its neighbour
+  // simply re-collapses on the next read; the per-pick treadling stays the canonical engine form. ---
+
+  /// The treadling collapsed into runs of identical sheds — the compressed view the editor renders
+  /// and edits. Generic over the drive (treadle ids for treadled, raised shaft ids for liftplan).
+  List<TreadlingEntry> get entries => treadlingEntries(draft.drive.rows);
+
+  /// Set every pick in entry [index]'s run to press [ids] (treadle ids treadled, shaft ids liftplan),
+  /// canonicalized ascending. Pure; returns `this` on a no-op. The paint path routes here so one tap
+  /// sets the whole run's shed.
+  EditorState withShedForEntry(int index, List<int> ids) {
+    final es = entries;
+    if (index < 0 || index >= es.length) throw RangeError.range(index, 0, es.length - 1, 'entry');
+    final e = es[index];
+    final shed = List<int>.of(ids)..sort();
+    final rows = draft.drive.rows;
+    final newRows = [
+      for (var p = 0; p < rows.length; p++)
+        (p >= e.startPick && p < e.endPick) ? shed : List<int>.of(rows[p]),
+    ];
+    final next = draft.copyWith(drive: _driveFromRows(newRows));
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// Set entry [index]'s pick COUNT (>= 1) by inserting/removing picks at the run's tail; inserted
+  /// picks copy the run's shed and its first pick's weft color/thickness. Pure; no-op when unchanged.
+  EditorState setEntryCount(int index, int count) {
+    if (count < 1) throw RangeError.range(count, 1, null, 'count');
+    final es = entries;
+    if (index < 0 || index >= es.length) throw RangeError.range(index, 0, es.length - 1, 'entry');
+    final e = es[index];
+    if (count == e.count) return this;
+    if (count > e.count) {
+      return _insertPicks(
+          e.endPick, count - e.count, e.shed, _weftColorAt(e.startPick), _weftThicknessAt(e.startPick));
+    }
+    return _removePicks(e.endPick - (e.count - count), e.count - count);
+  }
+
+  /// Append a new BLANK (no-shed) one-pick entry after the last run, ready to be given a shed + count.
+  EditorState addEntry() => _insertPicks(
+      draft.drive.rows.length, 1, const <int>[], 0, _weftThicknessAt(draft.picks - 1));
+
+  /// Remove entry [index]'s whole run (all its picks). A bad index is a no-op.
+  EditorState removeEntry(int index) {
+    final es = entries;
+    if (index < 0 || index >= es.length) return this;
+    final e = es[index];
+    return _removePicks(e.startPick, e.count);
+  }
+
+  int _weftColorAt(int pick) =>
+      (pick >= 0 && pick < draft.weftColors.length) ? draft.weftColors[pick] : 0;
+
+  double? _weftThicknessAt(int pick) =>
+      (pick >= 0 && pick < draft.weftThickness.length) ? draft.weftThickness[pick] : null;
+
+  /// The current drive with its per-pick [rows] replaced (variant-preserving).
+  DraftDrive _driveFromRows(List<List<int>> rows) {
+    final drive = draft.drive;
+    return switch (drive) {
+      DraftTreadled() => drive.copyWith(treadling: rows),
+      DraftLiftplan() => drive.copyWith(liftplan: rows),
+    };
+  }
+
+  /// [xs] padded with [fill] or truncated to exactly [len] — keeps the per-pick bands coupled to the
+  /// pick count when inserting/removing.
+  static List<T> _padded<T>(List<T> xs, int len, T fill) =>
+      [for (var i = 0; i < len; i++) i < xs.length ? xs[i] : fill];
+
+  /// Insert [n] picks at 0-based [at], each pressing [shed] with weft color [color] (and [thickness]
+  /// when the draft tracks per-pick thickness). Keeps treadling/liftplan, weftColors, weftThickness
+  /// coupled to the new pick count.
+  EditorState _insertPicks(int at, int n, List<int> shed, int color, double? thickness) {
+    if (n <= 0) return this;
+    final rows = draft.drive.rows;
+    final cut = at.clamp(0, rows.length);
+    final newRows = [
+      for (var p = 0; p < cut; p++) List<int>.of(rows[p]),
+      for (var k = 0; k < n; k++) List<int>.of(shed),
+      for (var p = cut; p < rows.length; p++) List<int>.of(rows[p]),
+    ];
+    final wc = _padded(draft.weftColors, rows.length, 0);
+    final newWc = [...wc.sublist(0, cut), for (var k = 0; k < n; k++) color, ...wc.sublist(cut)];
+    final wt = draft.weftThickness;
+    final newWt = wt.isEmpty
+        ? wt
+        : (() {
+            final p = _padded(wt, rows.length, 1.0);
+            return [...p.sublist(0, cut), for (var k = 0; k < n; k++) thickness ?? 1.0, ...p.sublist(cut)];
+          })();
+    return copyWith(
+        draft: draft.copyWith(drive: _driveFromRows(newRows), weftColors: newWc, weftThickness: newWt));
+  }
+
+  /// Remove [n] picks starting at 0-based [at], keeping the per-pick bands coupled. A bad range is a
+  /// no-op.
+  EditorState _removePicks(int at, int n) {
+    final rows = draft.drive.rows;
+    if (n <= 0 || at < 0 || at >= rows.length) return this;
+    final end = (at + n).clamp(0, rows.length);
+    keep(int p) => p < at || p >= end;
+    final newRows = [for (var p = 0; p < rows.length; p++) if (keep(p)) List<int>.of(rows[p])];
+    final wc = _padded(draft.weftColors, rows.length, 0);
+    final newWc = [for (var p = 0; p < wc.length; p++) if (keep(p)) wc[p]];
+    final wt = draft.weftThickness;
+    final newWt = wt.isEmpty
+        ? wt
+        : (() {
+            final p = _padded(wt, rows.length, 1.0);
+            return [for (var i = 0; i < p.length; i++) if (keep(i)) p[i]];
+          })();
+    return copyWith(
+        draft: draft.copyWith(drive: _driveFromRows(newRows), weftColors: newWc, weftThickness: newWt));
+  }
+
   /// A fresh copy of [rows] with row [index] set to a canonical (ascending) copy of [value],
   /// padding with empty rows up to [index] when the source is short.
   static List<List<int>> _setRow(List<List<int>> rows, int index, List<int> value) {
@@ -437,9 +549,9 @@ class EditorState {
       case DraftRegion.tieup:
         return withTieupCell(hit.col, hit.row, on);
       case DraftRegion.right:
-        return draft.drive is DraftTreadled
-            ? withTreadleForPick(hit.row, on ? [hit.col] : const <int>[])
-            : withLiftForPick(hit.row, on ? [hit.col] : const <int>[]);
+        // hit.row is an ENTRY index; a paint sets that whole run's shed (replace semantics, matching
+        // the old per-pick behaviour). Works for both drives via the shared shed-setter.
+        return withShedForEntry(hit.row, on ? [hit.col] : const <int>[]);
       case DraftRegion.warpColor:
       case DraftRegion.weftColor:
         // Color regions set a palette INDEX, not an on/off bool: a mis-route here is a bug, so fail
