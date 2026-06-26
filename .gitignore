@@ -28,3 +28,5 @@ CLAUDE.md
 *.jks
 *.keystore
 key.properties
+
+docs/

@@ -37,8 +37,11 @@ import/export is lossless for what we support.
 **1. `Drive` is a sum type, not two optional fields.** A draft is *either* treadled *or*
 liftplan-driven; an enum makes the illegal "both/neither" states unrepresentable.
 `Draft::to_liftplan()` converts treadled→liftplan losslessly (union the tie-up over the
-pressed treadles). The reverse (factor a liftplan into a minimal tie-up) is a harder
-combinatorial problem and is deliberately deferred.
+pressed treadles). The reverse, `Draft::factor_liftplan`, treats each distinct lift as one
+treadle (rising shed, so the cloth is unchanged) when the plan stays under a treadle-count
+cap; a too-complex dobby plan keeps its liftplan. It runs on WIF import so a `[LIFTPLAN]`-only
+file shows the conventional tie-up + treadling. (The editor also renders the treadling
+COMPRESSED — one numbered row per run of identical picks — but the stored model stays per-pick.)
 
 **2. Shed direction is resolved in exactly one place.** `Draft::raised_shafts(pick)`
 returns the canonical set of shafts that are *up* for a pick:
