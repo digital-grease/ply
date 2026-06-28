@@ -34,14 +34,23 @@ bool sameShed(List<int> a, List<int> b) {
 
 /// Collapse a per-pick [rows] list (treadling or liftplan) into maximal runs of identical sheds, in
 /// pick order. The entries' counts sum to `rows.length`; an empty input yields an empty list.
-List<TreadlingEntry> treadlingEntries(List<List<int>> rows) {
+///
+/// [collapse] gates the run-collapsing that is the overshot "book" shorthand: with it FALSE (the
+/// normal per-pick treadling for non-overshot drafts) every pick stays its own entry (count 1), so
+/// the treadling band reads one row per pick — aligned with the drawdown, no repeat counts. Only an
+/// overshot draft passes `collapse: true`, where a run of identical picks reads "throw this shed N
+/// times". Default true keeps the historical (always-collapsed) behaviour for callers that do not opt
+/// out (e.g. the engine-free reducers' default and existing tests).
+List<TreadlingEntry> treadlingEntries(List<List<int>> rows, {bool collapse = true}) {
   final entries = <TreadlingEntry>[];
   var i = 0;
   while (i < rows.length) {
     final shed = rows[i];
     var n = 1;
-    while (i + n < rows.length && sameShed(rows[i + n], shed)) {
-      n++;
+    if (collapse) {
+      while (i + n < rows.length && sameShed(rows[i + n], shed)) {
+        n++;
+      }
     }
     entries.add(TreadlingEntry(shed: List<int>.unmodifiable(shed), count: n, startPick: i));
     i += n;

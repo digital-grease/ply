@@ -31,6 +31,22 @@ void main() {
       expect(treadlingEntries(const []), isEmpty);
     });
 
+    test('collapse:false keeps one entry per pick (the non-overshot per-pick treadling)', () {
+      // The SAME repeating treadling, but NOT collapsed: every pick is its own count-1 entry, so the
+      // band reads one row per pick (aligned with the drawdown) instead of the overshot run shorthand.
+      final e = treadlingEntries(const [
+        [1],
+        [1],
+        [1],
+        [2],
+        [1],
+        [1],
+      ], collapse: false);
+      expect(e.length, 6, reason: 'one entry per pick, no run-collapsing');
+      expect(e.every((x) => x.count == 1), isTrue);
+      expect(e.map((x) => x.startPick).toList(), [0, 1, 2, 3, 4, 5]);
+    });
+
     test('a non-repeating treadling is one entry per pick (count 1)', () {
       final e = treadlingEntries([
         [1],

@@ -22,6 +22,27 @@ void main() {
       expect(restored, equals(original));
     });
 
+    test('overshotTreadling survives the round-trip', () {
+      final original = DraftMeta(
+        name: 'Overshot star',
+        overshotTreadling: true,
+        savedAt: DateTime.utc(2026, 6, 26, 12, 0),
+        lastOpened: DateTime.utc(2026, 6, 26, 12, 0),
+      );
+      final restored =
+          DraftMeta.fromJson(jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>);
+      expect(restored.overshotTreadling, isTrue);
+      expect(restored, equals(original));
+    });
+
+    test('an older sidecar without overshotTreadling defaults to false', () {
+      final m = DraftMeta.fromJson({
+        'name': 'Legacy',
+        'savedAt': '2026-06-01T00:00:00.000Z',
+      });
+      expect(m.overshotTreadling, isFalse);
+    });
+
     test('normalizes local input to UTC and still round-trips', () {
       final original = DraftMeta(
         name: 'Twill 2/2',

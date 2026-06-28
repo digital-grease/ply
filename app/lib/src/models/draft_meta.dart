@@ -24,6 +24,7 @@ class DraftMeta {
     this.author,
     this.notes = '',
     this.loomType = LoomType.jack,
+    this.overshotTreadling = false,
     required DateTime savedAt,
     required DateTime lastOpened,
     this.schemaVersion = 1,
@@ -51,6 +52,11 @@ class DraftMeta {
   /// unknown field. Defaults to [LoomType.jack] when absent (older sidecar).
   final LoomType loomType;
 
+  /// Whether this draft uses the OVERSHOT "book" treadling (collapsed numbered runs) rather than the
+  /// normal per-pick treadling. App-only view+edit mode; serde tolerates it as an unknown field.
+  /// Defaults to false (an older sidecar, or any non-overshot draft).
+  final bool overshotTreadling;
+
   /// When the draft was first saved.
   final DateTime savedAt;
 
@@ -66,6 +72,7 @@ class DraftMeta {
     String? author,
     String? notes,
     LoomType? loomType,
+    bool? overshotTreadling,
     DateTime? savedAt,
     DateTime? lastOpened,
     int? schemaVersion,
@@ -76,6 +83,7 @@ class DraftMeta {
       author: author ?? this.author,
       notes: notes ?? this.notes,
       loomType: loomType ?? this.loomType,
+      overshotTreadling: overshotTreadling ?? this.overshotTreadling,
       savedAt: savedAt ?? this.savedAt,
       lastOpened: lastOpened ?? this.lastOpened,
       schemaVersion: schemaVersion ?? this.schemaVersion,
@@ -90,6 +98,7 @@ class DraftMeta {
         if (author != null) 'author': author,
         'notes': notes,
         'loomType': loomType.serialName,
+        'overshotTreadling': overshotTreadling,
         'savedAt': savedAt.toIso8601String(),
         'lastOpened': lastOpened.toIso8601String(),
         'schemaVersion': schemaVersion,
@@ -105,6 +114,7 @@ class DraftMeta {
       author: json['author'] as String?,
       notes: (json['notes'] as String?) ?? '',
       loomType: loomTypeFromSerial(json['loomType'] as String?),
+      overshotTreadling: (json['overshotTreadling'] as bool?) ?? false,
       savedAt: savedAt,
       // Fall back to savedAt so sort order is still sensible if lastOpened is absent.
       lastOpened: _parseDate(json['lastOpened'], fallback: savedAt),
@@ -122,6 +132,7 @@ class DraftMeta {
           author == other.author &&
           notes == other.notes &&
           loomType == other.loomType &&
+          overshotTreadling == other.overshotTreadling &&
           savedAt == other.savedAt &&
           lastOpened == other.lastOpened &&
           schemaVersion == other.schemaVersion;
@@ -133,6 +144,7 @@ class DraftMeta {
         author,
         notes,
         loomType,
+        overshotTreadling,
         savedAt,
         lastOpened,
         schemaVersion,

@@ -26,6 +26,7 @@ class KnitStitch {
   static const int m1p = 17;
   static const int m1lp = 18;
   static const int m1rp = 19;
+  static const int ktbl = 20;
 }
 
 /// How the brush picker GROUPS its stitches into collapsible sections. [cables] is a UI-only section
@@ -53,6 +54,9 @@ const List<KnitBrush> kKnitBrushes = [
   KnitBrush(KnitStitch.knit, 'Knit', 'k', 'Knit stitch — smooth "V" on the right side.',
       KnitBrushCategory.basic),
   KnitBrush(KnitStitch.purl, 'Purl', 'p', 'Purl stitch — the bump; the reverse of a knit.',
+      KnitBrushCategory.basic),
+  KnitBrush(KnitStitch.ktbl, 'Knit tbl', 'ktbl',
+      'Knit through back loop — a twisted knit (work into the back of the stitch).',
       KnitBrushCategory.basic),
   KnitBrush(KnitStitch.slip, 'Slip', 'sl', 'Slip stitch — move a stitch to the other needle, unworked.',
       KnitBrushCategory.basic),

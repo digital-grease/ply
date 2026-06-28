@@ -481,6 +481,29 @@ void main() {
       expect(s.undo.length, 1, reason: 'one undo entry for the stroke');
     });
 
+    test('collapse:false paints ONE pick, not the whole run (non-overshot per-pick editing)', () {
+      // The SAME merging() draft, but the right-band row is a PICK index (collapse off): painting
+      // (treadle 3, row 1) must set only pick 1, leaving picks 0 and 2 of the old run untouched.
+      final s = EditorState(draft: merging())
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.right, 3, 1), on: true, collapse: false)
+          .endStroke();
+      expect((s.draft.drive as DraftTreadled).treadling, [
+        [1],
+        [3],
+        [1],
+        [2],
+      ], reason: 'only pick 1 changed; the run did not collapse');
+    });
+
+    test('collapse:false isCellOn reads a single pick (row = pick index)', () {
+      final s = EditorState(draft: merging());
+      // Pick 3 presses treadle 2; with collapse off the row IS the pick (not the run index).
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 2, 3), collapse: false), isTrue);
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 1, 3), collapse: false), isFalse);
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 1, 2), collapse: false), isTrue);
+    });
+
     test('setEntryCount GROWS by inserting picks that copy the run shed + color', () {
       final s = EditorState(draft: merging()).setEntryCount(1, 3); // treadle 2 x1 -> x3
       final t = s.draft.drive as DraftTreadled;

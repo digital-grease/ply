@@ -220,11 +220,68 @@ class DraftLayout {
   Size get totalSize => Size(
       _leftPad + _warpW + gutter + _rightW + _weftMarkerW, _topPad + _shaftH + gutter + _pickH);
 
+  /// The absolute floor (logical px/cell) the continuous auto-fit may shrink to. 1px is the smallest
+  /// sensible cell: the drawdown bitmap simply downscales to an overview, so even an enormous imported
+  /// draft can be shown whole instead of opening overflowed.
+  static const int minFitCellPx = 1;
+
+  /// True when the whole [totalSize] at pitch [px] fits [available] on BOTH axes.
+  static bool _fitsAt(
+    int px, {
+    required int ends,
+    required int picks,
+    required int shafts,
+    required int treadles,
+    required bool hasTieup,
+    required Size available,
+  }) {
+    final size = DraftLayout(
+      ends: ends,
+      picks: picks,
+      shafts: shafts,
+      treadles: treadles,
+      hasTieup: hasTieup,
+      cell: px.toDouble(),
+    ).totalSize;
+    return size.width <= available.width && size.height <= available.height;
+  }
+
+  /// The largest CONTINUOUS integer pitch in [[minFitCellPx], [maxPx]] whose whole [totalSize] fits
+  /// [available] on both axes, or [minFitCellPx] if even that overflows (the draft then scrolls).
+  /// Unlike [fitCellLevel] this is not restricted to the snap levels, so it can always shrink a large
+  /// draft down until it is fully visible — the floor a big imported WIF needs to be zoomable-to-fit.
+  static int fitCellPx({
+    required int ends,
+    required int picks,
+    required int shafts,
+    required int treadles,
+    required bool hasTieup,
+    required Size available,
+    required int maxPx,
+  }) {
+    var chosen = minFitCellPx;
+    for (var px = minFitCellPx; px <= maxPx; px++) {
+      if (_fitsAt(px,
+          ends: ends,
+          picks: picks,
+          shafts: shafts,
+          treadles: treadles,
+          hasTieup: hasTieup,
+          available: available)) {
+        chosen = px;
+      } else {
+        break; // totalSize is monotonic in pitch: once it overflows, every larger pitch does too.
+      }
+    }
+    return chosen;
+  }
+
   /// The largest pitch in [levels] whose whole [totalSize] fits within [available] on BOTH axes — a
   /// "zoom to fit" so a freshly-opened draft fills the viewport instead of always starting at a fixed
-  /// pitch. Falls back to the SMALLEST level when even that overflows (the draft then scrolls at the
-  /// smallest pitch). [levels] must be ascending and non-empty; pass the editor's `zoomCellLevels` so
-  /// the result is always a snappable step.
+  /// pitch. When even the SMALLEST level overflows (a large imported draft), it falls through to the
+  /// largest CONTINUOUS integer pitch (down to [minFitCellPx]) that fits via [fitCellPx], so the whole
+  /// draft is actually visible rather than opening overflowed at the floor. [levels] must be ascending
+  /// and non-empty; pass the editor's `zoomCellLevels` so a normal-sized result is a snappable step.
   static int fitCellLevel({
     required int ends,
     required int picks,
@@ -234,21 +291,29 @@ class DraftLayout {
     required Size available,
     required List<int> levels,
   }) {
-    var chosen = levels.first; // smallest = the scroll-anyway fallback
+    int? snap; // the largest snap level that fits, if any
     for (final level in levels) {
-      final size = DraftLayout(
-        ends: ends,
-        picks: picks,
-        shafts: shafts,
-        treadles: treadles,
-        hasTieup: hasTieup,
-        cell: level.toDouble(),
-      ).totalSize;
-      if (size.width <= available.width && size.height <= available.height) {
-        chosen = level; // monotonic in `level`, so the last fitting one is the largest
+      if (_fitsAt(level,
+          ends: ends,
+          picks: picks,
+          shafts: shafts,
+          treadles: treadles,
+          hasTieup: hasTieup,
+          available: available)) {
+        snap = level; // monotonic in `level`, so the last fitting one is the largest
       }
     }
-    return chosen;
+    if (snap != null) return snap;
+    // Even the smallest snap level overflows: shrink continuously so the whole draft is visible.
+    return fitCellPx(
+      ends: ends,
+      picks: picks,
+      shafts: shafts,
+      treadles: treadles,
+      hasTieup: hasTieup,
+      available: available,
+      maxPx: levels.first,
+    );
   }
 
   // --- per-grid geometry in each grid's LOCAL space ---

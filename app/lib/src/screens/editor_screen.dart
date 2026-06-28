@@ -30,6 +30,7 @@ enum _OverflowAction {
   convert,
   viewLayers,
   toggleShed,
+  toggleOvershot,
   toggleGridlines,
   toggleFloats,
   toggleThreadTexture
@@ -143,6 +144,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // the new-draft choice (or jack). Persisted back into the sidecar on save.
       ref.read(loomTypeProvider.notifier).state =
           widget.meta?.loomType ?? widget.initialLoomType ?? LoomType.jack;
+      // Seed the overshot-treadling mode from the sidecar (false for a from-scratch/imported draft);
+      // it is auto-set when an Overshot structure is generated and persisted back on save.
+      ref.read(overshotTreadlingProvider.notifier).state =
+          widget.meta?.overshotTreadling ?? false;
       setState(() => _loading = false);
     } catch (e) {
       if (!mounted) return;
@@ -231,8 +236,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // would emit no name and a reopen would default to "Untitled". An edit keeps its doc as-is.
       var docToSave = state.draft;
       final loomType = ref.read(loomTypeProvider);
+      final overshotTreadling = ref.read(overshotTreadlingProvider);
       if (widget.meta != null) {
-        meta = widget.meta!.copyWith(loomType: loomType, lastOpened: DateTime.now());
+        meta = widget.meta!.copyWith(
+            loomType: loomType, overshotTreadling: overshotTreadling, lastOpened: DateTime.now());
       } else {
         final input = await showSaveDraftDialog(context, initialName: widget.title);
         if (input == null || !mounted) return; // cancelled the name prompt
@@ -243,6 +250,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           author: input.author,
           notes: input.notes,
           loomType: loomType,
+          overshotTreadling: overshotTreadling,
           savedAt: now,
           lastOpened: now,
         );
@@ -605,6 +613,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         final cur = ref.read(draftEditorProvider).draft.shed;
                         notifier.setShed(
                             cur == Shed.sinking ? Shed.rising : Shed.sinking);
+                      case _OverflowAction.toggleOvershot:
+                        final p = ref.read(overshotTreadlingProvider.notifier);
+                        p.state = !p.state;
                       case _OverflowAction.toggleGridlines:
                         final p = ref.read(showGridlinesProvider.notifier);
                         p.state = !p.state;
@@ -659,6 +670,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       value: _OverflowAction.toggleShed,
                       checked: ref.read(draftEditorProvider).draft.shed == Shed.sinking,
                       child: const Text('Sinking shed'),
+                    ),
+                    // Overshot treadling: collapse runs of identical picks into one numbered "throw N
+                    // times" row (auto-set when an Overshot structure is generated). Off = the normal
+                    // per-pick treadling, so the overshot shorthand never shows on a plain/twill draft.
+                    CheckedPopupMenuItem(
+                      value: _OverflowAction.toggleOvershot,
+                      checked: ref.read(overshotTreadlingProvider),
+                      child: const Text('Overshot treadling'),
                     ),
                     const PopupMenuDivider(),
                     // View overlays (checkable): reflect the current toggle state at open time.

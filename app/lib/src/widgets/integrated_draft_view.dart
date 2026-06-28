@@ -84,6 +84,9 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
         )));
     final cell = ref.watch(zoomCellProvider);
     final pencil = ref.watch(editorToolProvider) == EditorTool.pencil;
+    // Overshot collapses the treadling into runs (band = run count); otherwise the band is one row per
+    // pick. dims.$6 is the collapsed run count, dims.$2 is the pick count.
+    final overshot = ref.watch(overshotTreadlingProvider);
 
     final layout = DraftLayout(
       ends: dims.$1,
@@ -91,7 +94,7 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       shafts: dims.$3,
       treadles: dims.$4,
       hasTieup: dims.$5,
-      entries: dims.$6,
+      entries: overshot ? dims.$6 : dims.$2,
       cell: cell.toDouble(),
     );
 
@@ -125,6 +128,7 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     // context.size shrink-wraps its scrolling axis to content, which would defeat the fit.
     return LayoutBuilder(builder: (context, constraints) {
       _maybeAutoFit(dims, constraints.biggest);
+      _updateMinPitch(dims, constraints.biggest);
       // Cap the canvas to its CONTENT height (not the whole viewport) so that when the cloth fits
       // with room to spare — e.g. a small/new draft on a tall phone — the editor's Column can pull
       // the dimension controls up into the freed space instead of leaving a gap under the cloth. In
@@ -298,8 +302,12 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     // ZOOM: set the pitch from the pinch-distance ratio.
     final dist = (g[0] - g[1]).distance;
     if (_navStartDist > 0 && dist > 0) {
-      final next =
-          (_navStartPitch * dist / _navStartDist).round().clamp(minCellPx, maxCellPx);
+      // Clamp the lower end to the ADAPTIVE floor (minCellPx for a normal draft, lower for one too big
+      // to fit at minCellPx) so a pinch can shrink a large draft until the whole thing is on screen.
+      final floor = ref.read(minZoomCellProvider);
+      var next = (_navStartPitch * dist / _navStartDist).round();
+      if (next < floor) next = floor;
+      if (next > maxCellPx) next = maxCellPx;
       if (next != ref.read(zoomCellProvider)) {
         ref.read(zoomCellProvider.notifier).state = next;
         ref.read(zoomUserSetProvider.notifier).state = true; // a manual zoom; auto-fit yields
@@ -340,6 +348,29 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       if (!mounted || ref.read(zoomUserSetProvider)) return;
       ref.read(zoomCellProvider.notifier).state = fit;
       ref.read(zoomUserSetProvider.notifier).state = true; // one-shot per load
+    });
+  }
+
+  /// Keep the adaptive zoom-OUT floor ([minZoomCellProvider]) in step with the live draft + viewport:
+  /// [minCellPx] for a normal draft, but LOWER when the whole draft does not fit even at [minCellPx],
+  /// so a pinch (or the zoom-out button) can shrink a large imported draft until everything is visible.
+  /// Unlike [_maybeAutoFit] this is NOT one-shot — it tracks every resize/zoom — but it only WRITES the
+  /// provider (post-frame, never during build) when the floor actually changes, so it never churns.
+  void _updateMinPitch((int, int, int, int, bool, int) dims, Size available) {
+    if (!available.isFinite || available.isEmpty) return;
+    final floor = DraftLayout.fitCellPx(
+      ends: dims.$1,
+      picks: dims.$2,
+      shafts: dims.$3,
+      treadles: dims.$4,
+      hasTieup: dims.$5,
+      available: available,
+      maxPx: minCellPx, // never raise the floor above the normal one; only lower it for a big draft
+    );
+    if (ref.read(minZoomCellProvider) == floor) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ref.read(minZoomCellProvider) == floor) return;
+      ref.read(minZoomCellProvider.notifier).state = floor;
     });
   }
 }

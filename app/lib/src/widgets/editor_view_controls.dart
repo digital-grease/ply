@@ -16,7 +16,11 @@ class EditorViewControls extends ConsumerWidget {
   const EditorViewControls({super.key});
 
   void _step(WidgetRef ref, int dir) {
-    ref.read(zoomCellProvider.notifier).state = stepZoomLevel(ref.read(zoomCellProvider), dir);
+    ref.read(zoomCellProvider.notifier).state = stepZoomLevel(
+      ref.read(zoomCellProvider),
+      dir,
+      minPx: ref.read(minZoomCellProvider), // adaptive floor: step below minCellPx for a big draft
+    );
     ref.read(zoomUserSetProvider.notifier).state = true; // a manual zoom; auto-fit yields
   }
 
@@ -28,6 +32,7 @@ class EditorViewControls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final cell = ref.watch(zoomCellProvider);
+    final minCell = ref.watch(minZoomCellProvider); // adaptive zoom-out floor (lower for a big draft)
     final pencil = ref.watch(editorToolProvider) == EditorTool.pencil;
 
     Widget btn({
@@ -58,7 +63,7 @@ class EditorViewControls extends ConsumerWidget {
             btn(
               icon: Icons.remove,
               tooltip: 'Zoom out',
-              onPressed: cell <= minCellPx ? null : () => _step(ref, -1),
+              onPressed: cell <= minCell ? null : () => _step(ref, -1),
             ),
             btn(
               icon: Icons.add,

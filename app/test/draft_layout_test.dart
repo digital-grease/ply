@@ -262,8 +262,36 @@ void main() {
     test('exact fit is inclusive (<=)', () {
       expect(fit(const Size(182, 102)), 16); // pitch 16 with gutter: 182x102 exactly
     });
-    test('falls back to the SMALLEST level when even it overflows (the draft then scrolls)', () {
-      expect(fit(const Size(50, 50)), 8); // 8 -> 91x51 overflows 50 but is the floor
+    test('shrinks CONTINUOUSLY below the smallest level so a too-big draft still fits whole', () {
+      // 8 -> 91x51 overflows 50, so the snap levels are exhausted; the continuous fallback finds the
+      // largest integer pitch that fits: 4 -> 46x26 fits, 5 -> 57 wide overflows.
+      expect(fit(const Size(50, 50)), 4);
+    });
+    test('bottoms out at minFitCellPx when even 1px overflows (the draft then scrolls)', () {
+      // A viewport narrower than 11px can not fit even a 1px-per-cell draft; the fit floors at 1.
+      expect(fit(const Size(8, 8)), DraftLayout.minFitCellPx);
+    });
+  });
+
+  group('DraftLayout.fitCellPx (continuous fit for a large draft)', () {
+    int fitPx(Size available, {int maxPx = 6}) => DraftLayout.fitCellPx(
+          ends: 4,
+          picks: 3,
+          shafts: 2,
+          treadles: 5,
+          hasTieup: true,
+          available: available,
+          maxPx: maxPx,
+        );
+
+    test('caps at maxPx when the draft fits there', () {
+      expect(fitPx(const Size(1000, 1000)), 6); // huge viewport: capped at the maxPx ceiling
+    });
+    test('returns the largest integer pitch that fits below the cap', () {
+      expect(fitPx(const Size(50, 50)), 4); // 4 -> 46x26 fits; 5 -> 57 wide overflows
+    });
+    test('floors at minFitCellPx when nothing fits', () {
+      expect(fitPx(const Size(8, 8)), DraftLayout.minFitCellPx);
     });
   });
 }

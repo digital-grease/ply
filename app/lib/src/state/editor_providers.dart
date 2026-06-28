@@ -61,16 +61,26 @@ const List<int> zoomCellLevels = [8, 12, 16, 24, 32, 48];
 
 /// Pinch-zoom pitch bounds (logical px/cell). Wider than [zoomCellLevels] so a pinch can push past the
 /// largest button step or below the smallest; still integer, so the drawdown bitmap stays crisp.
+/// [minCellPx] is the NORMAL floor; a LARGE draft lowers it adaptively (see [minZoomCellProvider]) so
+/// you can always zoom out far enough to see the whole thing.
 const int minCellPx = 6;
 const int maxCellPx = 64;
 
+/// The effective zoom-OUT floor (logical px/cell) for the open draft + viewport: [minCellPx] normally,
+/// but LOWER for a draft too big to fit even at [minCellPx], so a pinch or the zoom-out button can
+/// shrink it until the whole draft is visible (the fix for a large imported WIF that could not be
+/// zoomed out enough). The integrated view recomputes this from the live dimensions + viewport via
+/// [DraftLayout.fitCellPx]; pure VIEW CHROME like [zoomCellProvider].
+final minZoomCellProvider = StateProvider<int>((ref) => minCellPx);
+
 /// Step the cell pitch to the next/previous [zoomCellLevels] step from [cur] (dir +1 / -1). Snaps an
 /// OFF-level [cur] (e.g. an exact pitch a pinch left behind) to the nearest level in the step
-/// direction, and saturates at [maxCellPx]/[minCellPx] past the ends of the list. Pure so the AppBar
-/// overflow and the on-canvas controls step identically.
-int stepZoomLevel(int cur, int dir) => dir > 0
+/// direction, saturating at [maxCellPx] going up and at [minPx] going down (pass the adaptive
+/// [minZoomCellProvider] floor so a big draft steps below [minCellPx]). Pure so the AppBar overflow
+/// and the on-canvas controls step identically.
+int stepZoomLevel(int cur, int dir, {int minPx = minCellPx}) => dir > 0
     ? zoomCellLevels.firstWhere((l) => l > cur, orElse: () => maxCellPx)
-    : zoomCellLevels.reversed.firstWhere((l) => l < cur, orElse: () => minCellPx);
+    : zoomCellLevels.reversed.firstWhere((l) => l < cur, orElse: () => minPx);
 
 /// The on-screen pixels-per-cell (the shared grid pitch). Stepped through [zoomCellLevels] by the
 /// buttons, set freely (within [minCellPx]..[maxCellPx]) by a pinch.
@@ -88,6 +98,17 @@ final zoomUserSetProvider = StateProvider<bool>((ref) => false);
 /// view chrome (like the zoom) — reset on load. A consumer treats an index past the live entry count
 /// (a run that merged away) as "no selection".
 final selectedTreadlingEntryProvider = StateProvider<int?>((ref) => null);
+
+/// Whether the open draft uses the OVERSHOT "book" treadling: the treadling collapses runs of
+/// identical consecutive picks into one numbered row ("throw this shed N times"), and the dimensions
+/// bar shows the per-row treadle / count / add / delete controls. OFF (the default) shows the normal
+/// per-pick treadling — one row per pick, aligned with the drawdown, no repeat counts — so the
+/// overshot shorthand never leaks onto plain/twill/satin drafts. Auto-set true when an Overshot
+/// structure is generated, toggleable from the editor overflow menu, and persisted per draft in the
+/// sidecar [DraftMeta] (seeded on load, written on save). Ephemeral editor chrome like
+/// [loomTypeProvider]: it is a VIEW+EDIT mode, not part of the rendered cloth, so it lives off
+/// EditorState and never touches undo/dedup.
+final overshotTreadlingProvider = StateProvider<bool>((ref) => false);
 
 /// The loom type of the open draft. Seeded on [DraftEditorNotifier.load] from the sidecar
 /// [DraftMeta] (a saved draft) or the new-draft choice, written back into the sidecar on save.

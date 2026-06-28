@@ -76,7 +76,8 @@ DraftDoc fixture() => DraftDoc(
       notes: '',
     );
 
-Future<(ProviderContainer, FakeResizeRepo)> pumpBar(WidgetTester tester) async {
+Future<(ProviderContainer, FakeResizeRepo)> pumpBar(WidgetTester tester,
+    {bool overshot = false}) async {
   // The bar's action chips + 4 steppers scroll horizontally in production; widen the test surface
   // so every stepper is on-screen and tappable at a fixed offset (the row gained a Structure chip).
   tester.view.physicalSize = const Size(1600, 600);
@@ -87,6 +88,8 @@ Future<(ProviderContainer, FakeResizeRepo)> pumpBar(WidgetTester tester) async {
   final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(fake)]);
   addTearDown(c.dispose);
   c.read(draftEditorProvider.notifier).load(fixture());
+  // The per-row treadle/count/add/delete controls are overshot-only; opt in where a test exercises them.
+  c.read(overshotTreadlingProvider.notifier).state = overshot;
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: c,
@@ -114,7 +117,7 @@ void main() {
   });
 
   testWidgets('selecting a treadling row reveals its count stepper, which grows the run', (tester) async {
-    final (c, _) = await pumpBar(tester); // treadling [1],[2],[3],[4] -> 4 single-pick rows
+    final (c, _) = await pumpBar(tester, overshot: true); // treadling [1],[2],[3],[4] -> 4 single-pick rows
     expect(find.byTooltip('More Row ×'), findsNothing, reason: 'no per-row controls until selected');
     // Select entry 0 (treadle 1, x1).
     c.read(selectedTreadlingEntryProvider.notifier).state = 0;
@@ -135,8 +138,17 @@ void main() {
     expect(find.text('Row × 2'), findsOneWidget);
   });
 
+  testWidgets('the per-row treadling controls stay HIDDEN when overshot is OFF', (tester) async {
+    final (c, _) = await pumpBar(tester); // overshot defaults OFF
+    c.read(selectedTreadlingEntryProvider.notifier).state = 0; // select a row anyway
+    await tester.pump();
+    expect(find.byTooltip('More Row ×'), findsNothing, reason: 'no overshot count stepper');
+    expect(find.byTooltip('More Treadle'), findsNothing, reason: 'no overshot treadle stepper');
+    expect(find.widgetWithText(ActionChip, 'Row'), findsNothing, reason: 'no Add Row chip');
+  });
+
   testWidgets('Add row appends a blank treadling row and selects it', (tester) async {
-    final (c, _) = await pumpBar(tester);
+    final (c, _) = await pumpBar(tester, overshot: true);
     c.read(selectedTreadlingEntryProvider.notifier).state = 0;
     await tester.pump();
     await tester.tap(find.widgetWithText(ActionChip, 'Row'));
@@ -148,7 +160,7 @@ void main() {
 
   testWidgets('the per-row Treadle stepper sets the selected run\'s treadle (overshot)',
       (tester) async {
-    final (c, _) = await pumpBar(tester); // treadling [1],[2],[3],[4]
+    final (c, _) = await pumpBar(tester, overshot: true); // treadling [1],[2],[3],[4]
     c.read(selectedTreadlingEntryProvider.notifier).state = 0; // entry 0 = treadle 1
     await tester.pump();
     expect(find.text('Treadle 1'), findsOneWidget, reason: 'the selected run shows its treadle');
@@ -162,7 +174,7 @@ void main() {
   });
 
   testWidgets('the per-row Treadle stepper down to 0 clears the run shed', (tester) async {
-    final (c, _) = await pumpBar(tester); // treadling [1],[2],[3],[4]
+    final (c, _) = await pumpBar(tester, overshot: true); // treadling [1],[2],[3],[4]
     c.read(selectedTreadlingEntryProvider.notifier).state = 0; // treadle 1
     await tester.pump();
     await tester.tap(find.byTooltip('Fewer Treadle')); // 1 -> 0 = a blank shed

@@ -360,9 +360,10 @@ class RightGrid extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final (rows, treadled) =
         ref.watch(draftEditorProvider.select((s) => (s.draft.drive.rows, s.draft.drive is DraftTreadled)));
-    // COMPRESSED: one ROW per run of identical picks. Each run's shed fills its treadle/shaft cells;
-    // a run of two or more shows its pick count in the representative cell.
-    final entries = treadlingEntries(rows);
+    // OVERSHOT: collapse runs of identical picks into one numbered ROW ("throw this shed N times").
+    // NON-overshot: one row per pick (no collapse, no counts) — the normal per-pick treadling.
+    final overshot = ref.watch(overshotTreadlingProvider);
+    final entries = treadlingEntries(rows, collapse: overshot);
     final cells = <(int, int)>[
       for (var e = 0; e < entries.length && e < geom.rows; e++)
         for (final id in entries[e].shed)
@@ -414,7 +415,8 @@ class WeftMarkerBand extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final (rows, weftColors, palette) = ref.watch(draftEditorProvider
         .select((s) => (s.draft.drive.rows, s.draft.weftColors, s.draft.palette)));
-    final entries = treadlingEntries(rows);
+    // Mirror the right band's row granularity: one cell per run (overshot) or one per pick otherwise.
+    final entries = treadlingEntries(rows, collapse: ref.watch(overshotTreadlingProvider));
     final cells = <(int, int)>[for (var e = 0; e < entries.length && e < geom.rows; e++) (1, e)];
     final indices = <int>[
       for (var e = 0; e < entries.length && e < geom.rows; e++)

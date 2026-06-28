@@ -239,6 +239,13 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
       );
       if (!mounted) return;
       notifier.commitEdit(doc); // one undo entry: applies the structure into the draft
+      // A whole-draft generate (re)defines the structure, so set the treadling mode to match: overshot
+      // gets the collapsed "book" treadling, every other whole-draft structure the per-pick treadling.
+      // A composable partial apply (basic families) leaves the existing mode untouched.
+      if (_wholeDraft.contains(_family)) {
+        ref.read(overshotTreadlingProvider.notifier).state =
+            _family == StructureFamily.overshot;
+      }
       // Remember the choices so reopening the sheet restores them.
       ref.read(_lastStructureParamsProvider.notifier).state = (
         family: _family,

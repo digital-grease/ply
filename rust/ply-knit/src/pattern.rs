@@ -127,6 +127,7 @@ pub mod builtin {
     pub const M1P: StitchId = 17;
     pub const M1LP: StitchId = 18;
     pub const M1RP: StitchId = 19;
+    pub const KTBL: StitchId = 20;
 }
 
 /// The open stitch vocabulary for a pattern: built-ins plus any custom [`StitchDef`]s.
@@ -177,6 +178,8 @@ impl StitchLegend {
                 def("m1p", 0, 1, None),           // M1P   (purlwise make-one increase)
                 def("m1lp", 0, 1, None),          // M1LP  (left purlwise increase)
                 def("m1rp", 0, 1, None),          // M1RP  (right purlwise increase)
+                def("ktbl", 1, 1, None),          // KTBL  (knit through back loop — a twisted knit;
+                                                  //        no built-in ptbl WS mirror yet, so emitted as itself)
             ],
         }
     }
@@ -444,12 +447,13 @@ mod tests {
             (builtin::M1P, "m1p", 1),
             (builtin::M1LP, "m1lp", 1),
             (builtin::M1RP, "m1rp", 1),
+            (builtin::KTBL, "ktbl", 0),
         ] {
             let s = leg.get(id).unwrap_or_else(|| panic!("legend missing id {id} ({sym})"));
             assert_eq!(s.symbol, sym, "id {id} symbol");
             assert_eq!(s.delta(), delta, "id {id} ({sym}) delta");
         }
-        assert_eq!(leg.stitches.len(), 20, "12 original builtins + 8 appended shaping stitches");
+        assert_eq!(leg.stitches.len(), 21, "12 original builtins + 8 appended shaping stitches + ktbl");
     }
 
     #[test]
@@ -458,7 +462,7 @@ mod tests {
         let mut p = ribbing();
         p.legend.stitches.truncate(12);
         p.upgrade_builtins();
-        assert_eq!(p.legend.stitches.len(), 20, "the 8 newer built-ins are spliced in");
+        assert_eq!(p.legend.stitches.len(), 21, "the 9 newer built-ins are spliced in");
         assert_eq!(p.legend.get(builtin::K3TOG).unwrap().symbol, "k3tog");
         // The k/p chart cells (ids 1 & 2, below the splice point) are untouched.
         assert_eq!(p.chart.rows[0].cells[0].stitch, builtin::KNIT);
@@ -491,17 +495,17 @@ mod tests {
 
         p.upgrade_builtins();
 
-        assert_eq!(p.legend.stitches.len(), 21, "20 built-ins + the one moved cable");
-        assert_eq!(p.legend.stitches[20].symbol, "2/2RC");
-        assert!(p.legend.stitches[20].cable.is_some(), "the cable now sits after the full built-in set");
+        assert_eq!(p.legend.stitches.len(), 22, "21 built-ins + the one moved cable");
+        assert_eq!(p.legend.stitches[21].symbol, "2/2RC");
+        assert!(p.legend.stitches[21].cable.is_some(), "the cable now sits after the full built-in set");
         // The knit cell is unchanged; the cable cell (old index 12) follows the cable to its new index.
         assert_eq!(p.chart.rows[0].cells[0].stitch, builtin::KNIT);
-        assert_eq!(p.chart.rows[0].cells[1].stitch, 20);
+        assert_eq!(p.chart.rows[0].cells[1].stitch, 21);
     }
 
     #[test]
     fn upgrade_builtins_is_idempotent_on_a_current_pattern() {
-        let mut p = ribbing(); // already carries the current 20-built-in legend
+        let mut p = ribbing(); // already carries the current 21-built-in legend
         let before = p.clone();
         p.upgrade_builtins();
         assert_eq!(p, before, "a pattern already on the current built-ins is left untouched");
@@ -514,7 +518,7 @@ mod tests {
         old.legend.stitches.truncate(12);
         let json = serde_json::to_string(&old).unwrap();
         let back = KnitPattern::from_json(&json).unwrap();
-        assert_eq!(back.legend.stitches.len(), 20, "from_json migrates the built-in set on load");
+        assert_eq!(back.legend.stitches.len(), 21, "from_json migrates the built-in set on load");
         assert_eq!(back.chart.rows[0].cells[0].stitch, builtin::KNIT, "the chart survives unchanged");
     }
 

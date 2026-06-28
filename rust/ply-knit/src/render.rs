@@ -176,6 +176,11 @@ fn draw_cell(
             draw_line(px, w, h, left, top, cx, bottom, sym);
             draw_line(px, w, h, cx, bottom, right, top, sym);
         }
+        builtin::KTBL => {
+            // a twisted knit: the knit column (|) with a diagonal twist (/) crossing it.
+            draw_line(px, w, h, cx, top, cx, bottom, sym);
+            draw_line(px, w, h, left, bottom, right, top, sym);
+        }
         _ => {
             // Unknown / custom stitch: a hollow square placeholder.
             draw_rect_outline(px, w, h, left, top, right, bottom, sym);
@@ -392,6 +397,15 @@ mod tests {
         let p = pat(1, vec![Row::plain(vec![Cell::of(builtin::PURL)])], vec![Color::WHITE]);
         let img = render_rgba(&p, 16);
         assert_eq!(px_at(&img, 8, 8), [SYMBOL_DARK.r, SYMBOL_DARK.g, SYMBOL_DARK.b], "purl dot");
+    }
+
+    #[test]
+    fn ktbl_draws_a_twisted_knit_symbol() {
+        // ktbl draws a vertical bar (the knit column) crossing the cell center, so (cx, cy) is the dark
+        // symbol over the cream ground — distinct from a plain knit, which leaves the center cream.
+        let p = pat(1, vec![Row::plain(vec![Cell::of(builtin::KTBL)])], vec![Color::WHITE]);
+        let img = render_rgba(&p, 16);
+        assert_eq!(px_at(&img, 8, 8), [SYMBOL_DARK.r, SYMBOL_DARK.g, SYMBOL_DARK.b], "ktbl twist bar");
     }
 
     #[test]

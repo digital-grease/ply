@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/state/draft_editor_notifier.dart';
+import 'package:ply/src/state/editor_providers.dart';
 import 'package:ply/src/widgets/draft_grids.dart';
 import 'package:ply/src/widgets/draft_layout.dart';
 
@@ -71,10 +72,12 @@ const RegionGeom tieupGeom =
 const RegionGeom rightGeom =
     RegionGeom(cols: 2, rows: 4, cell: 10, colBase: 1, rowBase: 0, bottomOrigin: true);
 
-Future<ProviderContainer> pumpGrid(WidgetTester t, DraftDoc doc, Widget grid) async {
+Future<ProviderContainer> pumpGrid(WidgetTester t, DraftDoc doc, Widget grid,
+    {bool overshot = false}) async {
   final c = ProviderContainer();
   addTearDown(c.dispose);
   c.read(draftEditorProvider.notifier).load(doc);
+  c.read(overshotTreadlingProvider.notifier).state = overshot;
   await t.pumpWidget(
     UncontrolledProviderScope(
       container: c,
@@ -135,7 +138,7 @@ void main() {
         [2],
       ]),
     );
-    await pumpGrid(t, doc, const RightGrid(geom: rightGeom));
+    await pumpGrid(t, doc, const RightGrid(geom: rightGeom), overshot: true);
     // Entry 0 (treadle 1) at row 0, entry 1 (treadle 2) at row 1.
     expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (2, 1)});
     // (col, entryRow, count) — the collapsed run shows 3 in its cell.
@@ -145,6 +148,27 @@ void main() {
   testWidgets('a non-repeating treadling is one entry per pick and carries no counts', (t) async {
     await pumpGrid(t, treadled(), const RightGrid(geom: rightGeom));
     expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (2, 1), (1, 2), (2, 3)});
+    expect(countsOf(t, find.byType(RightGrid)), isEmpty);
+  });
+
+  testWidgets('a repeating treadling is NOT compressed when overshot is OFF (per-pick, no counts)',
+      (t) async {
+    // The SAME 3x-then-1 treadling as the overshot test, but with overshot OFF: it stays one row per
+    // pick (treadle 1 at picks 0,1,2; treadle 2 at pick 3) with no repeat counts — the overshot
+    // shorthand must not leak onto a plain treadled draft.
+    final doc = treadled().copyWith(
+      drive: DraftTreadled(tieup: const [
+        [1],
+        [2],
+      ], treadling: const [
+        [1],
+        [1],
+        [1],
+        [2],
+      ]),
+    );
+    await pumpGrid(t, doc, const RightGrid(geom: rightGeom)); // overshot defaults OFF
+    expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (1, 1), (1, 2), (2, 3)});
     expect(countsOf(t, find.byType(RightGrid)), isEmpty);
   });
 
