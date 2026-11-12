@@ -16,12 +16,13 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 | Overshot book treadling | Partial | A separate Book view groups runs of identical picks (pick ranges, every weft color, round-trip edits); the editor keeps one row per pick. Real "Use Tabby" shorthand needs pattern/tabby pick roles, not built yet |
 | Double-weave layer view | Partial | Each pick is shown in exactly one layer or listed with the reason it weaves neither; the views show each layer's own interlacement, and there is no view of the finished cloth's face yet |
 | Profile drafts | Partial | Engine helper only, not exposed in the app |
-| Knitting chart editor, written instructions, validation | Verified | Repeats (worked N times or to the end of the row) drive written instructions, stitch counts and validation; save does not validate; the pattern has no cast-on count yet, so a to-end repeat on the first row cannot be counted |
+| Knitting chart editor, written instructions, validation | Verified | Repeats (worked N times or to the end of the row) drive written instructions, stitch counts and validation; an optional cast-on count checks row 1 and opens the written instructions; save does not validate |
 | Nalbinding reference, notation playground, loop diagram | Partial | Notation is read strictly or leniently with every problem listed at its position, and nothing is dropped silently; the loop diagram is labelled as a one-stitch sketch and marked approximate when the notation was not read exactly. Multi-round and fabric views are not built |
 | Nalbinding projects (notation, notes, photos) | Verified | Notation is checked strictly as you type and problems stay listed, but saving is still allowed (a project is a draft); no structured recipe model yet |
 | Native file formats | Verified | `.plyknit` and `.plynal` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead); no general backup/restore yet |
-| Backup/restore, export/share | Not built | Planned in M7 and M9 |
-| Engineering gates | Verified | 349 Rust + 759 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings` |
+| Library backup and restore | Verified | Settings saves every project (with photos) to one `.plybackup` file wherever you choose; restore checks every file first, previews new, identical and differing projects, and adds differing ones as copies without replacing anything. App settings and single-project export are not included yet |
+| Export/share of patterns | Not built | Planned in M9 (print and share layouts) |
+| Engineering gates | Verified | 365 Rust + 829 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings`, and binding generation runs without hanging on current Flutter |
 
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
@@ -135,8 +136,13 @@ M9 garment construction and print, M10 tablet weaving, M11 crochet.
   row, and clear problems for repeats that do not divide evenly, overlap, or split a cable.
 - ✅ Viewport rendering: large weaving drafts render only what is on screen, at the current zoom,
   so editing stays responsive and drafts over 4 million intersections can be viewed and edited.
-- ⬜ Next: library backup and restore; a weaver's check of the shadow-weave fixtures; a cast-on
-  count in the knitting format.
+- ✅ Knitting cast-on count: optional, stored in knit format v3 (older files migrate with it
+  unset); row 1 is checked against it and the written instructions open with it.
+- ✅ Library backup and restore: one `.plybackup` file, saved offline wherever you choose; restore
+  validates every path and checksum before writing, previews the result, never replaces a
+  project, and leaves the library unchanged if anything fails.
+- ⬜ Next: a weaver's check of the shadow-weave fixtures; pattern/tabby pick roles for real "Use
+  Tabby" shorthand; single-project export.
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.
