@@ -1,0 +1,13 @@
+# build_runner exists here only to generate the freezed classes for the flutter_rust_bridge bindings
+# in lib/src/rust/ (no other app code uses freezed). Limiting its inputs to that folder keeps the
+# analyzer it pins away from the rest of the app, which imports Flutter framework code written with
+# newer Dart syntax (dot shorthands) than that analyzer understands: reading it made
+# `dart run build_runner build` throw "Missing implementation of visitDotShorthandPropertyAccess"
+# and then hang, in CI as well as locally. If app code ever adopts freezed or another builder, widen
+# this list (or upgrade build_runner, freezed and analyzer together).
+targets:
+  $default:
+    sources:
+      - lib/src/rust/**
+      - pubspec.yaml
+      - $package$
