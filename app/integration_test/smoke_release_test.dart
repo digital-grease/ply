@@ -112,17 +112,20 @@ void main() {
     final repo = KnitRepository();
     final blank = await repo.blank();
     final fullLen = blank.legend.stitches.length; // the current full builtin count
-    // Round-trip to native JSON, then SIMULATE a pattern saved before the shaping stitches existed by
-    // dropping the legend back to the original 12 builtins, and parse THAT through the real FFI.
-    final map = jsonDecode(await repo.write(blank)) as Map<String, dynamic>;
-    (map['legend'] as Map<String, dynamic>)['stitches'] =
-        (map['legend']['stitches'] as List).sublist(0, 12);
-    final reloaded = await repo.parse(jsonEncode(map));
+    // Round-trip to native JSON, then SIMULATE a pattern saved by v0.1.0 to v0.1.5 (before the
+    // shaping stitches existed): those releases wrote the BARE pattern object (no versioned
+    // envelope) with the original 12 builtins. Only such a legacy file has its builtins upgraded on
+    // load; a versioned file keeps its legend exactly as saved.
+    final envelope = jsonDecode(await repo.write(blank)) as Map<String, dynamic>;
+    final legacy = envelope['document'] as Map<String, dynamic>;
+    (legacy['legend'] as Map<String, dynamic>)['stitches'] =
+        (legacy['legend']['stitches'] as List).sublist(0, 12);
+    final reloaded = await repo.parse(jsonEncode(legacy));
     debugPrint('SMOKE[5] builtins on save=$fullLen, truncated=12, reloaded='
         '${reloaded.legend.stitches.length}');
-    expect(fullLen, 20, reason: 'a fresh pattern carries the full current builtin set');
-    expect(reloaded.legend.stitches.length, 20,
-        reason: 'parse migrates an old 12-builtin legend back to the full set (the tester\'s patterns)');
+    expect(fullLen, greaterThan(12), reason: 'a fresh pattern carries the full current builtin set');
+    expect(reloaded.legend.stitches.length, fullLen,
+        reason: 'parse migrates a legacy 12-builtin legend to the full set (the tester\'s patterns)');
   });
 
   testWidgets('6: the thread-texture render option changes the drawdown bitmap (real FFI)',

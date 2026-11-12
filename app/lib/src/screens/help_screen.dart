@@ -144,19 +144,19 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "How do I mark a repeat in a knitting chart?",
-      "Draw the repeating stitches once. Switch the top bar's tool button from drawing to selecting, drag across those stitches (on one row or several), and tap Mark repeat. Pick how many times they are worked in all, or To end to repeat them across the rest of the row. The chart outlines each repeat with its count; the written instructions show it as \"[k2, p2] 3 times\" or \"*k2, p2; rep from * to last st, k\"; and stitch counts include every repeat. Select the same stitches and choose Remove repeat to clear one. A pattern has no cast-on count, so a first row repeated to the end cannot be counted: the validation band says so and names the multiple of stitches it needs.",
+      "Draw the repeating stitches once. Switch the top bar's tool button from drawing to selecting, drag across those stitches (on one row or several), and tap Mark repeat. Pick how many times they are worked in all, or To end to repeat them across the rest of the row. The chart outlines each repeat with its count; the written instructions show it as \"[k2, p2] 3 times\" or \"*k2, p2; rep from * to last st, k\"; and stitch counts include every repeat. Select the same stitches and choose Remove repeat to clear one. A first row repeated to the end is counted against the pattern's cast-on; if the pattern has no cast-on set, Ply cannot count that row, and the validation band says so and names the multiple of stitches it needs.",
     ),
     FaqEntry(
       "Where do my knitting patterns get saved, and is there written instructions I can copy?",
-      "The Save button stores the pattern on your device in your knit library (no account or cloud), and it shows up as a thumbnail tile you can open, rename, or delete. From the More menu, \"Written instructions\" turns the chart into row-by-row text, listed cast-on edge first and aware of right-side/wrong-side rows; each line is selectable so you can copy the pattern out.",
+      "The Save button stores the pattern on your device in your knit library (no account or cloud), and it shows up as a thumbnail tile you can open, rename, or delete. From the More menu, \"Written instructions\" turns the chart into row-by-row text, listed cast-on edge first and aware of right-side/wrong-side rows, and starting with the cast-on (\"Cast on 26 sts.\") when the pattern has one; each line is selectable so you can copy the pattern out.",
     ),
     FaqEntry(
       "Is there a gauge and yardage calculator for knitting?",
-      "Yes, under More > \"Gauge & yardage\". You can seed a gauge from a yarn weight or type your swatch numbers and apply it to the pattern, calculate cast-on stitches from a finished width plus ease (rounded to a stitch-repeat multiple), and get a rough stockinette yardage estimate that also shows a 10% buffer. The yardage figure is an estimate, so plan to buy a little extra.",
+      "Yes, under More > \"Gauge & yardage\". You can seed a gauge from your yarn's wraps per inch or type your swatch numbers and apply it to the pattern, calculate cast-on stitches from a finished width plus ease (rounded to a stitch-repeat multiple) and set the result as the pattern's cast-on, and get a rough stockinette yardage estimate that also shows a 10% buffer. The yardage figure is an estimate, so plan to buy a little extra.",
     ),
     FaqEntry(
       "Can I set a pattern to be knit flat versus in the round?",
-      "Yes, in More > \"Pattern settings\" you switch between Flat and In the round, and for flat work you set whether row 1 is worked from the right or wrong side. That choice drives the written instructions (Row N with RS/WS alternation when flat, versus Round N when in the round), and there is also a free-text notes field for yarn, needles, and finishing.",
+      "Yes, in More > \"Pattern settings\" you switch between Flat and In the round, and for flat work you set whether row 1 is worked from the right or wrong side. That choice drives the written instructions (Row N with RS/WS alternation when flat, versus Round N when in the round). The same sheet holds the cast-on count (blank if the pattern does not say; row 1 is checked against it and the written instructions start with it) and a free-text notes field for yarn, needles, and finishing.",
     ),
     FaqEntry(
       "What can the nalbinding section actually do right now?",
@@ -167,6 +167,10 @@ const List<FaqSection> kFaq = [
     FaqEntry(
       "Where do all my patterns live, and how do I find the right craft?",
       "The home screen is one library with a tab per craft: Weaving, Knitting, and Nalbinding. Your saved weaves and knits each show up as thumbnails under their tab, and everything is stored as files on your device, so there is no account or cloud sync to worry about.",
+    ),
+    FaqEntry(
+      "How do I back up my patterns, or move them to a new phone?",
+      "Open Settings and choose \"Back up library\". Ply saves all your projects (weaving, knitting, and nalbinding, with their photos) into one .plybackup file wherever you choose, such as your Downloads folder or a cloud drive app. To bring them back, use \"Restore from backup\": Ply checks the file, shows you what is new, what you already have, and what differs, and only then adds the projects. Nothing in your library is replaced; a project that differs is added as a copy. App settings are not included.",
     ),
     FaqEntry(
       "What is that colored band in the editor telling me?",

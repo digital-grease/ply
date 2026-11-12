@@ -186,4 +186,14 @@ void main() {
       expect(sharedText, contains('exported a thing'));
     });
   });
+
+  test('kPlyAppVersion matches the version in pubspec.yaml', () {
+    // Crash reports, logs and library backups record this constant, so it must not drift from the
+    // version the app is actually built as (pubspec `version: X.Y.Z+build`).
+    final line = File('pubspec.yaml')
+        .readAsLinesSync()
+        .firstWhere((l) => l.startsWith('version:'));
+    final version = line.substring('version:'.length).trim().split('+').first;
+    expect(kPlyAppVersion, version);
+  });
 }
