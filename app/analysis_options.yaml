@@ -16,6 +16,9 @@ analyzer:
     # On a clean checkout (e.g. CI) `flutter analyze` cannot resolve its imports, so exclude it — it
     # is build tooling, not app code.
     - rust_builder/**
+    - build/**
+    - android/**
+    - ios/**
 
 linter:
   # The lint rules applied to this project can be customized in the
