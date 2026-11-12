@@ -12,3 +12,5 @@ ply-common = { workspace = true }
 [dev-dependencies]
 # Property-based tests / fuzzing of the WIF round-trip + parser robustness (stable toolchain).
 proptest = "1"
+# Reads the `.expect.json` structural oracles of the tracked fixtures (fixtures/weaving/).
+serde_json = { workspace = true }

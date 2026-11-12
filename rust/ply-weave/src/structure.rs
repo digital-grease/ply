@@ -7,8 +7,12 @@
 //!
 //! Each generator is PURE and returns a validate()-clean draft sized to the requested ends x picks.
 //! The worked examples in the tests were hand-derived AND adversarially verified (a straight-draw
-//! "overshot" is really a twill; a half-drop "shadow weave" is really solid stripes; a both-shafts-up
-//! "double weave" is really single-layer tabby) — the matrices below are the CORRECTED forms.
+//! "overshot" is really a twill; a both-shafts-up "double weave" is really single-layer tabby), so the
+//! matrices below are the CORRECTED forms.
+//!
+//! Shadow weave has its own module, [`crate::shadow`]: its Atwater and Powell systems take typed
+//! parameters (system, shafts, layout, block widths, repeats) and report invalid ones as errors
+//! instead of clamping them.
 
 use ply_common::{Color, Unit};
 
@@ -18,12 +22,12 @@ use crate::draft::{
 
 /// Two mid-contrast greys for color-and-weave; softer than pure black/white (which reads harsh),
 /// per the shadow-weave convention. Index 0 = light, 1 = dark.
-const LIGHT: Color = Color {
+pub(crate) const LIGHT: Color = Color {
     r: 219,
     g: 219,
     b: 219,
 };
-const DARK: Color = Color {
+pub(crate) const DARK: Color = Color {
     r: 45,
     g: 45,
     b: 45,
@@ -128,47 +132,6 @@ pub fn overshot(ends: usize, picks: usize, block: usize) -> Draft {
     )
 }
 
-/// SHADOW WEAVE — a color-and-weave on a simple ground (plain or 2/2 twill) where each warp/weft
-/// thread alternates LIGHT/DARK, but the color order is PHASE-SHIFTED every `block` threads
-/// (log-cabin style). A plain half-drop alternation flattens to solid stripes; the per-block phase
-/// flip is what makes adjacent same-colored threads interlace oppositely, producing the fine shifting
-/// shadow lines. `twill` selects a 2/2-twill ground (4 shafts) over plain weave (2 shafts).
-pub fn shadow_weave(ends: usize, picks: usize, twill: bool, block: usize) -> Draft {
-    let block = block.max(2);
-    let shafts: u16 = if twill { 4 } else { 2 };
-    let threading = Threading::straight(ends, shafts);
-    let tieup = if twill {
-        TieUp::twill(2, 2)
-    } else {
-        TieUp::plain(2)
-    };
-    let period = if twill { 4 } else { 2 };
-    let treadling = Treadling(
-        (0..picks)
-            .map(|p| vec![TreadleId((p % period) as u16 + 1)])
-            .collect(),
-    );
-    // Log-cabin phase shift: flip the L/D parity every `block` threads. (i + (i/block mod 2)) mod 2.
-    let phase = |i: usize| -> ColorIndex { (i + ((i / block) % 2)) % 2 };
-    let warp = (0..ends).map(phase).collect();
-    let weft = (0..picks).map(phase).collect();
-    base_draft(
-        if twill {
-            "Shadow weave (twill)"
-        } else {
-            "Shadow weave"
-        },
-        shafts,
-        period as u16,
-        threading,
-        tieup,
-        treadling,
-        vec![LIGHT, DARK],
-        warp,
-        weft,
-    )
-}
-
 /// DOUBLE WEAVE — two INDEPENDENT plain-weave layers woven at once on 4 shafts: the top layer on
 /// shafts {1,3}, the bottom on {2,4}, threaded straight (1,2,3,4 …). The textbook rising-shed
 /// (jack/liftplan) form: a TOP pick raises ONE top shaft and leaves the bottom layer DOWN (it sits
@@ -257,7 +220,7 @@ mod tests {
         s
     }
 
-    // The shaft each end threads (overshot/shadow/double all thread exactly one shaft per end).
+    // The shaft each end threads (overshot and double weave thread exactly one shaft per end).
     fn shaft_of(d: &Draft, end: usize) -> u16 {
         d.threading.0[end][0].0
     }
@@ -357,41 +320,6 @@ mod tests {
     }
 
     #[test]
-    fn shadow_weave_columns_vary_not_solid_stripes() {
-        // The corrected (log-cabin) color order must make at least one column change color down its
-        // length — the broken half-drop version made every column a single solid color.
-        let d = shadow_weave(8, 8, false, 4);
-        assert_eq!(d.shafts, 2);
-        assert_eq!(d.colors.warp, vec![0, 1, 0, 1, 1, 0, 1, 0]);
-        assert_eq!(d.colors.weft, vec![0, 1, 0, 1, 1, 0, 1, 0]);
-        // Displayed color at (end, pick): warp color if warp_up else weft color.
-        let shown = |end: usize, pick: usize| -> usize {
-            if warp_up(&d, end, pick) {
-                d.colors.warp[end]
-            } else {
-                d.colors.weft[pick]
-            }
-        };
-        let mut any_varies = false;
-        for end in 0..8 {
-            let c0 = shown(end, 0);
-            if (0..8).any(|p| shown(end, p) != c0) {
-                any_varies = true;
-                break;
-            }
-        }
-        assert!(
-            any_varies,
-            "a real shadow weave must have columns that change color (not solid stripes)"
-        );
-        assert!(
-            validate(&d).is_empty(),
-            "shadow golden must validate: {:?}",
-            validate(&d)
-        );
-    }
-
-    #[test]
     fn double_weave_each_layer_plain_weaves_and_clears_the_other() {
         let d = double_weave(8, 4);
         if let Drive::Treadled { tieup, treadling } = &d.drive {
@@ -455,11 +383,7 @@ mod tests {
 
     #[test]
     fn generators_size_to_request_and_validate() {
-        for d in [
-            overshot(24, 12, 6),
-            shadow_weave(20, 20, true, 4),
-            double_weave(12, 8),
-        ] {
+        for d in [overshot(24, 12, 6), double_weave(12, 8)] {
             assert_eq!(d.ends(), d.threading.ends());
             assert!(
                 validate(&d).is_empty(),
@@ -476,13 +400,7 @@ mod tests {
     fn generators_weave_the_same_cloth_on_a_sinking_shed() {
         use crate::draft::ShedType;
         use crate::drawdown::compute;
-        let drafts = [
-            plain_weave(12, 10),
-            overshot(16, 16, 4),
-            shadow_weave(16, 16, false, 4),
-            shadow_weave(16, 16, true, 4),
-            double_weave(8, 8),
-        ];
+        let drafts = [plain_weave(12, 10), overshot(16, 16, 4), double_weave(8, 8)];
         for d in drafts {
             assert_eq!(
                 d.shed,

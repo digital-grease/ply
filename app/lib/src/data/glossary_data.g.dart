@@ -117,6 +117,10 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'long floats, smooth lustrous face, densest sett.',
   ),
   GlossaryTerm(
+    term: 'Shadow weave',
+    definition: 'a block weave in which warp and weft both alternate dark and light threads one by one, and each dark end has a light "shadow" end beside it on a partner shaft. Inside each block the cloth is plain weave with fine horizontal or vertical lines; the only floats are two-thread skips where blocks meet. Unlike log cabin, the pattern comes from the threading, not the color order. The Atwater and Powell systems number the shafts differently but weave the same cloth.',
+  ),
+  GlossaryTerm(
     term: 'Knit',
     aka: 'k',
     definition: 'the basic stitch; a new loop pulled through to the back, making a flat "V" on the right side.',

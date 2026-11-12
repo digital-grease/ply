@@ -46,6 +46,26 @@ void main() {
     expect(kGlossary.any((t) => t.term == 'Rising shed / sinking shed'), isTrue);
   });
 
+  test('a colon separates the headword when there is no dash; a dash still wins', () {
+    final terms = parseGlossary('- **Plain**: one line\n'
+        '- **Aliased** (aka): wraps\n'
+        '  onto two lines\n'
+        '- **Dashed** \u2014 keeps its colon: here\n');
+    expect(terms.map((t) => (t.term, t.aka, t.definition)), [
+      ('Plain', null, 'one line'),
+      ('Aliased', 'aka', 'wraps onto two lines'),
+      ('Dashed', null, 'keeps its colon: here'),
+    ]);
+  });
+
+  test('shadow weave is defined as the authentic block weave', () {
+    final shadow = kGlossary.firstWhere((t) => t.term == 'Shadow weave');
+    expect(shadow.aka, isNull);
+    expect(shadow.definition, startsWith('a block weave'));
+    expect(shadow.definition, contains('Atwater and Powell'));
+    expect(shadow.definition, contains('log cabin'));
+  });
+
   test('definition-text is searchable (a sett query finds EPI in the body, not just headwords)', () {
     // Mirrors the screen filter: case-insensitive over term + aka + definition.
     bool matches(GlossaryTerm t, String q) =>

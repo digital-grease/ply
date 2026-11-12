@@ -1,0 +1,54 @@
+# Fixture record for aw2-atwater-4-point (see fixtures/README.md).
+
+id = "weaving/shadow/aw2-atwater-4-point"
+title = "Atwater shadow weave, 4 shafts, point of A2 B1 C1 D2"
+technique = "shadow weave"
+system = "Atwater"
+files = ["aw2-atwater-4-point.wif", "aw2-atwater-4-point.expect.json"]
+created = "2026-11-12"
+license = "original recreation"
+provenance = """
+An original design, written by Ply's shadow-weave generator from the parameters recorded in \
+aw2-atwater-4-point.expect.json. No published draft was copied: the file applies the published \
+Atwater rules cited below. Blocks: A = dark 1 / light 3, B = dark 2 / light 4, C = dark 3 / \
+light 1, D = dark 4 / light 2. The point layout keeps each turning block's shadow inside it \
+(A becomes a 7-thread run centered on its dark thread, D a 7-thread run centered on its light \
+thread), so no float is longer than two threads."""
+
+[structure]
+ends = 22
+picks = 22
+shafts = 4
+treadles = 4
+shed = "rising"
+tieup = "2/2 straight twill: [1,2] [2,3] [3,4] [1,4]"
+treadling = "as drawn in"
+color_order = "warp and weft alternate dark and light, both starting dark"
+balanced = false
+note = "One repeat each way. To weave a balanced piece, add end 1 (dark, shaft 1) after the last repeat and pick 1 (dark, treadle 1) after the last weft repeat."
+
+[sources]
+# Bibliographic references for the rules this design applies. Nothing from them is reproduced.
+references = [
+  "Madelyn van der Hoogt, \"The Draft: Shadow Weave as a Block Weave\", Handwoven online, 2021-11-29, https://handwovenmagazine.com/the-draft-shadow-weave-as-a-block-weave/ (Atwater pairing 1-3 and 2-4; four blocks that weave two by two).",
+  "Madelyn van der Hoogt and Lynn Tedder, \"All You Need for Shadow Weave\", Handwoven online, 2023-12-20, https://handwovenmagazine.com/all-you-need-for-shadow-weave/ (Atwater block letters; plain weave with two-thread floats).",
+  "Kathryn Wertenberger, \"Shadow Weave: An Overview\", Handwoven, January/February 1987, pp. 76-77; reprinted in Best of Handwoven: Shadow Weave (Interweave, 2011), pp. 5-6 (shadow on the opposite shaft; treadle 1 shadowed by treadle 3; symmetric turning points).",
+  "Alison Irwin and Jean Scorgie, \"Falling-Leaves Shadow-Weave Sweater\", Handwoven, March/April 1998, pp. 34-37, 75 (the 2/2 twill tie-up; doubling the threads at the top of a twill line for symmetry; smooth and feathery block edges).",
+  "Jane Evans, \"The Thick and Thin of Shadow Weave\", Handwoven, March/April 1990, pp. 40-42 (each pick followed by its shadow pick; treadled as drawn in).",
+  "Pat Zannier, \"2015 Sample Two: Shadow Weave\", Guild of Canadian Weavers, 2015-08-02, http://guildofcanadianweavers.blogspot.com/2015/08/2015-sample-two-shadow-weave.html (warp and weft start dark on shaft 1; the dark pick lifts shafts 1 and 2).",
+  "Leigh, \"Shadow Weave Profiles\", Leigh's Fiber Journal, 2006-09-18, https://leighsfiberjournal.blogspot.com/2006/09/shadow-weave-profiles.html (a profile unit is one dark and one light thread).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/shadow_weave.rs (tracked_fixtures_load_and_match_their_oracles and \
+aw2_atwater_4_shaft_point): the file parses; its interlacement, color drawdown and line map equal \
+the oracle in aw2-atwater-4-point.expect.json; it is exactly what the generator writes for the \
+recorded parameters (line endings aside); every structural test passes across the repeat join (strict color \
+alternation, shafts paired by every lift, every end and pick beside its partner, no float longer \
+than two, plain-weave block regions, lines that survive color normalization); the Powell \
+renumbering of the same design weaves identical cloth."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Structure and color order only. Sett, yarns and finishing are not part of the fixture."

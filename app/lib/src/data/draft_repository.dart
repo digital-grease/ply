@@ -12,6 +12,7 @@ import 'package:uuid/uuid.dart';
 import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
+import '../models/shadow_weave_params.dart';
 import '../rust/api.dart';
 import '../rust/dto.dart';
 
@@ -146,7 +147,8 @@ class DraftRepository {
   /// twill shows its diagonal. The result is derived from [base] so its palette/unit/name carry over;
   /// warp/weft colors are reset to fit (warp -> color 0, weft -> color 1 when the palette has one).
   /// Twill's shaft count is `over + under`; Plain/Satin use [shafts]. The editor commits the result
-  /// as one undo entry.
+  /// as one undo entry. Shadow weave takes its own parameters: use [generateShadowWeaveDoc] (passing
+  /// [StructureFamily.shadowWeave] here throws an [ArgumentError]).
   Future<DraftDoc> generateStructureDoc(
     DraftDoc base, {
     required StructureFamily family,
@@ -158,7 +160,6 @@ class DraftRepository {
     required int ends,
     required int picks,
     int block = 4,
-    bool twill = false,
     // Composable application (basic families only): write only the chosen components, optionally at an
     // end/pick offset, OVER the existing draft (non-destructive). Defaults reproduce a whole-cloth
     // generate from a blank draft.
@@ -168,15 +169,15 @@ class DraftRepository {
     int endStart = 0,
     int pickStart = 0,
   }) async {
-    // Whole-draft structures (overshot / shadow weave / double weave) are interdependent, so the
-    // engine builds them complete and returns a ready `DraftDto`. Keep the user's draft IDENTITY
-    // (name, notes) and unit; take the structure + its colors from the generator. Every generator
-    // assumes a RISING shed, so on a sinking-shed draft (counterbalance / countermarch) the engine
-    // re-expresses it with the complementary tie-up: same cloth, tie-up naming the sinking shafts.
+    if (family == StructureFamily.shadowWeave) {
+      throw ArgumentError.value(
+          family, 'family', 'Shadow weave takes its own parameters; use generateShadowWeaveDoc');
+    }
+    // Whole-draft structures (overshot / double weave) are interdependent, so the engine builds them
+    // complete and returns a ready `DraftDto` (see [_adoptGenerated]).
     // (Plain/Twill/Satin fall through to the Dart tie-up + threading composition below.)
     const wholeDraft = {
       StructureFamily.overshot,
-      StructureFamily.shadowWeave,
       StructureFamily.doubleWeave,
     };
     if (wholeDraft.contains(family)) {
@@ -188,14 +189,8 @@ class DraftRepository {
         ends: ends,
         picks: picks,
         block: block,
-        twill: twill,
       );
-      final gen = fromDto(await draftWithShedDto(dto: generated, shed: _shedKind(base.shed)));
-      return gen.copyWith(
-        name: base.name,
-        notes: base.notes,
-        unit: base.unit,
-      );
+      return _adoptGenerated(base, generated);
     }
 
     // --- Basic families (plain / twill / satin): COMPOSABLE, NON-DESTRUCTIVE application. Write only
@@ -259,6 +254,61 @@ class DraftRepository {
         Shed.rising => ShedKind.rising,
         Shed.sinking => ShedKind.sinking,
       };
+
+  /// Generate an authentic shadow-weave draft (Atwater or Powell) from [params]: the engine builds
+  /// the threading from the block widths and layout, the twill tie-up, the treadling as drawn in and
+  /// the dark/light color orders, sized in whole repeats ([ShadowWeaveParams.ends] x
+  /// [ShadowWeaveParams.picks]). Like the other whole-draft structures it replaces the cloth and
+  /// keeps [base]'s identity (see [_adoptGenerated]). Throws the engine's message (surfaced by frb)
+  /// for parameters it refuses, and a [RangeError] for a value the wire cannot carry.
+  Future<DraftDoc> generateShadowWeaveDoc(DraftDoc base, ShadowWeaveParams params) async {
+    for (final (name, v) in [
+      ('shafts', params.shafts),
+      ('warpRepeats', params.warpRepeats),
+      ('weftRepeats', params.weftRepeats),
+      for (final u in params.blockUnits) ('blockUnits', u),
+    ]) {
+      if (v < 0 || v > 0xFFFF) throw RangeError.range(v, 0, 0xFFFF, name);
+    }
+    final generated = await generateShadowWeaveDto(params: shadowParamsDto(params));
+    return _adoptGenerated(base, generated);
+  }
+
+  /// The wire form of [params]: one block entry per block in twill order (A first).
+  @visibleForTesting
+  static ShadowParamsDto shadowParamsDto(ShadowWeaveParams params) => ShadowParamsDto(
+        system: switch (params.system) {
+          ShadowSystem.atwater => ShadowSystemKind.atwater,
+          ShadowSystem.powell => ShadowSystemKind.powell,
+        },
+        shafts: params.shafts,
+        layout: switch (params.layout) {
+          ShadowLayout.repeat => ShadowLayoutKind.repeat,
+          ShadowLayout.point => ShadowLayoutKind.point,
+        },
+        blocks: [
+          for (var b = 0; b < params.blockUnits.length; b++)
+            ShadowBlockDto(block: b, units: params.blockUnits[b]),
+        ],
+        direction: params.reverseTwill ? TwillDirectionKind.reverse : TwillDirectionKind.forward,
+        weftPhase: params.featheryEdges ? WeftPhaseKind.swapped : WeftPhaseKind.standard,
+        warpRepeats: params.warpRepeats,
+        weftRepeats: params.weftRepeats,
+        balance: params.balanced,
+      );
+
+  /// Adopt an engine-generated whole draft onto [base]: keep the user's draft IDENTITY (name, notes)
+  /// and unit, take the structure and its colors from the generator. Every generator assumes a
+  /// RISING shed, so on a sinking-shed draft (counterbalance / countermarch) the engine re-expresses
+  /// it with the complementary tie-up: same cloth, tie-up naming the sinking shafts.
+  Future<DraftDoc> _adoptGenerated(DraftDoc base, DraftDto generated) async {
+    final gen = fromDto(await draftWithShedDto(dto: generated, shed: _shedKind(base.shed)));
+    return gen.copyWith(
+      name: base.name,
+      notes: base.notes,
+      unit: base.unit,
+    );
+  }
 
   /// The PURE overlay step of [generateStructureDoc] for basic families, split out so it is
   /// host-unit-testable without the FFI threading/tie-up generators. Overlays the (already generated)

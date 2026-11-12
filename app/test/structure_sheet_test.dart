@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/draft_doc.dart';
+import 'package:ply/src/models/shadow_weave_params.dart';
 import 'package:ply/src/rust/dto.dart' show StructureFamily, ThreadingKind;
 import 'package:ply/src/state/draft_editor_notifier.dart';
 import 'package:ply/src/state/editor_providers.dart';
@@ -23,7 +24,6 @@ class FakeStructureRepo extends DraftRepository {
     int ends,
     int picks,
     int block,
-    bool twill,
     bool applyThreading,
     bool applyTieup,
     bool applyTreadling,
@@ -46,7 +46,6 @@ class FakeStructureRepo extends DraftRepository {
     required int ends,
     required int picks,
     int block = 4,
-    bool twill = false,
     bool applyThreading = true,
     bool applyTieup = true,
     bool applyTreadling = true,
@@ -63,7 +62,6 @@ class FakeStructureRepo extends DraftRepository {
       ends: ends,
       picks: picks,
       block: block,
-      twill: twill,
       applyThreading: applyThreading,
       applyTieup: applyTieup,
       applyTreadling: applyTreadling,
@@ -72,7 +70,28 @@ class FakeStructureRepo extends DraftRepository {
     );
     return returnDoc;
   }
+
+  ShadowWeaveParams? shadowArgs;
+
+  @override
+  Future<DraftDoc> generateShadowWeaveDoc(DraftDoc base, ShadowWeaveParams params) async {
+    shadowArgs = params;
+    return returnDoc;
+  }
 }
+
+/// Switch the open sheet's structure dropdown (currently showing [from]) to Shadow weave.
+Future<void> chooseShadowWeave(WidgetTester t, {String from = 'Twill'}) async {
+  await t.tap(find.text(from));
+  await t.pumpAndSettle();
+  await t.tap(find.text('Shadow weave').last);
+  await t.pumpAndSettle();
+}
+
+String shadowSize(WidgetTester t) =>
+    t.widget<Text>(find.byKey(const Key('shadow-weave-size'))).data!;
+
+Finder blockField(String letter) => find.widgetWithText(TextFormField, letter);
 
 Future<ProviderContainer> openSheet(WidgetTester t, FakeStructureRepo repo) async {
   // A tall viewport so the composable sheet (family params + Apply chips + offsets) fits without the
@@ -230,22 +249,177 @@ void main() {
     expect(repo.args!.block, 6);
   });
 
-  testWidgets('Shadow weave toggles a twill ground and passes twill + default block', (t) async {
+  testWidgets('Shadow weave shows its own controls and generates the default design', (t) async {
     final repo = FakeStructureRepo();
-    await openSheet(t, repo);
-    await t.tap(find.text('Twill'));
-    await t.pumpAndSettle();
-    await t.tap(find.text('Shadow weave').last);
-    await t.pumpAndSettle();
-    expect(find.text('Twill ground'), findsOneWidget);
-    expect(find.widgetWithText(TextFormField, 'Color block'), findsOneWidget);
-    await t.tap(find.text('Twill ground')); // flip the switch on
-    await t.pumpAndSettle();
+    final c = await openSheet(t, repo);
+    await chooseShadowWeave(t);
+    for (final label in [
+      'System',
+      'Atwater',
+      'Powell',
+      'Shafts',
+      'Layout',
+      'Point',
+      'Straight repeat',
+      'Block widths',
+      'Reverse the tie-up twill',
+      'Block edges',
+      'Smooth',
+      'Feathery',
+      'Balance the edges',
+    ]) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+    expect(find.text('Partner shafts 1 & 3, 2 & 4. Both systems weave the same cloth.'),
+        findsOneWidget);
+    expect(find.text('Blocks run A to D, then back again.'), findsOneWidget);
+    // One width field per block, A to D, each naming its dark & light shafts (Atwater).
+    for (final (letter, shafts) in [('A', '1 & 3'), ('B', '2 & 4'), ('C', '3 & 1'), ('D', '4 & 2')]) {
+      expect(blockField(letter), findsOneWidget, reason: letter);
+      expect(find.text(shafts), findsOneWidget, reason: '$letter shows $shafts');
+    }
+    expect(blockField('E'), findsNothing, reason: 'four shafts give four blocks');
+    expect(find.widgetWithText(TextFormField, 'Warp repeats'), findsOneWidget);
+    expect(find.widgetWithText(TextFormField, 'Weft repeats'), findsOneWidget);
+    // Sized in whole repeats, not by typed ends x picks; no log-cabin knobs.
+    expect(find.widgetWithText(TextFormField, 'Warp ends'), findsNothing);
+    expect(find.widgetWithText(TextFormField, 'Picks'), findsNothing);
+    expect(find.text('Twill ground'), findsNothing);
+    expect(find.widgetWithText(TextFormField, 'Color block'), findsNothing);
+    // Point of A2 B2 C2 D2: 30 threads per repeat, 2 repeats + the balancing end and pick.
+    expect(shadowSize(t), 'Resulting size: 61 ends x 61 picks');
+
+    await t.ensureVisible(find.text('Generate'));
     await t.tap(find.text('Generate'));
     await t.pumpAndSettle();
-    expect(repo.args!.family, StructureFamily.shadowWeave);
-    expect(repo.args!.twill, isTrue);
-    expect(repo.args!.block, 4, reason: 'the default color block');
+    expect(repo.shadowArgs, const ShadowWeaveParams());
+    expect(repo.args, isNull, reason: 'shadow weave never goes through generateStructureDoc');
+    expect(c.read(draftEditorProvider).draft.name, 'generated');
+    expect(c.read(draftEditorProvider).canUndo, isTrue);
+  });
+
+  testWidgets('Powell, 8 shafts, a straight repeat, reversed twill and feathery edges pass through',
+      (t) async {
+    final repo = FakeStructureRepo();
+    await openSheet(t, repo);
+    await chooseShadowWeave(t);
+    await t.tap(find.text('Powell'));
+    await t.pumpAndSettle();
+    expect(find.text('Partner shafts 1 & 2, 3 & 4. Both systems weave the same cloth.'),
+        findsOneWidget);
+    // Powell's own letters: C is dark 2 / light 1.
+    expect(find.text('2 & 1'), findsOneWidget);
+    await t.tap(find.text('8'));
+    await t.pumpAndSettle();
+    expect(find.text('Partner shafts 1 & 2, 3 & 4, 5 & 6, 7 & 8. Both systems weave the same cloth.'),
+        findsOneWidget);
+    for (final letter in ['E', 'F', 'G', 'H']) {
+      expect(blockField(letter), findsOneWidget, reason: '8 shafts give blocks A to H');
+    }
+    // Point of eight blocks of 2: 64 - 2 = 62 per repeat, x 2 + 1.
+    expect(shadowSize(t), 'Resulting size: 125 ends x 125 picks');
+    await t.tap(find.text('Straight repeat'));
+    await t.pumpAndSettle();
+    expect(find.text('Blocks run A to H, then start over.'), findsOneWidget);
+    expect(shadowSize(t), 'Resulting size: 65 ends x 65 picks');
+    await t.enterText(blockField('A'), '3');
+    await t.enterText(blockField('H'), '1');
+    await t.enterText(find.widgetWithText(TextFormField, 'Weft repeats'), '1');
+    await t.pumpAndSettle();
+    // 16 units -> 32 per repeat: 2 x 32 + 1 ends, 1 x 32 + 1 picks.
+    expect(shadowSize(t), 'Resulting size: 65 ends x 33 picks');
+    await t.tap(find.text('Reverse the tie-up twill'));
+    await t.tap(find.text('Feathery'));
+    await t.tap(find.text('Balance the edges'));
+    await t.pumpAndSettle();
+    expect(shadowSize(t), 'Resulting size: 64 ends x 32 picks');
+
+    await t.ensureVisible(find.text('Generate'));
+    await t.tap(find.text('Generate'));
+    await t.pumpAndSettle();
+    expect(
+      repo.shadowArgs,
+      const ShadowWeaveParams(
+        system: ShadowSystem.powell,
+        shafts: 8,
+        layout: ShadowLayout.repeat,
+        blockUnits: [3, 2, 2, 2, 2, 2, 2, 1],
+        reverseTwill: true,
+        featheryEdges: true,
+        warpRepeats: 2,
+        weftRepeats: 1,
+        balanced: false,
+      ),
+    );
+  });
+
+  testWidgets('shadow-weave widths and repeats are validated before anything is generated',
+      (t) async {
+    final repo = FakeStructureRepo();
+    await openSheet(t, repo);
+    await chooseShadowWeave(t);
+    Future<void> generate() async {
+      await t.ensureVisible(find.text('Generate'));
+      await t.tap(find.text('Generate'));
+      await t.pumpAndSettle();
+    }
+
+    await t.enterText(blockField('B'), '0');
+    await t.pumpAndSettle();
+    expect(shadowSize(t), 'Resulting size: enter every block width and repeat');
+    await generate();
+    expect(find.text('At least 1'), findsOneWidget);
+    expect(repo.shadowArgs, isNull, reason: 'a block needs at least one unit');
+
+    await t.enterText(blockField('B'), '65');
+    await generate();
+    expect(find.text('At most ${ShadowWeaveParams.maxUnits}'), findsOneWidget);
+    expect(repo.shadowArgs, isNull);
+
+    // 40 units in a point: 158 threads a repeat; 13 repeats is 2055 ends, over the cap.
+    for (final letter in ['A', 'B', 'C', 'D']) {
+      await t.enterText(blockField(letter), '10');
+    }
+    await t.enterText(find.widgetWithText(TextFormField, 'Warp repeats'), '13');
+    await t.pumpAndSettle();
+    expect(shadowSize(t), 'Resulting size: 2055 ends x 317 picks');
+    await generate();
+    expect(find.text('Gives 2055 ends; at most $kMaxGeneratedThreads'), findsOneWidget);
+    expect(repo.shadowArgs, isNull, reason: 'an over-budget size never reaches the engine');
+
+    await t.enterText(find.widgetWithText(TextFormField, 'Warp repeats'), '');
+    await generate();
+    expect(find.text('At least 1'), findsOneWidget);
+    expect(repo.shadowArgs, isNull);
+
+    await t.enterText(find.widgetWithText(TextFormField, 'Warp repeats'), '12');
+    await generate();
+    expect(repo.shadowArgs?.ends, 1897, reason: '12 x 158 + 1 fits');
+  });
+
+  testWidgets('the shadow-weave design is remembered on reopen', (t) async {
+    final repo = FakeStructureRepo();
+    await openSheet(t, repo);
+    await chooseShadowWeave(t);
+    await t.tap(find.text('Powell'));
+    await t.tap(find.text('Straight repeat'));
+    await t.pumpAndSettle();
+    await t.enterText(blockField('C'), '4');
+    await t.ensureVisible(find.text('Generate'));
+    await t.tap(find.text('Generate'));
+    await t.pumpAndSettle();
+    final first = repo.shadowArgs;
+    expect(first?.blockUnits, [2, 2, 4, 2]);
+
+    repo.shadowArgs = null;
+    await t.tap(find.text('open'));
+    await t.pumpAndSettle();
+    expect(find.text('Shadow weave'), findsOneWidget, reason: 'family restored');
+    expect(shadowSize(t), 'Resulting size: 41 ends x 41 picks');
+    await t.ensureVisible(find.text('Generate'));
+    await t.tap(find.text('Generate'));
+    await t.pumpAndSettle();
+    expect(repo.shadowArgs, first, reason: 'system, layout and widths restored');
   });
 
   testWidgets('generated cloth is capped at the preview budget per axis', (t) async {
@@ -272,7 +446,8 @@ void main() {
     await t.pumpAndSettle();
     expect(find.widgetWithText(TextFormField, 'Over'), findsNothing);
     expect(find.widgetWithText(TextFormField, 'Block width'), findsNothing);
-    expect(find.widgetWithText(TextFormField, 'Color block'), findsNothing);
+    expect(find.widgetWithText(TextFormField, 'Warp repeats'), findsNothing,
+        reason: 'the shadow-weave controls belong to shadow weave only');
     expect(find.widgetWithText(TextFormField, 'Start at end'), findsNothing,
         reason: 'whole-draft structures apply wholesale, no component/range controls');
     expect(find.widgetWithText(TextFormField, 'Warp ends'), findsOneWidget);

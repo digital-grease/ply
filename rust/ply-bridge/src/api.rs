@@ -28,8 +28,10 @@ use ply_weave::{self as weave, Draft};
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
     ColorDto, DraftDto, DriveDto, RenderFailure, RenderFailureKind, RenderOptionsDto,
-    RetainedEntryDto, RetainedSectionDto, SeverityKind, ShedKind, StructureFamily, ThreadingKind,
-    UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPlanDto, YarnEstimateDto,
+    RetainedEntryDto, RetainedSectionDto, SeverityKind, ShadowBlockDto, ShadowLayoutKind,
+    ShadowParamsDto, ShadowSystemKind, ShedKind, StructureFamily, ThreadingKind,
+    TwillDirectionKind, UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPhaseKind,
+    WeftPlanDto, YarnEstimateDto,
 };
 
 /// Most shafts a structure generator will build a tie-up for. Real looms stop far below this (the
@@ -252,12 +254,18 @@ pub fn generate_tieup_dto(
         StructureFamily::Plain => weave::draft::TieUp::plain(shafts),
         StructureFamily::Twill => weave::draft::TieUp::twill(over, under),
         StructureFamily::Satin => weave::draft::TieUp::satin(shafts, counter),
-        // The whole-draft families (overshot/shadow/double) must go through `generate_structure_dto`:
-        // a misrouted request is an error, never a silently different structure.
-        StructureFamily::Overshot | StructureFamily::ShadowWeave | StructureFamily::DoubleWeave => {
+        // The whole-draft families must go through their own generators: a misrouted request is an
+        // error, never a silently different structure.
+        StructureFamily::Overshot | StructureFamily::DoubleWeave => {
             return Err(format!(
                 "{family:?} is a whole-draft structure; generate it with generate_structure_dto"
             ));
+        }
+        StructureFamily::ShadowWeave => {
+            return Err(
+                "ShadowWeave is a whole-draft structure; generate it with generate_shadow_weave_dto"
+                    .to_string(),
+            );
         }
     };
     Ok(tieup
@@ -267,27 +275,30 @@ pub fn generate_tieup_dto(
         .collect())
 }
 
-/// Generate a COMPLETE draft for a whole-draft weave structure (overshot, shadow weave, double weave).
-/// Unlike plain/twill/satin — whose tie-up + threading are composed Dart-side — these three are
-/// interdependent (the threading, tie-up, treadling, AND warp/weft colors must agree), so they are
-/// built whole in the engine and returned as a ready-to-edit `DraftDto`. `block` is the block width
-/// (overshot) or the log-cabin color-phase block (shadow weave); `twill` selects shadow weave's 2/2
-/// twill ground over plain weave. Plain/Twill/Satin use the tie-up path and are an `Err` here, as is
-/// a request where `ends`/`picks` exceed the per-axis
-/// document cap shared with WIF import (`ply_weave::MAX_THREADS`).
+/// Generate a COMPLETE draft for a whole-draft weave structure (overshot, double weave). Unlike
+/// plain/twill/satin, whose tie-up + threading are composed Dart-side, these are interdependent (the
+/// threading, tie-up, treadling, AND warp/weft colors must agree), so they are built whole in the
+/// engine and returned as a ready-to-edit `DraftDto`. `block` is overshot's block width (at least 2).
+/// Plain/Twill/Satin use the tie-up path and shadow weave its own typed call
+/// ([`generate_shadow_weave_dto`]), so those are an `Err` here, as is a request where `ends`/`picks`
+/// exceed the per-axis document cap shared with WIF import (`ply_weave::MAX_THREADS`).
 pub fn generate_structure_dto(
     family: StructureFamily,
     ends: u32,
     picks: u32,
     block: u32,
-    twill: bool,
 ) -> Result<DraftDto, String> {
     let (e, p) = check_threads(ends, picks)?;
     let b = (block as usize).max(2);
     let draft = match family {
         StructureFamily::Overshot => weave::structure::overshot(e, p, b),
-        StructureFamily::ShadowWeave => weave::structure::shadow_weave(e, p, twill, b),
         StructureFamily::DoubleWeave => weave::structure::double_weave(e, p),
+        StructureFamily::ShadowWeave => {
+            return Err(
+                "ShadowWeave takes its own parameters; generate it with generate_shadow_weave_dto"
+                    .to_string(),
+            );
+        }
         // Basic families are composed from tie-up + threading (`generate_tieup_dto`); a misrouted
         // request is an error, never a silently different structure.
         StructureFamily::Plain | StructureFamily::Twill | StructureFamily::Satin => {
@@ -297,6 +308,20 @@ pub fn generate_structure_dto(
         }
     };
     Ok(DraftDto::from(&draft))
+}
+
+/// Generate an authentic shadow-weave draft (Atwater or Powell system) from typed parameters: the
+/// threading from the block sequence and layout, the twill tie-up, the treadling as drawn in, and
+/// the strict dark/light color orders, on a rising shed. Its size is whole repeats (plus one end and
+/// one pick when balanced), never a cut unit. `Err` carries a plain sentence for any invalid
+/// parameter: shafts other than 4 or 8, an empty sequence, a block the shafts do not have, a width of
+/// 0, a single-block design, 0 repeats, or a size past the per-axis document cap shared with WIF
+/// import (`ply_weave::MAX_THREADS`).
+pub fn generate_shadow_weave_dto(params: ShadowParamsDto) -> Result<DraftDto, String> {
+    let params = weave::shadow::ShadowParams::try_from(params).map_err(|e| e.to_string())?;
+    weave::shadow::generate(&params)
+        .map(|d| DraftDto::from(&d))
+        .map_err(|e| e.to_string())
 }
 
 /// Generate a threading (per warp end, the 1-based shaft it threads) for the chosen draw over
@@ -594,8 +619,8 @@ mod tests {
         assert!(resize_dto(plain(2, 2), over, 2, 2, 2).is_err());
         assert!(resize_dto(plain(2, 2), 2, over, 2, 2).is_err());
         assert!(resize_dto(plain(2, 2), 3, 3, 2, 2).is_ok());
-        assert!(generate_structure_dto(StructureFamily::Overshot, over, 8, 4, false).is_err());
-        assert!(generate_structure_dto(StructureFamily::DoubleWeave, 8, 8, 4, false).is_ok());
+        assert!(generate_structure_dto(StructureFamily::Overshot, over, 8, 4).is_err());
+        assert!(generate_structure_dto(StructureFamily::DoubleWeave, 8, 8, 4).is_ok());
         assert!(generate_threading_dto(ThreadingKind::Straight, over, 4).is_err());
         assert_eq!(
             generate_threading_dto(ThreadingKind::Straight, 4, 2).unwrap(),
@@ -607,9 +632,9 @@ mod tests {
     /// preview), with the tie-up flipped to name the shafts that sink.
     #[test]
     fn generated_structure_keeps_its_cloth_on_a_sinking_shed() {
-        let rising = generate_structure_dto(StructureFamily::Overshot, 16, 16, 4, false).unwrap();
+        let rising = generate_structure_dto(StructureFamily::Overshot, 16, 16, 4).unwrap();
         let sinking = draft_with_shed_dto(
-            generate_structure_dto(StructureFamily::Overshot, 16, 16, 4, false).unwrap(),
+            generate_structure_dto(StructureFamily::Overshot, 16, 16, 4).unwrap(),
             ShedKind::Sinking,
         )
         .unwrap();
@@ -631,8 +656,121 @@ mod tests {
     /// A family sent to the wrong generator is an error, not a silently different structure.
     #[test]
     fn misrouted_structure_requests_are_errors() {
-        assert!(generate_structure_dto(StructureFamily::Twill, 8, 8, 4, false).is_err());
+        assert!(generate_structure_dto(StructureFamily::Twill, 8, 8, 4).is_err());
         assert!(generate_tieup_dto(StructureFamily::Overshot, 4, 2, 2, 1).is_err());
+        let shadow = generate_structure_dto(StructureFamily::ShadowWeave, 8, 8, 4);
+        assert!(shadow.is_err_and(|e| e.contains("generate_shadow_weave_dto")));
+        assert!(generate_tieup_dto(StructureFamily::ShadowWeave, 4, 2, 2, 1).is_err());
+    }
+
+    fn shadow(shafts: u16, blocks: &[(u16, u16)]) -> ShadowParamsDto {
+        ShadowParamsDto {
+            system: ShadowSystemKind::Atwater,
+            shafts,
+            layout: ShadowLayoutKind::Point,
+            blocks: blocks
+                .iter()
+                .map(|&(block, units)| ShadowBlockDto { block, units })
+                .collect(),
+            direction: TwillDirectionKind::Forward,
+            weft_phase: WeftPhaseKind::Standard,
+            warp_repeats: 2,
+            weft_repeats: 2,
+            balance: true,
+        }
+    }
+
+    fn abcd() -> ShadowParamsDto {
+        shadow(4, &[(0, 2), (1, 2), (2, 2), (3, 2)])
+    }
+
+    /// The default design (Atwater, 4 shafts, a point of A2 B2 C2 D2, two repeats each way,
+    /// balanced) comes back as a whole, ready-to-edit draft.
+    #[test]
+    fn shadow_weave_generates_the_default_design() {
+        let dto = generate_shadow_weave_dto(abcd()).unwrap();
+        assert_eq!(dto.name, "Shadow weave (Atwater)");
+        assert_eq!((dto.shafts, dto.treadles), (4, 4));
+        assert_eq!((dto.threading.len(), dto.weft_colors.len()), (61, 61));
+        assert!(matches!(dto.shed, ShedKind::Rising));
+        let DriveDto::Treadled { tieup, treadling } = &dto.drive else {
+            panic!("expected a treadled draft");
+        };
+        assert_eq!(tieup, &vec![vec![1, 2], vec![2, 3], vec![3, 4], vec![1, 4]]);
+        let threading: Vec<u16> = dto.threading.iter().map(|r| r[0]).collect();
+        let treadles: Vec<u16> = treadling.iter().map(|r| r[0]).collect();
+        assert_eq!(threading, treadles, "treadled as drawn in");
+        assert!(validate_draft(dto).unwrap().is_empty());
+    }
+
+    /// Every invalid parameter is an error with a plain message; nothing is clamped.
+    #[test]
+    fn shadow_weave_parameters_are_validated() {
+        let err = |p: ShadowParamsDto| generate_shadow_weave_dto(p).err().unwrap();
+        for shafts in [0, 2, 3, 5, 6, 7, 9, 10, 16] {
+            let mut p = abcd();
+            p.shafts = shafts;
+            assert_eq!(
+                err(p),
+                format!("shadow weave needs 4 or 8 shafts, not {shafts}")
+            );
+        }
+        assert_eq!(err(shadow(4, &[])), "the design has no blocks");
+        assert_eq!(
+            err(shadow(4, &[(0, 2), (4, 1)])),
+            "block entry 2 is block number 5, but 4 shafts give blocks A to D"
+        );
+        assert_eq!(
+            err(shadow(4, &[(0, 2), (1, 0)])),
+            "block entry 2 has no units; each block needs at least 1"
+        );
+        assert_eq!(
+            err(shadow(8, &[(5, 3)])),
+            "the design uses a single block; shadow weave needs at least two"
+        );
+        let mut p = abcd();
+        p.warp_repeats = 0;
+        assert_eq!(err(p), "warp and weft repeats must each be at least 1");
+        let mut p = abcd();
+        p.weft_repeats = u16::MAX;
+        assert!(err(p).contains("a draft allows at most 100000 of each"));
+        // 8 shafts accept blocks A to H.
+        assert!(generate_shadow_weave_dto(shadow(8, &[(0, 1), (7, 1)])).is_ok());
+    }
+
+    /// Atwater and Powell are two numberings of one cloth: same preview, pixel for pixel, and the same
+    /// cloth again on a sinking-shed loom.
+    #[test]
+    fn shadow_weave_systems_and_sheds_weave_the_same_cloth() {
+        let atwater = generate_shadow_weave_dto(abcd()).unwrap();
+        let mut p = abcd();
+        p.system = ShadowSystemKind::Powell;
+        let powell = generate_shadow_weave_dto(p).unwrap();
+        assert_eq!(powell.name, "Shadow weave (Powell)");
+        assert_ne!(atwater.threading, powell.threading);
+        let a = render_preview_dto(atwater, 2, None).ok().unwrap();
+        let sinking = draft_with_shed_dto(
+            generate_shadow_weave_dto(abcd()).unwrap(),
+            ShedKind::Sinking,
+        )
+        .unwrap();
+        let b = render_preview_dto(powell, 2, None).ok().unwrap();
+        let c = render_preview_dto(sinking, 2, None).ok().unwrap();
+        assert_eq!(a.rgba, b.rgba);
+        assert_eq!(a.rgba, c.rgba);
+    }
+
+    /// Swapping the weft colors keeps the threading and treadling and flips only the weft order.
+    #[test]
+    fn shadow_weave_edge_style_only_swaps_the_weft_colors() {
+        let smooth = generate_shadow_weave_dto(abcd()).unwrap();
+        let mut p = abcd();
+        p.weft_phase = WeftPhaseKind::Swapped;
+        let feathery = generate_shadow_weave_dto(p).unwrap();
+        assert_eq!(smooth.threading, feathery.threading);
+        assert_eq!(smooth.warp_colors, feathery.warp_colors);
+        let flipped: Vec<u32> = smooth.weft_colors.iter().map(|&c| 1 - c).collect();
+        assert_eq!(feathery.weft_colors, flipped);
     }
 
     /// A twill tie-up grows with the square of its shaft count; absurd requests are refused rather

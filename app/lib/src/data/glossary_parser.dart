@@ -10,6 +10,7 @@ import '../models/glossary_term.dart';
 /// ```
 /// - **Term** — definition            (plain)
 /// - **Term** (alias) — definition    (an alias between the headword and the dash)
+/// - **Term**: definition             (a colon also separates, when the line has no dash)
 /// ```
 /// A line indented under a bullet continues that term's definition (joined with a single space).
 /// `###` section headers and the intro paragraph are ignored, and a header also closes the
@@ -40,8 +41,10 @@ List<GlossaryTerm> parseGlossary(String markdown) {
       term = m.group(1)!.trim();
       final rest = m.group(2)!.trim();
       // Split the remainder on the first em-dash (U+2014, the source's headword/definition
-      // separator): the left side is an optional alias, the right side starts the definition.
-      final dash = rest.indexOf('—');
+      // separator), or on the first colon when there is none: the left side is an optional alias,
+      // the right side starts the definition.
+      var dash = rest.indexOf('\u2014');
+      if (dash < 0) dash = rest.indexOf(':');
       if (dash >= 0) {
         aka = _alias(rest.substring(0, dash).trim());
         def.write(rest.substring(dash + 1).trim());

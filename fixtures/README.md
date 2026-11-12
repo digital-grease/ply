@@ -7,10 +7,13 @@ place; nothing here is shipped in the app.
 fixtures/
   README.md                                      # this file
   migrations/<format>/<app-version>/<name>.<ext> # bytes exactly as a released version wrote them
+  weaving/<technique>/<name>.wif                 # craft acceptance fixture: the draft itself
+  weaving/<technique>/<name>.expect.json         # its structural oracle
+  weaving/<technique>/<name>.fixture.toml        # its record: sources, license, verification
 ```
 
-More trees (craft acceptance fixtures, adversarial inputs) will be added under their own top-level
-folders as later work needs them, following the same rules.
+More trees (adversarial inputs, other crafts) will be added under their own top-level folders as
+later work needs them, following the same rules.
 
 ## Reading fixtures from tests
 
@@ -59,3 +62,24 @@ path built the patterns above and wrote them with the release's own `KnitPattern
 `git show <tag>:app/lib/src/models/<file>.dart` into a scratch Dart package, and a throwaway script
 wrote the values through the release's own `toJson` and `jsonEncode`, as its repositories did.
 Timestamps are fixed values, not the time of generation.
+
+## `weaving/`
+
+Craft acceptance fixtures: drafts a weaver could put on the loom, each with the oracle the tests
+hold it to and a record of where it came from. Every fixture is three files with the same name:
+
+- `<name>.wif`: the draft, as Ply writes it.
+- `<name>.expect.json`: the structural oracle. Dimensions, tie-up, threading, treadling, thread
+  roles (`D` dark, `L` light), the interlacement matrix and the color drawdown (one string per pick,
+  pick 1 first, end 1 at the left), and any technique-specific map. When the fixture comes from a
+  generator, the parameters that produce it.
+- `<name>.fixture.toml`: the record. Title, technique, license, provenance, bibliographic sources
+  (cited, never copied), and the verification status: `automated_checks` (what the tests prove) and
+  `practitioner_weave_check` (`pending` until a weaver has woven or checked it on paper).
+
+| Folder | Contents | Tests |
+|---|---|---|
+| `weaving/shadow/` | Authentic shadow weave: `aw2-atwater-4-point` (Atwater, 4 shafts, point of A2 B1 C1 D2) and `pw2-powell-8-point` (Powell, 8 shafts, point of A1 to H1). Original designs written by the engine's shadow-weave generator, one repeat each way. | `rust/ply-weave/tests/shadow_weave.rs` |
+
+A generated fixture is regenerated only on purpose: if the generator's output changes, the test
+fails, and the change has to be reviewed as a change to the cloth.

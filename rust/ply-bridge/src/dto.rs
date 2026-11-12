@@ -19,6 +19,10 @@ use ply_weave::draft::{
     ColorPlan, Draft, Drive, Liftplan, RetainedSection, ShaftId, ShedType, Threading, TieUp,
     TreadleId, Treadling,
 };
+use ply_weave::shadow::{
+    ShadowBlock, ShadowError, ShadowLayout, ShadowParams, ShadowShafts, ShadowSystem,
+    TwillDirection, WeftPhase,
+};
 use ply_weave::validate::{Severity, ValidationIssue};
 use ply_weave::{RenderError, RenderOptions};
 
@@ -42,9 +46,11 @@ pub enum UnitKind {
 }
 
 /// Which weave-structure family the "Generate structure" action builds. Plain/Twill/Satin generate a
-/// tie-up (composed Dart-side with a threading + straight treadling); Overshot/ShadowWeave/DoubleWeave
-/// are interdependent WHOLE-DRAFT structures built in the engine and returned as a complete `DraftDto`
-/// via [`generate_structure_dto`]. Flat C-like enum so frb mirrors it as a plain Dart enum.
+/// tie-up (composed Dart-side with a threading + straight treadling); Overshot/DoubleWeave are
+/// interdependent WHOLE-DRAFT structures built in the engine and returned as a complete `DraftDto`
+/// via `generate_structure_dto`. ShadowWeave is whole-draft too, with its own typed parameters:
+/// it is built by `generate_shadow_weave_dto` from a [`ShadowParamsDto`]. Flat C-like enum so frb
+/// mirrors it as a plain Dart enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StructureFamily {
     Plain,
@@ -59,6 +65,98 @@ pub enum StructureFamily {
 pub enum ThreadingKind {
     Straight,
     Point,
+}
+
+/// Shadow-weave shaft numbering (mirrors `shadow::ShadowSystem`). Both weave the same cloth.
+pub enum ShadowSystemKind {
+    /// Partners half the loom apart (1-3, 2-4), with the straight twill tie-up.
+    Atwater,
+    /// Partners on neighboring shafts (1-2, 3-4), with the renumbered tie-up.
+    Powell,
+}
+
+/// How a shadow-weave block sequence is laid out (mirrors `shadow::ShadowLayout`).
+pub enum ShadowLayoutKind {
+    /// The sequence repeated as given.
+    Repeat,
+    /// The sequence, then mirrored back (the turning blocks keep their shadows).
+    Point,
+}
+
+/// Which way the shadow-weave tie-up's twill runs (mirrors `shadow::TwillDirection`).
+pub enum TwillDirectionKind {
+    Forward,
+    Reverse,
+}
+
+/// The shadow-weave weft color order (mirrors `shadow::WeftPhase`).
+pub enum WeftPhaseKind {
+    /// Each pick has the color of the thread it is treadled from: smooth block edges.
+    Standard,
+    /// Weft colors swapped within every pick pair: feathery block edges, same interlacement.
+    Swapped,
+}
+
+/// One entry of a shadow-weave block sequence: 0-based `block` (0 = A) and its width in `units`
+/// (one dark and one light thread each).
+pub struct ShadowBlockDto {
+    pub block: u16,
+    pub units: u16,
+}
+
+/// Every parameter of the shadow-weave generator, mirrored transparently for Dart. The engine
+/// checks them all and reports a problem as an error; nothing is clamped. `shafts` must be 4 or 8.
+pub struct ShadowParamsDto {
+    pub system: ShadowSystemKind,
+    pub shafts: u16,
+    pub layout: ShadowLayoutKind,
+    /// The block sequence of one repeat (for a point layout, its first half).
+    pub blocks: Vec<ShadowBlockDto>,
+    pub direction: TwillDirectionKind,
+    pub weft_phase: WeftPhaseKind,
+    /// Whole threading repeats across the warp (at least 1).
+    pub warp_repeats: u16,
+    /// Whole treadling repeats up the weft (at least 1).
+    pub weft_repeats: u16,
+    /// Weave the first end and pick once more at the end.
+    pub balance: bool,
+}
+
+impl TryFrom<ShadowParamsDto> for ShadowParams {
+    type Error = ShadowError;
+
+    fn try_from(d: ShadowParamsDto) -> Result<Self, Self::Error> {
+        Ok(ShadowParams {
+            system: match d.system {
+                ShadowSystemKind::Atwater => ShadowSystem::Atwater,
+                ShadowSystemKind::Powell => ShadowSystem::Powell,
+            },
+            shafts: ShadowShafts::try_from(d.shafts)?,
+            layout: match d.layout {
+                ShadowLayoutKind::Repeat => ShadowLayout::Repeat,
+                ShadowLayoutKind::Point => ShadowLayout::Point,
+            },
+            blocks: d
+                .blocks
+                .iter()
+                .map(|b| ShadowBlock {
+                    block: b.block,
+                    units: b.units,
+                })
+                .collect(),
+            direction: match d.direction {
+                TwillDirectionKind::Forward => TwillDirection::Forward,
+                TwillDirectionKind::Reverse => TwillDirection::Reverse,
+            },
+            weft_phase: match d.weft_phase {
+                WeftPhaseKind::Standard => WeftPhase::Standard,
+                WeftPhaseKind::Swapped => WeftPhase::Swapped,
+            },
+            warp_repeats: d.warp_repeats,
+            weft_repeats: d.weft_repeats,
+            balance: d.balance,
+        })
+    }
 }
 
 /// How the raised-shaft pattern per pick is specified. A draft is EITHER treadled OR

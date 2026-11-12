@@ -1,0 +1,54 @@
+# Fixture record for pw2-powell-8-point (see fixtures/README.md).
+
+id = "weaving/shadow/pw2-powell-8-point"
+title = "Powell shadow weave, 8 shafts, point of A1 B1 C1 D1 E1 F1 G1 H1"
+technique = "shadow weave"
+system = "Powell"
+files = ["pw2-powell-8-point.wif", "pw2-powell-8-point.expect.json"]
+created = "2026-11-12"
+license = "original recreation"
+provenance = """
+An original design, written by Ply's shadow-weave generator from the parameters recorded in \
+pw2-powell-8-point.expect.json. No published draft was copied: the file applies the published \
+Powell rules cited below. Blocks: A to D have their dark thread on shafts 1, 3, 5, 7 and their \
+light thread on 2, 4, 6, 8; E to H are the same pairs with the colors swapped (dark 2 / light 1, \
+and so on). The Atwater form of the same design (threading 1 5 2 6 3 7 4 8 5 1 6 2 7 3 8 4 8 3 7 \
+2 6 1 5 8 4 7 3 6 2 5 with the 4/4 straight twill) weaves identical cloth."""
+
+[structure]
+ends = 30
+picks = 30
+shafts = 8
+treadles = 8
+shed = "rising"
+tieup = "Powell 8-shaft: [1,3,5,7] [2,4,6,8] [2,3,5,7] [1,4,6,8] [2,4,5,7] [1,3,6,8] [2,4,6,7] [1,3,5,8]"
+treadling = "as drawn in"
+color_order = "warp and weft alternate dark and light, both starting dark"
+balanced = false
+note = "One repeat each way. To weave a balanced piece, add end 1 (dark, shaft 1) after the last repeat and pick 1 (dark, treadle 1) after the last weft repeat."
+
+[sources]
+# Bibliographic references for the rules this design applies. Nothing from them is reproduced.
+references = [
+  "Madelyn van der Hoogt, \"The Draft: Shadow Weave as a Block Weave\", Handwoven online, 2021-11-29, https://handwovenmagazine.com/the-draft-shadow-weave-as-a-block-weave/ (Powell puts partners on adjacent shafts; eight blocks on eight shafts, four with horizontal and four with vertical lines).",
+  "Madelyn van der Hoogt and Lynn Tedder, \"All You Need for Shadow Weave\", Handwoven online, 2023-12-20, https://handwovenmagazine.com/all-you-need-for-shadow-weave/ (Powell renumbers the Atwater shafts; the interlacement is unchanged).",
+  "Kathryn Wertenberger, \"Shadow Weave: An Overview\", Handwoven, January/February 1987, pp. 76-77; reprinted in Best of Handwoven: Shadow Weave (Interweave, 2011), pp. 5-6 (8-shaft Atwater and Powell figures; this design's first 29 ends follow the same thread sequence as its Powell figure).",
+  "Amanda Cutler, \"Powell's Shadow Weave book\", Weave-Away, 2011-09-05, http://weave-away.blogspot.com/2011/09/powells-shadow-weave-book.html (Powell's notation: a capital letter for the dark thread, lower case for its shadow).",
+  "Jennifer Leigh, \"Designing Your Own Shadow Weave Pattern\", Gist Yarn blog, https://www.gistyarn.com/blogs/how-to-weave/designing-your-own-shadow-weave-pattern (forward blocks 1-2, 3-4, 5-6, 7-8 and reversed 2-1, 4-3, ...; three-thread turning blocks; one tie-up for all Powell drafts).",
+  "Eva Stossel, \"Shadow Weave Samples & A Woolen Pullover\", Eva's Weaving Blog, 2014-12-07, https://evasweaving.wordpress.com/2014/12/07/shadow-weave-samples-a-woolen-pullover/ (an 8-shaft draft in Atwater and in Powell giving the same cloth).",
+  "Ralph E. Griswold, \"Variations on a Shadow Weave\", University of Arizona, 1999, revised 2004, https://www.cs.arizona.edu/patterns/weaving/webdocs/gre_shad.pdf (the same eight Powell lifts; treadled as drawn in).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/shadow_weave.rs (tracked_fixtures_load_and_match_their_oracles and \
+pw2_powell_8_shaft_point): the file parses; its interlacement, color drawdown and line map equal \
+the oracle in pw2-powell-8-point.expect.json; it is exactly what the generator writes for the \
+recorded parameters (line endings aside); every structural test passes across the repeat join (strict color \
+alternation, shafts paired by every lift, every end and pick beside its partner, no float longer \
+than two, plain-weave block regions, lines that survive color normalization); its Atwater form \
+weaves identical cloth."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Structure and color order only. Sett, yarns and finishing are not part of the fixture."
