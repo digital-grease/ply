@@ -3,13 +3,33 @@
 Milestones are roughly ordered. The guiding principle: **make one craft excellent end to
 end (weaving) to harden the shared shell before fanning out.**
 
+## Current state (verified 2026-11-11 at `1cb0612`)
+
+M0 to M6 have shipped. Status words: **Verified** (works in the current checkout), **Partial**
+(exists, but important behavior is missing), **Not built**.
+
+| Area | Status | Known limits |
+|---|---|---|
+| Weaving editor, drawdown, WIF import/export, calculators, validation | Verified | Rendering is bounded to a phone memory budget: large drafts preview at reduced resolution, and drafts over 4 million intersections show a "too large to preview" message until region rendering lands |
+| Variable thread thickness | Partial | Correct in previews, misaligned in the integrated editor |
+| Structure generators | Partial | Plain/twill/satin accurate; the "shadow weave" option actually produces log cabin, not shadow weave; overshot and double weave are simplified examples; generated drafts ignore a sinking shed |
+| Overshot book treadling | Partial | Collapses only consecutive identical sheds; no "Use Tabby" shorthand |
+| Double-weave layer view | Partial | Silently drops or double-counts picks it cannot classify |
+| Profile drafts | Partial | Engine helper only, not exposed in the app |
+| Knitting chart editor, written instructions, validation | Verified | Repeat spans stored but not interpreted; save does not validate |
+| Nalbinding reference, notation playground, loop diagram | Partial | Parser accepts malformed notation lossily; diagram is an unlabelled one-stitch schematic |
+| Nalbinding projects (notation, notes, photos) | Verified | Notation is stored as text and not validated on save |
+| Native file formats | Partial | No schema version in `.plyknit`/`.plynal`; unknown fields dropped on save |
+| Backup/restore, export/share | Not built | Planned in M7 and M9 |
+| Engineering gates | Verified | 181 Rust + 585 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings` |
+
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
 - Weaving draft model (WIF-shaped), drawdown + RGBA render, sett & warp/yarn calculators,
   validation, WIF import/export. Tested.
 - frb bridge surface compiles.
 
-## M1 — Weaving end-to-end in the app
+## M1 — Weaving end-to-end in the app ✅ (done)
 - Run `flutter_rust_bridge_codegen generate`; initialize frb in `main.dart`.
 - Import a `.wif` (file_picker) → parse → render preview from the engine's RGBA buffer.
 - Persist: save/load drafts as `.wif` on device + a JSON sidecar for app metadata
@@ -17,22 +37,25 @@ end (weaving) to harden the shared shell before fanning out.**
 - Library screen: list saved drafts with preview thumbnails.
 - **Exit criterion:** open a public WIF draft on a phone and see a correct drawdown.
 
-## M2 — Weaving editor
+## M2 — Weaving editor ✅ (done)
 - Edit threading / tie-up / treadling (or liftplan) on an interactive grid.
 - Live preview recompute on every edit (it's microseconds).
 - Color palette + warp/weft color sequence editing.
 - Surface `validate()` issues inline.
 - Sett and warp/yarn calculators as a planning panel.
 
-## M3 — Weaving depth
+## M3 — Weaving depth ✅ (done, two items open)
 - Weft-yardage estimate (`estimate_weft`: needs PPI + woven width).
-- Structure helpers (generate plain/twill/satin tie-ups; profile drafts).
+- Structure helpers (generate plain/twill/satin tie-ups).
+- ⬜ Profile drafts: only an engine helper (`ply-weave/src/profile.rs`) that nothing calls yet;
+  not in the app (full block-level profile drafting is planned for M8).
 - Export refinements: thickness/spacing, color-palette ranges other than 0..255.
-- iOS file-type association for `.wif` (UTI) — see `docs/WIF_MAPPING.md`.
+- ⬜ Open: iOS file-type association for `.wif` (UTI), see `docs/WIF_MAPPING.md`. Not present in
+  `app/ios/Runner/Info.plist`; Android has no `.wif` intent filter either.
 - Property tests / fuzzing: WIF round-trip invariants; engine never panics on adversarial
   input.
 
-## M4 — Visual & UX design pass
+## M4 — Visual & UX design pass ✅ (done)
 - First real design system (this is where dedicated UI/design work belongs — not earlier).
 - Drawdown rendering polish: thickness-aware cells, float rendering, zoom/pan, theming.
 - Tutorials + reference glossary in-app (seed content from `docs/GLOSSARY.md`).
@@ -54,8 +77,10 @@ end (weaving) to harden the shared shell before fanning out.**
   cells, with whole-group clearing), on-device persistence (`<docs>/knits/<id>.{plyknit,json,
   png}` triplet), an expandable severity-coded validation band, a written-instructions view, a
   gauge/yardage planning sheet, and pattern settings (construction, first-row side, notes).
-- ✅ Unified home: a single library with a tab per craft (Weaving | Knitting); the in-app
-  glossary now carries knitting terms too.
+- ✅ Unified home: a single library with a tab per craft (Weaving | Knitting, plus Nalbinding
+  from M6); the in-app glossary now carries knitting terms too.
+- Known gap: repeat spans exist in the model and file format but are not interpreted by written
+  instructions, stitch counts, or the chart render, and no UI creates one (planned for M7).
 - ⬜ Deferred: optional **Knitout export** for machine knitters (the one M5 item not yet built).
 
 ## M6 — Nalbinding engine (`ply-nalbind`) ✅ (v1 done)
@@ -69,10 +94,26 @@ end (weaving) to harden the shared shell before fanning out.**
   REFERENCE (browse the dictionary with notation + a+b alias + the generated loop diagram drawn by
   a CustomPainter) + a notation playground (type a Hansen string → live diagram + validation). The
   glossary gains nalbinding terms.
-- ⬜ Deferred: the project/recipe model (worked pieces: spiral/tube/short-row shaping segments) and
-  its spiral node-graph view; persistence; a 3-D/round structural render.
+- ✅ Simple projects (shipped after v1, in `b246c06`): save a worked piece on device with its
+  notation, notes, and photos (`<docs>/nalbinds/<id>.plynal` + sidecar + photo folder).
+- Known gaps: the notation parser accepts some malformed input and loses information; the loop
+  diagram is a one-stitch schematic with no caption saying so.
+- ⬜ Deferred: the structured project/recipe model (worked pieces: spiral/tube/short-row shaping
+  segments) and its spiral node-graph view; a 3-D/round structural render.
+
+## M7 onward
+Post-M6 milestones: M7 integrity and reliability, M8 loom-aware planning and weaving fidelity,
+M9 garment construction and print, M10 tablet weaving, M11 crochet.
+- ✅ M7 baseline audit (2026-11-11): current behavior verified against the code; the table above
+  reflects it.
+- ✅ Data safety: deleting a nalbind project removes its photos (and cleans up photos left by
+  earlier deletes); the knit and nalbind editors ask before discarding unsaved edits.
+- ✅ Bounded weaving render, first slice: size checks before any allocation, reduced-resolution
+  previews for large drafts, a clear message for drafts too large to preview, size caps on
+  resize and structure generation.
+- ⬜ Next: region (tile) rendering for very large drafts; versioned native file formats.
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.
-- Shared stash/yarn manager across crafts.
+- Shared stash/yarn manager across crafts (now M8-01 in the post-M6 plan).
 - Trigger Claude Code build/test sessions remotely (ties into existing homelab workflow).

@@ -16,8 +16,9 @@
 ┌───────────────┴───────────────────────────────────────────┐
 │  Engine crates (pure Rust, no FFI, no Flutter)              │
 │    ply-weave   draft · drawdown · wif · calc · validate   │
+│    ply-knit    chart · legend · written · render · calc   │
+│    ply-nalbind notation · dictionary · diagram · validate │
 │    ply-common  color · yarn · units · craft kind          │
-│  (future: ply-knit, ply-nalbind as siblings)            │
 └───────────────────────────────────────────────────────────┘
 ```
 
@@ -41,8 +42,8 @@ lets you develop and test the hard logic in plain `cargo test` with a fast inner
 1. UI has a `Draft` (imported from WIF or edited in-app).
 2. UI calls `render_preview(draft, cell_px)` **once** per change.
 3. `ply-weave::compute` builds the drawdown (over/under grid); `render_rgba` paints it to
-   a flat RGBA8 buffer (pick 0 at the bottom; the buffer is top-to-bottom for image
-   conventions).
+   a flat RGBA8 buffer in the conventional draft orientation (end 1 at the right, pick 1 at
+   the top; the buffer is row-major, top-to-bottom). See `CORRECTNESS_GATE.md`.
 4. The bridge returns `{width, height, rgba}`. Dart decodes it into a `ui.Image` and a
    `CustomPainter` blits it.
 
@@ -70,7 +71,7 @@ repository/service layer so the UI never imports generated symbols directly.
 
 ## Where knitting & nalbinding slot in
 
-Each is a new sibling engine crate (`ply-knit`, `ply-nalbind`) depending on
+Each is a sibling engine crate (`ply-knit`, `ply-nalbind`) depending on
 `ply-common`, exposed through additional `ply-bridge` calls. The shared shell —
 library, persistence, calculators pattern, glossary — is reused; only the craft-specific
 model + editor differ. Knitting needs a custom schema (no interchange standard);
