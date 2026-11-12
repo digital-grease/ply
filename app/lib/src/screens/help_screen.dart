@@ -72,7 +72,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Which crafts does Ply support?",
-      "Three: weaving, knitting, and nalbinding, each on its own tab in the app. Weaving and knitting have full editors with live previews, and nalbinding currently offers a stitch reference dictionary plus a notation playground (its project and recipe model is planned but not yet built).",
+      "Three: weaving, knitting, and nalbinding, each on its own tab in the app. Weaving and knitting have full editors with live previews. Nalbinding offers a stitch reference dictionary, a notation playground, and simple saved projects (stitch notation, notes, and photos); a step-by-step recipe model for shaped pieces is planned.",
     ),
     FaqEntry(
       "Do I need an account or an internet connection to use Ply?",
@@ -156,7 +156,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "What can the nalbinding section actually do right now?",
-      "Nalbinding is a stitch reference for now, not a project editor. You get a curated dictionary of about 12 stitches (each showing its Hansen notation, the a+b thumb-loop alias, alternate names, a generated loop diagram, and a short description) plus a notation playground where you type a Hansen string like \"UO/UOO F1\" and see a live loop diagram and validation. There is no project or recipe model and no saving of nalbinding work yet; the worked-piece and shaping-segment model is deferred.",
+      "You get a curated dictionary of about 12 stitches (each showing its Hansen notation, the a+b thumb-loop alias, alternate names, a generated loop diagram, and a short description) plus a notation playground where you type a Hansen string like \"UO/UOO F1\" and see a live loop diagram and validation. Under My projects you can save a piece you are working on (New project): its name, stitch notation, notes, and photos stay on your device. The loop diagram is a simplified sketch of one stitch, not a picture of finished fabric, and a step-by-step recipe for shaped pieces (starts, increases, shaping) is still planned.",
     ),
   ]),
   FaqSection('Tips & troubleshooting', [
@@ -170,19 +170,19 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Will Ply stop me from saving if my pattern has problems?",
-      "Errors will prompt you with a confirmation before saving, but you can choose to save anyway, so nothing is ever locked behind a fix. Warnings never block saving since they are only advisory. The one hard stop is an empty cloth: you need at least one end and one pick before a weave can be saved.",
+      "No. In the weaving editor, errors prompt you with a confirmation before saving, but you can choose to save anyway, so nothing is ever locked behind a fix; warnings never block saving since they are only advisory. The one hard stop is an empty cloth: you need at least one end and one pick before a weave can be saved. The knitting editor saves without that prompt (problems stay listed in the validation band), and needs at least one row and stitch. In every editor, leaving with unsaved changes asks whether to save or discard them.",
     ),
     FaqEntry(
       "How do undo, redo, and zoom work?",
-      "Both the weaving and knitting editors have Undo and Redo buttons in the top bar that walk back and forth through your edit history. Both also zoom from the editor's overflow menu (Zoom in / Zoom out), with weaving snapping through preset zoom steps and knitting nudging a few pixels each tap; in the weaving editor you can also drag to pan the draft. Note the Nalbinding tab is a reference, not an editor, so it has no undo or zoom.",
+      "Both the weaving and knitting editors have Undo and Redo buttons in the top bar that walk back and forth through your edit history. Both also zoom from the editor's overflow menu (Zoom in / Zoom out), with weaving snapping through preset zoom steps and knitting nudging a few pixels each tap; in the weaving editor you can also drag to pan the draft. Nalbinding projects are simple forms (name, notation, notes, photos), so they have no undo or zoom.",
     ),
     FaqEntry(
       "Can I change the app's colors or make it easier to read?",
       "Yes, open Settings from the gear icon in the home screen's top bar. You can pick System, Light, or Dark mode, turn on Material You to pull colors from your device wallpaper, or choose an accent color. Changes apply instantly and survive a relaunch, and the app respects your system text size and works with screen readers.",
     ),
     FaqEntry(
-      "Where is the glossary, and why can't I do machine knitting export or nalbinding projects?",
-      "The glossary lives right here in Help: tap the Glossary entry at the top of this screen (Help is the question-mark icon in the home screen's top bar). It is a searchable reference covering weaving, knitting, and nalbinding terms. Knitout export for machine knitters is planned but not built yet, so for now knitting is charts plus written instructions only. Nalbinding is currently a stitch reference and notation playground; the project and recipe model (worked pieces with shaping) is also still deferred.",
+      "Where is the glossary, and why can't I do machine knitting export or nalbinding recipes?",
+      "The glossary lives right here in Help: tap the Glossary entry at the top of this screen (Help is the question-mark icon in the home screen's top bar). It is a searchable reference covering weaving, knitting, and nalbinding terms. Knitout export for machine knitters is planned but not built yet, so for now knitting is charts plus written instructions only. Nalbinding has the stitch reference, the notation playground, and simple saved projects; the recipe model (worked pieces with shaping steps) is still planned.",
     ),
   ]),
 ];
