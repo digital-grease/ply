@@ -3,7 +3,7 @@
 Milestones are roughly ordered. The guiding principle: **make one craft excellent end to
 end (weaving) to harden the shared shell before fanning out.**
 
-## Current state (verified 2026-11-11 at `1cb0612`)
+## Current state (verified 2026-11-12)
 
 M0 to M6 have shipped. Status words: **Verified** (works in the current checkout), **Partial**
 (exists, but important behavior is missing), **Not built**.
@@ -12,16 +12,16 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 |---|---|---|
 | Weaving editor, drawdown, WIF import/export, calculators, validation | Verified | Rendering is bounded to a phone memory budget: large drafts preview at reduced resolution, and drafts over 4 million intersections show a "too large to preview" message until region rendering lands |
 | Variable thread thickness | Partial | Correct in previews, misaligned in the integrated editor |
-| Structure generators | Partial | Plain/twill/satin accurate; the "shadow weave" option actually produces log cabin, not shadow weave; overshot and double weave are simplified examples; generated drafts ignore a sinking shed |
+| Structure generators | Partial | Plain/twill/satin accurate (plain weave on an odd shaft count requires a point draw); the "shadow weave" option actually produces log cabin, not shadow weave; overshot and double weave are simplified examples. Generated structures weave the same cloth on rising and sinking (counterbalance/countermarch) sheds |
 | Overshot book treadling | Partial | Collapses only consecutive identical sheds; no "Use Tabby" shorthand |
-| Double-weave layer view | Partial | Silently drops or double-counts picks it cannot classify |
+| Double-weave layer view | Partial | Each pick is shown in exactly one layer or listed with the reason it weaves neither; the views show each layer's own interlacement, and there is no view of the finished cloth's face yet |
 | Profile drafts | Partial | Engine helper only, not exposed in the app |
 | Knitting chart editor, written instructions, validation | Verified | Repeat spans stored but not interpreted; save does not validate |
-| Nalbinding reference, notation playground, loop diagram | Partial | Parser accepts malformed notation lossily; diagram is an unlabelled one-stitch schematic |
-| Nalbinding projects (notation, notes, photos) | Verified | Notation is stored as text and not validated on save |
-| Native file formats | Partial | No schema version in `.plyknit`/`.plynal`; unknown fields dropped on save |
+| Nalbinding reference, notation playground, loop diagram | Partial | Notation is read strictly or leniently with every problem listed at its position, and nothing is dropped silently; the loop diagram is labelled as a one-stitch sketch and marked approximate when the notation was not read exactly. Multi-round and fabric views are not built |
+| Nalbinding projects (notation, notes, photos) | Verified | Notation is checked strictly as you type and problems stay listed, but saving is still allowed (a project is a draft); no structured recipe model yet |
+| Native file formats | Verified | `.plyknit` and `.plynal` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead); no general backup/restore yet |
 | Backup/restore, export/share | Not built | Planned in M7 and M9 |
-| Engineering gates | Verified | 181 Rust + 585 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings` |
+| Engineering gates | Verified | 260 Rust + 658 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings` |
 
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
@@ -111,7 +111,18 @@ M9 garment construction and print, M10 tablet weaving, M11 crochet.
 - ✅ Bounded weaving render, first slice: size checks before any allocation, reduced-resolution
   previews for large drafts, a clear message for drafts too large to preview, size caps on
   resize and structure generation.
-- ⬜ Next: region (tile) rendering for very large drafts; versioned native file formats.
+- ✅ Versioned native formats: explicit schema versions with ordered migrations for `.plyknit` and
+  `.plynal`, tested against real files written by v0.1.5 to v0.1.7 (`fixtures/migrations/`); a
+  file saved by a newer Ply is refused with a plain message and never overwritten; sidecars keep
+  unknown keys on rewrite; settings and photo writes are flushed and atomic.
+- ✅ Weaving fixes: generated structures keep their cloth on a sinking shed; plain weave on an odd
+  shaft count asks for a point draw; misrouted generator requests are errors instead of a silent
+  plain weave; the layer view accounts for every pick.
+- ✅ Nalbinding notation: strict reading for authoring and lenient reading for reference, with
+  positioned diagnostics, the original text kept, and unsupported syntax preserved instead of
+  dropped; the diagram is labelled as a sketch and marked approximate when the reading is not exact.
+- ⬜ Next: region (tile) rendering for very large drafts; executable knitting repeats; authentic
+  shadow weave.
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.
