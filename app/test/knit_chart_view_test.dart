@@ -49,12 +49,32 @@ KnitPatternDto grid(int w, int h) => KnitPatternDto(
       notes: '',
     );
 
-Future<ProviderContainer> pump(WidgetTester tester, {int cell = 20}) async {
+/// [grid] with per-row repeats: [repeats] maps a row index to its spans.
+KnitPatternDto gridWithRepeats(int w, int h, Map<int, List<RepeatSpanDto>> repeats) {
+  final g = grid(w, h);
+  return KnitPatternDto(
+    name: g.name,
+    construction: g.construction,
+    firstRowSide: g.firstRowSide,
+    gauge: g.gauge,
+    palette: g.palette,
+    legend: g.legend,
+    chart: ChartDto(
+      width: w,
+      rows: [
+        for (var r = 0; r < h; r++) RowDto(cells: g.chart.rows[r].cells, repeats: repeats[r] ?? const []),
+      ],
+    ),
+    notes: g.notes,
+  );
+}
+
+Future<ProviderContainer> pump(WidgetTester tester, {int cell = 20, KnitPatternDto? pattern}) async {
   final c = ProviderContainer(
     overrides: [knitRepositoryProvider.overrideWithValue(FakeKnitRepo())],
   );
   addTearDown(c.dispose);
-  c.read(knitEditorProvider.notifier).load(grid(8, 8)); // 8x8 cells
+  c.read(knitEditorProvider.notifier).load(pattern ?? grid(8, 8)); // 8x8 cells
   c.read(knitZoomProvider.notifier).state = cell; // 8*20 = 160px, fits the 800x600 test viewport
   c.read(activeKnitStitchProvider.notifier).state = KnitStitch.purl;
   await tester.pumpWidget(
@@ -114,5 +134,68 @@ void main() {
     expect(c.read(knitEditorProvider).pattern.chart.rows[0].cells[0].color, 0,
         reason: 'a tap colors the cell in select mode too — no Fill button required');
     expect(c.read(knitSelectionProvider), isNull, reason: 'a tap leaves no pending selection');
+  });
+
+  group('repeat brackets', () {
+    const times3 = RepeatSpanDto(start: 1, end: 5, count: RepeatDto.times(count: 3));
+    const toEnd = RepeatSpanDto(start: 1, end: 5, count: RepeatDto.toEnd());
+
+    test('consecutive rows with the same repeat share one box; a different count starts another', () {
+      final chart = gridWithRepeats(6, 4, {
+        0: [times3],
+        1: [times3],
+        2: [toEnd],
+        3: [times3],
+      }).chart;
+      expect(repeatBoxes(chart), const [
+        RepeatBox(colStart: 1, colEnd: 5, rowLo: 0, rowHi: 1, count: RepeatDto.times(count: 3)),
+        RepeatBox(colStart: 1, colEnd: 5, rowLo: 2, rowHi: 2, count: RepeatDto.toEnd()),
+        RepeatBox(colStart: 1, colEnd: 5, rowLo: 3, rowHi: 3, count: RepeatDto.times(count: 3)),
+      ]);
+    });
+
+    test('a span past the edge is drawn clipped and one wholly outside is not drawn', () {
+      final chart = gridWithRepeats(4, 1, {
+        0: const [
+          RepeatSpanDto(start: 2, end: 9, count: RepeatDto.toEnd()),
+          RepeatSpanDto(start: 6, end: 8, count: RepeatDto.toEnd()),
+        ],
+      }).chart;
+      expect(repeatBoxes(chart), const [
+        RepeatBox(colStart: 2, colEnd: 4, rowLo: 0, rowHi: 0, count: RepeatDto.toEnd()),
+      ]);
+    });
+
+    test('labels and descriptions read as the chart is numbered', () {
+      expect(repeatLabel(const RepeatDto.times(count: 3)), '×3');
+      expect(repeatLabel(const RepeatDto.toEnd()), 'to end');
+      const box = RepeatBox(colStart: 1, colEnd: 5, rowLo: 0, rowHi: 3, count: RepeatDto.times(count: 3));
+      // Width 6: storage cols 1..4 are axis stitches 5..2 (numbered right to left).
+      expect(describeRepeatBox(box, 6), 'stitches 2 to 5, rows 1 to 4, 3 times');
+    });
+
+    testWidgets('the chart shows a bracket for each repeat, and taps inside it still paint', (tester) async {
+      final c = await pump(tester, pattern: gridWithRepeats(8, 8, {0: [times3], 1: [times3]}));
+      expect(find.bySemanticsLabel('Repeats: stitches 4 to 7, rows 1 to 2, 3 times'), findsOneWidget);
+      // Tap col 2 of row 0 (inside the bracket): the overlay must not swallow the paint.
+      final origin = tester.getTopLeft(find.byType(KnitChartView));
+      await tester.tapAt(origin + const Offset(50, 150));
+      await tester.pump();
+      expect(c.read(knitEditorProvider).pattern.chart.rows[0].cells[2].stitch, KnitStitch.purl);
+      expect(c.read(knitEditorProvider).pattern.chart.rows[0].repeats, const [times3],
+          reason: 'painting keeps the repeat');
+    });
+
+    testWidgets('a chart without repeats draws no bracket layer', (tester) async {
+      await pump(tester);
+      expect(find.bySemanticsLabel(RegExp('^Repeats:')), findsNothing);
+    });
+
+    testWidgets('marking a repeat adds its bracket live', (tester) async {
+      final c = await pump(tester);
+      c.read(knitEditorProvider.notifier).markRepeat(2, 0, 2, 3, const RepeatDto.toEnd());
+      await tester.pump();
+      expect(find.bySemanticsLabel('Repeats: stitches 5 to 8, row 3, to the end of the row'), findsOneWidget);
+    });
   });
 }

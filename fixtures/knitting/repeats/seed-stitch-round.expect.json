@@ -1,0 +1,14 @@
+{
+  "description": "Seed stitch in the round: a 2-stitch motif worked 6 times in total, offset by one stitch every round. The simplest fixed repeat, with no edge stitches.",
+  "covers": ["simple fixed repeat", "counts across consecutive rows", "save and load of repeats"],
+  "construction": "InTheRound",
+  "first_row_side": "Rs",
+  "width": 2,
+  "rows": [
+    {"row": 1, "written": "Round 1: [k, p] 6 times", "consumes": 12, "produces": 12, "to_end_times": null, "worked": ["k", "p", "k", "p", "k", "p", "k", "p", "k", "p", "k", "p"]},
+    {"row": 2, "written": "Round 2: [p, k] 6 times", "consumes": 12, "produces": 12, "to_end_times": null, "worked": ["p", "k", "p", "k", "p", "k", "p", "k", "p", "k", "p", "k"]},
+    {"row": 3, "written": "Round 3: [k, p] 6 times", "consumes": 12, "produces": 12, "to_end_times": null, "worked": ["k", "p", "k", "p", "k", "p", "k", "p", "k", "p", "k", "p"]},
+    {"row": 4, "written": "Round 4: [p, k] 6 times", "consumes": 12, "produces": 12, "to_end_times": null, "worked": ["p", "k", "p", "k", "p", "k", "p", "k", "p", "k", "p", "k"]}
+  ],
+  "issues": []
+}

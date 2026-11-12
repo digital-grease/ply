@@ -1,0 +1,31 @@
+# Fixture record for seed-stitch-round (see fixtures/README.md).
+
+id = "knitting/repeats/seed-stitch-round"
+title = "Seed stitch in the round, a 2-stitch repeat"
+technique = "seed stitch"
+files = ["seed-stitch-round.plyknit", "seed-stitch-round.expect.json"]
+created = "2026-11-12"
+license = "original"
+provenance = """
+Seed stitch: knit the purls and purl the knits of the round below, here charted as a 2-cell motif worked 6 times per round, offset each round. Written for Ply's tests through the engine's own .plyknit writer; no published \
+chart or text was copied."""
+
+[sources]
+# Conventions the oracle's written text follows (cited, nothing reproduced).
+references = [
+  "Craft Yarn Council, \"Knit Chart Symbols\", https://www.craftyarncouncil.com/standards/knit-chart-symbols (chart conventions, as cited in docs/KNIT_DESIGN.md).",
+  "Stitch Maps, \"Knitspeak\", https://stitch-maps.com/about/knitspeak/ (authored repeats, as summarized in the prior-art table of docs/KNIT_DESIGN.md).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/repeat_fixtures.rs (repeat_fixtures_match_their_oracles): the file parses as a \
+current .plyknit envelope and re-saves to the same bytes (repeats included); for every row, the \
+written instruction, the worked counts, the to-end repeat count and the expanded worked sequence \
+equal the oracle in seed-stitch-round.expect.json, and the counts are the sums over that sequence; the \
+validation issues equal the oracle's, in order. app/test/native_format_test.dart reads the same \
+file as schema version 2."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Four rounds over 12 stitches. Stitch structure and counts only; gauge, yarn and colorwork are not part of the fixture."

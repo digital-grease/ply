@@ -7,10 +7,15 @@
 //! span and be trailed by no-stitch, every cell must reference a real legend stitch / palette color,
 //! and the grid stays rectangular.
 //!
-//! Repeats are validated for bounds only: a chart stores the literal motif as drawn (the repeat is how
-//! a knitter TILES it, not part of the motif's internal stitch count), so the continuity pass runs on
-//! the literal cells.
+//! Stitch counts come from [`crate::flow`], which counts each row's WORKED sequence: authored repeats
+//! are expanded (`Times(n)` works the motif n times, `ToEnd` resolves from the row below), so a row
+//! drawn as 6 cells with a 4-cell motif worked 3 times counts as the 14 stitches it makes. Every repeat
+//! problem it finds (a span worked 0 times, outside the row, overlapping, nested, a second to-end span,
+//! a split cable, a to-end count that does not divide or cannot be known) is reported here with its
+//! row and columns (see [`crate::instruction`]).
 
+use crate::flow::stitch_flow;
+use crate::instruction::ReadingCols;
 use crate::pattern::{builtin, KnitPattern, Row, Side, StitchLegend};
 
 /// Issue severity. Errors are hard problems (a save gate should refuse); warnings are advisory.
@@ -34,6 +39,13 @@ impl KnitIssue {
             message,
         }
     }
+
+    fn warning(message: String) -> Self {
+        KnitIssue {
+            severity: Severity::Warning,
+            message,
+        }
+    }
 }
 
 /// Validate a pattern's chart. An empty result is a structurally sound chart.
@@ -43,9 +55,7 @@ pub fn validate(pattern: &KnitPattern) -> Vec<KnitIssue> {
     let width = pattern.chart.width;
     let palette_len = pattern.palette.len();
 
-    // Per-row structural checks, collecting each row's (consumes, produces) totals for the continuity
-    // pass below.
-    let mut totals: Vec<(u32, u32)> = Vec::with_capacity(pattern.chart.rows.len());
+    // Per-row structural checks (cells, colors, cables).
     for (r, row) in pattern.chart.rows.iter().enumerate() {
         let rownum = r + 1; // 1-based for human-facing messages
                             // Number stitches in READING/WORKING order so a reported "col" names the same stitch the
@@ -76,60 +86,35 @@ pub fn validate(pattern: &KnitPattern) -> Vec<KnitIssue> {
             }
         }
 
-        for rep in &row.repeats {
-            if rep.start >= rep.end || rep.end > width {
-                issues.push(KnitIssue::error(format!(
-                    "row {rownum} has an out-of-range repeat span {}..{} (width {width})",
-                    rep.start, rep.end
-                )));
-            }
-        }
-
         check_cable_spans(legend, row, rownum, width, rs, &mut issues);
-        totals.push(row_totals(legend, row));
     }
 
-    // Stitch-count continuity: each row must consume exactly what the row below it produced.
-    for r in 1..pattern.chart.rows.len() {
-        let produced_below = totals[r - 1].1;
-        let consumed_here = totals[r].0;
-        if produced_below != consumed_here {
-            issues.push(KnitIssue::error(format!(
-                "row {} consumes {consumed_here} stitches but row {} produced {produced_below}",
-                r + 1,
-                r
-            )));
+    // Repeats and stitch counts: each row's worked sequence must take exactly what the row below
+    // left, and every repeat must be workable as authored. An unknown stitch counts 0 (it is already
+    // flagged above).
+    for flow in stitch_flow(pattern) {
+        let cols = ReadingCols::for_row(pattern, flow.row);
+        for problem in &flow.problems {
+            let message = problem.message(flow.row, &cols);
+            issues.push(if problem.is_warning() {
+                KnitIssue::warning(message)
+            } else {
+                KnitIssue::error(message)
+            });
         }
     }
 
     issues
 }
 
-/// Sum of (consumes, produces) over a row's cells. An unknown stitch contributes 0 (it is already
-/// error-flagged); saturating so a pathological legend can't overflow.
-fn row_totals(legend: &StitchLegend, row: &Row) -> (u32, u32) {
-    let mut consumes = 0u32;
-    let mut produces = 0u32;
-    for cell in &row.cells {
-        if let Some(def) = legend.get(cell.stitch) {
-            consumes = consumes.saturating_add(def.consumes as u32);
-            produces = produces.saturating_add(def.produces as u32);
-        }
-    }
-    (consumes, produces)
-}
-
 /// The 1-based column number to SHOW for storage index `idx`, in READING ORDER: a right-side (RS) row
 /// is worked, read, and written right-to-left, so its rightmost stitch is column 1; a wrong-side (WS)
 /// row is worked left-to-right (column = idx + 1). This mirrors `written.rs` so a validation "col N"
 /// names the same stitch the written instructions and the knitter count to. The `width > idx` guard
-/// keeps a ragged over-wide row (already error-flagged) from underflowing.
+/// keeps a ragged over-wide row (already error-flagged) from underflowing. One rule with the repeat
+/// diagnostics ([`ReadingCols`]).
 fn reading_col(rs: bool, width: usize, idx: usize) -> usize {
-    if rs && width > idx {
-        width - idx
-    } else {
-        idx + 1
-    }
+    ReadingCols::new(rs, width).col(idx)
 }
 
 /// A cable cell must fit the width and be followed by `span - 1` no-stitch cells (the columns it
@@ -288,9 +273,8 @@ mod tests {
             }],
         };
         let p = pattern(4, vec![row], vec![Color::WHITE], StitchLegend::builtin());
-        assert!(validate(&p)
-            .iter()
-            .any(|i| i.message.contains("out-of-range repeat")));
+        assert!(validate(&p).iter().any(|i| i.message
+            == "row 1: a repeat runs past the edge of the row (stored as 2..9 on a 4-column row)"));
     }
 
     #[test]
@@ -438,5 +422,184 @@ mod tests {
     fn empty_chart_is_clean() {
         let p = pattern(0, vec![], vec![Color::WHITE], StitchLegend::builtin());
         assert!(validate(&p).is_empty());
+    }
+
+    // --- repeats (ADR 0004) -------------------------------------------------------------------------
+
+    fn spanned(ids: &[usize], repeats: Vec<RepeatSpan>) -> Row {
+        Row {
+            cells: ids.iter().map(|&i| Cell::of(i)).collect(),
+            repeats,
+        }
+    }
+
+    fn rep(start: usize, end: usize, count: Repeat) -> RepeatSpan {
+        RepeatSpan { start, end, count }
+    }
+
+    const RIB: [usize; 6] = [
+        builtin::KNIT,
+        builtin::PURL,
+        builtin::PURL,
+        builtin::KNIT,
+        builtin::KNIT,
+        builtin::KNIT,
+    ];
+
+    #[test]
+    fn the_audit_example_no_longer_validates_clean() {
+        // R-02: 14 worked stitches, then a plain 6-stitch row. It used to validate clean.
+        let p = pattern(
+            6,
+            vec![
+                spanned(&RIB, vec![rep(1, 5, Repeat::Times(3))]),
+                Row::plain(vec![k(); 6]),
+            ],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        assert_eq!(
+            validate(&p),
+            vec![KnitIssue {
+                severity: Severity::Error,
+                message: "row 2 consumes 6 stitches but row 1 produced 14".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_counted_repeat_balances_the_next_row() {
+        let p = pattern(
+            6,
+            vec![
+                spanned(&RIB, vec![rep(1, 5, Repeat::Times(3))]),
+                spanned(&RIB, vec![rep(1, 5, Repeat::ToEnd)]),
+            ],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        assert!(validate(&p).is_empty(), "{:?}", validate(&p));
+    }
+
+    #[test]
+    fn a_first_row_to_end_is_a_warning_with_its_multiple() {
+        let p = pattern(
+            6,
+            vec![spanned(&RIB, vec![rep(1, 5, Repeat::ToEnd)])],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        assert_eq!(
+            validate(&p),
+            vec![KnitIssue {
+                severity: Severity::Warning,
+                message:
+                    "row 1: the repeat over cols 2-5 is worked to the end of the row, but the \
+                          pattern has no cast-on count, so Ply cannot count this row (it needs a \
+                          multiple of 4 stitches plus 2)"
+                        .into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn rejected_repeats_are_errors_naming_the_row_and_columns() {
+        let cases: Vec<(Vec<RepeatSpan>, &str)> = vec![
+            (
+                vec![rep(1, 5, Repeat::Times(0))],
+                "row 1: the repeat over cols 2-5 is worked 0 times",
+            ),
+            (
+                vec![rep(0, 3, Repeat::Times(2)), rep(2, 5, Repeat::Times(2))],
+                "row 1: the repeats over cols 2-4 and cols 4-6 overlap",
+            ),
+            (
+                vec![rep(0, 6, Repeat::Times(2)), rep(2, 4, Repeat::Times(2))],
+                "row 1: the repeat over cols 3-4 is inside the repeat over cols 1-6",
+            ),
+            (
+                vec![rep(0, 2, Repeat::ToEnd), rep(3, 5, Repeat::ToEnd)],
+                "row 1: the repeats over cols 2-3 and cols 5-6 are both worked to the end of the row",
+            ),
+            (
+                vec![rep(4, 8, Repeat::Times(2))],
+                "row 1: a repeat runs past the edge of the row (stored as 4..8 on a 6-column row)",
+            ),
+        ];
+        for (repeats, want) in cases {
+            let p = pattern(
+                6,
+                vec![spanned(&RIB, repeats)],
+                vec![Color::WHITE],
+                StitchLegend::builtin(),
+            );
+            let issues = validate(&p);
+            assert!(
+                issues
+                    .iter()
+                    .any(|i| i.severity == Severity::Error && i.message.starts_with(want)),
+                "want `{want}` in {issues:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_repeat_splitting_a_cable_is_an_error() {
+        let mut legend = StitchLegend::builtin();
+        legend.stitches.push(StitchDef {
+            symbol: "2/2 RC".into(),
+            consumes: 4,
+            produces: 4,
+            ws_variant: None,
+            cable: Some(CableDef {
+                front: 2,
+                back: 2,
+                direction: Cross::Right,
+                front_purl: false,
+                back_purl: false,
+            }),
+            macro_rows: 1,
+        });
+        let c = legend.stitches.len() - 1;
+        let p = pattern(
+            6,
+            vec![Row {
+                cells: vec![k(), Cell::of(c), ns(), ns(), ns(), k()],
+                repeats: vec![rep(3, 6, Repeat::Times(2))],
+            }],
+            vec![Color::WHITE],
+            legend,
+        );
+        assert!(
+            validate(&p).iter().any(|i| i.severity == Severity::Error
+                && i.message
+                    == "row 1: the repeat over cols 1-3 splits the cable at cols 2-5; a cable \
+                        must be wholly inside or outside a repeat"),
+            "{:?}",
+            validate(&p)
+        );
+    }
+
+    #[test]
+    fn a_non_dividing_to_end_is_an_error_with_the_numbers() {
+        let p = pattern(
+            6,
+            vec![
+                Row::plain(vec![k(), k(), k(), k(), k(), Cell::of(builtin::KFB)]),
+                spanned(&RIB, vec![rep(1, 5, Repeat::ToEnd)]),
+            ],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        assert_eq!(
+            validate(&p),
+            vec![KnitIssue {
+                severity: Severity::Error,
+                message: "row 2: the repeat over cols 2-5 cannot be worked to the end: row 1 \
+                          produced 7 stitches, the rest of the row uses 2, and the 5 left are not a \
+                          multiple of 4"
+                    .into(),
+            }]
+        );
     }
 }

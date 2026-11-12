@@ -132,9 +132,70 @@ class KnitEditorState {
   }
 
   /// Resize the chart grid to [width] columns x [rows] rows: existing cells are kept, new cells are
-  /// knit, extras are truncated.
+  /// knit, extras are truncated. Authored repeats are CLIPPED with the cells they cover, never
+  /// dropped silently: a repeat that still starts inside the new width is shortened to the new edge,
+  /// one that starts past it is removed, and removed rows take their repeats with them. Call
+  /// [repeatCutsOnResize] first to tell the user what a resize will do to them (Undo restores it).
   KnitEditorState resizeChart(int width, int rows) =>
       _commit(_resizeChart(pattern, width.clamp(0, 1 << 16), rows.clamp(0, 1 << 16)));
+
+  /// Mark storage columns [c0]..[c1] (inclusive, either order) of rows [r0]..[r1] as an authored
+  /// repeat worked [count] times (or to the end of the row), as ONE undo entry. The cells are the
+  /// motif as drawn; nothing is duplicated. Any repeat in those rows that overlaps the new one is
+  /// replaced, so the editor never creates overlapping repeats; the row's repeats stay sorted by
+  /// column. Coordinates are clamped to the chart. A `times` count below 1 (never worked) or a
+  /// no-change mark is a no-op. Whether the repeat is workable (a cable cut by its edge, a second
+  /// to-end repeat) is the engine validator's call, shown in the validation band like any problem.
+  KnitEditorState markRepeat(int r0, int c0, int r1, int c1, RepeatDto count) {
+    if (count case RepeatDto_Times(count: final n) when n < 1) return this;
+    final region = _clampRegion(pattern, r0, c0, r1, c1);
+    if (region == null) return this;
+    final (rLo, rHi, cLo, cHi) = region;
+    final span = RepeatSpanDto(start: cLo, end: cHi + 1, count: count);
+    var changed = false;
+    final rows = [...pattern.chart.rows];
+    for (var r = rLo; r <= rHi; r++) {
+      final old = rows[r].repeats;
+      final kept = old.where((s) => !_overlaps(s, span.start, span.end)).toList();
+      final next = [...kept, span]..sort((a, b) => a.start.compareTo(b.start));
+      if (_sameRepeats(old, next)) continue;
+      rows[r] = RowDto(cells: rows[r].cells, repeats: next);
+      changed = true;
+    }
+    if (!changed) return this;
+    return _commit(_withChart(pattern, ChartDto(width: pattern.chart.width, rows: rows)));
+  }
+
+  /// Remove every repeat in rows [r0]..[r1] that overlaps storage columns [c0]..[c1] (inclusive,
+  /// either order), as ONE undo entry. The cells are untouched. A region with no repeat is a no-op.
+  KnitEditorState clearRepeats(int r0, int c0, int r1, int c1) {
+    final region = _clampRegion(pattern, r0, c0, r1, c1);
+    if (region == null) return this;
+    final (rLo, rHi, cLo, cHi) = region;
+    var changed = false;
+    final rows = [...pattern.chart.rows];
+    for (var r = rLo; r <= rHi; r++) {
+      final old = rows[r].repeats;
+      final kept = old.where((s) => !_overlaps(s, cLo, cHi + 1)).toList();
+      if (kept.length == old.length) continue;
+      rows[r] = RowDto(cells: rows[r].cells, repeats: kept);
+      changed = true;
+    }
+    if (!changed) return this;
+    return _commit(_withChart(pattern, ChartDto(width: pattern.chart.width, rows: rows)));
+  }
+
+  /// Whether any repeat in rows [r0]..[r1] overlaps storage columns [c0]..[c1] (inclusive, either
+  /// order): what "Remove repeat" would clear.
+  bool hasRepeatIn(int r0, int c0, int r1, int c1) {
+    final region = _clampRegion(pattern, r0, c0, r1, c1);
+    if (region == null) return false;
+    final (rLo, rHi, cLo, cHi) = region;
+    for (var r = rLo; r <= rHi; r++) {
+      if (pattern.chart.rows[r].repeats.any((s) => _overlaps(s, cLo, cHi + 1))) return true;
+    }
+    return false;
+  }
 
   /// Set the pattern's [gauge] (stitches/rows per 4 in or 10 cm). A no-change is a no-op (GaugeDto
   /// has value equality).
@@ -353,11 +414,91 @@ KnitPatternDto _resizeChart(KnitPatternDto p, int width, int rowCount) {
       width,
       (c) => (old != null && c < old.cells.length) ? old.cells[c] : knit,
     );
-    // Drop any authored repeat span that no longer fits the (possibly shrunk) width, so a resize
-    // can't leave a span referencing columns past the edge (which validate would flag).
-    final repeats =
-        (old?.repeats ?? const <RepeatSpanDto>[]).where((s) => s.end <= width).toList();
+    // Repeats follow the cells they cover: one cut by the new edge is clipped to it, one wholly past
+    // it goes with its cells. The editor reports both ([repeatCutsOnResize]); Undo restores them.
+    final repeats = [
+      for (final s in old?.repeats ?? const <RepeatSpanDto>[])
+        if (s.end <= width)
+          s
+        else if (s.start < width)
+          RepeatSpanDto(start: s.start, end: width, count: s.count),
+    ];
     return RowDto(cells: cells, repeats: repeats);
   });
   return _withChart(p, ChartDto(width: width, rows: rows));
+}
+
+/// What a resize to [width] x [rowCount] does to [p]'s authored repeats: how many are [clipped] to
+/// the new edge and how many are [removed] (wholly past the new width, or on a removed row).
+class RepeatCuts {
+  const RepeatCuts({this.clipped = 0, this.removed = 0});
+  final int clipped;
+  final int removed;
+  bool get isEmpty => clipped == 0 && removed == 0;
+}
+
+/// The repeats a resize to [width] columns x [rowCount] rows would clip or remove (the same rule as
+/// [KnitEditorState.resizeChart]).
+RepeatCuts repeatCutsOnResize(KnitPatternDto p, int width, int rowCount) {
+  width = width.clamp(0, 1 << 16);
+  rowCount = rowCount.clamp(0, 1 << 16);
+  var clipped = 0;
+  var removed = 0;
+  for (var r = 0; r < p.chart.rows.length; r++) {
+    for (final s in p.chart.rows[r].repeats) {
+      if (r >= rowCount) {
+        removed++;
+      } else if (s.end > width) {
+        if (s.start < width) {
+          clipped++;
+        } else {
+          removed++;
+        }
+      }
+    }
+  }
+  return RepeatCuts(clipped: clipped, removed: removed);
+}
+
+/// The notice for a resize that changed repeats, or null when it changed none.
+String? repeatCutsMessage(RepeatCuts cuts) {
+  final c = cuts.clipped;
+  final r = cuts.removed;
+  if (c > 0 && r > 0) {
+    return '$c ${c == 1 ? 'repeat was' : 'repeats were'} shortened and $r removed to fit the '
+        'chart. Undo to restore.';
+  }
+  if (c > 0) {
+    return '$c ${c == 1 ? 'repeat was' : 'repeats were'} shortened to fit the chart. '
+        'Undo to restore.';
+  }
+  if (r > 0) {
+    return '$r ${r == 1 ? 'repeat was' : 'repeats were'} removed with the stitches '
+        '${r == 1 ? 'it' : 'they'} covered. Undo to restore.';
+  }
+  return null;
+}
+
+/// The region rows [r0]..[r1] x cols [c0]..[c1] (any corner order) clamped to [p]'s chart, as
+/// (rowLo, rowHi, colLo, colHi), or null on an empty chart.
+(int, int, int, int)? _clampRegion(KnitPatternDto p, int r0, int c0, int r1, int c1) {
+  final rows = p.chart.rows.length;
+  final width = p.chart.width;
+  if (rows == 0 || width == 0) return null;
+  final rLo = (r0 < r1 ? r0 : r1).clamp(0, rows - 1);
+  final rHi = (r0 < r1 ? r1 : r0).clamp(0, rows - 1);
+  final cLo = (c0 < c1 ? c0 : c1).clamp(0, width - 1);
+  final cHi = (c0 < c1 ? c1 : c0).clamp(0, width - 1);
+  return (rLo, rHi, cLo, cHi);
+}
+
+/// Whether span [s] shares a column with storage columns `[start, end)`.
+bool _overlaps(RepeatSpanDto s, int start, int end) => s.start < end && start < s.end;
+
+bool _sameRepeats(List<RepeatSpanDto> a, List<RepeatSpanDto> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }

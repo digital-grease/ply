@@ -1,11 +1,17 @@
-//! Property-based hardening of `ply-knit` (M5). Two guarantees over generated, deliberately
+//! Property-based hardening of `ply-knit` (M5). Three guarantees over generated, deliberately
 //! ADVERSARIAL patterns (ragged rows, dangling stitch/color ids, malformed cables, out-of-range
 //! repeats, overflowing cell sizes, non-finite calculator inputs):
 //!
 //! 1. the `.plyknit` write -> parse round-trip is identity (over finite-gauge patterns), and a
 //!    legacy (version 1) file migrates with every cell on the stitch it named, and
-//! 2. `validate` / `render_rgba` / `to_written` / the calculators NEVER panic — they return a value
-//!    (often a flagged issue or a clamped 0), the contract the FFI boundary relies on.
+//! 2. `validate` / `render_rgba` / `to_written` / the stitch flow / the calculators NEVER panic:
+//!    they return a value (often a flagged issue or a clamped 0), the contract the FFI boundary
+//!    relies on, and
+//! 3. authored repeats mean one thing everywhere: a row with fixed repeats works exactly the
+//!    stitches of the same row drawn out in full, a to-end repeat resolves exactly when the stitches
+//!    left divide by its motif, the counts equal the sums over the expanded worked sequence, and a
+//!    row is refused by the written text exactly when validation reports it (valid repeat rows are
+//!    generated too, not only adversarial ones).
 //!
 //! Run: `cargo test -p ply-knit --test knit_proptest`
 
@@ -14,8 +20,11 @@ use ply_knit::calc::{
     cast_on, estimate_yards_from_swatch, estimate_yards_stockinette, finished_length,
     finished_width, seed_gauge, total_stitches, with_buffer,
 };
+use ply_knit::instruction::{op_totals, row_instruction, RowInstruction, StitchOp};
 use ply_knit::pattern::*;
-use ply_knit::{render_rgba, to_written, validate, KNIT_FORMAT, KNIT_SCHEMA_VERSION};
+use ply_knit::{
+    render_rgba, stitch_flow, to_written, validate, Severity, KNIT_FORMAT, KNIT_SCHEMA_VERSION,
+};
 use proptest::prelude::*;
 
 // --- strategies --------------------------------------------------------------------------------
@@ -78,6 +87,7 @@ fn arb_cell() -> impl Strategy<Value = Cell> {
     (0usize..18, prop::option::of(0usize..8)).prop_map(|(stitch, color)| Cell { stitch, color })
 }
 
+/// Includes `Times(0)` (refused) on purpose.
 fn arb_repeat() -> impl Strategy<Value = Repeat> {
     prop_oneof![(0u16..8).prop_map(Repeat::Times), Just(Repeat::ToEnd)]
 }
@@ -119,6 +129,140 @@ fn arb_pattern() -> impl Strategy<Value = KnitPattern> {
                 },
             )
     })
+}
+
+/// Non-cable stitches for VALID repeat rows (plus no-stitch, so motifs can hold fillers).
+const PLAIN_STITCHES: [StitchId; 12] = [
+    builtin::NO_STITCH,
+    builtin::KNIT,
+    builtin::PURL,
+    builtin::YO,
+    builtin::K2TOG,
+    builtin::SSK,
+    builtin::P2TOG,
+    builtin::CDD,
+    builtin::M1L,
+    builtin::KFB,
+    builtin::SLIP,
+    builtin::KTBL,
+];
+
+/// How one segment of a valid repeat row is worked.
+#[derive(Debug, Clone, Copy)]
+enum Seg {
+    Plain,
+    Times(u16),
+    ToEnd,
+}
+
+/// A row with VALID repeats: segments of 1..=3 cells, each plain or a repeat worked 1..=4 times, and
+/// (when `to_end`) exactly one repeat worked to the end. Every motif works at least one stitch and a
+/// to-end motif takes at least one from the row below (patched, not filtered, so cases are not lost).
+fn arb_valid_repeat_row(to_end: bool) -> impl Strategy<Value = Row> {
+    let seg = (
+        1usize..=3,
+        prop_oneof![Just(Seg::Plain), (1u16..=4).prop_map(Seg::Times)],
+        prop::collection::vec(0usize..PLAIN_STITCHES.len(), 3),
+    );
+    (
+        prop::collection::vec(seg, 1..=5),
+        any::<prop::sample::Index>(),
+    )
+        .prop_map(move |(segs, pick)| {
+            let mut segs: Vec<_> = segs;
+            if to_end {
+                let i = pick.index(segs.len());
+                segs[i].1 = Seg::ToEnd;
+            }
+            let mut cells = Vec::new();
+            let mut repeats = Vec::new();
+            for (len, kind, ids) in segs {
+                let start = cells.len();
+                let mut motif: Vec<Cell> = ids[..len]
+                    .iter()
+                    .map(|&i| Cell::of(PLAIN_STITCHES[i]))
+                    .collect();
+                let count = match kind {
+                    Seg::Plain => None,
+                    Seg::Times(n) => Some(Repeat::Times(n)),
+                    Seg::ToEnd => Some(Repeat::ToEnd),
+                };
+                if let Some(count) = count {
+                    let legend = StitchLegend::builtin();
+                    let takes = motif
+                        .iter()
+                        .map(|c| legend.get(c.stitch).unwrap().consumes)
+                        .sum::<u8>();
+                    let works = motif.iter().any(|c| c.stitch != builtin::NO_STITCH);
+                    if !works || (count == Repeat::ToEnd && takes == 0) {
+                        motif[0] = Cell::of(builtin::KNIT);
+                    }
+                    repeats.push(RepeatSpan {
+                        start,
+                        end: start + len,
+                        count,
+                    });
+                }
+                cells.extend(motif);
+            }
+            Row { cells, repeats }
+        })
+}
+
+/// One-row pattern holding `row`, flat (either side) or in the round.
+fn single_row(row: Row, construction: Construction, first: Side) -> KnitPattern {
+    mk_with(row.cells.len(), vec![row], construction, first)
+}
+
+fn mk_with(width: usize, rows: Vec<Row>, construction: Construction, first: Side) -> KnitPattern {
+    KnitPattern {
+        name: "r".into(),
+        construction,
+        first_row_side: first,
+        gauge: Gauge {
+            sts: 20.0,
+            rows: 28.0,
+            unit: Unit::Inches,
+        },
+        palette: vec![Color::WHITE],
+        legend: StitchLegend::builtin(),
+        chart: Chart { width, rows },
+        notes: String::new(),
+    }
+}
+
+/// The row drawn out in full: every fixed motif's cells copied `n` times in storage order, no spans.
+fn flattened(row: &Row) -> Row {
+    let mut cells = Vec::new();
+    let mut col = 0;
+    let mut spans = row.repeats.clone();
+    spans.sort_by_key(|s| s.start);
+    for s in spans {
+        cells.extend_from_slice(&row.cells[col..s.start]);
+        let Repeat::Times(n) = s.count else {
+            panic!("only fixed repeats flatten")
+        };
+        for _ in 0..n {
+            cells.extend_from_slice(&row.cells[s.start..s.end]);
+        }
+        col = s.end;
+    }
+    cells.extend_from_slice(&row.cells[col..]);
+    Row::plain(cells)
+}
+
+/// What a worked stitch IS, without the drawn column it came from.
+fn worked_ids(ops: &[StitchOp]) -> Vec<(StitchId, StitchId, Option<usize>, u32, u32)> {
+    ops.iter()
+        .map(|o| (o.drawn, o.worked, o.color, o.consumes, o.produces))
+        .collect()
+}
+
+fn arb_construction() -> impl Strategy<Value = (Construction, Side)> {
+    (
+        prop_oneof![Just(Construction::Flat), Just(Construction::InTheRound)],
+        prop_oneof![Just(Side::Rs), Just(Side::Ws)],
+    )
 }
 
 /// cell_px including the OVERFLOW extremes that must hit render's `checked_mul` guard, not panic.
@@ -244,6 +388,104 @@ proptest! {
     fn written_never_panics_one_line_per_row(p in arb_pattern()) {
         let lines = to_written(&p);
         prop_assert_eq!(lines.len(), p.chart.rows.len());
+    }
+
+    /// The stitch flow never panics, and wherever it counts a row (and the row is small enough to
+    /// write out) the counts are exactly the sums over the expanded worked sequence.
+    #[test]
+    fn flow_counts_are_the_sums_over_the_expansion(p in arb_pattern()) {
+        for f in stitch_flow(&p) {
+            let Some(c) = f.count else { continue };
+            if c.consumed.max(c.produced) > 20_000 {
+                continue;
+            }
+            let worked = f.worked().expect("a counted row expands");
+            prop_assert_eq!(op_totals(&worked), Some((c.consumed, c.produced)));
+        }
+    }
+
+    /// A row is written as "repeats need fixing" exactly when its repeats are refused, and then every
+    /// reason is also a validation error for that row.
+    #[test]
+    fn written_and_validate_agree_on_refused_rows(p in arb_pattern()) {
+        let lines = to_written(&p);
+        let issues = validate(&p);
+        for (r, line) in lines.iter().enumerate() {
+            let refused = matches!(row_instruction(&p, r), RowInstruction::Unsupported(_));
+            prop_assert_eq!(line.contains("(repeats need fixing:"), refused, "{}", line);
+            if refused {
+                let prefix = format!("row {}:", r + 1);
+                prop_assert!(
+                    issues.iter().any(|i| i.severity == Severity::Error && i.message.starts_with(&prefix)),
+                    "{:?}", issues
+                );
+            }
+        }
+    }
+
+    /// Fixed repeats work exactly the stitches of the same row drawn out in full, on either side and
+    /// in the round: same worked sequence, same counts.
+    #[test]
+    fn fixed_repeats_work_the_flattened_row(
+        row in arb_valid_repeat_row(false),
+        (construction, first) in arb_construction(),
+    ) {
+        let p = single_row(row.clone(), construction, first);
+        let f = single_row(flattened(&row), construction, first);
+        let worked = row_instruction(&p, 0).expand(None).expect("a valid row expands");
+        let drawn_out = row_instruction(&f, 0).expand(None).expect("a plain row expands");
+        prop_assert_eq!(worked_ids(&worked), worked_ids(&drawn_out));
+        let (pc, fc) = (stitch_flow(&p)[0].count, stitch_flow(&f)[0].count);
+        prop_assert_eq!(pc.map(|c| (c.consumed, c.produced)), fc.map(|c| (c.consumed, c.produced)));
+        prop_assert!(validate(&p).iter().all(|i| !i.message.contains("repeat")), "{:?}", validate(&p));
+    }
+
+    /// A to-end repeat over a known count resolves exactly when the stitches left after the rest of
+    /// the row are a positive multiple of the motif, and then the row takes all of them.
+    #[test]
+    fn to_end_resolves_exactly_when_the_remainder_divides(
+        row in arb_valid_repeat_row(true),
+        (construction, first) in arb_construction(),
+        times in 1u16..=6,
+    ) {
+        let w = row.cells.len();
+        let base = Row {
+            cells: vec![Cell::of(builtin::KNIT); w],
+            repeats: vec![RepeatSpan { start: 0, end: w, count: Repeat::Times(times) }],
+        };
+        let p = mk_with(w, vec![base, row], construction, first);
+        let flow = stitch_flow(&p);
+        let available = (w as u64) * u64::from(times);
+        prop_assert_eq!(flow[0].count.map(|c| c.produced), Some(available));
+        let (span, motif) = flow[1].instruction.to_end().expect("one to-end repeat");
+        let (motif_c, _) = op_totals(motif).unwrap();
+        let reserved: u64 = flow[1]
+            .instruction
+            .items()
+            .unwrap()
+            .iter()
+            .filter_map(|i| i.fixed_totals().map(|t| t.0))
+            .sum();
+        let divides = available > reserved && (available - reserved).is_multiple_of(motif_c);
+        match flow[1].count {
+            Some(c) => {
+                prop_assert!(divides);
+                prop_assert_eq!(c.consumed, available);
+                prop_assert_eq!(reserved + c.to_end_times.unwrap() * motif_c, available);
+                let worked = flow[1].worked().unwrap();
+                prop_assert_eq!(op_totals(&worked), Some((c.consumed, c.produced)));
+                prop_assert!(flow[1].problems.is_empty());
+            }
+            None => {
+                prop_assert!(!divides);
+                prop_assert_eq!(flow[1].problems.len(), 1);
+                prop_assert_eq!(flow[1].problems[0].span(), Some(span));
+                prop_assert!(matches!(
+                    flow[1].problems[0].code(),
+                    "repeat-to-end-not-divisible" | "repeat-to-end-no-room" | "repeat-to-end-none-left"
+                ));
+            }
+        }
     }
 
     /// `from_json` never panics on arbitrary text...

@@ -1,0 +1,18 @@
+{
+  "description": "Eyelet lace in the round over a 6-stitch motif. Round 2 pairs each yarn-over with a decrease (count-neutral), round 4 adds two stitches per repeat (24 to 36), and round 6 forgets a decrease, so its 6 repeats take 30 stitches where 36 are on the needle.",
+  "covers": ["lace increase/decrease balance inside a repeat", "ToEnd with exact remainder", "counts across consecutive rows", "fixed repeat counted from its expansion"],
+  "construction": "InTheRound",
+  "first_row_side": "Rs",
+  "width": 6,
+  "rows": [
+    {"row": 1, "written": "Round 1: [k6] 4 times", "consumes": 24, "produces": 24, "to_end_times": null, "worked": ["k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k"]},
+    {"row": 2, "written": "Round 2: *k, yo, ssk, k, k2tog, yo; rep from * to end", "consumes": 24, "produces": 24, "to_end_times": 4, "worked": ["k", "yo", "ssk", "k", "k2tog", "yo", "k", "yo", "ssk", "k", "k2tog", "yo", "k", "yo", "ssk", "k", "k2tog", "yo", "k", "yo", "ssk", "k", "k2tog", "yo"]},
+    {"row": 3, "written": "Round 3: *k6; rep from * to end", "consumes": 24, "produces": 24, "to_end_times": 4, "worked": ["k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k"]},
+    {"row": 4, "written": "Round 4: *yo, k3, yo, k; rep from * to end", "consumes": 24, "produces": 36, "to_end_times": 6, "worked": ["yo", "k", "k", "k", "yo", "k", "yo", "k", "k", "k", "yo", "k", "yo", "k", "k", "k", "yo", "k", "yo", "k", "k", "k", "yo", "k", "yo", "k", "k", "k", "yo", "k", "yo", "k", "k", "k", "yo", "k"]},
+    {"row": 5, "written": "Round 5: *k6; rep from * to end", "consumes": 36, "produces": 36, "to_end_times": 6, "worked": ["k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k", "k"]},
+    {"row": 6, "written": "Round 6: [k, yo, ssk, k2, yo] 6 times", "consumes": 30, "produces": 36, "to_end_times": null, "worked": ["k", "yo", "ssk", "k", "k", "yo", "k", "yo", "ssk", "k", "k", "yo", "k", "yo", "ssk", "k", "k", "yo", "k", "yo", "ssk", "k", "k", "yo", "k", "yo", "ssk", "k", "k", "yo", "k", "yo", "ssk", "k", "k", "yo"]}
+  ],
+  "issues": [
+    {"severity": "error", "message": "row 6 consumes 30 stitches but row 5 produced 36"}
+  ]
+}

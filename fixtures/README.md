@@ -10,6 +10,9 @@ fixtures/
   weaving/<technique>/<name>.wif                 # craft acceptance fixture: the draft itself
   weaving/<technique>/<name>.expect.json         # its structural oracle
   weaving/<technique>/<name>.fixture.toml        # its record: sources, license, verification
+  knitting/<topic>/<name>.plyknit                # craft acceptance fixture: the chart itself
+  knitting/<topic>/<name>.expect.json            # its oracle (written rows, counts, issues)
+  knitting/<topic>/<name>.fixture.toml           # its record
 ```
 
 More trees (adversarial inputs, other crafts) will be added under their own top-level folders as
@@ -83,3 +86,22 @@ hold it to and a record of where it came from. Every fixture is three files with
 
 A generated fixture is regenerated only on purpose: if the generator's output changes, the test
 fails, and the change has to be reviewed as a change to the cloth.
+
+## `knitting/`
+
+Craft acceptance fixtures for knitting: original charts, each with an oracle derived by hand (not
+dumped from the code under test) and a record. Every fixture is three files with the same name:
+
+- `<name>.plyknit`: the chart, written by the engine's own `.plyknit` writer (a current-version
+  envelope). The tests require that re-saving it gives the same bytes.
+- `<name>.expect.json`: the oracle. Construction, chart width, and for every row (row 1 first) the
+  written instruction, the stitches it consumes and produces, how many times its to-end repeat is
+  worked, and the expanded worked sequence as worked symbols (`null` where the row cannot be
+  counted); then the validation issues, in order, with their exact messages.
+- `<name>.fixture.toml`: the record. Title, technique, license, provenance, the conventions the
+  written text follows (cited, never copied), and the verification status: `automated_checks` and
+  `practitioner_knit_check` (`pending` until a knitter has worked or checked it).
+
+| Folder | Contents | Tests |
+|---|---|---|
+| `knitting/repeats/` | Authored horizontal repeats: a simple fixed repeat (`seed-stitch-round`), edge stitches and RS/WS mirroring (`rib-edges-flat`), to-end repeats with an exact remainder (`rib-to-end-flat`), an invalid remainder (`rib-to-end-remainder-flat`) and an unknown first-row count (`rib-cast-on-unknown-flat`), lace balance and count growth (`eyelet-lace-round`), a cable inside and across a repeat edge (`cable-repeat-round`), and every refused repeat shape (`rejected-spans-round`). | `rust/ply-knit/tests/repeat_fixtures.rs`; `app/test/native_format_test.dart` |

@@ -201,28 +201,127 @@ void main() {
     expect(s.pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl);
   });
 
-  test('resizeChart shrink drops a repeat span that no longer fits the width', () {
-    final withRepeat = KnitPatternDto(
-      name: 't',
-      construction: ConstructionKind.flat,
-      firstRowSide: SideKind.rs,
-      gauge: const GaugeDto(sts: 18, rows: 24, unit: UnitKind.inches),
-      palette: const [ColorDto(r: 255, g: 255, b: 255)],
-      legend: const StitchLegendDto(stitches: []),
+  /// A pattern whose rows carry [repeats] (the same spans on every row).
+  KnitPatternDto withRepeats(int width, int rows, List<RepeatSpanDto> repeats) {
+    final base = pattern(width, rows);
+    return KnitPatternDto(
+      name: base.name,
+      construction: base.construction,
+      firstRowSide: base.firstRowSide,
+      gauge: base.gauge,
+      palette: base.palette,
+      legend: base.legend,
       chart: ChartDto(
-        width: 4,
-        rows: [
-          RowDto(
-            cells: List.generate(4, (_) => const CellDto(stitch: KnitStitch.knit)),
-            repeats: [const RepeatSpanDto(start: 1, end: 4, count: RepeatDto.toEnd())],
-          ),
-        ],
+        width: width,
+        rows: [for (final r in base.chart.rows) RowDto(cells: r.cells, repeats: repeats)],
       ),
-      notes: '',
+      notes: base.notes,
     );
-    final shrunk = KnitEditorState(pattern: withRepeat).resizeChart(2, 1);
-    expect(shrunk.pattern.chart.rows[0].repeats, isEmpty,
-        reason: 'a span ending at col 4 cannot survive a shrink to width 2');
+  }
+
+  group('repeats on resize (clipped, never silently dropped)', () {
+    test('a shrink clips a repeat that still starts inside the chart, and says so', () {
+      final p = withRepeats(4, 1, const [RepeatSpanDto(start: 1, end: 4, count: RepeatDto.toEnd())]);
+      expect(repeatCutsMessage(repeatCutsOnResize(p, 2, 1)),
+          '1 repeat was shortened to fit the chart. Undo to restore.');
+      final shrunk = KnitEditorState(pattern: p).resizeChart(2, 1);
+      expect(shrunk.pattern.chart.rows[0].repeats,
+          const [RepeatSpanDto(start: 1, end: 2, count: RepeatDto.toEnd())]);
+      expect(shrunk.undoEdit().pattern.chart.rows[0].repeats,
+          const [RepeatSpanDto(start: 1, end: 4, count: RepeatDto.toEnd())],
+          reason: 'undo restores the repeat as authored');
+    });
+
+    test('a repeat wholly past the new edge is removed, with a notice', () {
+      final p = withRepeats(6, 1, const [RepeatSpanDto(start: 4, end: 6, count: RepeatDto.times(count: 2))]);
+      final cuts = repeatCutsOnResize(p, 3, 1);
+      expect((cuts.clipped, cuts.removed), (0, 1));
+      expect(repeatCutsMessage(cuts),
+          '1 repeat was removed with the stitches it covered. Undo to restore.');
+      expect(KnitEditorState(pattern: p).resizeChart(3, 1).pattern.chart.rows[0].repeats, isEmpty);
+    });
+
+    test('removing rows removes their repeats, and both kinds of change are reported together', () {
+      final p = withRepeats(6, 3, const [
+        RepeatSpanDto(start: 0, end: 2, count: RepeatDto.times(count: 3)),
+        RepeatSpanDto(start: 3, end: 6, count: RepeatDto.toEnd()),
+      ]);
+      // 3 rows -> 2 removes the top row's 2 repeats; width 6 -> 5 clips the 3..6 repeat on the rest.
+      final cuts = repeatCutsOnResize(p, 5, 2);
+      expect((cuts.clipped, cuts.removed), (2, 2));
+      expect(repeatCutsMessage(cuts),
+          '2 repeats were shortened and 2 removed to fit the chart. Undo to restore.');
+      final rows = KnitEditorState(pattern: p).resizeChart(5, 2).pattern.chart.rows;
+      expect(rows, hasLength(2));
+      expect(rows[1].repeats, const [
+        RepeatSpanDto(start: 0, end: 2, count: RepeatDto.times(count: 3)),
+        RepeatSpanDto(start: 3, end: 5, count: RepeatDto.toEnd()),
+      ]);
+    });
+
+    test('a resize that leaves every repeat whole says nothing and keeps them', () {
+      final p = withRepeats(4, 2, const [RepeatSpanDto(start: 0, end: 2, count: RepeatDto.times(count: 2))]);
+      expect(repeatCutsOnResize(p, 6, 3).isEmpty, isTrue);
+      expect(repeatCutsMessage(repeatCutsOnResize(p, 2, 2)), isNull, reason: 'ends exactly at the edge');
+      final grown = KnitEditorState(pattern: p).resizeChart(6, 3).pattern.chart.rows;
+      expect(grown[0].repeats, p.chart.rows[0].repeats);
+      expect(grown[2].repeats, isEmpty, reason: 'a new row has no repeat');
+    });
+  });
+
+  group('marking and clearing repeats', () {
+    test('markRepeat marks the selected columns on every selected row as one undo entry', () {
+      final s = KnitEditorState(pattern: pattern(6, 3))
+          .markRepeat(0, 4, 1, 1, const RepeatDto.times(count: 3)); // corners in any order
+      const span = RepeatSpanDto(start: 1, end: 5, count: RepeatDto.times(count: 3));
+      expect(s.pattern.chart.rows[0].repeats, const [span]);
+      expect(s.pattern.chart.rows[1].repeats, const [span]);
+      expect(s.pattern.chart.rows[2].repeats, isEmpty, reason: 'outside the selection');
+      expect(s.pattern.chart.rows[0].cells, pattern(6, 3).chart.rows[0].cells,
+          reason: 'the drawn cells are never duplicated or changed');
+      expect(s.undo, hasLength(1));
+      expect(s.undoEdit().pattern.chart.rows[0].repeats, isEmpty);
+    });
+
+    test('a new repeat replaces any it overlaps and keeps the row sorted by column', () {
+      final s = KnitEditorState(pattern: pattern(8, 1))
+          .markRepeat(0, 5, 0, 7, const RepeatDto.times(count: 2))
+          .markRepeat(0, 0, 0, 1, const RepeatDto.toEnd())
+          .markRepeat(0, 4, 0, 6, const RepeatDto.times(count: 4)); // overlaps 5..8
+      expect(s.pattern.chart.rows[0].repeats, const [
+        RepeatSpanDto(start: 0, end: 2, count: RepeatDto.toEnd()),
+        RepeatSpanDto(start: 4, end: 7, count: RepeatDto.times(count: 4)),
+      ]);
+    });
+
+    test('marking the same repeat again, or a count below 1, is a no-op', () {
+      final once = KnitEditorState(pattern: pattern(4, 1)).markRepeat(0, 0, 0, 1, const RepeatDto.toEnd());
+      expect(identical(once.markRepeat(0, 0, 0, 1, const RepeatDto.toEnd()), once), isTrue);
+      expect(identical(once.markRepeat(0, 2, 0, 3, const RepeatDto.times(count: 0)), once), isTrue,
+          reason: 'a repeat worked 0 times is never created by the editor');
+    });
+
+    test('clearRepeats removes only the repeats the region overlaps', () {
+      final s = KnitEditorState(pattern: pattern(8, 2))
+          .markRepeat(0, 0, 1, 1, const RepeatDto.times(count: 2))
+          .markRepeat(0, 4, 1, 6, const RepeatDto.toEnd());
+      expect(s.hasRepeatIn(0, 5, 0, 5), isTrue);
+      expect(s.hasRepeatIn(0, 2, 1, 3), isFalse);
+      final cleared = s.clearRepeats(1, 5, 1, 5);
+      expect(cleared.pattern.chart.rows[1].repeats,
+          const [RepeatSpanDto(start: 0, end: 2, count: RepeatDto.times(count: 2))]);
+      expect(cleared.pattern.chart.rows[0].repeats, hasLength(2), reason: 'row 0 was not selected');
+      expect(cleared.undo.length, s.undo.length + 1);
+      expect(identical(cleared.clearRepeats(1, 5, 1, 5), cleared), isTrue, reason: 'nothing left to clear');
+    });
+
+    test('painting keeps a row\'s repeats', () {
+      final s = KnitEditorState(pattern: pattern(4, 1))
+          .markRepeat(0, 0, 0, 3, const RepeatDto.toEnd())
+          .paintCell(0, 1, KnitStitch.purl, null);
+      expect(s.pattern.chart.rows[0].repeats,
+          const [RepeatSpanDto(start: 0, end: 4, count: RepeatDto.toEnd())]);
+    });
   });
 
   test('setConstruction switches flat<->round, keeps the chart, and records undo', () {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../rust/knit_dto.dart';
 import '../state/knit_editor_providers.dart';
 
 /// Width (px) of the right gutter that carries row numbers, and height of the bottom gutter that
@@ -13,6 +14,87 @@ const double _colGutter = 16;
 /// the rightmost column is 1) to match the knitting reading order — the same order the written
 /// instructions and the validation columns use.
 int axisNumberAt({required bool row, required int i, required int count}) => row ? i + 1 : count - i;
+
+/// One repeat bracket to draw: storage columns `[colStart, colEnd)` on chart rows [rowLo]..[rowHi]
+/// (row 0 at the bottom), worked [count]. Consecutive rows that mark the same columns and count share
+/// one box, the way printed charts draw a repeat box.
+class RepeatBox {
+  const RepeatBox({
+    required this.colStart,
+    required this.colEnd,
+    required this.rowLo,
+    required this.rowHi,
+    required this.count,
+  });
+  final int colStart;
+  final int colEnd;
+  final int rowLo;
+  final int rowHi;
+  final RepeatDto count;
+
+  @override
+  bool operator ==(Object other) =>
+      other is RepeatBox &&
+      other.colStart == colStart &&
+      other.colEnd == colEnd &&
+      other.rowLo == rowLo &&
+      other.rowHi == rowHi &&
+      other.count == count;
+
+  @override
+  int get hashCode => Object.hash(colStart, colEnd, rowLo, rowHi, count);
+
+  @override
+  String toString() => 'RepeatBox($colStart..$colEnd, rows $rowLo..$rowHi, $count)';
+}
+
+/// The repeat brackets for [chart]: every row's authored repeats, clipped to the chart width (a span
+/// with nothing left inside the chart is not drawn; validation reports it), merged upward across
+/// consecutive rows with the same columns and count. The chart itself keeps showing the drawn cells.
+List<RepeatBox> repeatBoxes(ChartDto chart) {
+  final done = <RepeatBox>[];
+  // Boxes still open after the previous row, keyed by (start, end, count).
+  var open = <(int, int, RepeatDto), RepeatBox>{};
+  for (var r = 0; r < chart.rows.length; r++) {
+    final next = <(int, int, RepeatDto), RepeatBox>{};
+    for (final s in chart.rows[r].repeats) {
+      final start = s.start.clamp(0, chart.width);
+      final end = s.end.clamp(0, chart.width);
+      if (start >= end) continue;
+      final key = (start, end, s.count);
+      if (next.containsKey(key)) continue; // a duplicate span on one row draws once
+      final below = open.remove(key);
+      next[key] = below == null
+          ? RepeatBox(colStart: start, colEnd: end, rowLo: r, rowHi: r, count: s.count)
+          : RepeatBox(colStart: start, colEnd: end, rowLo: below.rowLo, rowHi: r, count: s.count);
+    }
+    done.addAll(open.values); // not continued on this row
+    open = next;
+  }
+  done.addAll(open.values);
+  done.sort((a, b) => a.rowLo != b.rowLo ? a.rowLo.compareTo(b.rowLo) : a.colStart.compareTo(b.colStart));
+  return done;
+}
+
+/// The short label drawn on a repeat bracket: "×3", or "to end".
+String repeatLabel(RepeatDto count) => switch (count) {
+      RepeatDto_Times(:final count) => '×$count',
+      RepeatDto_ToEnd() => 'to end',
+    };
+
+/// A screen-reader description of a repeat box on a chart [width] stitches wide, numbering stitches
+/// as the bottom axis does (right to left): "stitches 2 to 5, rows 1 to 4, 3 times".
+String describeRepeatBox(RepeatBox b, int width) {
+  final first = width - (b.colEnd - 1);
+  final last = width - b.colStart;
+  final stitches = first == last ? 'stitch $first' : 'stitches $first to $last';
+  final rows = b.rowLo == b.rowHi ? 'row ${b.rowLo + 1}' : 'rows ${b.rowLo + 1} to ${b.rowHi + 1}';
+  final times = switch (b.count) {
+    RepeatDto_Times(:final count) => count == 1 ? 'once' : '$count times',
+    RepeatDto_ToEnd() => 'to the end of the row',
+  };
+  return '$stitches, $rows, $times';
+}
 
 /// The editable knitting chart: the engine-rendered RGBA chart (symbols + colorwork + cable spans)
 /// shown 1:1, with tap-to-paint. Rows draw BOTTOM-TO-TOP (row 0 at the bottom, the knitting reading
@@ -125,6 +207,15 @@ class KnitChartView extends ConsumerWidget {
                   ),
                 ),
               ),
+              // Repeat brackets over the drawn cells (the motif is drawn once; the label says how often
+              // it is worked). Pointer-transparent so taps still paint.
+              Positioned(
+                left: 0,
+                top: 0,
+                width: w,
+                height: h,
+                child: _RepeatOverlay(cell: cell.toDouble()),
+              ),
               // The selection rectangle (SELECT tool), drawn over the cloth and ignoring pointers.
               if (selection != null)
                 Positioned(
@@ -169,6 +260,97 @@ class KnitChartView extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// The repeat brackets layer. Its own consumer, so marking or painting re-draws the brackets without
+/// rebuilding the chart view around them.
+class _RepeatOverlay extends ConsumerWidget {
+  const _RepeatOverlay({required this.cell});
+
+  final double cell;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final chart = ref.watch(knitEditorProvider.select((s) => s.pattern.chart));
+    final boxes = repeatBoxes(chart);
+    if (boxes.isEmpty) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    return IgnorePointer(
+      child: Semantics(
+        label: 'Repeats: ${boxes.map((b) => describeRepeatBox(b, chart.width)).join('; ')}',
+        child: CustomPaint(
+          painter: _RepeatBrackets(
+            boxes: boxes,
+            rows: chart.rows.length,
+            cell: cell,
+            color: cs.tertiary,
+            onColor: cs.onTertiary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Paints each [RepeatBox] as an outlined box over its cells with a small count label ("×3" or "to
+/// end") in its top-right corner (the right-side reading start).
+class _RepeatBrackets extends CustomPainter {
+  _RepeatBrackets({
+    required this.boxes,
+    required this.rows,
+    required this.cell,
+    required this.color,
+    required this.onColor,
+  });
+
+  final List<RepeatBox> boxes;
+  final int rows;
+  final double cell;
+  final Color color;
+  final Color onColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final fill = Paint()..color = color;
+    final fontSize = (cell * 0.42).clamp(8.0, 11.0);
+    for (final b in boxes) {
+      final rect = Rect.fromLTRB(
+        b.colStart * cell,
+        (rows - 1 - b.rowHi) * cell,
+        b.colEnd * cell,
+        (rows - b.rowLo) * cell,
+      ).deflate(1);
+      canvas.drawRect(rect, stroke);
+      final tp = TextPainter(
+        text: TextSpan(
+          text: repeatLabel(b.count),
+          style: TextStyle(color: onColor, fontSize: fontSize, fontWeight: FontWeight.w600),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final pill = Rect.fromLTWH(
+        (rect.right - tp.width - 6).clamp(0.0, size.width),
+        rect.top,
+        tp.width + 6,
+        tp.height + 2,
+      );
+      canvas.drawRRect(RRect.fromRectAndRadius(pill, const Radius.circular(3)), fill);
+      tp.paint(canvas, Offset(pill.left + 3, pill.top + 1));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RepeatBrackets old) =>
+      old.boxes.length != boxes.length ||
+      !old.boxes.indexed.every((e) => e.$2 == boxes[e.$1]) ||
+      old.rows != rows ||
+      old.cell != cell ||
+      old.color != color ||
+      old.onColor != onColor;
 }
 
 /// Paints the numbers for one axis into its gutter. For ROWS the strip is vertical (number `i+1` at

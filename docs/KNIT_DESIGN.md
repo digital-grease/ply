@@ -132,7 +132,7 @@ the **vocabulary is an open `StitchLegend`** not a closed enum, **cables are spa
 |---|---|---|
 | `draft.rs` | `pattern.rs` | `KnitPattern` model + edits (set cell, resize chart, palette/legend ops) |
 | `drawdown.rs` | `render.rs` | chart → RGBA symbol grid + colorwork (the coarse FFI buffer); cables drawn across their span |
-| — | `written.rs` | chart → written text, **expanding the authored repeats** (the easy direction; chart→*folded* is deferred) |
+| — | `written.rs` | chart → written text, **writing the authored repeats** in the conventional folded forms (`[..] N times`, `*..; rep from *`); auto-detecting repeats in an unmarked chart is deferred |
 | `calc.rs` | `calc.rs` | gauge → dimensions/cast-on; yardage estimate (formulas below) |
 | `validate.rs` | `validate.rs` | **stitch-count consistency**: row deltas balance, decreases don't underflow, cable spans fit, repeats divide evenly |
 | `wif.rs` | `io.rs` | the custom native format (versioned JSON) + optional `knitout.rs` **export** |
@@ -162,7 +162,7 @@ arithmetic here so the renderer and editor never re-derive it.
   checks deltas; per-row count derived.
 - **Cables** → spanning cells (`Cell.span` + `CableDef`); `render` draws the crossing across the span.
 - **RS/WS** → store RS identity + `ws_variant`; resolve at render/written time. One inversion point.
-- **Repeats** → first-class authored structure (`RepeatSpan`); chart→written *expands* them (trivial).
+- **Repeats** → first-class authored structure (`RepeatSpan`); chart→written writes them as `[..] N times` / `*..; rep from *`, and stitch counts use the expanded worked row.
   Chart→*minimal-folded* written is a lossy compression problem with no canonical answer — **deferred**.
 - **No native format** → versioned JSON (`.plyknit`); trivial via serde, lossless, no parser to fuzz.
   Knitout is export-only; a human text DSL (Knitspeak-style) can come later.
@@ -198,7 +198,7 @@ arithmetic here so the renderer and editor never re-derive it.
 - **P3** — `validate.rs` (stitch-count consistency) + `calc.rs` (gauge/yardage) + property tests.
 - **P4** — `io.rs` native JSON (+ optional Knitout export).
 - **P5** — the chart editor in the app (reusing library/persistence/palette/glossary shell).
-- **P6** — `written.rs` (chart→text, expanding repeats) + milestone gate (device e2e + held review).
+- **P6** — `written.rs` (chart→text, writing authored repeats) + milestone gate (device e2e + held review).
 
 ---
 

@@ -1,0 +1,16 @@
+{
+  "description": "A cable panel in the round: two knit stitches, then a purl, a 2/2 right cross and a purl worked 4 times (26 stitches). The cable sits wholly inside the motif and is worked once per repeat. Round 3 marks a repeat whose edge cuts through the cable, which Ply refuses.",
+  "covers": ["cable inside a repeat", "cable crossing a repeat boundary (refused)", "ToEnd with exact remainder", "counts across consecutive rows"],
+  "construction": "InTheRound",
+  "first_row_side": "Rs",
+  "width": 8,
+  "rows": [
+    {"row": 1, "written": "Round 1: k2, [p, 2/2 RC, p] 4 times", "consumes": 26, "produces": 26, "to_end_times": null, "worked": ["k", "k", "p", "2/2 RC", "p", "p", "2/2 RC", "p", "p", "2/2 RC", "p", "p", "2/2 RC", "p"]},
+    {"row": 2, "written": "Round 2: k2, *p, k4, p; rep from * to end", "consumes": 26, "produces": 26, "to_end_times": 4, "worked": ["k", "k", "p", "k", "k", "k", "k", "p", "p", "k", "k", "k", "k", "p", "p", "k", "k", "k", "k", "p", "p", "k", "k", "k", "k", "p"]},
+    {"row": 3, "written": "Round 3: (repeats need fixing: the repeat over cols 1-5 splits the cable at cols 4-7; a cable must be wholly inside or outside a repeat)", "consumes": null, "produces": null, "to_end_times": null, "worked": null},
+    {"row": 4, "written": "Round 4: k2, [p, k4, p] 4 times", "consumes": 26, "produces": 26, "to_end_times": null, "worked": ["k", "k", "p", "k", "k", "k", "k", "p", "p", "k", "k", "k", "k", "p", "p", "k", "k", "k", "k", "p", "p", "k", "k", "k", "k", "p"]}
+  ],
+  "issues": [
+    {"severity": "error", "message": "row 3: the repeat over cols 1-5 splits the cable at cols 4-7; a cable must be wholly inside or outside a repeat"}
+  ]
+}

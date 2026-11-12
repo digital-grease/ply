@@ -1,0 +1,31 @@
+# Fixture record for cable-repeat-round (see fixtures/README.md).
+
+id = "knitting/repeats/cable-repeat-round"
+title = "Cable panel repeat in the round"
+technique = "cables"
+files = ["cable-repeat-round.plyknit", "cable-repeat-round.expect.json"]
+created = "2026-11-12"
+license = "original"
+provenance = """
+An original panel: a 2/2 right cross between two purls, as a 6-stitch motif worked 4 times after two knit stitches, alternating with plain panel rounds. Round 3 marks a repeat whose edge cuts the cable to show the refusal. Written for Ply's tests through the engine's own .plyknit writer; no published \
+chart or text was copied."""
+
+[sources]
+# Conventions the oracle's written text follows (cited, nothing reproduced).
+references = [
+  "Craft Yarn Council, \"Knit Chart Symbols\", https://www.craftyarncouncil.com/standards/knit-chart-symbols (chart conventions, as cited in docs/KNIT_DESIGN.md).",
+  "Stitch Maps, \"Knitspeak\", https://stitch-maps.com/about/knitspeak/ (authored repeats, as summarized in the prior-art table of docs/KNIT_DESIGN.md).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/repeat_fixtures.rs (repeat_fixtures_match_their_oracles): the file parses as a \
+current .plyknit envelope and re-saves to the same bytes (repeats included); for every row, the \
+written instruction, the worked counts, the to-end repeat count and the expanded worked sequence \
+equal the oracle in cable-repeat-round.expect.json, and the counts are the sums over that sequence; the \
+validation issues equal the oracle's, in order. app/test/native_format_test.dart reads the same \
+file as schema version 2."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Four rounds over 26 stitches; round 3 is refused and not counted. Stitch structure and counts only; gauge, yarn and colorwork are not part of the fixture."

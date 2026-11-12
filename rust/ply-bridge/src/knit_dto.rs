@@ -532,6 +532,53 @@ mod tests {
         assert_eq!(back, p);
     }
 
+    /// Authored repeats cross the boundary intact and mean the same thing behind it: the written
+    /// instructions expand them and validation counts the worked row (the R-02 example, 14 worked
+    /// stitches drawn as 6, then a plain 6-stitch row).
+    #[test]
+    fn repeats_are_worked_through_the_bridge() {
+        let k = Cell::of(builtin::KNIT);
+        let p = Cell::of(builtin::PURL);
+        let pattern = KnitPattern {
+            name: "rib".into(),
+            construction: Construction::Flat,
+            first_row_side: Side::Rs,
+            gauge: Gauge {
+                sts: 22.0,
+                rows: 30.0,
+                unit: Unit::Inches,
+            },
+            palette: vec![Color::WHITE],
+            legend: StitchLegend::builtin(),
+            chart: Chart {
+                width: 6,
+                rows: vec![
+                    Row {
+                        cells: vec![k, p, p, k, k, k],
+                        repeats: vec![RepeatSpan {
+                            start: 1,
+                            end: 5,
+                            count: Repeat::Times(3),
+                        }],
+                    },
+                    Row::plain(vec![k; 6]),
+                ],
+            },
+            notes: String::new(),
+        };
+        assert_eq!(
+            crate::api::knit_written(KnitPatternDto::from(&pattern)),
+            vec!["Row 1 (RS): k, [k2, p2] 3 times, k", "Row 2 (WS): p6"]
+        );
+        let issues = crate::api::validate_knit(KnitPatternDto::from(&pattern));
+        assert_eq!(issues.len(), 1);
+        assert!(matches!(issues[0].severity, SeverityKind::Error));
+        assert_eq!(
+            issues[0].message,
+            "row 2 consumes 6 stitches but row 1 produced 14"
+        );
+    }
+
     /// Format problems reach Dart as a typed kind, not a raw parser string.
     #[test]
     fn format_errors_map_to_typed_failures() {

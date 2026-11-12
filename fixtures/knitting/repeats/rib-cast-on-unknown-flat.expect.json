@@ -1,0 +1,15 @@
+{
+  "description": "2x2 rib where every row, including row 1, repeats to the end. The pattern has no cast-on count, so Ply cannot count any row: each gets a warning stating the multiple it works over, and the written rows stay exact.",
+  "covers": ["ToEnd on the first row (unknown count)", "RS/WS variants"],
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "width": 6,
+  "rows": [
+    {"row": 1, "written": "Row 1 (RS): k, *k2, p2; rep from * to last st, k", "consumes": null, "produces": null, "to_end_times": null, "worked": null},
+    {"row": 2, "written": "Row 2 (WS): p, *k2, p2; rep from * to last st, p", "consumes": null, "produces": null, "to_end_times": null, "worked": null}
+  ],
+  "issues": [
+    {"severity": "warning", "message": "row 1: the repeat over cols 2-5 is worked to the end of the row, but the pattern has no cast-on count, so Ply cannot count this row (it needs a multiple of 4 stitches plus 2)"},
+    {"severity": "warning", "message": "row 2: the repeat over cols 2-5 is worked to the end of the row, but the stitch count after row 1 is unknown, so Ply cannot count this row (it needs a multiple of 4 stitches plus 2)"}
+  ]
+}

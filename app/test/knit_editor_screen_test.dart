@@ -268,6 +268,151 @@ void main() {
     expect(c.read(knitEditorProvider).undo.length, 1, reason: 'one undo entry for the fill');
   });
 
+  group('repeats', () {
+    /// Load a 4x4 chart, switch to SELECT and select [sel], ready for the Mark repeat action.
+    Future<ProviderContainer> selectFor(WidgetTester tester, KnitSelection sel) async {
+      final c = await pumpEditor(tester, FakeEditorRepo());
+      c.read(knitEditorProvider.notifier).load(_fourByFour());
+      c.read(knitToolProvider.notifier).state = KnitTool.select;
+      c.read(knitSelectionProvider.notifier).state = sel;
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    testWidgets('Mark repeat marks the selection a number of times, as one undo entry', (tester) async {
+      final c = await selectFor(tester, const KnitSelection(0, 1, 1, 2));
+      expect(find.byTooltip('Mark repeat'), findsOneWidget);
+      await tester.tap(find.byTooltip('Mark repeat'));
+      await tester.pumpAndSettle();
+      expect(find.text('Repeat stitches'), findsOneWidget);
+      expect(find.text('Stitches 2 to 3, rows 1 to 2'), findsOneWidget,
+          reason: 'numbered like the chart axis (right to left)');
+      expect(find.text('Remove repeat'), findsNothing, reason: 'nothing to remove yet');
+      await tester.tap(find.byTooltip('More times'));
+      await tester.pump();
+      expect(find.text('Worked 3 times in all.'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Mark repeat'));
+      await tester.pumpAndSettle();
+
+      final rows = c.read(knitEditorProvider).pattern.chart.rows;
+      const span = RepeatSpanDto(start: 1, end: 3, count: RepeatDto.times(count: 3));
+      expect(rows[0].repeats, const [span]);
+      expect(rows[1].repeats, const [span]);
+      expect(rows[2].repeats, isEmpty);
+      expect(c.read(knitEditorProvider).undo, hasLength(1));
+      expect(c.read(knitSelectionProvider), isNull, reason: 'the selection clears');
+      expect(find.bySemanticsLabel('Repeats: stitches 2 to 3, rows 1 to 2, 3 times'), findsOneWidget,
+          reason: 'the chart shows the bracket');
+    });
+
+    testWidgets('To end marks a repeat worked to the end of the row', (tester) async {
+      final c = await selectFor(tester, const KnitSelection(2, 0, 2, 3));
+      await tester.tap(find.byTooltip('Mark repeat'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('To end'));
+      await tester.pumpAndSettle();
+      expect(find.text('Number of times'), findsNothing);
+      expect(find.text('Repeated across the row as many times as the stitches allow.'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Mark repeat'));
+      await tester.pumpAndSettle();
+      expect(c.read(knitEditorProvider).pattern.chart.rows[2].repeats,
+          const [RepeatSpanDto(start: 0, end: 4, count: RepeatDto.toEnd())]);
+    });
+
+    testWidgets('Remove repeat clears the repeats the selection overlaps; Cancel changes nothing',
+        (tester) async {
+      final c = await selectFor(tester, const KnitSelection(0, 0, 0, 3));
+      c.read(knitEditorProvider.notifier).markRepeat(0, 1, 0, 2, const RepeatDto.times(count: 2));
+      await tester.pumpAndSettle();
+      final before = c.read(knitEditorProvider).pattern;
+
+      await tester.tap(find.byTooltip('Mark repeat'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(identical(c.read(knitEditorProvider).pattern, before), isTrue);
+
+      await tester.tap(find.byTooltip('Mark repeat'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove repeat'));
+      await tester.pumpAndSettle();
+      expect(c.read(knitEditorProvider).pattern.chart.rows[0].repeats, isEmpty);
+      expect(find.bySemanticsLabel(RegExp('^Repeats:')), findsNothing, reason: 'the bracket is gone');
+    });
+
+    testWidgets('selecting an existing repeat preselects its count', (tester) async {
+      final c = await selectFor(tester, const KnitSelection(3, 0, 3, 1));
+      c.read(knitEditorProvider.notifier).markRepeat(3, 0, 3, 1, const RepeatDto.times(count: 5));
+      c.read(knitSelectionProvider.notifier).state = const KnitSelection(3, 0, 3, 1);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Mark repeat'));
+      await tester.pumpAndSettle();
+      expect(find.text('Worked 5 times in all.'), findsOneWidget);
+      expect(find.text('Remove repeat'), findsOneWidget);
+    });
+
+    testWidgets('shrinking the chart clips a repeat and says so (never silently)', (tester) async {
+      final c = await pumpEditor(tester, FakeEditorRepo());
+      c.read(knitEditorProvider.notifier).load(_fourByFour());
+      c.read(knitEditorProvider.notifier).markRepeat(0, 2, 0, 3, const RepeatDto.toEnd());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Fewer Sts'));
+      await tester.pump();
+      expect(find.text('1 repeat was shortened to fit the chart. Undo to restore.'), findsOneWidget);
+      expect(c.read(knitEditorProvider).pattern.chart.rows[0].repeats,
+          const [RepeatSpanDto(start: 2, end: 3, count: RepeatDto.toEnd())]);
+
+      // A resize that touches no repeat says nothing (once the first notice has timed out).
+      await tester.pump(const Duration(seconds: 1)); // entrance done: the display timer starts
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Undo to restore'), findsNothing);
+      await tester.tap(find.byTooltip('More Rows'));
+      await tester.pump();
+      expect(find.textContaining('Undo to restore'), findsNothing);
+    });
+
+    testWidgets('with a selection, the app bar fits Fill and Mark repeat at phone width', (tester) async {
+      tester.view.physicalSize = const Size(360, 740);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await selectFor(tester, const KnitSelection(0, 0, 0, 1));
+      expect(tester.takeException(), isNull, reason: 'no layout overflow');
+      expect(find.byTooltip('Fill selection'), findsOneWidget);
+      expect(find.byTooltip('Mark repeat'), findsOneWidget);
+      await tester.tap(find.byTooltip('Mark repeat'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'the dialog fits a phone');
+      expect(find.widgetWithText(FilledButton, 'Mark repeat'), findsOneWidget);
+    });
+
+    testWidgets('repeat problems from the engine appear in the validation band', (tester) async {
+      await pumpEditor(
+        tester,
+        FakeEditorRepo(issues: const [
+          KnitIssueDto(
+            severity: SeverityKind.error,
+            message: 'row 2: the repeat over cols 2-5 cannot be worked to the end: row 1 produced 7 '
+                'stitches, the rest of the row uses 2, and the 5 left are not a multiple of 4',
+          ),
+          KnitIssueDto(
+            severity: SeverityKind.warning,
+            message: 'row 1: the repeat over cols 2-5 is worked to the end of the row, but the pattern '
+                'has no cast-on count, so Ply cannot count this row (it needs a multiple of 4 '
+                'stitches plus 2)',
+          ),
+        ]),
+      );
+      expect(find.text('1 error, 1 warning'), findsOneWidget);
+      await tester.tap(find.text('1 error, 1 warning'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('are not a multiple of 4'), findsOneWidget);
+      expect(find.textContaining('has no cast-on count'), findsOneWidget);
+    });
+  });
+
   testWidgets('the overflow Zoom in action steps the chart zoom', (tester) async {
     final c = await pumpEditor(tester, FakeEditorRepo());
     final before = c.read(knitZoomProvider);

@@ -1,0 +1,31 @@
+# Fixture record for rib-to-end-remainder-flat (see fixtures/README.md).
+
+id = "knitting/repeats/rib-to-end-remainder-flat"
+title = "2x2 rib after an increase leaves a remainder"
+technique = "ribbing"
+files = ["rib-to-end-remainder-flat.plyknit", "rib-to-end-remainder-flat.expect.json"]
+created = "2026-11-12"
+license = "original"
+provenance = """
+A deliberately unworkable chart: a kfb at the start of row 1 makes 7 stitches, and the 2x2 rib above it (one edge stitch each side) cannot divide the 5 stitches between its edges. Written for Ply's tests through the engine's own .plyknit writer; no published \
+chart or text was copied."""
+
+[sources]
+# Conventions the oracle's written text follows (cited, nothing reproduced).
+references = [
+  "Craft Yarn Council, \"Knit Chart Symbols\", https://www.craftyarncouncil.com/standards/knit-chart-symbols (chart conventions, as cited in docs/KNIT_DESIGN.md).",
+  "Stitch Maps, \"Knitspeak\", https://stitch-maps.com/about/knitspeak/ (authored repeats, as summarized in the prior-art table of docs/KNIT_DESIGN.md).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/repeat_fixtures.rs (repeat_fixtures_match_their_oracles): the file parses as a \
+current .plyknit envelope and re-saves to the same bytes (repeats included); for every row, the \
+written instruction, the worked counts, the to-end repeat count and the expanded worked sequence \
+equal the oracle in rib-to-end-remainder-flat.expect.json, and the counts are the sums over that sequence; the \
+validation issues equal the oracle's, in order. app/test/native_format_test.dart reads the same \
+file as schema version 2."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Three rows; row 2 is an error and rows 2 and 3 are not counted. Stitch structure and counts only; gauge, yarn and colorwork are not part of the fixture."

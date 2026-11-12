@@ -10,6 +10,8 @@
 
 pub mod calc;
 pub mod error;
+pub mod flow;
+pub mod instruction;
 pub mod native;
 pub mod pattern;
 pub mod render;
@@ -17,6 +19,8 @@ pub mod validate;
 pub mod written;
 
 pub use error::KnitError;
+pub use flow::{stitch_flow, RowCount, RowFlow};
+pub use instruction::{row_instruction, RowInstruction, RowItem, RowProblem, SpanRef, StitchOp};
 pub use native::{LoadedPattern, KNIT_FORMAT, KNIT_SCHEMA_VERSION};
 pub use pattern::{
     builtin, CableDef, Cell, Chart, ColorIndex, Construction, Cross, Gauge, KnitPattern, Repeat,

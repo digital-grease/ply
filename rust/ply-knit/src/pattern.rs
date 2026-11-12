@@ -260,13 +260,20 @@ impl Cell {
 /// How many times a horizontal [`RepeatSpan`] is worked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Repeat {
+    /// The motif is worked this many times IN TOTAL (`[k2, p2] 3 times`). Must be at least 1.
     Times(u16),
+    /// The motif is repeated as many times as the stitches on the needle allow, after reserving what
+    /// the stitches worked after it consume (`*k2, p2; rep from * to last st, k1`).
     ToEnd,
 }
 
-/// An AUTHORED horizontal repeat over columns `[start, end)` of a row (`[..] N times` / `*..; rep
-/// from *`). First-class structure — never auto-detected — so chart->written is a trivial expansion
-/// and the lossy chart->minimal-folded direction is avoided.
+/// An AUTHORED horizontal repeat over the drawn storage columns `[start, end)` of a row (0 =
+/// leftmost): the cells are the MOTIF as drawn, and the motif is WORKED [`Repeat`] times. The worked
+/// row is `prefix + motif x n + suffix` in working order; the cells are never duplicated in the chart.
+/// First-class structure, never auto-detected, so the lossy chart->minimal-folded direction is
+/// avoided. [`crate::instruction`] defines the meaning and what is refused (overlapping or nested
+/// spans, `Times(0)`, a second to-end span, a span splitting a cable); see the repeats ADR. The stored
+/// shape is part of the `.plyknit` schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepeatSpan {
     pub start: usize,

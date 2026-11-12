@@ -111,7 +111,19 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
       state = state.fillRegion(r0, c0, r1, c1, stitch, color,
           keepColor: keepColor, keepStitch: keepStitch);
 
-  void resizeChart(int width, int rows) => state = state.resizeChart(width, rows);
+  /// Resize the chart, returning what it did to the authored repeats (clipped / removed) so the
+  /// caller can say so.
+  RepeatCuts resizeChart(int width, int rows) {
+    final cuts = repeatCutsOnResize(state.pattern, width, rows);
+    state = state.resizeChart(width, rows);
+    return cuts;
+  }
+
+  void markRepeat(int r0, int c0, int r1, int c1, RepeatDto count) =>
+      state = state.markRepeat(r0, c0, r1, c1, count);
+
+  void clearRepeats(int r0, int c0, int r1, int c1) =>
+      state = state.clearRepeats(r0, c0, r1, c1);
 
   void setGauge(GaugeDto gauge) => state = state.setGauge(gauge);
 

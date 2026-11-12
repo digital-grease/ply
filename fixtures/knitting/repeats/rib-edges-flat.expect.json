@@ -1,0 +1,14 @@
+{
+  "description": "2x2 rib worked flat: one edge stitch, a 4-stitch motif worked 3 times, one edge stitch (14 stitches). The chart draws 6 cells; the wrong-side rows read the same cells left to right as their wrong-side stitches.",
+  "covers": ["repeat with edge stitches", "RS/WS variants", "counts across consecutive rows", "save and load of repeats"],
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "width": 6,
+  "rows": [
+    {"row": 1, "written": "Row 1 (RS): k, [k2, p2] 3 times, k", "consumes": 14, "produces": 14, "to_end_times": null, "worked": ["k", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k"]},
+    {"row": 2, "written": "Row 2 (WS): p, [k2, p2] 3 times, p", "consumes": 14, "produces": 14, "to_end_times": null, "worked": ["p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "p"]},
+    {"row": 3, "written": "Row 3 (RS): k, [k2, p2] 3 times, k", "consumes": 14, "produces": 14, "to_end_times": null, "worked": ["k", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k"]},
+    {"row": 4, "written": "Row 4 (WS): p, [k2, p2] 3 times, p", "consumes": 14, "produces": 14, "to_end_times": null, "worked": ["p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "p"]}
+  ],
+  "issues": []
+}

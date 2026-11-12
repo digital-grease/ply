@@ -7,6 +7,10 @@
 //! spans. Rows are drawn BOTTOM-TO-TOP (row 0 at the bottom — knitting charts read upward), matching
 //! the weaving bitmap convention so the Flutter side blits it without a flip.
 //!
+//! Authored repeats do not change the raster: the chart shows the cells AS DRAWN (one copy of each
+//! motif), and the app draws the repeat brackets as an overlay.
+//! What the knitter works, motifs expanded, is [`crate::instruction`]'s business.
+//!
 //! The v1 symbol set is deliberately simple, recognizable primitives (dot / ring / diagonals / bars),
 //! not the full CYC/StitchMastery glyph font — that fidelity is a later refinement. The whole buffer
 //! is computed in Rust and handed across the FFI in one shot (never per cell).

@@ -1,0 +1,14 @@
+{
+  "description": "2x2 rib worked flat. Row 1 works the motif 3 times (14 stitches); every later row repeats it to the last stitch, which resolves to 3 repeats from the 14 stitches row 1 left.",
+  "covers": ["ToEnd with exact remainder", "RS/WS variants", "counts across consecutive rows", "save and load of repeats"],
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "width": 6,
+  "rows": [
+    {"row": 1, "written": "Row 1 (RS): k, [k2, p2] 3 times, k", "consumes": 14, "produces": 14, "to_end_times": null, "worked": ["k", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k"]},
+    {"row": 2, "written": "Row 2 (WS): p, *k2, p2; rep from * to last st, p", "consumes": 14, "produces": 14, "to_end_times": 3, "worked": ["p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "p"]},
+    {"row": 3, "written": "Row 3 (RS): k, *k2, p2; rep from * to last st, k", "consumes": 14, "produces": 14, "to_end_times": 3, "worked": ["k", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k"]},
+    {"row": 4, "written": "Row 4 (WS): p, *k2, p2; rep from * to last st, p", "consumes": 14, "produces": 14, "to_end_times": 3, "worked": ["p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "p"]}
+  ],
+  "issues": []
+}

@@ -1,0 +1,23 @@
+{
+  "description": "One refused repeat shape per round, over the same drawn 2x2 rib cells: worked 0 times, overlapping, nested, two repeats to the end, past the edge of the row, and empty. Each round is written as needing a fix (never as its drawn cells) and is not counted.",
+  "covers": ["Times(0) rejected", "overlapping spans rejected", "nested spans rejected", "more than one ToEnd rejected", "span outside the row rejected"],
+  "construction": "InTheRound",
+  "first_row_side": "Rs",
+  "width": 6,
+  "rows": [
+    {"row": 1, "written": "Round 1: (repeats need fixing: the repeat over cols 2-5 is worked 0 times; a repeat must be worked at least once)", "consumes": null, "produces": null, "to_end_times": null, "worked": null},
+    {"row": 2, "written": "Round 2: (repeats need fixing: the repeats over cols 2-4 and cols 4-6 overlap)", "consumes": null, "produces": null, "to_end_times": null, "worked": null},
+    {"row": 3, "written": "Round 3: (repeats need fixing: the repeat over cols 3-4 is inside the repeat over cols 1-6; a repeat inside a repeat is not supported yet)", "consumes": null, "produces": null, "to_end_times": null, "worked": null},
+    {"row": 4, "written": "Round 4: (repeats need fixing: the repeats over cols 2-3 and cols 5-6 are both worked to the end of the row; a row can have only one)", "consumes": null, "produces": null, "to_end_times": null, "worked": null},
+    {"row": 5, "written": "Round 5: (repeats need fixing: a repeat runs past the edge of the row (stored as 4..8 on a 6-column row))", "consumes": null, "produces": null, "to_end_times": null, "worked": null},
+    {"row": 6, "written": "Round 6: (repeats need fixing: a repeat covers no columns (stored as 2..2 on a 6-column row))", "consumes": null, "produces": null, "to_end_times": null, "worked": null}
+  ],
+  "issues": [
+    {"severity": "error", "message": "row 1: the repeat over cols 2-5 is worked 0 times; a repeat must be worked at least once"},
+    {"severity": "error", "message": "row 2: the repeats over cols 2-4 and cols 4-6 overlap"},
+    {"severity": "error", "message": "row 3: the repeat over cols 3-4 is inside the repeat over cols 1-6; a repeat inside a repeat is not supported yet"},
+    {"severity": "error", "message": "row 4: the repeats over cols 2-3 and cols 5-6 are both worked to the end of the row; a row can have only one"},
+    {"severity": "error", "message": "row 5: a repeat runs past the edge of the row (stored as 4..8 on a 6-column row)"},
+    {"severity": "error", "message": "row 6: a repeat covers no columns (stored as 2..2 on a 6-column row)"}
+  ]
+}

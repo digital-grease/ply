@@ -35,6 +35,19 @@ void main() {
       }
     });
 
+    test('every knitting acceptance fixture is a current (version 2) envelope', () {
+      // fixtures/knitting/: written by the engine's own writer, so the Dart probe must agree.
+      final files = Directory('../fixtures/knitting')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.plyknit'))
+          .toList();
+      expect(files, isNotEmpty);
+      for (final f in files) {
+        expect(plyknitSchemaVersion(f.readAsStringSync()), 2, reason: f.path);
+      }
+    });
+
     test('an envelope reports its own version', () {
       expect(plyknitSchemaVersion(envelope(2)), 2);
       expect(plyknitSchemaVersion(envelope(3)), 3, reason: 'newer versions are reported, not hidden');

@@ -1,0 +1,31 @@
+# Fixture record for eyelet-lace-round (see fixtures/README.md).
+
+id = "knitting/repeats/eyelet-lace-round"
+title = "Eyelet lace in the round over a 6-stitch motif"
+technique = "lace"
+files = ["eyelet-lace-round.plyknit", "eyelet-lace-round.expect.json"]
+created = "2026-11-12"
+license = "original"
+provenance = """
+An original eyelet motif (k, yo, ssk, k, k2tog, yo) worked in the round, an increase round (yo, k3, yo, k) that grows 24 stitches to 36, and a final round that drops one decrease from the eyelet motif so the round no longer matches the stitches on the needle. Written for Ply's tests through the engine's own .plyknit writer; no published \
+chart or text was copied."""
+
+[sources]
+# Conventions the oracle's written text follows (cited, nothing reproduced).
+references = [
+  "Craft Yarn Council, \"Knit Chart Symbols\", https://www.craftyarncouncil.com/standards/knit-chart-symbols (chart conventions, as cited in docs/KNIT_DESIGN.md).",
+  "Stitch Maps, \"Knitspeak\", https://stitch-maps.com/about/knitspeak/ (authored repeats, as summarized in the prior-art table of docs/KNIT_DESIGN.md).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/repeat_fixtures.rs (repeat_fixtures_match_their_oracles): the file parses as a \
+current .plyknit envelope and re-saves to the same bytes (repeats included); for every row, the \
+written instruction, the worked counts, the to-end repeat count and the expanded worked sequence \
+equal the oracle in eyelet-lace-round.expect.json, and the counts are the sums over that sequence; the \
+validation issues equal the oracle's, in order. app/test/native_format_test.dart reads the same \
+file as schema version 2."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Six rounds; round 6 is a deliberate stitch-count error. Stitch structure and counts only; gauge, yarn and colorwork are not part of the fixture."

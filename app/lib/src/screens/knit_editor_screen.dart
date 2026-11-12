@@ -6,7 +6,7 @@ import '../models/draft_meta.dart';
 import '../models/knit_stitches.dart';
 import '../models/native_format.dart';
 import '../rust/dto.dart' show ColorDto, SeverityKind;
-import '../rust/knit_dto.dart' show KnitIssueDto, KnitPatternDto;
+import '../rust/knit_dto.dart' show KnitIssueDto, KnitPatternDto, RepeatDto;
 import '../state/knit_editor_providers.dart';
 import '../state/knit_editor_state.dart';
 import '../theme/ply_colors.dart';
@@ -14,6 +14,7 @@ import '../widgets/cable_builder_dialog.dart';
 import '../widgets/knit_chart_view.dart';
 import '../widgets/knit_legend_sheet.dart';
 import '../widgets/knit_planning_sheet.dart';
+import '../widgets/knit_repeat_dialog.dart';
 import '../widgets/knit_settings_sheet.dart';
 import '../widgets/name_input_dialog.dart';
 import '../widgets/rgb_color_picker.dart';
@@ -205,6 +206,43 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     ref.read(knitSelectionProvider.notifier).state = null; // clear after filling
   }
 
+  /// Mark the selected stitches as a repeat (a number of times, or to the end of the row) on every
+  /// selected row, or remove the repeats they overlap, then clear the selection. One undo entry.
+  Future<void> _repeatSelection() async {
+    final sel = ref.read(knitSelectionProvider);
+    if (sel == null) return;
+    final editor = ref.read(knitEditorProvider);
+    final rows = editor.pattern.chart.rows;
+    // Preselect the count of a repeat already marked on exactly these stitches (first selected row).
+    RepeatDto? initial;
+    if (sel.rowMin >= 0 && sel.rowMin < rows.length) {
+      for (final s in rows[sel.rowMin].repeats) {
+        if (s.start == sel.colMin && s.end == sel.colMax + 1) initial = s.count;
+      }
+    }
+    final choice = await showRepeatDialog(
+      context,
+      where: describeRepeatSelection(
+        colMin: sel.colMin,
+        colMax: sel.colMax,
+        rowMin: sel.rowMin,
+        rowMax: sel.rowMax,
+        width: editor.pattern.chart.width,
+      ),
+      canRemove: editor.hasRepeatIn(sel.rowMin, sel.colMin, sel.rowMax, sel.colMax),
+      initial: initial,
+    );
+    if (choice == null || !mounted) return;
+    final notifier = ref.read(knitEditorProvider.notifier);
+    switch (choice) {
+      case MarkRepeatChoice(:final count):
+        notifier.markRepeat(sel.rowMin, sel.colMin, sel.rowMax, sel.colMax, count);
+      case RemoveRepeatChoice():
+        notifier.clearRepeats(sel.rowMin, sel.colMin, sel.rowMax, sel.colMax);
+    }
+    ref.read(knitSelectionProvider.notifier).state = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final canUndo = ref.watch(knitEditorProvider.select((s) => s.canUndo));
@@ -232,13 +270,20 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
               if (next == KnitTool.paint) ref.read(knitSelectionProvider.notifier).state = null;
             },
           ),
-          if (select && selection != null)
+          if (select && selection != null) ...[
             IconButton(
               visualDensity: VisualDensity.compact,
               tooltip: 'Fill selection',
               icon: const Icon(Icons.format_color_fill),
               onPressed: _fillSelection,
             ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Mark repeat',
+              icon: const Icon(Icons.repeat),
+              onPressed: _repeatSelection,
+            ),
+          ],
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: 'Save',
@@ -472,7 +517,6 @@ class _KnitToolBar extends ConsumerWidget {
     final category = ref.watch(knitBrushCategoryProvider);
     final cols = dims.$1;
     final rows = dims.$2;
-    final notifier = ref.read(knitEditorProvider.notifier);
 
     return SafeArea(
       top: false,
@@ -484,9 +528,9 @@ class _KnitToolBar extends ConsumerWidget {
           children: [
             Row(
               children: [
-                _Stepper(label: 'Sts', value: cols, onChanged: (v) => notifier.resizeChart(v, rows)),
+                _Stepper(label: 'Sts', value: cols, onChanged: (v) => _resize(context, ref, v, rows)),
                 const SizedBox(width: 16),
-                _Stepper(label: 'Rows', value: rows, onChanged: (v) => notifier.resizeChart(cols, v)),
+                _Stepper(label: 'Rows', value: rows, onChanged: (v) => _resize(context, ref, cols, v)),
               ],
             ),
             const SizedBox(height: 6),
@@ -569,6 +613,16 @@ class _KnitToolBar extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Resize the chart, and say so when that clipped or removed an authored repeat (never silently).
+  static void _resize(BuildContext context, WidgetRef ref, int width, int rows) {
+    final cuts = ref.read(knitEditorProvider.notifier).resizeChart(width, rows);
+    final message = repeatCutsMessage(cuts);
+    if (message == null) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// Open the cable builder; on confirm, add the cable to the legend and make it the active brush so

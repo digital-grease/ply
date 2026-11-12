@@ -1,0 +1,16 @@
+{
+  "description": "A kfb in row 1 leaves 7 stitches. Row 2 repeats a 4-stitch rib to the last stitch after a 1-stitch edge: 5 stitches remain for the motif, which is not a whole number of repeats, so the row is an error and is not counted. Row 3 then cannot be counted either.",
+  "covers": ["ToEnd with invalid remainder", "RS/WS variants", "unknown count after an uncounted row"],
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "width": 6,
+  "rows": [
+    {"row": 1, "written": "Row 1 (RS): kfb, k5", "consumes": 6, "produces": 7, "to_end_times": null, "worked": ["kfb", "k", "k", "k", "k", "k"]},
+    {"row": 2, "written": "Row 2 (WS): p, *k2, p2; rep from * to last st, p", "consumes": null, "produces": null, "to_end_times": null, "worked": null},
+    {"row": 3, "written": "Row 3 (RS): k, *k2, p2; rep from * to last st, k", "consumes": null, "produces": null, "to_end_times": null, "worked": null}
+  ],
+  "issues": [
+    {"severity": "error", "message": "row 2: the repeat over cols 2-5 cannot be worked to the end: row 1 produced 7 stitches, the rest of the row uses 2, and the 5 left are not a multiple of 4"},
+    {"severity": "warning", "message": "row 3: the repeat over cols 2-5 is worked to the end of the row, but the stitch count after row 2 is unknown, so Ply cannot count this row (it needs a multiple of 4 stitches plus 2)"}
+  ]
+}

@@ -143,6 +143,10 @@ const List<FaqSection> kFaq = [
       "Tap the \"Cable\" chip in the brush row to open the cable builder, where you set the front and back stitch counts (1 to 4 each), pick a right or left cross, and optionally purl the front and/or back strand. On confirm it becomes a new brush (labeled like \"2/2 RC\"), and tapping the chart places the cable anchor and auto-fills the no-stitch cells it spans.",
     ),
     FaqEntry(
+      "How do I mark a repeat in a knitting chart?",
+      "Draw the repeating stitches once. Switch the top bar's tool button from drawing to selecting, drag across those stitches (on one row or several), and tap Mark repeat. Pick how many times they are worked in all, or To end to repeat them across the rest of the row. The chart outlines each repeat with its count; the written instructions show it as \"[k2, p2] 3 times\" or \"*k2, p2; rep from * to last st, k\"; and stitch counts include every repeat. Select the same stitches and choose Remove repeat to clear one. A pattern has no cast-on count, so a first row repeated to the end cannot be counted: the validation band says so and names the multiple of stitches it needs.",
+    ),
+    FaqEntry(
       "Where do my knitting patterns get saved, and is there written instructions I can copy?",
       "The Save button stores the pattern on your device in your knit library (no account or cloud), and it shows up as a thumbnail tile you can open, rename, or delete. From the More menu, \"Written instructions\" turns the chart into row-by-row text, listed cast-on edge first and aware of right-side/wrong-side rows; each line is selectable so you can copy the pattern out.",
     ),
