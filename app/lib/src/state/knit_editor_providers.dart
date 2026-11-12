@@ -133,6 +133,9 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
 
   void setNotes(String notes) => state = state.setNotes(notes);
 
+  /// Set (>= 1) or clear (null) the pattern's cast-on count. See [KnitEditorState.setCastOn].
+  void setCastOn(int? castOn) => state = state.setCastOn(castOn);
+
   void addPaletteColor(ColorDto color) => state = state.addPaletteColor(color);
 
   void setPaletteColor(int idx, ColorDto color) => state = state.setPaletteColor(idx, color);

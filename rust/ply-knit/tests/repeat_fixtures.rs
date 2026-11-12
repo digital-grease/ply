@@ -1,7 +1,8 @@
 //! Knitting repeat acceptance fixtures (`fixtures/knitting/repeats/`): original charts with
 //! hand-derived oracles. Each fixture is a `.plyknit` file the engine wrote, an `.expect.json` oracle
-//! (the written line, worked counts, to-end repeat count and expanded worked sequence of every row,
-//! plus the validation issues), and a `.fixture.toml` record.
+//! (the cast-on and its written line when the chart states one; the written line, worked counts,
+//! to-end repeat count and expanded worked sequence of every row; the validation issues), and a
+//! `.fixture.toml` record.
 //!
 //! What this proves for every fixture: the file loads as a current envelope and re-saves to the same
 //! bytes (so repeats survive save and load); the written instructions, the stitch counts and the
@@ -20,12 +21,13 @@ const DIR: &str = concat!(
 );
 
 /// Every tracked fixture, by name.
-const FIXTURES: [&str; 8] = [
+const FIXTURES: [&str; 9] = [
     "seed-stitch-round",
     "rib-edges-flat",
     "rib-to-end-flat",
     "rib-to-end-remainder-flat",
     "rib-cast-on-unknown-flat",
+    "rib-cast-on-flat",
     "eyelet-lace-round",
     "cable-repeat-round",
     "rejected-spans-round",
@@ -95,13 +97,26 @@ fn repeat_fixtures_match_their_oracles() {
             "{name}"
         );
 
+        // The cast-on (absent from the oracle = not stated) and, when stated, its written line first.
+        let cast_on = expect.get("cast_on").and_then(Value::as_u64);
+        assert_eq!(p.cast_on.map(u64::from), cast_on, "{name}: cast-on");
+        let mut written = to_written(&p);
+        if cast_on.is_some() {
+            let line = written.remove(0);
+            assert_eq!(line, expect["cast_on_line"].as_str().unwrap(), "{name}");
+        }
+
         let rows = expect["rows"].as_array().unwrap();
         assert_eq!(
             rows.len(),
             p.chart.rows.len(),
             "{name}: one oracle row per row"
         );
-        let written = to_written(&p);
+        assert_eq!(
+            written.len(),
+            rows.len(),
+            "{name}: one written line per row"
+        );
         let flow = stitch_flow(&p);
         for (r, want) in rows.iter().enumerate() {
             let at = format!("{name} row {}", r + 1);

@@ -1,10 +1,11 @@
 {
   "format": "ply.knit",
-  "schema_version": 2,
+  "schema_version": 3,
   "document": {
     "name": "Repeats Ply refuses",
     "construction": "InTheRound",
     "first_row_side": "Rs",
+    "cast_on": null,
     "gauge": {
       "sts": 22.0,
       "rows": 30.0,

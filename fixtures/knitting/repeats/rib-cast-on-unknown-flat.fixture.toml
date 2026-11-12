@@ -7,7 +7,7 @@ files = ["rib-cast-on-unknown-flat.plyknit", "rib-cast-on-unknown-flat.expect.js
 created = "2026-11-12"
 license = "original"
 provenance = """
-The rib with every row repeated to the last stitch, including row 1. Ply's pattern model has no cast-on count, so the first row's repeat count cannot be known: the fixture locks the warning that says so and the multiple the row works over. Written for Ply's tests through the engine's own .plyknit writer; no published \
+The rib with every row repeated to the last stitch, including row 1. The pattern states no cast-on count (the field exists since .plyknit schema version 3 and is left unset here), so the first row's repeat count cannot be known: the fixture locks the warning that says so, the multiple the row works over, and the pointer to the cast-on setting. rib-cast-on-flat is the same chart with a cast-on. Written for Ply's tests through the engine's own .plyknit writer; no published \
 chart or text was copied."""
 
 [sources]
@@ -25,7 +25,7 @@ current .plyknit envelope and re-saves to the same bytes (repeats included); for
 written instruction, the worked counts, the to-end repeat count and the expanded worked sequence \
 equal the oracle in rib-cast-on-unknown-flat.expect.json, and the counts are the sums over that sequence; the \
 validation issues equal the oracle's, in order. app/test/native_format_test.dart reads the same \
-file as schema version 2."""
+file as schema version 3."""
 practitioner_knit_check = "pending"
 practitioner_reviewer = "owner"
 known_limits = "Two rows; neither is counted. Stitch structure and counts only; gauge, yarn and colorwork are not part of the fixture."

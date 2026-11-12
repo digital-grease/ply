@@ -318,6 +318,17 @@ pub struct KnitPattern {
     pub name: String,
     pub construction: Construction,
     pub first_row_side: Side,
+    /// How many stitches are cast on before chart row 1, or `None` when the pattern does not say.
+    ///
+    /// - [`Construction::Flat`]: the stitches on the needle before row 1 is worked.
+    /// - [`Construction::InTheRound`]: the stitches cast on and joined into a ring before round 1.
+    ///
+    /// When set, row (round) 1 must consume exactly this many stitches, and a to-end repeat on it is
+    /// counted against it; the written instructions start with the cast-on. When `None`, row 1's own
+    /// consumption is the starting count and a first-row to-end repeat cannot be counted (see
+    /// [`crate::flow`]). Never derived from the chart: it is what the knitter states. Added in
+    /// `.plyknit` schema version 3 (older files load as `None`).
+    pub cast_on: Option<u32>,
     pub gauge: Gauge,
     pub palette: Vec<Color>,
     pub legend: StitchLegend,
@@ -371,6 +382,7 @@ mod tests {
             name: "1x1 rib".into(),
             construction: Construction::Flat,
             first_row_side: Side::Rs,
+            cast_on: None,
             gauge: Gauge {
                 sts: 24.0,
                 rows: 32.0,

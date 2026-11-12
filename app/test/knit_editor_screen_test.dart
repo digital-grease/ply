@@ -401,7 +401,7 @@ void main() {
             severity: SeverityKind.warning,
             message: 'row 1: the repeat over cols 2-5 is worked to the end of the row, but the pattern '
                 'has no cast-on count, so Ply cannot count this row (it needs a multiple of 4 '
-                'stitches plus 2)',
+                'stitches plus 2); set the cast-on in the pattern settings',
           ),
         ]),
       );

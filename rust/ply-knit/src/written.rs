@@ -2,6 +2,10 @@
 //! chart-as-source). One line per row in working order (bottom-to-top, row 1 first), each line the
 //! stitches in WORKING order with consecutive identical stitches run-length collapsed ("k3").
 //!
+//! When the pattern states a cast-on ([`KnitPattern::cast_on`]), the instructions start with it,
+//! before row 1: `Cast on 26 sts.` flat, or `Cast on 96 sts. Join to work in the round, being careful
+//! not to twist.` in the round (`1 st` for one). Without one there is no cast-on line, as before.
+//!
 //! Reading direction follows knitting convention: a flat RS row reads RIGHT-TO-LEFT, a flat WS row
 //! LEFT-TO-RIGHT, and every in-the-round round right-to-left (always from the RS). A symbol is stored
 //! RS-relative, so on a WS row it is emitted as its [`StitchDef::ws_variant`](crate::StitchDef) (knit
@@ -25,12 +29,16 @@ use crate::instruction::{row_instruction, ReadingCols, RowInstruction, RowItem, 
 use crate::pattern::{builtin, Construction, KnitPattern, Side};
 use std::collections::{BTreeSet, HashMap};
 
-/// One written line per chart row, bottom-to-top (row 1 = the first worked).
+/// The written instructions: the cast-on line when the pattern states one, then one line per chart
+/// row, bottom-to-top (row 1 = the first worked).
 pub fn to_written(pattern: &KnitPattern) -> Vec<String> {
     // Colorwork labels (MC / CC / CC1.. ) — `None` when the chart is a single colour, which keeps a
     // plain stitch line uncluttered (and matches the no-colorwork V1 behaviour).
     let labels = color_labels(pattern);
-    let mut lines = Vec::with_capacity(pattern.chart.rows.len());
+    let mut lines = Vec::with_capacity(pattern.chart.rows.len() + 1);
+    if let Some(n) = pattern.cast_on {
+        lines.push(cast_on_line(pattern.construction, n));
+    }
 
     for r in 0..pattern.chart.rows.len() {
         let rs = matches!(pattern.row_side(r), Side::Rs);
@@ -63,6 +71,18 @@ pub fn to_written(pattern: &KnitPattern) -> Vec<String> {
     }
 
     lines
+}
+
+/// The opening instruction for a pattern that casts on `n` stitches: `Cast on 26 sts.` when worked
+/// flat; in the round the cast-on is joined into a ring before round 1.
+fn cast_on_line(construction: Construction, n: u32) -> String {
+    let sts = if n == 1 { "st" } else { "sts" };
+    match construction {
+        Construction::Flat => format!("Cast on {n} {sts}."),
+        Construction::InTheRound => {
+            format!("Cast on {n} {sts}. Join to work in the round, being careful not to twist.")
+        }
+    }
 }
 
 /// Builds one row's text from its items: comma-separated parts, with the colorwork label state
@@ -233,6 +253,7 @@ mod tests {
             name: "t".into(),
             construction,
             first_row_side: first,
+            cast_on: None,
             gauge: Gauge {
                 sts: 20.0,
                 rows: 28.0,
@@ -584,6 +605,47 @@ mod tests {
             )],
         };
         assert_eq!(to_written(&p), vec!["Round 1: k2, [p, 2/2 RC, p] 4 times"]);
+    }
+
+    // --- cast-on (ADR 0006) -------------------------------------------------------------------------
+
+    #[test]
+    fn a_cast_on_is_the_first_line_flat_and_in_the_round() {
+        let mut p = pat(
+            vec![spanned(&RIB, vec![rep(1, 5, Repeat::ToEnd)])],
+            Construction::Flat,
+            Side::Rs,
+        );
+        p.cast_on = Some(26);
+        assert_eq!(
+            to_written(&p),
+            vec![
+                "Cast on 26 sts.",
+                "Row 1 (RS): k, *k2, p2; rep from * to last st, k"
+            ]
+        );
+        p.construction = Construction::InTheRound;
+        assert_eq!(
+            to_written(&p),
+            vec![
+                "Cast on 26 sts. Join to work in the round, being careful not to twist.",
+                "Round 1: k, *k2, p2; rep from * to last st, k"
+            ]
+        );
+        p.cast_on = Some(1);
+        p.construction = Construction::Flat;
+        assert_eq!(to_written(&p)[0], "Cast on 1 st.");
+        // Not stated: no cast-on line, one line per row as before.
+        p.cast_on = None;
+        assert_eq!(to_written(&p).len(), 1);
+        assert!(to_written(&p)[0].starts_with("Row 1 (RS):"));
+    }
+
+    #[test]
+    fn a_cast_on_is_written_even_before_any_rows() {
+        let mut p = pat(vec![], Construction::Flat, Side::Rs);
+        p.cast_on = Some(20);
+        assert_eq!(to_written(&p), vec!["Cast on 20 sts."]);
     }
 
     #[test]

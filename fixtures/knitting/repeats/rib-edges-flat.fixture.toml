@@ -25,7 +25,7 @@ current .plyknit envelope and re-saves to the same bytes (repeats included); for
 written instruction, the worked counts, the to-end repeat count and the expanded worked sequence \
 equal the oracle in rib-edges-flat.expect.json, and the counts are the sums over that sequence; the \
 validation issues equal the oracle's, in order. app/test/native_format_test.dart reads the same \
-file as schema version 2."""
+file as schema version 3."""
 practitioner_knit_check = "pending"
 practitioner_reviewer = "owner"
 known_limits = "Four rows over 14 stitches. Stitch structure and counts only; gauge, yarn and colorwork are not part of the fixture."

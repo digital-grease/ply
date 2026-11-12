@@ -1,8 +1,9 @@
 // The knit planning calculator: a modal bottom sheet with three sections — a GAUGE editor (seed from
 // a yarn weight or type it; "Apply" writes it back onto the pattern), a CAST-ON calculator (target
-// width + ease -> stitches, rounded to a stitch-repeat multiple), and a YARDAGE estimate (a width x
-// length stockinette rectangle -> yards, plus a 10% buffer). The gauge edit is the only one that
-// mutates the pattern; the two calculators are pure planning aids reading the in-sheet gauge fields.
+// width + ease -> stitches, rounded to a stitch-repeat multiple; "Set as pattern cast-on" writes the
+// result onto the pattern), and a YARDAGE estimate (a width x length stockinette rectangle -> yards,
+// plus a 10% buffer). Only those two explicit taps mutate the pattern; the calculators themselves are
+// planning aids reading the in-sheet gauge fields.
 //
 // All FFI lives in the repository. Dimensions are in the pattern gauge's unit (per 4 in or per 10 cm).
 
@@ -14,6 +15,7 @@ import '../models/knit_calculators.dart' show YarnWeight, yarnWeightFromWpi;
 import '../rust/dto.dart' show UnitKind;
 import '../rust/knit_dto.dart';
 import '../state/knit_editor_providers.dart';
+import '../state/knit_editor_state.dart';
 import 'adaptive_sheet.dart';
 
 /// Open the knit planning calculator. Call from a context inside the editor's ProviderScope so the
@@ -47,6 +49,7 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
   final _ease = TextEditingController(text: '0');
   final _repeat = TextEditingController(text: '1');
   int? _castOn;
+  bool _castOnApplied = false;
 
   // Yardage estimate.
   final _yardWidth = TextEditingController();
@@ -114,7 +117,26 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
           g,
           int.parse(_repeat.text.trim()),
         );
-    if (mounted) setState(() => _castOn = n);
+    if (mounted) {
+      setState(() {
+        _castOn = n;
+        _castOnApplied = false;
+      });
+    }
+  }
+
+  /// Whether the calculated count can become the pattern's cast-on (the editor's accepted range).
+  bool get _castOnApplicable {
+    final n = _castOn;
+    return n != null && n >= 1 && n <= KnitEditorState.maxCastOn;
+  }
+
+  /// Write the calculated count onto the pattern as its cast-on (one undo entry). Only on this tap:
+  /// calculating alone never changes the pattern.
+  void _applyCastOn() {
+    if (!_castOnApplicable) return;
+    ref.read(knitEditorProvider.notifier).setCastOn(_castOn);
+    setState(() => _castOnApplied = true);
   }
 
   Future<void> _calcYards() async {
@@ -133,6 +155,7 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final muted = text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final patternCastOn = ref.watch(knitEditorProvider.select((s) => s.pattern.castOn));
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -197,6 +220,14 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
 
             // --- Cast-on: target width + ease -> stitches. ---
             Text('Cast-on stitches', style: text.titleSmall),
+            Text(
+              switch (patternCastOn) {
+                null => 'Pattern cast-on: not set',
+                1 => 'Pattern cast-on: 1 stitch',
+                final n => 'Pattern cast-on: $n stitches',
+              },
+              style: muted,
+            ),
             Form(
               key: _castForm,
               child: Column(
@@ -224,6 +255,26 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
                   ),
               ],
             ),
+            if (_castOnApplicable)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    OutlinedButton(
+                      onPressed: _applyCastOn,
+                      child: const Text('Set as pattern cast-on'),
+                    ),
+                    const SizedBox(width: 16),
+                    if (_castOnApplied)
+                      Expanded(
+                        child: Semantics(
+                          liveRegion: true,
+                          child: Text('Saved to the pattern', style: text.bodyMedium),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
 
             const Divider(height: 32),
 

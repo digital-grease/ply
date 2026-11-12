@@ -223,6 +223,19 @@ class KnitEditorState {
     return _commit(_withMeta(pattern, notes: notes));
   }
 
+  /// The largest cast-on the editor accepts (the engine counts in u64; this keeps the u32 wire field
+  /// and the typed number sane).
+  static const int maxCastOn = 100000;
+
+  /// Set how many stitches are cast on before row 1 ([castOn] >= 1), or clear it (null = the pattern
+  /// does not state one). A count below 1 or above [maxCastOn] is refused (no-op), as is a no-change.
+  /// Row 1 is then checked against it and the written instructions start with it (engine side).
+  KnitEditorState setCastOn(int? castOn) {
+    if (castOn != null && (castOn < 1 || castOn > maxCastOn)) return this;
+    if (pattern.castOn == castOn) return this;
+    return _commit(_withCastOn(pattern, castOn));
+  }
+
   /// Append a colorwork [color] to the palette (its index becomes a paintable cell color).
   KnitEditorState addPaletteColor(ColorDto color) =>
       _commit(_withPalette(pattern, [...pattern.palette, color]));
@@ -276,6 +289,7 @@ KnitPatternDto _withChart(KnitPatternDto p, ChartDto chart) => KnitPatternDto(
       name: p.name,
       construction: p.construction,
       firstRowSide: p.firstRowSide,
+      castOn: p.castOn,
       gauge: p.gauge,
       palette: p.palette,
       legend: p.legend,
@@ -293,6 +307,7 @@ KnitPatternDto _withMeta(
       name: p.name,
       construction: construction ?? p.construction,
       firstRowSide: firstRowSide ?? p.firstRowSide,
+      castOn: p.castOn,
       gauge: p.gauge,
       palette: p.palette,
       legend: p.legend,
@@ -300,10 +315,23 @@ KnitPatternDto _withMeta(
       notes: notes ?? p.notes,
     );
 
+KnitPatternDto _withCastOn(KnitPatternDto p, int? castOn) => KnitPatternDto(
+      name: p.name,
+      construction: p.construction,
+      firstRowSide: p.firstRowSide,
+      castOn: castOn,
+      gauge: p.gauge,
+      palette: p.palette,
+      legend: p.legend,
+      chart: p.chart,
+      notes: p.notes,
+    );
+
 KnitPatternDto _withGauge(KnitPatternDto p, GaugeDto gauge) => KnitPatternDto(
       name: p.name,
       construction: p.construction,
       firstRowSide: p.firstRowSide,
+      castOn: p.castOn,
       gauge: gauge,
       palette: p.palette,
       legend: p.legend,
@@ -315,6 +343,7 @@ KnitPatternDto _withPalette(KnitPatternDto p, List<ColorDto> palette) => KnitPat
       name: p.name,
       construction: p.construction,
       firstRowSide: p.firstRowSide,
+      castOn: p.castOn,
       gauge: p.gauge,
       palette: palette,
       legend: p.legend,
@@ -326,6 +355,7 @@ KnitPatternDto _withLegend(KnitPatternDto p, List<StitchDefDto> stitches) => Kni
       name: p.name,
       construction: p.construction,
       firstRowSide: p.firstRowSide,
+      castOn: p.castOn,
       gauge: p.gauge,
       palette: p.palette,
       legend: StitchLegendDto(stitches: stitches),

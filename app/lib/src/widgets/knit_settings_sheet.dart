@@ -1,16 +1,21 @@
-// Pattern settings: construction (flat vs in-the-round), the first row's worked side (RS/WS), and
-// free-text notes. Construction + first-row-side drive the written-instructions wording (Row N (RS)
-// vs Round N) and the RS/WS alternation, so this is where a knitter switches a chart from flat to in
-// the round. Each control writes back onto the open pattern via the editor notifier.
+// Pattern settings: construction (flat vs in-the-round), the first row's worked side (RS/WS), the
+// cast-on count, and free-text notes. Construction + first-row-side drive the written-instructions
+// wording (Row N (RS) vs Round N) and the RS/WS alternation, so this is where a knitter switches a
+// chart from flat to in the round. The cast-on is what row 1 is checked against and the first line
+// of the written instructions; it is optional (blank = the pattern does not state one). Each control
+// writes back onto the open pattern via the editor notifier.
 //
-// Construction/side toggles commit immediately (one discrete undo entry each). Notes commit ONCE,
-// when the sheet closes, so typing doesn't spam the undo stack with a snapshot per keystroke.
+// Construction/side toggles and Clear commit immediately (one discrete undo entry each). Notes and
+// the typed cast-on commit ONCE, when their field loses focus (or the sheet closes), so typing doesn't
+// spam the undo stack with a snapshot per keystroke.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter, LengthLimitingTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../rust/knit_dto.dart';
 import '../state/knit_editor_providers.dart';
+import '../state/knit_editor_state.dart';
 import 'adaptive_sheet.dart';
 
 /// Open the pattern-settings sheet. Call from a context inside the editor's ProviderScope.
@@ -28,6 +33,8 @@ class KnitSettingsSheet extends ConsumerStatefulWidget {
 class _KnitSettingsSheetState extends ConsumerState<KnitSettingsSheet> {
   late final TextEditingController _notes;
   late final FocusNode _notesFocus;
+  late final TextEditingController _castOn;
+  late final FocusNode _castOnFocus;
   // Capture the notifier OBJECT in initState: `ref` itself cannot be used outside build/dispose
   // restrictions, but the captured notifier stays valid for a focus-loss callback.
   late final KnitEditorNotifier _notifier;
@@ -36,8 +43,39 @@ class _KnitSettingsSheetState extends ConsumerState<KnitSettingsSheet> {
   void initState() {
     super.initState();
     _notifier = ref.read(knitEditorProvider.notifier);
-    _notes = TextEditingController(text: ref.read(knitEditorProvider).pattern.notes);
+    final pattern = ref.read(knitEditorProvider).pattern;
+    _notes = TextEditingController(text: pattern.notes);
     _notesFocus = FocusNode()..addListener(_onNotesFocusChange);
+    _castOn = TextEditingController(text: pattern.castOn?.toString() ?? '');
+    _castOnFocus = FocusNode()..addListener(_onCastOnFocusChange);
+  }
+
+  /// Why the typed cast-on cannot be used, or null when it can (blank = not set, which is fine).
+  static String? castOnError(String text) {
+    final t = text.trim();
+    if (t.isEmpty) return null;
+    final n = int.tryParse(t);
+    if (n == null || n < 1) return 'Enter at least 1 stitch, or clear it.';
+    if (n > KnitEditorState.maxCastOn) return 'Enter at most ${KnitEditorState.maxCastOn} stitches.';
+    return null;
+  }
+
+  /// Commit the typed cast-on ONCE, when the field loses focus or is submitted: blank clears it, a
+  /// usable number sets it, anything else is left uncommitted (its error shows under the field).
+  void _commitCastOn() {
+    final t = _castOn.text.trim();
+    if (castOnError(t) != null) return;
+    _notifier.setCastOn(t.isEmpty ? null : int.parse(t));
+  }
+
+  void _onCastOnFocusChange() {
+    if (!_castOnFocus.hasFocus) _commitCastOn();
+  }
+
+  void _clearCastOn() {
+    _castOn.clear();
+    _notifier.setCastOn(null);
+    setState(() {});
   }
 
   /// Commit the notes ONCE, when the field loses focus (tapping away or closing the sheet), so a
@@ -56,6 +94,9 @@ class _KnitSettingsSheetState extends ConsumerState<KnitSettingsSheet> {
     _notesFocus.removeListener(_onNotesFocusChange);
     _notesFocus.dispose();
     _notes.dispose();
+    _castOnFocus.removeListener(_onCastOnFocusChange);
+    _castOnFocus.dispose();
+    _castOn.dispose();
     super.dispose();
   }
 
@@ -65,6 +106,7 @@ class _KnitSettingsSheetState extends ConsumerState<KnitSettingsSheet> {
     final muted = text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
     final construction = ref.watch(knitEditorProvider.select((s) => s.pattern.construction));
     final side = ref.watch(knitEditorProvider.select((s) => s.pattern.firstRowSide));
+    final castOn = ref.watch(knitEditorProvider.select((s) => s.pattern.castOn));
     final inRound = construction == ConstructionKind.inTheRound;
     final notifier = ref.read(knitEditorProvider.notifier);
 
@@ -128,9 +170,63 @@ class _KnitSettingsSheetState extends ConsumerState<KnitSettingsSheet> {
 
             const Divider(height: 32),
 
+            Text('Cast-on', style: text.titleSmall),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('knit-cast-on-field'),
+                    controller: _castOn,
+                    focusNode: _castOnFocus,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(7),
+                    ],
+                    onChanged: (_) => setState(() {}), // refresh the error and the Clear button
+                    onSubmitted: (_) => _commitCastOn(),
+                    decoration: InputDecoration(
+                      border: const OutlineInputBorder(),
+                      labelText: 'Stitches cast on',
+                      hintText: 'Not set',
+                      suffixText: 'sts',
+                      errorText: castOnError(_castOn.text),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: TextButton(
+                    key: const Key('knit-cast-on-clear'),
+                    // Enabled while there is something to clear: a saved count or typed text.
+                    onPressed: castOn == null && _castOn.text.isEmpty ? null : _clearCastOn,
+                    child: const Text('Clear'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              inRound
+                  ? 'Stitches cast on and joined before round 1. Round 1 is checked against this '
+                      'count, and the written instructions start with it. Leave it blank if the '
+                      'pattern does not say.'
+                  : 'Stitches on the needle before row 1. Row 1 is checked against this count, and '
+                      'the written instructions start with it. Leave it blank if the pattern does '
+                      'not say.',
+              style: muted,
+            ),
+
+            const Divider(height: 32),
+
             Text('Notes', style: text.titleSmall),
             const SizedBox(height: 8),
             TextField(
+              key: const Key('knit-notes-field'),
               controller: _notes,
               focusNode: _notesFocus,
               minLines: 3,

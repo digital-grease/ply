@@ -5,8 +5,9 @@ import '../state/knit_editor_providers.dart';
 
 /// The knit chart rendered as readable, row-by-row written instructions — the textual companion to
 /// the visual chart. Watches [knitWrittenProvider], so it tracks live edits if the chart changes
-/// underneath. Rows are listed cast-on edge first (the order a knitter works them), and each line is
-/// [SelectableText] so the pattern can be copied out.
+/// underneath. Rows are listed cast-on edge first (the order a knitter works them), after the cast-on
+/// line ("Cast on 26 sts.") when the pattern states one, and each line is [SelectableText] so the
+/// pattern can be copied out.
 class KnitWrittenScreen extends ConsumerWidget {
   const KnitWrittenScreen({super.key});
 

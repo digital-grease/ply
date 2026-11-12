@@ -374,6 +374,57 @@ void main() {
   const cable22 =
       CableDefDto(front: 2, back: 2, direction: CrossKind.right, frontPurl: false, backPurl: false);
 
+  group('cast-on', () {
+    test('setCastOn sets and clears the count, one undo entry each', () {
+      final s = KnitEditorState(pattern: pattern(4, 2)).setCastOn(26);
+      expect(s.pattern.castOn, 26);
+      expect(s.undo.length, 1);
+      final cleared = s.setCastOn(null);
+      expect(cleared.pattern.castOn, isNull, reason: 'null = the pattern does not state one');
+      expect(cleared.undo.length, 2);
+      expect(cleared.undoEdit().pattern.castOn, 26, reason: 'undo restores the count');
+      expect(cleared.pattern.chart, s.pattern.chart, reason: 'the chart is untouched');
+    });
+
+    test('a count below 1 or above the maximum, or no change, is a no-op', () {
+      final s = KnitEditorState(pattern: pattern(4, 2)).setCastOn(26);
+      for (final bad in [0, -3, KnitEditorState.maxCastOn + 1]) {
+        expect(identical(s.setCastOn(bad), s), isTrue, reason: '$bad is refused');
+      }
+      expect(identical(s.setCastOn(26), s), isTrue, reason: 'no change');
+      final fresh = KnitEditorState(pattern: pattern(4, 2));
+      expect(identical(fresh.setCastOn(null), fresh), isTrue, reason: 'already not set');
+      expect(fresh.setCastOn(KnitEditorState.maxCastOn).pattern.castOn, KnitEditorState.maxCastOn);
+      expect(fresh.setCastOn(1).pattern.castOn, 1);
+    });
+
+    test('every other edit keeps the cast-on (no reducer drops the field)', () {
+      final base = KnitEditorState(pattern: pattern(4, 2)).setCastOn(26);
+      final edits = <String, KnitEditorState Function(KnitEditorState)>{
+        'paintCell': (s) => s.paintCell(0, 0, KnitStitch.purl, null),
+        'fillRegion': (s) => s.fillRegion(0, 0, 1, 1, KnitStitch.purl, null),
+        'resizeChart': (s) => s.resizeChart(6, 3),
+        'markRepeat': (s) => s.markRepeat(0, 0, 0, 1, const RepeatDto.toEnd()),
+        'clearRepeats': (s) => s.markRepeat(0, 0, 0, 1, const RepeatDto.toEnd()).clearRepeats(0, 0, 0, 1),
+        'setGauge': (s) => s.setGauge(const GaugeDto(sts: 20, rows: 28, unit: UnitKind.inches)),
+        'setConstruction': (s) => s.setConstruction(ConstructionKind.inTheRound),
+        'setFirstRowSide': (s) => s.setFirstRowSide(SideKind.ws),
+        'setNotes': (s) => s.setNotes('n'),
+        'addPaletteColor': (s) => s.addPaletteColor(const ColorDto(r: 1, g: 2, b: 3)),
+        'setPaletteColor': (s) => s.setPaletteColor(0, const ColorDto(r: 1, g: 2, b: 3)),
+        'addCable': (s) => s.addCable(
+            const CableDefDto(
+                front: 1, back: 1, direction: CrossKind.right, frontPurl: false, backPurl: false),
+            '1/1 RC'),
+      };
+      for (final MapEntry(key: name, value: edit) in edits.entries) {
+        final next = edit(base);
+        expect(identical(next.pattern, base.pattern), isFalse, reason: '$name must change something');
+        expect(next.pattern.castOn, 26, reason: '$name keeps the cast-on');
+      }
+    });
+  });
+
   test('addCable appends a count-neutral cable brush to the legend', () {
     final s = KnitEditorState(pattern: cablePattern(6)).addCable(cable22, '2/2RC');
     expect(s.pattern.legend.stitches.length, 3, reason: 'was 2 (no-stitch + knit)');

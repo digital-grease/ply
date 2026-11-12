@@ -1,0 +1,33 @@
+# Fixture record for rib-cast-on-flat (see fixtures/README.md).
+
+id = "knitting/repeats/rib-cast-on-flat"
+title = "2x2 rib repeated to the end from a stated cast-on"
+technique = "ribbing"
+files = ["rib-cast-on-flat.plyknit", "rib-cast-on-flat.expect.json"]
+created = "2026-11-12"
+license = "original"
+provenance = """
+The rib-cast-on-unknown-flat chart with a cast-on of 26 stitches (.plyknit schema version 3). The \
+cast-on is what row 1 works over, so the first row's to-end repeat is counted (6 times) instead of \
+warned about, and the written instructions open with the cast-on. Written for Ply's tests through \
+the engine's own .plyknit writer; no published chart or text was copied."""
+
+[sources]
+# Conventions the oracle's written text follows (cited, nothing reproduced).
+references = [
+  "Craft Yarn Council, \"Knit Chart Symbols\", https://www.craftyarncouncil.com/standards/knit-chart-symbols (chart conventions, as cited in docs/KNIT_DESIGN.md).",
+  "Stitch Maps, \"Knitspeak\", https://stitch-maps.com/about/knitspeak/ (authored repeats, as summarized in the prior-art table of docs/KNIT_DESIGN.md).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/repeat_fixtures.rs (repeat_fixtures_match_their_oracles): the file parses as a \
+current .plyknit envelope and re-saves to the same bytes (the cast-on included); the cast-on and \
+the written cast-on line equal the oracle; for every row, the written instruction, the worked \
+counts, the to-end repeat count and the expanded worked sequence equal the oracle in \
+rib-cast-on-flat.expect.json, and the counts are the sums over that sequence; validation is clean. \
+app/test/native_format_test.dart reads the same file as schema version 3."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Two rows. Stitch structure and counts only; gauge, yarn and colorwork are not part of the fixture."

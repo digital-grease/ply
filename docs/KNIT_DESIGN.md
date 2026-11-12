@@ -72,6 +72,7 @@ pub struct KnitPattern {
     pub name: String,
     pub construction: Construction,     // Flat | InTheRound
     pub first_row_side: Side,           // Rs | Ws  (flat only; in-the-round is all Rs)
+    pub cast_on: Option<u32>,           // stitches cast on before row 1 (None = not stated; ADR 0006)
     pub gauge: Gauge,
     pub palette: Vec<Color>,            // colorwork palette (mirrors weaving ColorPlan.palette)
     pub legend: StitchLegend,           // OPEN vocabulary: symbol id -> semantics (see below)

@@ -43,6 +43,7 @@ later work needs them, following the same rules.
 | `.plyknit` knitting pattern | `plyknit/v0.1.5/` | The `ply-knit` crate at tag `v0.1.5`. Its serializer and 12 built-in stitches are unchanged from `v0.1.0`, so these bytes stand for `v0.1.0` to `v0.1.5`. |
 | | `plyknit/v0.1.6/` | `ply-knit` at `v0.1.6` (20 built-in stitches). |
 | | `plyknit/v0.1.7/` | `ply-knit` at `v0.1.7` (21 built-in stitches). |
+| | `plyknit/schema-v2/` | `.plyknit` schema version 2, which no tagged release wrote (v0.1.7 wrote version 1); development builds from the envelope (ADR 0002) to before version 3 (ADR 0006) did. The bytes are copies of `knitting/repeats/` fixtures the engine's own writer produced, taken before the version 3 writer existed. Named by schema version, not app version, and each has a `.fixture.toml` record. |
 | `.plynal` nalbinding project | `plynal/v0.1.7/` | `NalbindProject.toJson` + `jsonEncode` at `v0.1.7`, unchanged since `v0.1.0`. |
 | `<id>.json` sidecar (`DraftMeta`) | `sidecar/v0.1.7/` | `DraftMeta.toJson` + `jsonEncode` at `v0.1.7`, shaped as the weaving, knitting and nalbinding save paths of that release built it. |
 
@@ -54,6 +55,10 @@ Each `.plyknit` folder has:
 - `custom-ws-variant.plyknit`: an engine-level shape the app UI cannot create, kept so the migration
   of a custom stitch's `ws_variant` is exercised: one custom cable's WS variant names another custom,
   another's names a built-in. Worked in the round.
+
+`plyknit/schema-v2/` instead holds three charts that exercise the version 2 to 3 migration (flat with
+edge stitches, a first-row to-end repeat, a custom cable in the round), each with a
+`<name>.fixture.toml` recording where the bytes came from and what the migration must produce.
 
 ### How they were made
 
@@ -94,8 +99,8 @@ dumped from the code under test) and a record. Every fixture is three files with
 
 - `<name>.plyknit`: the chart, written by the engine's own `.plyknit` writer (a current-version
   envelope). The tests require that re-saving it gives the same bytes.
-- `<name>.expect.json`: the oracle. Construction, chart width, and for every row (row 1 first) the
-  written instruction, the stitches it consumes and produces, how many times its to-end repeat is
+- `<name>.expect.json`: the oracle. Construction, chart width, the cast-on and its written line when
+  the chart states one (absent = not stated), and for every row (row 1 first) the written instruction, the stitches it consumes and produces, how many times its to-end repeat is
   worked, and the expanded worked sequence as worked symbols (`null` where the row cannot be
   counted); then the validation issues, in order, with their exact messages.
 - `<name>.fixture.toml`: the record. Title, technique, license, provenance, the conventions the
@@ -104,4 +109,4 @@ dumped from the code under test) and a record. Every fixture is three files with
 
 | Folder | Contents | Tests |
 |---|---|---|
-| `knitting/repeats/` | Authored horizontal repeats: a simple fixed repeat (`seed-stitch-round`), edge stitches and RS/WS mirroring (`rib-edges-flat`), to-end repeats with an exact remainder (`rib-to-end-flat`), an invalid remainder (`rib-to-end-remainder-flat`) and an unknown first-row count (`rib-cast-on-unknown-flat`), lace balance and count growth (`eyelet-lace-round`), a cable inside and across a repeat edge (`cable-repeat-round`), and every refused repeat shape (`rejected-spans-round`). | `rust/ply-knit/tests/repeat_fixtures.rs`; `app/test/native_format_test.dart` |
+| `knitting/repeats/` | Authored horizontal repeats: a simple fixed repeat (`seed-stitch-round`), edge stitches and RS/WS mirroring (`rib-edges-flat`), to-end repeats with an exact remainder (`rib-to-end-flat`), an invalid remainder (`rib-to-end-remainder-flat`), an unknown first-row count (`rib-cast-on-unknown-flat`) and the same chart counted from a stated cast-on (`rib-cast-on-flat`), lace balance and count growth (`eyelet-lace-round`), a cable inside and across a repeat edge (`cable-repeat-round`), and every refused repeat shape (`rejected-spans-round`). | `rust/ply-knit/tests/repeat_fixtures.rs`; `app/test/native_format_test.dart` |

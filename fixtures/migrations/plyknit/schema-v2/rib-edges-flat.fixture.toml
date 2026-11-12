@@ -1,0 +1,32 @@
+# Fixture record for migrations/plyknit/schema-v2/rib-edges-flat (see fixtures/README.md).
+
+id = "migrations/plyknit/schema-v2/rib-edges-flat"
+title = "2x2 rib with edge stitches, worked flat"
+format = "ply.knit"
+schema_version = 2
+files = ["rib-edges-flat.plyknit"]
+created = "2026-11-12"
+license = "original"
+immutable = true
+provenance = """
+Schema version 2 bytes exactly as the ply-knit engine wrote them before schema version 3 existed: \
+copied byte for byte from fixtures/knitting/repeats/rib-edges-flat.plyknit at commit 6d7e703, which the \
+engine's own .plyknit writer produced at commit 705f1cb. Schema version 2 was never in a tagged \
+release (v0.1.7 wrote version 1); development builds from 9920d14 to 6d7e703 wrote it. Kept so the \
+version 2 to 3 migration is always tested against real bytes. Never edit or regenerate this file."""
+shape = "Flat, first row RS, 6 drawn columns, 4 rows; every row works one edge stitch, a 4-stitch motif 3 times and one edge stitch (14 stitches). Built-in legend only."
+
+[expected_after_migration]
+source_version = 2
+cast_on = "not set (null); every other document field unchanged"
+behavior = "Every row is counted (14 stitches) and validation is clean, exactly as at schema version 2."
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/src/native.rs (every_schema_v2_fixture_migrates_to_v3_unchanged_but_for_the_cast_on and \
+schema_v2_fixtures_count_write_and_validate_as_before): the file reads as schema version 2, migrates \
+to the current version with cast_on not set and the document otherwise identical, re-saves as the \
+current version, and its written rows and validation issues are the version 2 results. \
+app/test/native_format_test.dart reads it as schema version 2 and app/test/knit_repository_test.dart \
+keeps a one-time .v2.bak of these bytes when a save upgrades it."""

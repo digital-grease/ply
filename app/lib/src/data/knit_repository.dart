@@ -68,7 +68,8 @@ class KnitRepository {
   Future<GaugeDto> seedGauge(YarnWeightKind weight) => knitSeedGauge(weight: weight);
 
   /// The chart rendered as human-readable, row-by-row written instructions — RS read right-to-left,
-  /// WS left-to-right, run-length collapsed ("k3, p1"). One string per row/round, cast-on edge first.
+  /// WS left-to-right, run-length collapsed ("k3, p1"). One string per row/round, cast-on edge first,
+  /// after a "Cast on N sts." line when the pattern states a cast-on.
   Future<List<String>> written(KnitPatternDto pattern) => knitWritten(dto: pattern);
 
   /// Decode an FFI [PreviewImage] RGBA buffer into a [ui.Image]. A zero-area image (an empty chart)

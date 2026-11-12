@@ -13,6 +13,9 @@
 //! problem it finds (a span worked 0 times, outside the row, overlapping, nested, a second to-end span,
 //! a split cable, a to-end count that does not divide or cannot be known) is reported here with its
 //! row and columns (see [`crate::instruction`]).
+//!
+//! When the pattern states a cast-on ([`KnitPattern::cast_on`]), row 1 must consume exactly that
+//! many stitches, and a cast-on of 0 is an error. Without one, row 1's own count is the start.
 
 use crate::flow::stitch_flow;
 use crate::instruction::ReadingCols;
@@ -54,6 +57,13 @@ pub fn validate(pattern: &KnitPattern) -> Vec<KnitIssue> {
     let legend = &pattern.legend;
     let width = pattern.chart.width;
     let palette_len = pattern.palette.len();
+
+    // A stated cast-on must put at least one stitch on the needle. (`None` is "not stated", fine.)
+    if pattern.cast_on == Some(0) {
+        issues.push(KnitIssue::error(
+            "the cast-on is 0 stitches; cast on at least 1 stitch, or clear the cast-on".into(),
+        ));
+    }
 
     // Per-row structural checks (cells, colors, cables).
     for (r, row) in pattern.chart.rows.iter().enumerate() {
@@ -183,6 +193,7 @@ mod tests {
             name: "t".into(),
             construction: Construction::Flat,
             first_row_side: Side::Rs,
+            cast_on: None,
             gauge: Gauge {
                 sts: 20.0,
                 rows: 28.0,
@@ -496,8 +507,98 @@ mod tests {
                 message:
                     "row 1: the repeat over cols 2-5 is worked to the end of the row, but the \
                           pattern has no cast-on count, so Ply cannot count this row (it needs a \
-                          multiple of 4 stitches plus 2)"
+                          multiple of 4 stitches plus 2); set the cast-on in the pattern settings"
                         .into(),
+            }]
+        );
+    }
+
+    // --- cast-on (ADR 0006) -------------------------------------------------------------------------
+
+    #[test]
+    fn a_first_row_to_end_resolves_against_the_cast_on() {
+        // k + [k2, p2] to the end + k over 26 cast-on stitches: 6 repeats, then a row that keeps 26.
+        let mut p = pattern(
+            6,
+            vec![
+                spanned(&RIB, vec![rep(1, 5, Repeat::ToEnd)]),
+                spanned(&RIB, vec![rep(1, 5, Repeat::ToEnd)]),
+            ],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        p.cast_on = Some(26);
+        assert!(validate(&p).is_empty(), "{:?}", validate(&p));
+    }
+
+    #[test]
+    fn a_first_row_to_end_that_does_not_divide_the_cast_on_names_the_cast_on() {
+        let mut p = pattern(
+            6,
+            vec![spanned(&RIB, vec![rep(1, 5, Repeat::ToEnd)])],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        p.cast_on = Some(27);
+        assert_eq!(
+            validate(&p),
+            vec![KnitIssue {
+                severity: Severity::Error,
+                message:
+                    "row 1: the repeat over cols 2-5 cannot be worked to the end: the cast-on \
+                          is 27 stitches, the rest of the row uses 2, and the 25 left are not a \
+                          multiple of 4"
+                        .into(),
+            }]
+        );
+        p.cast_on = Some(1);
+        assert_eq!(
+            validate(&p)[0].message,
+            "row 1: the repeat over cols 2-5 cannot be worked to the end: the cast-on is 1 stitch \
+             but the rest of the row uses 2"
+        );
+        p.cast_on = Some(2);
+        assert_eq!(
+            validate(&p)[0].message,
+            "row 1: the repeat over cols 2-5 cannot be worked to the end: the rest of the row uses \
+             all 2 stitches of the cast-on, leaving none for the repeat"
+        );
+    }
+
+    #[test]
+    fn row_1_must_consume_exactly_the_cast_on() {
+        let mut p = pattern(
+            4,
+            vec![Row::plain(vec![k(); 4]), Row::plain(vec![k(); 4])],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
+        p.cast_on = Some(4);
+        assert!(validate(&p).is_empty(), "{:?}", validate(&p));
+        p.cast_on = Some(6);
+        assert_eq!(
+            validate(&p),
+            vec![KnitIssue {
+                severity: Severity::Error,
+                message: "row 1 consumes 4 stitches but the cast-on is 6".into(),
+            }]
+        );
+        // Not stated: row 1's own count is the start, as before.
+        p.cast_on = None;
+        assert!(validate(&p).is_empty());
+    }
+
+    #[test]
+    fn a_zero_cast_on_is_an_error() {
+        let mut p = pattern(0, vec![], vec![Color::WHITE], StitchLegend::builtin());
+        p.cast_on = Some(0);
+        assert_eq!(
+            validate(&p),
+            vec![KnitIssue {
+                severity: Severity::Error,
+                message: "the cast-on is 0 stitches; cast on at least 1 stitch, or clear the \
+                          cast-on"
+                    .into(),
             }]
         );
     }

@@ -63,6 +63,11 @@ ChartDto starterChart(
 /// side, and a starting stitch pattern. Builds a ready-to-edit [KnitPatternDto] and pops it back to
 /// the library, which opens the editor on it. Reuses the existing model fields (KnitEditorState
 /// reducers + the engine gauge seed) — nothing new on the engine side.
+///
+/// The typed stitch count also becomes the pattern's CAST-ON while "Cast on N stitches" is on (the
+/// default): every starter row is one stitch per column with no repeats, so row 1 works exactly that
+/// many, and the number is the knitter's own, not one Ply derived. Turning it off leaves the cast-on
+/// unset (for a chart that is a repeat narrower than the piece).
 class NewKnitSetupScreen extends ConsumerStatefulWidget {
   const NewKnitSetupScreen({super.key});
 
@@ -80,6 +85,7 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
   KnitStarter _starter = KnitStarter.stockinette;
   int _ribKnit = 1;
   int _ribPurl = 1;
+  bool _castOnFromSize = true;
   bool _creating = false;
 
   static const int _maxSts = 200;
@@ -123,6 +129,8 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
         name: base.name,
         construction: base.construction,
         firstRowSide: base.firstRowSide,
+        // The knitter's typed width, when they keep it as the cast-on (row 1 works exactly _w).
+        castOn: _castOnFromSize ? _w : null,
         gauge: base.gauge,
         palette: base.palette,
         legend: base.legend,
@@ -176,12 +184,25 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(child: _numField(_sts, 'Stitches')),
+              // Rebuild on each keystroke so the cast-on switch names the current count.
+              Expanded(child: _numField(_sts, 'Stitches', onChanged: (_) => setState(() {}))),
               const SizedBox(width: 12),
               Expanded(child: _numField(_rows, 'Rows')),
             ],
           ),
-          const SizedBox(height: 20),
+          SwitchListTile(
+            key: const Key('knit-setup-cast-on'),
+            contentPadding: EdgeInsets.zero,
+            value: _castOnFromSize,
+            onChanged: (v) => setState(() => _castOnFromSize = v),
+            title: Text('Cast on $_w ${_w == 1 ? 'stitch' : 'stitches'}'),
+            subtitle: const Text(
+              'Row 1 is checked against it and the written instructions start with it. Turn this '
+              'off if the chart is a repeat narrower than the piece. You can change it later in '
+              'Pattern settings.',
+            ),
+          ),
+          const SizedBox(height: 12),
           Text('Yarn weight (seeds the gauge)', style: text.titleSmall),
           const SizedBox(height: 8),
           DropdownButtonFormField<YarnWeightKind>(
@@ -275,8 +296,10 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
     );
   }
 
-  Widget _numField(TextEditingController c, String label) => TextFormField(
+  Widget _numField(TextEditingController c, String label, {ValueChanged<String>? onChanged}) =>
+      TextFormField(
         controller: c,
+        onChanged: onChanged,
         keyboardType: TextInputType.number,
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9]'))],
         decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),

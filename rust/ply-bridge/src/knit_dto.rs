@@ -114,6 +114,9 @@ pub struct KnitPatternDto {
     pub name: String,
     pub construction: ConstructionKind,
     pub first_row_side: SideKind,
+    /// Stitches cast on before chart row 1 (flat) or joined before round 1 (in the round); `None` =
+    /// the pattern does not state one. See `KnitPattern::cast_on`.
+    pub cast_on: Option<u32>,
     pub gauge: GaugeDto,
     pub palette: Vec<ColorDto>,
     pub legend: StitchLegendDto,
@@ -430,6 +433,7 @@ impl From<&KnitPattern> for KnitPatternDto {
             name: p.name.clone(),
             construction: p.construction.into(),
             first_row_side: p.first_row_side.into(),
+            cast_on: p.cast_on,
             gauge: p.gauge.into(),
             palette: p.palette.iter().map(|&c| color_to_dto(c)).collect(),
             legend: StitchLegendDto::from(&p.legend),
@@ -444,6 +448,7 @@ impl From<KnitPatternDto> for KnitPattern {
             name: p.name,
             construction: p.construction.into(),
             first_row_side: p.first_row_side.into(),
+            cast_on: p.cast_on,
             gauge: p.gauge.into(),
             palette: p.palette.iter().map(color_from_dto).collect(),
             legend: p.legend.into(),
@@ -494,6 +499,7 @@ mod tests {
             name: "swatch".into(),
             construction: Construction::InTheRound,
             first_row_side: Side::Ws,
+            cast_on: Some(96),
             gauge: Gauge {
                 sts: 22.5,
                 rows: 30.0,
@@ -543,6 +549,7 @@ mod tests {
             name: "rib".into(),
             construction: Construction::Flat,
             first_row_side: Side::Rs,
+            cast_on: None,
             gauge: Gauge {
                 sts: 22.0,
                 rows: 30.0,
@@ -585,7 +592,7 @@ mod tests {
         let kind =
             |text: &str| KnitFormatFailure::from(KnitPattern::from_json(text).unwrap_err()).kind;
         assert_eq!(
-            kind(r#"{"format":"ply.knit","schema_version":3,"document":{}}"#),
+            kind(r#"{"format":"ply.knit","schema_version":4,"document":{}}"#),
             KnitFormatFailureKind::NewerVersion
         );
         assert_eq!(
@@ -593,9 +600,50 @@ mod tests {
             KnitFormatFailureKind::WrongFormat
         );
         assert_eq!(kind("{not json"), KnitFormatFailureKind::Unreadable);
+        for current_or_older in [2, 3] {
+            assert_eq!(
+                kind(&format!(
+                    r#"{{"format":"ply.knit","schema_version":{current_or_older},"document":{{}}}}"#
+                )),
+                KnitFormatFailureKind::Unreadable
+            );
+        }
+    }
+
+    /// A schema-version-2 file (the real bytes) opens through the bridge with the cast-on not set,
+    /// and saving it writes the current version; a cast-on set in the app comes back in the written
+    /// instructions and is what row 1 is checked against.
+    #[test]
+    fn a_v2_file_opens_without_a_cast_on_and_saves_as_v3() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/migrations/plyknit/schema-v2/rib-cast-on-unknown-flat.plyknit"
+        );
+        let v2 = std::fs::read_to_string(path).unwrap();
+        let dto = crate::api::parse_knit(v2).unwrap();
+        assert_eq!(dto.cast_on, None);
+        let saved = crate::api::write_knit(dto).unwrap();
         assert_eq!(
-            kind(r#"{"format":"ply.knit","schema_version":2,"document":{}}"#),
-            KnitFormatFailureKind::Unreadable
+            ply_knit::native::schema_version(&saved).unwrap(),
+            ply_knit::KNIT_SCHEMA_VERSION
+        );
+
+        let mut dto = crate::api::parse_knit(saved).unwrap();
+        dto.cast_on = Some(26);
+        let lines = crate::api::knit_written(
+            crate::api::parse_knit(crate::api::write_knit(dto).unwrap()).unwrap(),
+        );
+        assert_eq!(lines[0], "Cast on 26 sts.");
+        assert_eq!(lines[1], "Row 1 (RS): k, *k2, p2; rep from * to last st, k");
+
+        let mut short = crate::api::parse_knit(std::fs::read_to_string(path).unwrap()).unwrap();
+        short.cast_on = Some(27);
+        let issues = crate::api::validate_knit(short);
+        assert!(matches!(issues[0].severity, SeverityKind::Error));
+        assert!(
+            issues[0].message.contains("the cast-on is 27 stitches"),
+            "{}",
+            issues[0].message
         );
     }
 }

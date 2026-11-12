@@ -381,6 +381,7 @@ mod tests {
             name: "t".into(),
             construction: Construction::Flat,
             first_row_side: Side::Rs,
+            cast_on: None,
             gauge: Gauge {
                 sts: 20.0,
                 rows: 28.0,

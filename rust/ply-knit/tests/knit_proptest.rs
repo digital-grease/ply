@@ -2,8 +2,9 @@
 //! ADVERSARIAL patterns (ragged rows, dangling stitch/color ids, malformed cables, out-of-range
 //! repeats, overflowing cell sizes, non-finite calculator inputs):
 //!
-//! 1. the `.plyknit` write -> parse round-trip is identity (over finite-gauge patterns), and a
-//!    legacy (version 1) file migrates with every cell on the stitch it named, and
+//! 1. the `.plyknit` write -> parse round-trip is identity (over finite-gauge patterns, cast-on set or
+//!    not), a legacy (version 1) file migrates with every cell on the stitch it named, and a version-2
+//!    file migrates to the same pattern with the cast-on not set, and
 //! 2. `validate` / `render_rgba` / `to_written` / the stitch flow / the calculators NEVER panic:
 //!    they return a value (often a flagged issue or a clamped 0), the contract the FFI boundary
 //!    relies on, and
@@ -11,7 +12,8 @@
 //!    stitches of the same row drawn out in full, a to-end repeat resolves exactly when the stitches
 //!    left divide by its motif, the counts equal the sums over the expanded worked sequence, and a
 //!    row is refused by the written text exactly when validation reports it (valid repeat rows are
-//!    generated too, not only adversarial ones).
+//!    generated too, not only adversarial ones), and a stated cast-on is what row 1 is counted
+//!    against.
 //!
 //! Run: `cargo test -p ply-knit --test knit_proptest`
 
@@ -20,7 +22,7 @@ use ply_knit::calc::{
     cast_on, estimate_yards_from_swatch, estimate_yards_stockinette, finished_length,
     finished_width, seed_gauge, total_stitches, with_buffer,
 };
-use ply_knit::instruction::{op_totals, row_instruction, RowInstruction, StitchOp};
+use ply_knit::instruction::{op_totals, row_instruction, RowInstruction, RowProblem, StitchOp};
 use ply_knit::pattern::*;
 use ply_knit::{
     render_rgba, stitch_flow, to_written, validate, Severity, KNIT_FORMAT, KNIT_SCHEMA_VERSION,
@@ -107,6 +109,11 @@ fn arb_row(width: usize) -> impl Strategy<Value = Row> {
         .prop_map(|(cells, repeats)| Row { cells, repeats })
 }
 
+/// A cast-on that is not stated, small (so it often matches or divides row 1), 0 (an error), or huge.
+fn arb_cast_on() -> impl Strategy<Value = Option<u32>> {
+    prop_oneof![Just(None), (0u32..40).prop_map(Some), Just(Some(u32::MAX)),]
+}
+
 fn arb_pattern() -> impl Strategy<Value = KnitPattern> {
     (0usize..8, arb_legend()).prop_flat_map(|(width, legend)| {
         (
@@ -115,12 +122,14 @@ fn arb_pattern() -> impl Strategy<Value = KnitPattern> {
             arb_finite_gauge(),
             prop_oneof![Just(Construction::Flat), Just(Construction::InTheRound)],
             prop_oneof![Just(Side::Rs), Just(Side::Ws)],
+            arb_cast_on(),
         )
             .prop_map(
-                move |(rows, palette, gauge, construction, first_row_side)| KnitPattern {
+                move |(rows, palette, gauge, construction, first_row_side, cast_on)| KnitPattern {
                     name: "p".into(),
                     construction,
                     first_row_side,
+                    cast_on,
                     gauge,
                     palette,
                     legend: legend.clone(),
@@ -219,6 +228,7 @@ fn mk_with(width: usize, rows: Vec<Row>, construction: Construction, first: Side
         name: "r".into(),
         construction,
         first_row_side: first,
+        cast_on: None,
         gauge: Gauge {
             sts: 20.0,
             rows: 28.0,
@@ -313,13 +323,32 @@ proptest! {
     }
 
     /// A LEGACY (bare, version 1) file of a pattern already on the full built-in vocabulary, as
-    /// v0.1.7 wrote it, loads unchanged: the v1 -> v2 migration only re-bases older vocabularies.
+    /// v0.1.7 wrote it (no cast-on), loads unchanged with the cast-on not set: the v1 -> v2 migration
+    /// only re-bases older vocabularies and v2 -> v3 states no cast-on.
     #[test]
     fn legacy_file_on_the_full_vocabulary_loads_unchanged(p in arb_pattern()) {
-        let legacy = serde_json::to_string(&p).expect("serializes");
+        let legacy = serde_json::to_string(&without_cast_on(&p)).expect("serializes");
         let loaded = ply_knit::native::read(&legacy).expect("a legacy file parses");
         prop_assert_eq!(loaded.source_version, 1);
-        prop_assert_eq!(loaded.pattern, p);
+        prop_assert_eq!(loaded.pattern, KnitPattern { cast_on: None, ..p });
+    }
+
+    /// A version-2 envelope (no `cast_on` in its document, as that writer stored it) migrates to the
+    /// same pattern with the cast-on not set, and re-saves as a current envelope.
+    #[test]
+    fn v2_file_migrates_to_the_same_pattern_without_a_cast_on(p in arb_pattern()) {
+        let v2 = serde_json::json!({
+            "format": KNIT_FORMAT,
+            "schema_version": 2,
+            "document": without_cast_on(&p),
+        })
+        .to_string();
+        let loaded = ply_knit::native::read(&v2).expect("a v2 file parses");
+        prop_assert_eq!(loaded.source_version, 2);
+        let expected = KnitPattern { cast_on: None, ..p };
+        prop_assert_eq!(&loaded.pattern, &expected);
+        let saved = loaded.pattern.to_json().unwrap();
+        prop_assert_eq!(ply_knit::native::schema_version(&saved).unwrap(), KNIT_SCHEMA_VERSION);
     }
 
     /// A pattern as v0.1.0 to v0.1.5 held it (12 built-ins, then its custom cables) migrates so every
@@ -341,7 +370,9 @@ proptest! {
                 };
             }
         }
-        let migrated = KnitPattern::from_json(&serde_json::to_string(&old).unwrap()).unwrap();
+        let migrated =
+            KnitPattern::from_json(&serde_json::to_string(&without_cast_on(&old)).unwrap()).unwrap();
+        prop_assert_eq!(migrated.cast_on, None);
         prop_assert_eq!(&migrated.legend, &p.legend);
         prop_assert_eq!(migrated.chart.rows.len(), old.chart.rows.len());
         for (old_row, new_row) in old.chart.rows.iter().zip(&migrated.chart.rows) {
@@ -383,11 +414,48 @@ proptest! {
         prop_assert_eq!(img.pixels.len(), img.width as usize * img.height as usize * 4);
     }
 
-    /// `to_written` never panics and emits exactly one line per chart row.
+    /// `to_written` never panics and emits exactly one line per chart row, after a cast-on line
+    /// exactly when the pattern states a cast-on.
     #[test]
     fn written_never_panics_one_line_per_row(p in arb_pattern()) {
         let lines = to_written(&p);
-        prop_assert_eq!(lines.len(), p.chart.rows.len());
+        let cast_on_line = usize::from(p.cast_on.is_some());
+        prop_assert_eq!(lines.len(), cast_on_line + p.chart.rows.len());
+        if let Some(n) = p.cast_on {
+            let starts = format!("Cast on {n} st");
+            prop_assert!(lines[0].starts_with(&starts), "{}", lines[0]);
+        }
+    }
+
+    /// Row 1 is checked against a stated cast-on and nothing else: a cast-on mismatch exactly when
+    /// row 1 is counted and consumes a different number, never the row-to-row mismatch on row 1, and
+    /// without a cast-on row 1 has no count to match.
+    #[test]
+    fn row_1_is_checked_against_the_cast_on(p in arb_pattern()) {
+        let flow = stitch_flow(&p);
+        let Some(first) = flow.first() else { return Ok(()) };
+        prop_assert_eq!(first.available, p.cast_on.map(u64::from));
+        let mismatch = first
+            .problems
+            .iter()
+            .any(|q| matches!(q, RowProblem::CastOnMismatch { .. }));
+        let expected = match (p.cast_on, first.count) {
+            (Some(n), Some(c)) => c.consumed != u64::from(n),
+            _ => false,
+        };
+        prop_assert_eq!(mismatch, expected);
+        let row_to_row = first
+            .problems
+            .iter()
+            .any(|q| matches!(q, RowProblem::CountMismatch { .. }));
+        prop_assert!(!row_to_row, "row 1 has no row below: {:?}", first.problems);
+        for f in &flow[1..] {
+            let later = f
+                .problems
+                .iter()
+                .any(|q| matches!(q, RowProblem::CastOnMismatch { .. }));
+            prop_assert!(!later, "only row 1 works from the cast-on: {:?}", f.problems);
+        }
     }
 
     /// The stitch flow never panics, and wherever it counts a row (and the row is small enough to
@@ -410,7 +478,8 @@ proptest! {
     fn written_and_validate_agree_on_refused_rows(p in arb_pattern()) {
         let lines = to_written(&p);
         let issues = validate(&p);
-        for (r, line) in lines.iter().enumerate() {
+        let rows = &lines[usize::from(p.cast_on.is_some())..];
+        for (r, line) in rows.iter().enumerate() {
             let refused = matches!(row_instruction(&p, r), RowInstruction::Unsupported(_));
             prop_assert_eq!(line.contains("(repeats need fixing:"), refused, "{}", line);
             if refused {
@@ -484,6 +553,54 @@ proptest! {
                     flow[1].problems[0].code(),
                     "repeat-to-end-not-divisible" | "repeat-to-end-no-room" | "repeat-to-end-none-left"
                 ));
+            }
+        }
+    }
+
+    /// A to-end repeat on row 1 over a stated cast-on resolves exactly when the cast-on, less what the
+    /// rest of the row uses, is a positive multiple of the motif; then the row takes the whole
+    /// cast-on. Without a cast-on the same row is the advisory unknown-count warning.
+    #[test]
+    fn a_first_row_to_end_resolves_against_the_cast_on(
+        row in arb_valid_repeat_row(true),
+        (construction, first) in arb_construction(),
+        stated in 0u32..60,
+    ) {
+        let mut p = single_row(row, construction, first);
+        let flow = stitch_flow(&p);
+        prop_assert!(flow[0].count.is_none());
+        prop_assert_eq!(flow[0].problems.len(), 1);
+        let unknown = matches!(
+            flow[0].problems[0],
+            RowProblem::ToEndUnknownCount { first_row: true, .. }
+        );
+        prop_assert!(unknown, "{:?}", flow[0].problems);
+        prop_assert!(flow[0].problems[0].is_warning());
+
+        p.cast_on = Some(stated);
+        let flow = stitch_flow(&p);
+        let (_, motif) = flow[0].instruction.to_end().expect("one to-end repeat");
+        let (motif_c, _) = op_totals(motif).unwrap();
+        let reserved: u64 = flow[0]
+            .instruction
+            .items()
+            .unwrap()
+            .iter()
+            .filter_map(|i| i.fixed_totals().map(|t| t.0))
+            .sum();
+        let available = u64::from(stated);
+        let divides = available > reserved && (available - reserved).is_multiple_of(motif_c);
+        match flow[0].count {
+            Some(c) => {
+                prop_assert!(divides);
+                prop_assert_eq!(c.consumed, available);
+                prop_assert_eq!(reserved + c.to_end_times.unwrap() * motif_c, available);
+                prop_assert!(flow[0].problems.is_empty(), "{:?}", flow[0].problems);
+            }
+            None => {
+                prop_assert!(!divides);
+                prop_assert_eq!(flow[0].problems.len(), 1);
+                prop_assert!(!flow[0].problems[0].is_warning());
             }
         }
     }
@@ -606,11 +723,19 @@ fn adversarial_corpus_never_panics() {
     }
 }
 
+/// `p` as JSON without the `cast_on` key: how the version-1 and version-2 writers stored a pattern.
+fn without_cast_on(p: &KnitPattern) -> serde_json::Value {
+    let mut v = serde_json::to_value(p).expect("serializes");
+    v.as_object_mut().expect("an object").remove("cast_on");
+    v
+}
+
 fn mk(width: usize, rows: Vec<Row>, legend: StitchLegend, gauge: Gauge) -> KnitPattern {
     KnitPattern {
         name: "t".into(),
         construction: Construction::Flat,
         first_row_side: Side::Rs,
+        cast_on: None,
         gauge,
         palette: vec![Color::WHITE],
         legend,

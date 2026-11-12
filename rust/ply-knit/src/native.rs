@@ -2,7 +2,7 @@
 //! the ordered migrations that bring an older file up to the current schema.
 //!
 //! ```json
-//! { "format": "ply.knit", "schema_version": 2, "document": { "name": "...", "legend": ... } }
+//! { "format": "ply.knit", "schema_version": 3, "document": { "name": "...", "legend": ... } }
 //! ```
 //!
 //! **Version detection (deterministic).** A `.plyknit` file is one JSON object.
@@ -23,6 +23,12 @@
 //! (see [`StitchLegend::builtin`](crate::StitchLegend::builtin)) bumps [`KNIT_SCHEMA_VERSION`] and
 //! appends one migration that knows exactly what changed. Migrations work on JSON values, not on the
 //! current Rust types, so an old step keeps working after the types move on.
+//!
+//! **Versions.**
+//! - 1: the bare pattern object of releases v0.1.0 to v0.1.7 (no envelope).
+//! - 2: the envelope; built-in stitches stored exactly as saved (the frozen `builtins_v2`).
+//! - 3: the document gains `cast_on` (a stitch count, or `null` when the pattern does not state
+//!   one). The built-in vocabulary is unchanged from version 2.
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -34,7 +40,7 @@ use crate::pattern::KnitPattern;
 pub const KNIT_FORMAT: &str = "ply.knit";
 
 /// The `.plyknit` schema version this build writes, and the newest it can read.
-pub const KNIT_SCHEMA_VERSION: u32 = 2;
+pub const KNIT_SCHEMA_VERSION: u32 = 3;
 
 /// A pattern read from a `.plyknit` file, with the schema version the file was written at.
 #[derive(Debug, Clone, PartialEq)]
@@ -122,7 +128,7 @@ type Migration = fn(Value) -> Result<Value, KnitError>;
 /// The ordered migration chain: `MIGRATIONS[i]` upgrades a document from version `i + 1` to `i + 2`.
 /// The length is tied to [`KNIT_SCHEMA_VERSION`], so bumping the version without appending its
 /// migration does not compile.
-const MIGRATIONS: [Migration; KNIT_SCHEMA_VERSION as usize - 1] = [v1_to_v2];
+const MIGRATIONS: [Migration; KNIT_SCHEMA_VERSION as usize - 1] = [v1_to_v2, v2_to_v3];
 
 /// Run every migration from `from` up to the current version, in order.
 fn migrate(from: u32, mut document: Value) -> Result<Value, KnitError> {
@@ -138,8 +144,9 @@ fn migrate(from: u32, mut document: Value) -> Result<Value, KnitError> {
 const LEGACY_BUILTIN_COUNTS: [usize; 3] = [12, 20, 21];
 
 /// The built-in stitch vocabulary exactly as schema version 2 defines it, in wire form. FROZEN: this
-/// is what a version-2 legend's built-in entries mean. A later vocabulary gets its own frozen copy and
-/// its own migration; this one never changes.
+/// is what a version-2 legend's built-in entries mean. Version 3 changed the document shape only, so
+/// it uses this vocabulary unchanged. A later vocabulary gets its own frozen copy and its own
+/// migration; this one never changes.
 fn builtins_v2() -> Vec<Value> {
     let def = |symbol: &str, consumes: u8, produces: u8, ws_variant: Option<u8>| {
         json!({
@@ -270,6 +277,21 @@ fn v1_to_v2(mut doc: Value) -> Result<Value, KnitError> {
     Ok(doc)
 }
 
+/// Version 2 to 3: the document gains `cast_on`, set to `null` ("not set").
+///
+/// A version-2 pattern never stated a cast-on, so the migration states none: it does not derive one
+/// from row 1 (that would put a number in the file the knitter never wrote, and would turn a
+/// first-row to-end repeat into a count Ply guessed). A `cast_on` key already in a version-2 document
+/// was written by no release and meant nothing there, so it is replaced by `null` rather than given a
+/// meaning now. Everything else in the document is untouched.
+fn v2_to_v3(mut doc: Value) -> Result<Value, KnitError> {
+    if let Some(obj) = doc.as_object_mut() {
+        obj.insert("cast_on".into(), Value::Null);
+    }
+    // Not an object: left as is, so the typed decode reports what is wrong.
+    Ok(doc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,6 +342,7 @@ mod tests {
             name: "1x1 rib".into(),
             construction: Construction::Flat,
             first_row_side: Side::Rs,
+            cast_on: None,
             gauge: Gauge {
                 sts: 24.0,
                 rows: 32.0,
@@ -338,18 +361,41 @@ mod tests {
         }
     }
 
-    /// The bare (legacy, version 1) JSON a release wrote for `p`.
+    /// The bare (legacy, version 1) JSON a release wrote for `p`: no envelope, and no `cast_on`
+    /// (no release had one).
     fn legacy_json(p: &KnitPattern) -> String {
-        serde_json::to_string_pretty(p).unwrap()
+        let mut v = serde_json::to_value(p).unwrap();
+        v.as_object_mut().unwrap().remove("cast_on");
+        serde_json::to_string_pretty(&v).unwrap()
     }
+
+    /// A version-2 envelope holding `p` as the version-2 writer stored it (no `cast_on` key).
+    fn v2_json(p: &KnitPattern) -> String {
+        let mut doc = serde_json::to_value(p).unwrap();
+        doc.as_object_mut().unwrap().remove("cast_on");
+        serde_json::to_string_pretty(&json!({
+            "format": "ply.knit",
+            "schema_version": 2,
+            "document": doc,
+        }))
+        .unwrap()
+    }
+
+    /// The real version-2 bytes the engine wrote before version 3 (see each `.fixture.toml`).
+    const SCHEMA_V2: [&str; 3] = [
+        "rib-edges-flat",
+        "rib-cast-on-unknown-flat",
+        "cable-repeat-round",
+    ];
 
     /// The built-in vocabulary is part of the schema. If this fails, the built-ins changed: bump
     /// KNIT_SCHEMA_VERSION, freeze the new vocabulary next to `builtins_v2`, and append a migration
-    /// that maps exactly what changed (see the format ADR). Do not edit `builtins_v2`.
+    /// that maps exactly what changed (see the format ADR). Do not edit `builtins_v2`. Schema 3 only
+    /// added `cast_on`, so its vocabulary is still the version-2 one.
     #[test]
     fn current_builtins_are_the_frozen_schema_vocabulary() {
         assert_eq!(
-            KNIT_SCHEMA_VERSION, 2,
+            KNIT_SCHEMA_VERSION, 3,
             "update this test with the new snapshot"
         );
         let current = serde_json::to_value(&StitchLegend::builtin().stitches).unwrap();
@@ -362,9 +408,14 @@ mod tests {
         let json = write(&ribbing()).unwrap();
         let v: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["format"], "ply.knit");
-        assert_eq!(v["schema_version"], 2);
+        assert_eq!(v["schema_version"], 3);
         assert_eq!(v["document"]["name"], "1x1 rib");
-        assert_eq!(schema_version(&json).unwrap(), 2);
+        assert_eq!(
+            v["document"]["cast_on"],
+            Value::Null,
+            "not set is written as null"
+        );
+        assert_eq!(schema_version(&json).unwrap(), 3);
     }
 
     #[test]
@@ -373,6 +424,163 @@ mod tests {
         let loaded = read(&write(&p).unwrap()).unwrap();
         assert_eq!(loaded.pattern, p);
         assert_eq!(loaded.source_version, KNIT_SCHEMA_VERSION);
+    }
+
+    /// A version-3 file keeps its cast-on through save and load, byte for byte on a re-save.
+    #[test]
+    fn a_v3_cast_on_round_trips() {
+        let mut p = ribbing();
+        p.cast_on = Some(26);
+        let text = write(&p).unwrap();
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["document"]["cast_on"], 26);
+        let loaded = read(&text).unwrap();
+        assert_eq!(loaded.source_version, 3);
+        assert_eq!(loaded.pattern, p);
+        assert_eq!(write(&loaded.pattern).unwrap(), text);
+    }
+
+    /// The real version-2 bytes migrate to the current version with the cast-on NOT set and every
+    /// other document field exactly as stored; a re-save is a current envelope that loads unchanged.
+    #[test]
+    fn every_schema_v2_fixture_migrates_to_v3_unchanged_but_for_the_cast_on() {
+        for name in SCHEMA_V2 {
+            let text = fixture(&format!("schema-v2/{name}.plyknit"));
+            assert_eq!(schema_version(&text).unwrap(), 2, "{name}");
+            let stored: Value = serde_json::from_str(&text).unwrap();
+            let stored_doc = stored["document"].clone();
+            assert!(
+                stored_doc.get("cast_on").is_none(),
+                "{name}: v2 had no cast_on"
+            );
+
+            let loaded = read(&text).unwrap();
+            assert_eq!(loaded.source_version, 2, "{name}");
+            assert_eq!(
+                loaded.pattern.cast_on, None,
+                "{name}: a migration never invents one"
+            );
+            let mut migrated = serde_json::to_value(&loaded.pattern).unwrap();
+            assert_eq!(
+                migrated.as_object_mut().unwrap().remove("cast_on"),
+                Some(Value::Null)
+            );
+            assert_eq!(migrated, stored_doc, "{name}: nothing else changes");
+
+            let saved = write(&loaded.pattern).unwrap();
+            assert_eq!(schema_version(&saved).unwrap(), KNIT_SCHEMA_VERSION);
+            let again = read(&saved).unwrap();
+            assert_eq!(again.source_version, KNIT_SCHEMA_VERSION);
+            assert_eq!(again.pattern, loaded.pattern, "{name}");
+        }
+    }
+
+    /// The migrated version-2 fixtures count, write and validate exactly as they did at version 2
+    /// (the oracle results recorded in `fixtures/knitting/repeats/` when these bytes were written).
+    /// The one wording change: the first-row warning now points at the cast-on setting.
+    #[test]
+    fn schema_v2_fixtures_count_write_and_validate_as_before() {
+        use crate::{stitch_flow, to_written, validate, Severity};
+        type Expect = (
+            &'static str,
+            &'static [&'static str],
+            &'static [Option<u64>],
+            &'static [(&'static str, &'static str)],
+        );
+        let expected: [Expect; 3] = [
+            (
+                "rib-edges-flat",
+                &[
+                    "Row 1 (RS): k, [k2, p2] 3 times, k",
+                    "Row 2 (WS): p, [k2, p2] 3 times, p",
+                    "Row 3 (RS): k, [k2, p2] 3 times, k",
+                    "Row 4 (WS): p, [k2, p2] 3 times, p",
+                ],
+                &[Some(14), Some(14), Some(14), Some(14)],
+                &[],
+            ),
+            (
+                "rib-cast-on-unknown-flat",
+                &[
+                    "Row 1 (RS): k, *k2, p2; rep from * to last st, k",
+                    "Row 2 (WS): p, *k2, p2; rep from * to last st, p",
+                ],
+                &[None, None],
+                &[
+                    (
+                        "warning",
+                        "row 1: the repeat over cols 2-5 is worked to the end of the row, but the \
+                         pattern has no cast-on count, so Ply cannot count this row (it needs a \
+                         multiple of 4 stitches plus 2); set the cast-on in the pattern settings",
+                    ),
+                    (
+                        "warning",
+                        "row 2: the repeat over cols 2-5 is worked to the end of the row, but the \
+                         stitch count after row 1 is unknown, so Ply cannot count this row (it \
+                         needs a multiple of 4 stitches plus 2)",
+                    ),
+                ],
+            ),
+            (
+                "cable-repeat-round",
+                &[
+                    "Round 1: k2, [p, 2/2 RC, p] 4 times",
+                    "Round 2: k2, *p, k4, p; rep from * to end",
+                    "Round 3: (repeats need fixing: the repeat over cols 1-5 splits the cable at \
+                     cols 4-7; a cable must be wholly inside or outside a repeat)",
+                    "Round 4: k2, [p, k4, p] 4 times",
+                ],
+                &[Some(26), Some(26), None, Some(26)],
+                &[(
+                    "error",
+                    "row 3: the repeat over cols 1-5 splits the cable at cols 4-7; a cable must \
+                     be wholly inside or outside a repeat",
+                )],
+            ),
+        ];
+        for (name, written, produced, issues) in expected {
+            let p = read(&fixture(&format!("schema-v2/{name}.plyknit")))
+                .unwrap()
+                .pattern;
+            assert_eq!(
+                to_written(&p),
+                written,
+                "{name}: no cast-on line, rows as before"
+            );
+            let counts: Vec<Option<u64>> = stitch_flow(&p)
+                .iter()
+                .map(|f| f.count.map(|c| c.produced))
+                .collect();
+            assert_eq!(counts, produced, "{name}: counts");
+            let got: Vec<(&str, String)> = validate(&p)
+                .into_iter()
+                .map(|i| {
+                    let s = match i.severity {
+                        Severity::Error => "error",
+                        Severity::Warning => "warning",
+                    };
+                    (s, i.message)
+                })
+                .collect();
+            let want: Vec<(&str, String)> =
+                issues.iter().map(|&(s, m)| (s, m.to_string())).collect();
+            assert_eq!(got, want, "{name}: validation");
+        }
+    }
+
+    /// A version-2 document never meant anything by a `cast_on` key (no writer produced one), so the
+    /// migration replaces it with "not set" instead of giving it a meaning now.
+    #[test]
+    fn v2_to_v3_never_carries_a_number_forward() {
+        let p = ribbing();
+        let mut v: Value = serde_json::from_str(&v2_json(&p)).unwrap();
+        v["document"]["cast_on"] = json!(99);
+        let loaded = read(&v.to_string()).unwrap();
+        assert_eq!(loaded.source_version, 2);
+        assert_eq!(loaded.pattern.cast_on, None);
+        assert_eq!(loaded.pattern, p);
+        // The step alone, on a value that is not a document object, leaves it for the typed decode.
+        assert_eq!(v2_to_v3(json!([1, 2])).unwrap(), json!([1, 2]));
     }
 
     /// The real bytes each release wrote load, migrate onto the full vocabulary, and every cell still
@@ -437,6 +645,10 @@ mod tests {
             }
             assert_eq!(p.name, old["name"].as_str().unwrap());
             assert_eq!(p.notes, old["notes"].as_str().unwrap());
+            assert_eq!(
+                p.cast_on, None,
+                "{release}/{name}: migrated all the way, not set"
+            );
             assert_eq!(p.palette.len(), old["palette"].as_array().unwrap().len());
         }
     }
@@ -502,8 +714,8 @@ mod tests {
         assert!(matches!(err, KnitError::Malformed(_)), "{err}");
     }
 
-    /// Version 2 legends load exactly as saved: no prefix matching. Here built-in 5 (ssk) differs from
-    /// the vocabulary and a custom equals a built-in; neither is touched.
+    /// Version 2 and 3 legends load exactly as saved: no prefix matching. Here built-in 5 (ssk)
+    /// differs from the vocabulary and a custom equals a built-in; neither is touched.
     #[test]
     fn a_v2_legend_loads_exactly_as_saved() {
         let mut p = ribbing();
@@ -514,6 +726,9 @@ mod tests {
         p.chart.rows[0].cells[1] = Cell::of(21);
         let loaded = read(&write(&p).unwrap()).unwrap();
         assert_eq!(loaded.pattern, p);
+        let from_v2 = read(&v2_json(&p)).unwrap();
+        assert_eq!(from_v2.source_version, 2);
+        assert_eq!(from_v2.pattern, p);
 
         // The same legend written as a LEGACY file goes through the v1 -> v2 rule instead, which does
         // not recognize the altered built-ins as any release's vocabulary.
@@ -528,14 +743,14 @@ mod tests {
         let p = ribbing();
         let text = write(&p)
             .unwrap()
-            .replace("\"schema_version\": 2", "\"schema_version\": 3");
+            .replace("\"schema_version\": 3", "\"schema_version\": 4");
         let err = read(&text).unwrap_err();
         assert!(
             matches!(
                 err,
                 KnitError::NewerVersion {
-                    found: 3,
-                    supported: 2
+                    found: 4,
+                    supported: 3
                 }
             ),
             "{err}"

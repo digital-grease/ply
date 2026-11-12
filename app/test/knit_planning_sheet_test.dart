@@ -8,8 +8,9 @@ import 'package:ply/src/state/knit_editor_providers.dart';
 import 'package:ply/src/widgets/knit_planning_sheet.dart';
 
 // Host coverage for the knit planning calculator: Apply-gauge writes onto the pattern, the cast-on
-// and yardage calculators surface the repo's results (+ a 10% buffer line), and seeding from a yarn
-// weight fills the gauge fields. A fake repo returns deterministic numbers (no FFI).
+// and yardage calculators surface the repo's results (+ a 10% buffer line), "Set as pattern cast-on"
+// writes the calculated count only when tapped, and seeding from a yarn weight fills the gauge
+// fields. A fake repo returns deterministic numbers (no FFI).
 
 class FakeCalcRepo extends KnitRepository {
   @override
@@ -58,6 +59,28 @@ void main() {
     await tester.tap(calc);
     await tester.pumpAndSettle();
     expect(find.text('Cast on 100 stitches'), findsOneWidget);
+  });
+
+  testWidgets('a calculated cast-on is set on the pattern only when asked', (tester) async {
+    final c = await pumpSheet(tester);
+    expect(find.text('Pattern cast-on: not set'), findsOneWidget);
+    expect(find.text('Set as pattern cast-on'), findsNothing, reason: 'nothing calculated yet');
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'Finished width (in)'), '20');
+    final calc = find.widgetWithText(FilledButton, 'Calculate cast-on');
+    await tester.ensureVisible(calc);
+    await tester.tap(calc);
+    await tester.pumpAndSettle();
+    expect(c.read(knitEditorProvider).pattern.castOn, isNull, reason: 'calculating changes nothing');
+
+    final apply = find.widgetWithText(OutlinedButton, 'Set as pattern cast-on');
+    await tester.ensureVisible(apply);
+    await tester.tap(apply);
+    await tester.pumpAndSettle();
+    expect(c.read(knitEditorProvider).pattern.castOn, 100);
+    expect(c.read(knitEditorProvider).undo, hasLength(1), reason: 'one undo entry');
+    expect(find.text('Pattern cast-on: 100 stitches'), findsOneWidget);
+    expect(find.text('Saved to the pattern'), findsOneWidget);
   });
 
   testWidgets('the yardage estimate shows the figure plus a 10% buffer', (tester) async {

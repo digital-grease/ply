@@ -482,6 +482,7 @@ pub fn knit_blank_pattern() -> KnitPatternDto {
         name: String::new(),
         construction: ply_knit::Construction::Flat,
         first_row_side: ply_knit::Side::Rs,
+        cast_on: None,
         gauge: ply_knit::calc::seed_gauge(ply_common::YarnWeight::Medium),
         palette: vec![ply_common::Color::WHITE],
         legend: ply_knit::StitchLegend::builtin(),

@@ -10,9 +10,10 @@ import 'package:ply/src/rust/knit_dto.dart';
 // fixtures exactly as the engine does (`ply_knit::native`, tested against the same files in Rust), and
 // the engine's typed failure must become the one app-side exception every screen understands.
 
-/// Every released `.plyknit` fixture (repo-root `fixtures/`, shared with the Rust tests).
-List<File> legacyKnitFixtures() {
-  final root = Directory('../fixtures/migrations/plyknit');
+/// The `.plyknit` migration fixtures in [folder] (repo-root `fixtures/migrations/plyknit/`, shared
+/// with the Rust tests), or in every folder when null.
+List<File> knitMigrationFixtures([String? folder]) {
+  final root = Directory('../fixtures/migrations/plyknit${folder == null ? '' : '/$folder'}');
   final files = root
       .listSync(recursive: true)
       .whereType<File>()
@@ -21,6 +22,10 @@ List<File> legacyKnitFixtures() {
     ..sort((a, b) => a.path.compareTo(b.path));
   return files;
 }
+
+/// Every released (v0.1.x, legacy version 1) `.plyknit` fixture.
+List<File> legacyKnitFixtures() =>
+    knitMigrationFixtures().where((f) => f.path.contains('/v0.1.')).toList();
 
 String envelope(Object? version, {Object? format = kPlyknitFormat}) =>
     jsonEncode({'format': format, 'schema_version': version, 'document': <String, Object?>{}});
@@ -35,7 +40,16 @@ void main() {
       }
     });
 
-    test('every knitting acceptance fixture is a current (version 2) envelope', () {
+    test('every schema-v2 fixture is a version 2 envelope (an upgrade on save)', () {
+      final files = knitMigrationFixtures('schema-v2');
+      expect(files, hasLength(3));
+      for (final f in files) {
+        expect(plyknitSchemaVersion(f.readAsStringSync()), 2, reason: f.path);
+      }
+      expect(knitMigrationFixtures(), hasLength(9), reason: 'no migration fixture is unclassified');
+    });
+
+    test('every knitting acceptance fixture is a current (version 3) envelope', () {
       // fixtures/knitting/: written by the engine's own writer, so the Dart probe must agree.
       final files = Directory('../fixtures/knitting')
           .listSync(recursive: true)
@@ -44,13 +58,14 @@ void main() {
           .toList();
       expect(files, isNotEmpty);
       for (final f in files) {
-        expect(plyknitSchemaVersion(f.readAsStringSync()), 2, reason: f.path);
+        expect(plyknitSchemaVersion(f.readAsStringSync()), 3, reason: f.path);
       }
     });
 
     test('an envelope reports its own version', () {
       expect(plyknitSchemaVersion(envelope(2)), 2);
-      expect(plyknitSchemaVersion(envelope(3)), 3, reason: 'newer versions are reported, not hidden');
+      expect(plyknitSchemaVersion(envelope(3)), 3);
+      expect(plyknitSchemaVersion(envelope(4)), 4, reason: 'newer versions are reported, not hidden');
     });
 
     test('anything that is not a .plyknit is null', () {

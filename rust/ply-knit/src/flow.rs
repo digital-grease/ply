@@ -7,12 +7,16 @@
 //! checked `u64` math; that equals the sums over [`RowInstruction::expand`] (held equal by a property
 //! test) without allocating a huge worked row.
 //!
+//! The count before row 1 is the pattern's cast-on ([`KnitPattern::cast_on`]) when it states one:
+//! row 1 must then consume exactly that many stitches ([`RowProblem::CastOnMismatch`] otherwise),
+//! and a to-end repeat on row 1 resolves against it like on any other row. Without a cast-on, row 1's
+//! own consumption is the starting count and a to-end repeat on it cannot be counted.
+//!
 //! A to-end repeat resolves only when the stitch count before its row is known and the stitches left
 //! after the rest of the row (`available - reserved`) are a positive exact multiple of the motif's
-//! consumption. Otherwise the row gets a [`RowProblem`] and its count is UNKNOWN, never guessed. The
-//! model has no cast-on count, so a to-end repeat on the first row is unknown. A row after an unknown
-//! row counts again if it has no to-end repeat (its consumption is its own), but its continuity with
-//! the unknown row below cannot be checked.
+//! consumption. Otherwise the row gets a [`RowProblem`] and its count is UNKNOWN, never guessed. A row
+//! after an unknown row counts again if it has no to-end repeat (its consumption is its own), but its
+//! continuity with the unknown row below cannot be checked.
 
 use crate::instruction::{op_totals, row_instruction, RowInstruction, RowItem, RowProblem};
 use crate::pattern::{KnitPattern, Side};
@@ -37,8 +41,8 @@ pub struct RowFlow {
     pub side: Side,
     /// The row as an instruction.
     pub instruction: RowInstruction,
-    /// Stitches on the needle before the row (what the row below produced), when known. Always
-    /// `None` for the first row: the model has no cast-on count.
+    /// Stitches on the needle before the row, when known: what the row below produced, or for the
+    /// first row the pattern's cast-on (`None` when the pattern does not state one).
     pub available: Option<u64>,
     /// The row's counts, when they can be worked out.
     pub count: Option<RowCount>,
@@ -58,7 +62,7 @@ impl RowFlow {
 /// Walk every chart row, bottom to top, and work out its counts.
 pub fn stitch_flow(pattern: &KnitPattern) -> Vec<RowFlow> {
     let mut out = Vec::with_capacity(pattern.chart.rows.len());
-    let mut available: Option<u64> = None;
+    let mut available: Option<u64> = pattern.cast_on.map(u64::from);
     for r in 0..pattern.chart.rows.len() {
         let instruction = row_instruction(pattern, r);
         let mut problems = Vec::new();
@@ -69,13 +73,21 @@ pub fn stitch_flow(pattern: &KnitPattern) -> Vec<RowFlow> {
             }
             RowInstruction::Sequence(items) => count_row(items, available, r, &mut problems),
         };
-        // Continuity: the row must take exactly what the row below left. (A to-end row takes all of
-        // it by construction; an unknown row below cannot be checked.)
+        // Continuity: the row must take exactly what the row below left, and row 1 exactly the
+        // cast-on. (A to-end row takes all of it by construction; an unknown count below cannot be
+        // checked.)
         if let (Some(below), Some(c)) = (available, count) {
             if c.consumed != below {
-                problems.push(RowProblem::CountMismatch {
-                    consumed: c.consumed,
-                    produced_below: below,
+                problems.push(if r == 0 {
+                    RowProblem::CastOnMismatch {
+                        consumed: c.consumed,
+                        cast_on: below,
+                    }
+                } else {
+                    RowProblem::CountMismatch {
+                        consumed: c.consumed,
+                        produced_below: below,
+                    }
                 });
             }
         }
@@ -190,6 +202,7 @@ mod tests {
             name: "t".into(),
             construction,
             first_row_side: Side::Rs,
+            cast_on: None,
             gauge: Gauge {
                 sts: 20.0,
                 rows: 28.0,
@@ -335,6 +348,66 @@ mod tests {
             "no continuity check across an unknown row"
         );
         assert!(flow[0].problems[0].is_warning());
+    }
+
+    #[test]
+    fn a_cast_on_counts_a_first_row_to_end_and_everything_after_it() {
+        // The same chart as above, now with 26 stitches cast on: every row is counted.
+        let mut p = pat(
+            6,
+            vec![
+                row(&RIB, vec![span(1, 5, Repeat::ToEnd)]),
+                row(&RIB, vec![span(1, 5, Repeat::ToEnd)]),
+                row(&RIB, vec![span(1, 5, Repeat::Times(6))]),
+            ],
+            Construction::InTheRound,
+        );
+        p.cast_on = Some(26);
+        assert_eq!(
+            counts(&p),
+            vec![
+                Some((26, 26, Some(6))),
+                Some((26, 26, Some(6))),
+                Some((26, 26, None))
+            ]
+        );
+        assert!(codes(&p).iter().all(Vec::is_empty), "{:?}", codes(&p));
+        let flow = stitch_flow(&p);
+        assert_eq!(flow[0].available, Some(26), "row 1 works from the cast-on");
+        assert_eq!(flow[0].worked().unwrap().len(), 26);
+    }
+
+    #[test]
+    fn row_1_consuming_other_than_the_cast_on_is_a_mismatch_naming_both() {
+        let mut p = pat(4, vec![row(&[K; 4], vec![])], Construction::Flat);
+        p.cast_on = Some(5);
+        assert_eq!(counts(&p), vec![Some((4, 4, None))], "the row still counts");
+        assert_eq!(
+            stitch_flow(&p)[0].problems,
+            vec![RowProblem::CastOnMismatch {
+                consumed: 4,
+                cast_on: 5
+            }]
+        );
+        assert_eq!(codes(&p), vec![vec!["cast-on-mismatch"]]);
+        // A first-row to-end repeat that does not divide the cast-on is the divisibility error,
+        // with the cast-on as what is available.
+        let mut p = pat(
+            6,
+            vec![row(&RIB, vec![span(1, 5, Repeat::ToEnd)])],
+            Construction::Flat,
+        );
+        p.cast_on = Some(27);
+        assert_eq!(counts(&p), vec![None]);
+        assert!(matches!(
+            stitch_flow(&p)[0].problems[..],
+            [RowProblem::ToEndNotDivisible {
+                available: 27,
+                reserved: 2,
+                motif: 4,
+                ..
+            }]
+        ));
     }
 
     #[test]

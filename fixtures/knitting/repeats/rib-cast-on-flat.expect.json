@@ -1,0 +1,14 @@
+{
+  "description": "The rib-cast-on-unknown-flat chart with 26 stitches cast on. Row 1 repeats its 4-stitch motif to the last stitch over the cast-on: 26 less the two edge stitches leaves 24, so the motif is worked 6 times, and row 2 works the same 26. The written instructions start with the cast-on, and validation is clean.",
+  "covers": ["cast-on count", "ToEnd on the first row resolved by the cast-on", "RS/WS variants", "counts across consecutive rows"],
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "cast_on": 26,
+  "cast_on_line": "Cast on 26 sts.",
+  "width": 6,
+  "rows": [
+    {"row": 1, "written": "Row 1 (RS): k, *k2, p2; rep from * to last st, k", "consumes": 26, "produces": 26, "to_end_times": 6, "worked": ["k", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k"]},
+    {"row": 2, "written": "Row 2 (WS): p, *k2, p2; rep from * to last st, p", "consumes": 26, "produces": 26, "to_end_times": 6, "worked": ["p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "k", "k", "p", "p", "p"]}
+  ],
+  "issues": []
+}

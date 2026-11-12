@@ -100,8 +100,8 @@ pub enum RowProblem {
     NoStitches(SpanRef),
     /// A to-end motif that takes no stitches from the row below would never end.
     ToEndUsesNothing(SpanRef),
-    /// A to-end repeat whose available stitch count is unknown: the first row (the pattern has no
-    /// cast-on count) or a row after one that could not be counted. `motif` and `reserved` give the
+    /// A to-end repeat whose available stitch count is unknown: the first row of a pattern with no
+    /// cast-on count, or a row after one that could not be counted. `motif` and `reserved` give the
     /// "multiple of `motif` plus `reserved`" the row works over.
     ToEndUnknownCount {
         span: SpanRef,
@@ -128,6 +128,8 @@ pub enum RowProblem {
     CountTooLarge,
     /// The row consumes a different number of stitches than the row below produced.
     CountMismatch { consumed: u64, produced_below: u64 },
+    /// The first row consumes a different number of stitches than the pattern casts on.
+    CastOnMismatch { consumed: u64, cast_on: u64 },
 }
 
 impl RowProblem {
@@ -154,6 +156,7 @@ impl RowProblem {
             RowProblem::ToEndNoneLeft { .. } => "repeat-to-end-none-left",
             RowProblem::CountTooLarge => "stitch-count-too-large",
             RowProblem::CountMismatch { .. } => "stitch-count-mismatch",
+            RowProblem::CastOnMismatch { .. } => "cast-on-mismatch",
         }
     }
 
@@ -172,14 +175,26 @@ impl RowProblem {
             RowProblem::Overlap { first: s, .. }
             | RowProblem::Nested { outer: s, .. }
             | RowProblem::SeveralToEnd { first: s, .. } => Some(s),
-            RowProblem::CountTooLarge | RowProblem::CountMismatch { .. } => None,
+            RowProblem::CountTooLarge
+            | RowProblem::CountMismatch { .. }
+            | RowProblem::CastOnMismatch { .. } => None,
         }
     }
 
     /// The problem as a sentence fragment without the row number, for the written instructions
     /// (`the repeats over cols 2-5 and 4-7 overlap`). `row` is 0-based (used only by messages that
-    /// name the row below); `cols` maps storage columns to reading-order numbers.
+    /// name what the row works from: the row below, or for the first row the cast-on); `cols` maps
+    /// storage columns to reading-order numbers.
     pub fn reason(&self, row: usize, cols: &ReadingCols) -> String {
+        // Where the row's stitches come from: "row 2 produced 14 stitches" / "the cast-on is 14
+        // stitches" (a first row has a known count only when the pattern states a cast-on).
+        let source = |n: u64| {
+            if row == 0 {
+                format!("the cast-on is {}", stitches(n))
+            } else {
+                format!("row {row} produced {}", stitches(n))
+            }
+        };
         match *self {
             RowProblem::ZeroTimes(s) => format!(
                 "the repeat over {} is worked 0 times; a repeat must be worked at least once",
@@ -236,13 +251,16 @@ impl RowProblem {
                 motif,
                 reserved,
             } => {
-                let why = if first_row {
-                    "the pattern has no cast-on count".to_string()
+                let (why, fix) = if first_row {
+                    (
+                        "the pattern has no cast-on count".to_string(),
+                        "; set the cast-on in the pattern settings",
+                    )
                 } else {
-                    format!("the stitch count after row {row} is unknown")
+                    (format!("the stitch count after row {row} is unknown"), "")
                 };
                 format!(
-                    "the repeat over {} is worked to the end of the row, but {why}, so Ply cannot count this row (it needs {})",
+                    "the repeat over {} is worked to the end of the row, but {why}, so Ply cannot count this row (it needs {}){fix}",
                     cols.span(span),
                     multiple_of(motif, reserved)
                 )
@@ -253,10 +271,9 @@ impl RowProblem {
                 reserved,
                 motif,
             } => format!(
-                "the repeat over {} cannot be worked to the end: row {} produced {}, the rest of the row uses {reserved}, and the {} left {} not a multiple of {motif}",
+                "the repeat over {} cannot be worked to the end: {}, the rest of the row uses {reserved}, and the {} left {} not a multiple of {motif}",
                 cols.span(span),
-                row,
-                stitches(available),
+                source(available),
                 available.saturating_sub(reserved),
                 if available.saturating_sub(reserved) == 1 { "is" } else { "are" }
             ),
@@ -265,17 +282,22 @@ impl RowProblem {
                 available,
                 reserved,
             } => format!(
-                "the repeat over {} cannot be worked to the end: row {} produced {} but the rest of the row uses {reserved}",
+                "the repeat over {} cannot be worked to the end: {} but the rest of the row uses {reserved}",
                 cols.span(span),
-                row,
-                stitches(available)
+                source(available)
             ),
-            RowProblem::ToEndNoneLeft { span, available } => format!(
-                "the repeat over {} cannot be worked to the end: the rest of the row uses all {} row {} produced, leaving none for the repeat",
-                cols.span(span),
-                stitches(available),
-                row
-            ),
+            RowProblem::ToEndNoneLeft { span, available } => {
+                let of = if row == 0 {
+                    "of the cast-on".to_string()
+                } else {
+                    format!("row {row} produced")
+                };
+                format!(
+                    "the repeat over {} cannot be worked to the end: the rest of the row uses all {} {of}, leaving none for the repeat",
+                    cols.span(span),
+                    stitches(available)
+                )
+            }
             RowProblem::CountTooLarge => {
                 "has too many stitches to count".to_string()
             }
@@ -286,16 +308,21 @@ impl RowProblem {
                 "consumes {consumed} stitches but row {} produced {produced_below}",
                 row
             ),
+            RowProblem::CastOnMismatch { consumed, cast_on } => {
+                format!("consumes {consumed} stitches but the cast-on is {cast_on}")
+            }
         }
     }
 
     /// The full user-facing message, starting with the 1-based row number (`row 3: ...`). The
-    /// stitch-count mismatch keeps its established wording (`row 3 consumes 12 stitches but row 2
-    /// produced 14`).
+    /// stitch-count mismatches keep the established wording (`row 3 consumes 12 stitches but row 2
+    /// produced 14`, `row 1 consumes 24 stitches but the cast-on is 26`).
     pub fn message(&self, row: usize, cols: &ReadingCols) -> String {
         let n = row + 1;
         match self {
-            RowProblem::CountMismatch { .. } | RowProblem::CountTooLarge => {
+            RowProblem::CountMismatch { .. }
+            | RowProblem::CastOnMismatch { .. }
+            | RowProblem::CountTooLarge => {
                 format!("row {n} {}", self.reason(row, cols))
             }
             _ => format!("row {n}: {}", self.reason(row, cols)),
@@ -702,6 +729,7 @@ mod tests {
             name: "t".into(),
             construction,
             first_row_side: first,
+            cast_on: None,
             gauge: Gauge {
                 sts: 20.0,
                 rows: 28.0,

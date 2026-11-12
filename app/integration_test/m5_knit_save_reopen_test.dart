@@ -3,10 +3,13 @@
 // Verifies the `<documents>/knits/<id>.{plyknit,json,png}` triplet end to end: a painted chart
 // saves, appears in listKnits(), reopens byte-faithfully (the painted cell survives), bumps
 // lastOpened on open, writes the current `.plyknit` envelope, refuses a newer file with the typed
-// error, and deletes cleanly (drops out of the list).
+// error, and deletes cleanly (drops out of the list). A schema-version-2 file (before the cast-on)
+// opens through the real engine with the cast-on not set, and saving it writes version 3 with a
+// one-time `.v2.bak` of the original.
 //
 //   flutter test integration_test/m5_knit_save_reopen_test.dart -d emulator-5554
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -68,7 +71,7 @@ void main() {
 
     // The file on disk is a current-version envelope, and the real engine refuses a newer one with
     // the typed error the editor turns into "saved by a newer version of Ply".
-    expect(plyknitSchemaVersion(File(entry.patternPath).readAsStringSync()), 2);
+    expect(plyknitSchemaVersion(File(entry.patternPath).readAsStringSync()), 3);
     await expectLater(
       repo.parse('{"format":"ply.knit","schema_version":99,"document":{}}'),
       throwsA(isA<NativeFormatException>()
@@ -85,5 +88,36 @@ void main() {
     await repo.deleteKnit(id);
     final afterDelete = await repo.listKnits();
     expect(afterDelete.map((e) => e.id), isNot(contains(id)));
+  });
+
+  testWidgets('a schema-version-2 pattern opens without a cast-on and saves as version 3',
+      (tester) async {
+    final repo = KnitRepository();
+    final pattern = KnitEditorState(pattern: await repo.blank()).resizeChart(4, 2).pattern;
+    final now = DateTime.now();
+    final meta = DraftMeta(name: 'knit-v2', craft: 'Knitting', savedAt: now, lastOpened: now);
+    final id = await repo.saveKnit(pattern: pattern, meta: meta);
+    addTearDown(() => repo.deleteKnit(id));
+    final path = (await repo.openKnit(id)).patternPath;
+
+    // Put the same pattern back on disk exactly as the version-2 writer stored it: no cast_on key.
+    final envelope = jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
+    (envelope['document'] as Map<String, dynamic>).remove('cast_on');
+    envelope['schema_version'] = 2;
+    final v2 = const JsonEncoder.withIndent('  ').convert(envelope);
+    File(path).writeAsStringSync(v2);
+
+    final opened = await repo.readPattern(id);
+    expect(opened.castOn, isNull, reason: 'the migration never invents a cast-on');
+    expect(opened.chart.width, 4);
+    expect(File(path).readAsStringSync(), v2, reason: 'opening never rewrites the file');
+
+    final edited = KnitEditorState(pattern: opened).setCastOn(4).pattern;
+    await repo.saveKnit(pattern: edited, meta: meta, id: id);
+    expect(plyknitSchemaVersion(File(path).readAsStringSync()), 3);
+    expect(File(KnitRepository.backupPath(path, 2)).readAsStringSync(), v2,
+        reason: 'the version-2 original is kept once');
+    expect((await repo.readPattern(id)).castOn, 4);
+    expect((await repo.written(edited)).first, 'Cast on 4 sts.');
   });
 }

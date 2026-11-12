@@ -16,11 +16,11 @@ import 'package:ply/src/rust/knit_dto.dart';
 // sidecar. The engine serializer is stood in for by a canned current-version envelope (the real one
 // is covered by the Rust tests); legacy files are the real released bytes from `fixtures/`.
 
-/// What the engine writes for any pattern here: a current-version (2) envelope.
+/// What the engine writes for any pattern here: a current-version (3) envelope.
 final String _current = jsonEncode({
   'format': 'ply.knit',
-  'schema_version': 2,
-  'document': {'name': 'saved now'},
+  'schema_version': 3,
+  'document': {'name': 'saved now', 'cast_on': null},
 });
 
 class DiskOnlyKnitRepo extends KnitRepository {
@@ -130,7 +130,7 @@ void main() {
       final backup = f('k1.plyknit.v1.bak');
       expect(backup.readAsBytesSync(), original, reason: 'the released bytes, untouched');
       expect(f('k1.plyknit').readAsStringSync(), _current, reason: 'upgraded to the current format');
-      expect(plyknitSchemaVersion(f('k1.plyknit').readAsStringSync()), 2);
+      expect(plyknitSchemaVersion(f('k1.plyknit').readAsStringSync()), 3);
 
       // The file is current now: later saves neither add nor replace a backup.
       await repo.saveKnit(pattern: _pattern, meta: meta('Sampler'), id: 'k1');
@@ -139,6 +139,31 @@ void main() {
       expect(namesIn(dir), ['k1.json', 'k1.plyknit', 'k1.plyknit.v1.bak'],
           reason: 'one backup, no temp files left behind');
     });
+
+    for (final name in ['rib-edges-flat', 'rib-cast-on-unknown-flat', 'cable-repeat-round']) {
+      test('saving over schema-version-2 $name keeps its bytes as a one-time .v2.bak', () async {
+        // Real v2 bytes (written by the engine before v3). Opening one migrates it in memory
+        // (engine, covered by the Rust tests: cast-on not set, nothing else changed); the first save
+        // upgrades the file to v3 and keeps the original next to it, exactly once.
+        final original = fixtureBytes('plyknit/schema-v2/$name.plyknit');
+        expect(plyknitSchemaVersion(utf8.decode(original)), 2);
+        f('k2.plyknit').writeAsBytesSync(original);
+        f('k2.json').writeAsBytesSync(fixtureBytes('sidecar/v0.1.7/knit.json'));
+
+        await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k2');
+        final backup = f('k2.plyknit.v2.bak');
+        expect(backup.readAsBytesSync(), original, reason: 'the v2 bytes, untouched');
+        expect(plyknitSchemaVersion(f('k2.plyknit').readAsStringSync()), 3);
+
+        await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k2');
+        expect(backup.readAsBytesSync(), original, reason: 'a later save never replaces it');
+        expect(namesIn(dir), ['k2.json', 'k2.plyknit', 'k2.plyknit.v2.bak']);
+
+        // Deleting the pattern removes the backup with it.
+        await repo.deleteKnit('k2');
+        expect(namesIn(dir), isEmpty);
+      });
+    }
 
     test('an existing backup is never replaced (it holds the true original)', () async {
       f('k1.plyknit').writeAsBytesSync(fixtureBytes('plyknit/v0.1.6/sampler.plyknit'));
@@ -167,7 +192,7 @@ void main() {
     for (final (label, onDisk, problem) in [
       (
         'a file saved by a newer Ply',
-        '{"format":"ply.knit","schema_version":3,"document":{"future":true}}',
+        '{"format":"ply.knit","schema_version":4,"document":{"future":true}}',
         NativeFormatProblem.newerVersion,
       ),
       ('an unreadable file', '{half a pattern', NativeFormatProblem.unreadable),
