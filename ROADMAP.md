@@ -11,9 +11,9 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 | Area | Status | Known limits |
 |---|---|---|
 | Weaving editor, drawdown, WIF import/export, calculators, validation | Verified | Rendering is bounded to a phone memory budget: large drafts preview at reduced resolution, and drafts over 4 million intersections show a "too large to preview" message until region rendering lands |
-| Variable thread thickness | Partial | Correct in previews, misaligned in the integrated editor |
-| Structure generators | Partial | Plain/twill/satin accurate (plain weave on an odd shaft count requires a point draw); the "shadow weave" option actually produces log cabin, not shadow weave; overshot and double weave are simplified examples. Generated structures weave the same cloth on rising and sinking (counterbalance/countermarch) sheds |
-| Overshot book treadling | Partial | Collapses only consecutive identical sheds; no "Use Tabby" shorthand |
+| Variable thread thickness | Verified | The editor is a strict structural draft (uniform cells, ignores thickness, every cell aligned); thickness shows in the yarn previews, labelled as an approximate look, not a fabric model |
+| Structure generators | Partial | Plain/twill/satin accurate (plain weave on an odd shaft count requires a point draw); shadow weave is the authentic Atwater/Powell block weave on 4 or 8 shafts (straight or point layout, treadled as drawn in, sized in whole repeats), checked against original reference fixtures that still await a practitioner weave-check; overshot and double weave are simplified examples. Generated structures weave the same cloth on rising and sinking (counterbalance/countermarch) sheds |
+| Overshot book treadling | Partial | A separate Book view groups runs of identical picks (pick ranges, every weft color, round-trip edits); the editor keeps one row per pick. Real "Use Tabby" shorthand needs pattern/tabby pick roles, not built yet |
 | Double-weave layer view | Partial | Each pick is shown in exactly one layer or listed with the reason it weaves neither; the views show each layer's own interlacement, and there is no view of the finished cloth's face yet |
 | Profile drafts | Partial | Engine helper only, not exposed in the app |
 | Knitting chart editor, written instructions, validation | Verified | Repeat spans stored but not interpreted; save does not validate |
@@ -21,7 +21,7 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 | Nalbinding projects (notation, notes, photos) | Verified | Notation is checked strictly as you type and problems stay listed, but saving is still allowed (a project is a draft); no structured recipe model yet |
 | Native file formats | Verified | `.plyknit` and `.plynal` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead); no general backup/restore yet |
 | Backup/restore, export/share | Not built | Planned in M7 and M9 |
-| Engineering gates | Verified | 260 Rust + 658 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings` |
+| Engineering gates | Verified | 294 Rust + 713 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings` |
 
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
@@ -121,8 +121,16 @@ M9 garment construction and print, M10 tablet weaving, M11 crochet.
 - ✅ Nalbinding notation: strict reading for authoring and lenient reading for reference, with
   positioned diagnostics, the original text kept, and unsupported syntax preserved instead of
   dropped; the diagram is labelled as a sketch and marked approximate when the reading is not exact.
-- ⬜ Next: region (tile) rendering for very large drafts; executable knitting repeats; authentic
-  shadow weave.
+- ✅ Structural draft and Book view (M7-09): the editor keeps one row per pick on a uniform grid
+  shared by all four quadrants; yarn thickness moves to labelled previews; runs of identical
+  picks are listed in a separate Book view.
+- ✅ Authentic shadow weave (M8-07, pulled forward): Atwater and Powell systems on 4 or 8 shafts,
+  straight or point layouts, per-block widths, either twill direction, smooth or feathery block
+  edges, whole repeats with an optional balancing end and pick. The structural tests that separate it
+  from log cabin run on every generated design, and two original reference fixtures
+  (`fixtures/weaving/shadow/`) record the expected cloth. The old log-cabin generator is gone.
+- ⬜ Next: region (tile) rendering for very large drafts; executable knitting repeats; a weaver's
+  check of the shadow-weave fixtures.
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.
