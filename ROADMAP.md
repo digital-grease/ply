@@ -10,18 +10,18 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 
 | Area | Status | Known limits |
 |---|---|---|
-| Weaving editor, drawdown, WIF import/export, calculators, validation | Verified | Rendering is bounded to a phone memory budget: large drafts preview at reduced resolution, and drafts over 4 million intersections show a "too large to preview" message until region rendering lands |
+| Weaving editor, drawdown, WIF import/export, calculators, validation | Verified | Rendering is bounded to a phone memory budget; large drafts render only the visible part of the drawdown at the current zoom, so even drafts over 4 million intersections can be viewed and edited |
 | Variable thread thickness | Verified | The editor is a strict structural draft (uniform cells, ignores thickness, every cell aligned); thickness shows in the yarn previews, labelled as an approximate look, not a fabric model |
 | Structure generators | Partial | Plain/twill/satin accurate (plain weave on an odd shaft count requires a point draw); shadow weave is the authentic Atwater/Powell block weave on 4 or 8 shafts (straight or point layout, treadled as drawn in, sized in whole repeats), checked against original reference fixtures that still await a practitioner weave-check; overshot and double weave are simplified examples. Generated structures weave the same cloth on rising and sinking (counterbalance/countermarch) sheds |
 | Overshot book treadling | Partial | A separate Book view groups runs of identical picks (pick ranges, every weft color, round-trip edits); the editor keeps one row per pick. Real "Use Tabby" shorthand needs pattern/tabby pick roles, not built yet |
 | Double-weave layer view | Partial | Each pick is shown in exactly one layer or listed with the reason it weaves neither; the views show each layer's own interlacement, and there is no view of the finished cloth's face yet |
 | Profile drafts | Partial | Engine helper only, not exposed in the app |
-| Knitting chart editor, written instructions, validation | Verified | Repeat spans stored but not interpreted; save does not validate |
+| Knitting chart editor, written instructions, validation | Verified | Repeats (worked N times or to the end of the row) drive written instructions, stitch counts and validation; save does not validate; the pattern has no cast-on count yet, so a to-end repeat on the first row cannot be counted |
 | Nalbinding reference, notation playground, loop diagram | Partial | Notation is read strictly or leniently with every problem listed at its position, and nothing is dropped silently; the loop diagram is labelled as a one-stitch sketch and marked approximate when the notation was not read exactly. Multi-round and fabric views are not built |
 | Nalbinding projects (notation, notes, photos) | Verified | Notation is checked strictly as you type and problems stay listed, but saving is still allowed (a project is a draft); no structured recipe model yet |
 | Native file formats | Verified | `.plyknit` and `.plynal` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead); no general backup/restore yet |
 | Backup/restore, export/share | Not built | Planned in M7 and M9 |
-| Engineering gates | Verified | 294 Rust + 713 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings` |
+| Engineering gates | Verified | 349 Rust + 759 Flutter host tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings` |
 
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
@@ -79,8 +79,9 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
   gauge/yardage planning sheet, and pattern settings (construction, first-row side, notes).
 - ✅ Unified home: a single library with a tab per craft (Weaving | Knitting, plus Nalbinding
   from M6); the in-app glossary now carries knitting terms too.
-- Known gap: repeat spans exist in the model and file format but are not interpreted by written
-  instructions, stitch counts, or the chart render, and no UI creates one (planned for M7).
+- ✅ Repeats (M7): a repeat box over chart cells is worked N times or to the end of the row; written
+  instructions, stitch counts and validation all follow it, and the chart editor can mark and clear
+  repeats.
 - ⬜ Deferred: optional **Knitout export** for machine knitters (the one M5 item not yet built).
 
 ## M6 — Nalbinding engine (`ply-nalbind`) ✅ (v1 done)
@@ -129,8 +130,13 @@ M9 garment construction and print, M10 tablet weaving, M11 crochet.
   edges, whole repeats with an optional balancing end and pick. The structural tests that separate it
   from log cabin run on every generated design, and two original reference fixtures
   (`fixtures/weaving/shadow/`) record the expected cloth. The old log-cabin generator is gone.
-- ⬜ Next: region (tile) rendering for very large drafts; executable knitting repeats; a weaver's
-  check of the shadow-weave fixtures.
+- ✅ Executable knitting repeats: worked N times or to the end of the row, with conventional written
+  forms (`[k2, p2] 3 times`, `*k2, p2; rep from * to last st, k1`), stitch counts from the worked
+  row, and clear problems for repeats that do not divide evenly, overlap, or split a cable.
+- ✅ Viewport rendering: large weaving drafts render only what is on screen, at the current zoom,
+  so editing stays responsive and drafts over 4 million intersections can be viewed and edited.
+- ⬜ Next: library backup and restore; a weaver's check of the shadow-weave fixtures; a cast-on
+  count in the knitting format.
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.
