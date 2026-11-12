@@ -17,7 +17,9 @@ import '../rust/nalbind_dto.dart';
 /// The stitch reference (builtins, parse, diagram, validate) is engine-backed and read-only; the
 /// PROJECT layer (save/list/open/rename/delete) is on-device persistence — a `<documents>/nalbinds/
 /// <id>.{plynal,json}` pair mirroring the knit triplet, MINUS the engine-native body and the thumbnail
-/// (nalbinding has no chart to render). See `docs/NALBIND_DESIGN.md`.
+/// (nalbinding has no chart to render). A saved project may also own a `<id>.photos/` folder of
+/// project photos (written by `PhotoStore`), which [deleteProject] removes with it. See
+/// `docs/NALBIND_DESIGN.md`.
 class NalbindRepository {
   NalbindRepository();
 
@@ -72,6 +74,13 @@ class NalbindRepository {
   String _projectPath(Directory d, String id) => p.join(d.path, '$id.plynal');
   String _jsonPath(Directory d, String id) => p.join(d.path, '$id.json');
 
+  /// The project's photo folder. MUST match `PhotoStore` (`<documents>/<subdir>/<id>.photos`, with
+  /// subdir `nalbinds`), which writes it; this side only ever deletes it.
+  String _photosPath(Directory d, String id) => p.join(d.path, '$id.photos');
+
+  /// Whether this repository instance (one per app run) has already swept orphaned photo folders.
+  bool _sweptOrphanedPhotos = false;
+
   /// Save a project as the `<id>.{plynal,json}` pair, returning its id. The project body is written
   /// FIRST and the sidecar LAST, so [listProjects] never sees a `.json` without its `.plynal`.
   Future<String> saveProject(NalbindProject project, {String? id}) async {
@@ -103,8 +112,18 @@ class NalbindRepository {
 
   /// List every complete saved project, newest-opened first. Skips a sidecar whose `.plynal` is gone
   /// and a malformed sidecar (one bad file never breaks the whole list).
+  ///
+  /// The FIRST listing of the app run also runs [sweepOrphanedPhotos] once (best-effort, never fails
+  /// the list), so photos stranded by deletes made before [deleteProject] removed them get cleaned
+  /// up the first time the nalbinding projects are shown.
   Future<List<NalbindProjectEntry>> listProjects() async {
     final dir = await _dir();
+    if (!_sweptOrphanedPhotos) {
+      _sweptOrphanedPhotos = true;
+      try {
+        await sweepOrphanedPhotos();
+      } catch (_) {/* best-effort: a failed sweep never breaks the list; next run retries */}
+    }
     if (!await dir.exists()) return const [];
     final entries = <NalbindProjectEntry>[];
     await for (final ent in dir.list()) {
@@ -140,11 +159,15 @@ class NalbindRepository {
     await _atomicWrite(File(_jsonPath(dir, id)), jsonEncode(meta.copyWith(lastOpened: DateTime.now()).toJson()));
   }
 
-  /// Delete a project's pair (sidecar FIRST so [listProjects] drops it atomically). Tolerant of
-  /// already-missing files.
+  /// Delete EVERYTHING a project owns: the sidecar FIRST (so [listProjects] drops it atomically), then
+  /// the `.plynal` body, any `.tmp` a save interrupted mid-write left behind, and finally the
+  /// `<id>.photos/` folder with every photo in it. The confirm dialog promises the project is
+  /// "permanently removed", so no user content may survive it. Tolerant of already-missing files.
   Future<void> deleteProject(String id) async {
     final dir = await _dir();
-    for (final path in [_jsonPath(dir, id), _projectPath(dir, id)]) {
+    final json = _jsonPath(dir, id);
+    final body = _projectPath(dir, id);
+    for (final path in [json, body, '$body.tmp', '$json.tmp']) {
       final f = File(path);
       if (await f.exists()) {
         try {
@@ -152,6 +175,42 @@ class NalbindRepository {
         } catch (_) {/* tolerate races / permission quirks */}
       }
     }
+    // Last, so the project has already left the listing. If this fails, the folder is an orphan
+    // (neither file exists any more) and the next run's [sweepOrphanedPhotos] removes it.
+    await _deletePhotosDir(Directory(_photosPath(dir, id)));
+  }
+
+  /// Remove every `<id>.photos/` folder whose project is gone, i.e. for which NEITHER `<id>.json`
+  /// NOR `<id>.plynal` exists. Such a folder can only be what an earlier delete left behind: photos
+  /// can be attached only after a project's first save, which writes both files, and every re-save
+  /// replaces them atomically. A folder whose sidecar OR body still exists is never touched.
+  /// Best-effort and idempotent; one undeletable folder never stops the rest.
+  Future<void> sweepOrphanedPhotos() async {
+    final dir = await _dir();
+    if (!await dir.exists()) return;
+    final orphans = <Directory>[];
+    // followLinks: false, so a symlink is reported as a Link and skipped, never followed.
+    await for (final ent in dir.list(followLinks: false)) {
+      if (ent is! Directory || p.extension(ent.path) != '.photos') continue;
+      final id = p.basenameWithoutExtension(ent.path);
+      if (id.isEmpty) continue;
+      try {
+        if (await File(_jsonPath(dir, id)).exists()) continue;
+        if (await File(_projectPath(dir, id)).exists()) continue;
+      } catch (_) {
+        continue; // can't tell, so leave it alone
+      }
+      orphans.add(ent);
+    }
+    for (final d in orphans) {
+      await _deletePhotosDir(d);
+    }
+  }
+
+  Future<void> _deletePhotosDir(Directory photos) async {
+    try {
+      if (await photos.exists()) await photos.delete(recursive: true);
+    } catch (_) {/* tolerate races / permission quirks; the sweep retries next run */}
   }
 
   Future<DraftMeta> _readSidecar(Directory dir, String id) async => DraftMeta.fromJson(

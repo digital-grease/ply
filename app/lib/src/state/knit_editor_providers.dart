@@ -90,12 +90,17 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
   @override
   KnitEditorState build() => const KnitEditorState(pattern: KnitEditorState.placeholder);
 
-  /// Open [pattern] for editing, resetting the undo history. Also resets the active brush color so a
-  /// stale palette index from a prior session can't paint a dangling colorwork reference.
+  /// Open [pattern] for editing, resetting the undo history and making it the saved baseline (a
+  /// freshly opened or freshly started pattern has nothing unsaved). Also resets the active brush
+  /// color so a stale palette index from a prior session can't paint a dangling colorwork reference.
   void load(KnitPatternDto pattern) {
-    state = KnitEditorState(pattern: pattern);
+    state = KnitEditorState(pattern: pattern, saved: pattern);
     ref.read(activeKnitColorProvider.notifier).state = knitColorKeep;
   }
+
+  /// Record [persisted] (the exact pattern instance a save just wrote) as the saved baseline, so the
+  /// editor reads clean until the next edit.
+  void markSaved(KnitPatternDto persisted) => state = state.markSaved(persisted);
 
   void paintCell(int row, int col, int stitch, int? color,
           {bool keepColor = false, bool keepStitch = false}) =>

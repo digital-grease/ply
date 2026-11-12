@@ -330,4 +330,49 @@ void main() {
     expect(cells[2].stitch, 3, reason: 'new cable B anchor');
     expect(cells[3].stitch, KnitStitch.noStitch, reason: 'new cable B filler');
   });
+  group('isDirty (the dirty-on-exit baseline)', () {
+    test('no baseline (nothing loaded yet) is never dirty', () {
+      final s = KnitEditorState(pattern: pattern(2, 2)).paintCell(0, 0, KnitStitch.purl, null);
+      expect(s.isDirty, isFalse);
+    });
+
+    test('a freshly loaded pattern is clean; an edit is dirty; a no-op edit stays clean', () {
+      final p = pattern(2, 2);
+      final loaded = KnitEditorState(pattern: p, saved: p);
+      expect(loaded.isDirty, isFalse);
+      expect(loaded.paintCell(0, 0, KnitStitch.knit, null).isDirty, isFalse, reason: 'no change');
+      expect(loaded.paintCell(0, 0, KnitStitch.purl, null).isDirty, isTrue);
+      expect(loaded.setNotes('cast on loosely').isDirty, isTrue);
+    });
+
+    test('undo back to the saved pattern reads clean; redo reads dirty again', () {
+      final p = pattern(2, 2);
+      final edited = KnitEditorState(pattern: p, saved: p)
+          .paintCell(0, 0, KnitStitch.purl, null)
+          .paintCell(1, 1, KnitStitch.purl, null);
+      final undone = edited.undoEdit().undoEdit();
+      expect(undone.isDirty, isFalse, reason: 'undo restores the exact saved instance');
+      expect(undone.redoEdit().isDirty, isTrue);
+    });
+
+    test('a hand-reverted edit reads dirty (the safe direction)', () {
+      final p = pattern(2, 2);
+      final s = KnitEditorState(pattern: p, saved: p)
+          .paintCell(0, 0, KnitStitch.purl, null)
+          .paintCell(0, 0, KnitStitch.knit, null);
+      expect(s.isDirty, isTrue);
+    });
+
+    test('markSaved moves the baseline to the persisted instance, keeping history', () {
+      final p = pattern(2, 2);
+      final edited = KnitEditorState(pattern: p, saved: p).paintCell(0, 0, KnitStitch.purl, null);
+      final saved = edited.markSaved(edited.pattern);
+      expect(saved.isDirty, isFalse);
+      expect(saved.undo.length, 1, reason: 'history untouched');
+      expect(saved.undoEdit().isDirty, isTrue, reason: 'the pre-save pattern is now unsaved');
+      // An edit that landed while the write was in flight: the baseline is the WRITTEN instance.
+      final later = edited.paintCell(1, 1, KnitStitch.purl, null);
+      expect(later.markSaved(edited.pattern).isDirty, isTrue);
+    });
+  });
 }

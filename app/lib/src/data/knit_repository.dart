@@ -90,7 +90,16 @@ class KnitRepository {
   static const Uuid _uuid = Uuid();
   Directory? _knitsDirCache;
 
+  /// Tests point this at a temp dir so the file-only persistence paths (list / rename / delete) run
+  /// without `path_provider` (mirrors `NalbindRepository.dirOverride`). Null in production.
+  Directory? dirOverride;
+
   Future<Directory> _knitsDir() async {
+    final override = dirOverride;
+    if (override != null) {
+      await override.create(recursive: true);
+      return override;
+    }
     final cached = _knitsDirCache;
     if (cached != null) return cached;
     final docs = await getApplicationDocumentsDirectory();
@@ -186,11 +195,13 @@ class KnitRepository {
     await _writeSidecar(dir, id, meta.copyWith(name: newName));
   }
 
-  /// Delete a pattern's whole triplet (sidecar FIRST so [listKnits] drops it atomically). Tolerates
+  /// Delete a pattern's whole triplet (sidecar FIRST so [listKnits] drops it atomically), plus any
+  /// `.tmp` a save interrupted mid-write left behind (it holds pattern content too). Tolerates
   /// already-missing files.
   Future<void> deleteKnit(String id) async {
     final dir = await _knitsDir();
-    for (final path in [_jsonPath(dir, id), _patternPath(dir, id), _pngPath(dir, id)]) {
+    final files = [_jsonPath(dir, id), _patternPath(dir, id), _pngPath(dir, id)];
+    for (final path in [...files, for (final f in files) '$f.tmp']) {
       final f = File(path);
       if (await f.exists()) {
         try {

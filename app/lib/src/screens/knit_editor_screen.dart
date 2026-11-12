@@ -16,6 +16,7 @@ import '../widgets/knit_planning_sheet.dart';
 import '../widgets/knit_settings_sheet.dart';
 import '../widgets/name_input_dialog.dart';
 import '../widgets/rgb_color_picker.dart';
+import '../widgets/unsaved_changes_guard.dart';
 import 'knit_written_screen.dart';
 
 /// The knit editor's overflow-menu actions.
@@ -38,7 +39,8 @@ class KnitEditorScreen extends ConsumerStatefulWidget {
   ConsumerState<KnitEditorScreen> createState() => _KnitEditorScreenState();
 }
 
-class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
+class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
+    with UnsavedChangesGuard<KnitEditorScreen> {
   bool _loading = true;
   String? _error;
   String? _id; // the saved pattern id; null until the first save
@@ -103,12 +105,24 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
     if (next != z) ref.read(knitZoomProvider.notifier).state = next;
   }
 
-  Future<void> _save() async {
-    if (_saving) return;
+  /// Dirty-on-exit guard input (see [UnsavedChangesGuard]). Nothing is unsaved while loading or after
+  /// a failed open (the provider may still hold a PREVIOUS session's pattern until this one loads);
+  /// otherwise it is the editor state's identity-based [KnitEditorState.isDirty].
+  @override
+  bool get hasUnsavedChanges =>
+      !_loading && _error == null && ref.read(knitEditorProvider).isDirty;
+
+  /// The normal save flow (the Save button and the leave prompt's Save both run it, via
+  /// [guardedSave], which also makes a second request join an in-flight one). Saves in place: the
+  /// editor stays open. Resolves true only when the pattern was written.
+  @override
+  Future<bool> performSave() async {
+    // Capture ONCE: this exact instance is what gets written AND what becomes the saved baseline, so
+    // an edit landing during the write's async gap still reads as unsaved afterwards.
     final pattern = ref.read(knitEditorProvider).pattern;
     if (pattern.chart.width == 0 || pattern.chart.rows.isEmpty) {
       _snack('Add some rows and stitches before saving.');
-      return;
+      return false;
     }
     var name = _name;
     if (_id == null) {
@@ -119,17 +133,20 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
         initial: name,
         fieldLabel: 'Pattern name',
       );
-      if (entered == null) return; // cancelled or left blank
+      if (entered == null) return false; // cancelled or left blank
       name = entered;
     }
-    if (!mounted) return; // the name dialog is an async gap
+    if (!mounted) return false; // the name dialog is an async gap
     setState(() => _saving = true);
     try {
       final repo = ref.read(knitRepositoryProvider);
       final now = DateTime.now();
       final meta = DraftMeta(name: name, craft: 'Knitting', savedAt: _savedAt ?? now, lastOpened: now);
       final id = await repo.saveKnit(pattern: pattern, meta: meta, id: _id);
-      if (!mounted) return;
+      // Written. If the editor was discarded while the write was in flight, stop here: `ref` is
+      // unusable once disposed, and the next session's load resets the baseline anyway.
+      if (!mounted) return true;
+      ref.read(knitEditorProvider.notifier).markSaved(pattern);
       setState(() {
         _id = id;
         _name = name;
@@ -137,10 +154,12 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
         _saving = false;
       });
       _snack('Saved to your knit patterns.');
+      return true;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _saving = false);
       _snack('Could not save: $e');
+      return false;
     }
   }
 
@@ -177,7 +196,13 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
     final canRedo = ref.watch(knitEditorProvider.select((s) => s.canRedo));
     final select = ref.watch(knitToolProvider) == KnitTool.select;
     final selection = ref.watch(knitSelectionProvider);
-    return Scaffold(
+    // Dirty-on-exit guard: canPop=false routes the back button / system back through the leave
+    // prompt. Selecting the bool keeps the rebuild to when it flips, not every paint.
+    final edited = ref.watch(knitEditorProvider.select((s) => s.isDirty));
+    return PopScope<Object?>(
+      canPop: _loading || _error != null || !edited,
+      onPopInvokedWithResult: onLeaveRequested,
+      child: Scaffold(
       appBar: AppBar(
         title: Text(_name),
         actions: [
@@ -206,7 +231,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
                 ? const SizedBox(
                     width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.save_outlined),
-            onPressed: _saving ? null : _save,
+            onPressed: _saving ? null : guardedSave,
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -287,6 +312,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen> {
         ],
       ),
       body: _buildBody(),
+      ),
     );
   }
 

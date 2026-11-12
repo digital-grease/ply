@@ -14,12 +14,10 @@ import '../widgets/draft_layout.dart';
 import '../widgets/integrated_draft_view.dart';
 import '../widgets/loom_type_picker.dart';
 import '../widgets/save_draft_dialog.dart';
+import '../widgets/unsaved_changes_guard.dart';
 import '../widgets/validation_panel.dart';
 import '../widgets/woven_preview.dart';
 import 'layer_inspector_screen.dart';
-
-/// What the user chose when leaving the editor with unsaved edits (see `_confirmLeave`).
-enum _LeaveAction { keepEditing, discard, save }
 
 /// The less-frequent AppBar actions tucked into the overflow (⋮) menu. The two `toggle*` entries
 /// are view-chrome switches (gridlines / long-float highlight) rather than one-shot actions.
@@ -302,14 +300,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     if (_leaving) return;
     _leaving = true;
     try {
-      final action = await _confirmLeave() ?? _LeaveAction.keepEditing;
+      final action = await _confirmLeave() ?? LeaveAction.keepEditing;
       if (!mounted) return;
       switch (action) {
-        case _LeaveAction.discard:
+        case LeaveAction.discard:
           _popEditor(); // single-pop latched; no result -> callers see "nothing saved"
-        case _LeaveAction.save:
+        case LeaveAction.save:
           await _save(); // pops true on success; a gated/cancelled save just leaves us here
-        case _LeaveAction.keepEditing:
+        case LeaveAction.keepEditing:
           break;
       }
     } finally {
@@ -331,35 +329,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     navigator.pop(result);
   }
 
-  /// Ask what to do about unsaved edits when leaving. Returns null if the dialog is dismissed.
-  Future<_LeaveAction?> _confirmLeave() {
-    return showDialog<_LeaveAction>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Leave without saving?'),
-        content: const Text("Your edits to this pattern haven't been saved. Discard will lose them."),
-        // Order matters: the destructive Discard is LEFTMOST, separated from the rightmost primary
-        // Save by the safe Keep editing, so a mis-tap toward the primary never lands on data loss.
-        actions: [
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(ctx, _LeaveAction.discard),
-            child: const Text('Discard'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, _LeaveAction.keepEditing),
-            child: const Text('Keep editing'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, _LeaveAction.save),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
+  /// Ask what to do about unsaved edits when leaving. Returns null if the dialog is dismissed. The
+  /// dialog itself is shared with the knit and nalbind editors (`unsaved_changes_guard.dart`).
+  Future<LeaveAction?> _confirmLeave() => showLeaveWithoutSavingDialog(context);
 
   /// Confirm a lossy re-serialize. Returns true to proceed, false/null to cancel.
   Future<bool?> _confirmLossySave() {

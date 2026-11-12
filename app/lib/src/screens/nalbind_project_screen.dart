@@ -6,6 +6,7 @@ import '../state/nalbind_providers.dart';
 import '../rust/nalbind_dto.dart';
 import '../widgets/nalbind_diagram_view.dart';
 import '../widgets/project_photos.dart';
+import '../widgets/unsaved_changes_guard.dart';
 
 /// The nalbinding PROJECT editor (M6 write path): name the project, pick a stitch (tap a builtin chip
 /// or type a Hansen string), and keep free-text working notes — the way the craft is shared, since
@@ -20,15 +21,24 @@ class NalbindProjectScreen extends ConsumerStatefulWidget {
   ConsumerState<NalbindProjectScreen> createState() => _NalbindProjectScreenState();
 }
 
-class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen> {
+class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
+    with UnsavedChangesGuard<NalbindProjectScreen> {
   final _name = TextEditingController();
   final _notation = TextEditingController();
   final _notes = TextEditingController();
+
+  /// Fires on any edit to the three text fields, so the PopScope's canPop tracks typing without
+  /// rebuilding the whole form per keystroke.
+  late final Listenable _fields = Listenable.merge([_name, _notation, _notes]);
 
   String _stitchName = ''; // the chosen builtin's display name, '' once the notation is hand-edited
   String? _id;
   bool _loading = true;
   bool _saving = false;
+
+  /// The project as the form held it right after opening (or after the last successful save), in
+  /// the same normalized form [_compose] builds. Null until loading finishes.
+  NalbindProject? _baseline;
 
   int _seq = 0;
   DiagramDto? _diagram;
@@ -43,7 +53,10 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen> {
 
   Future<void> _load() async {
     if (widget.openId == null) {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _baseline = _compose(); // a fresh, empty form has nothing unsaved
+      });
       return;
     }
     try {
@@ -55,14 +68,44 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen> {
       _notation.text = project.notation;
       _notes.text = project.notes;
       _stitchName = project.stitchName;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _baseline = _compose();
+      });
       _refreshDiagram(project.notation);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
-      _snack('Could not open the project: $e');
+      // The form stays empty; anything typed from here on still counts as unsaved. Forget the id so
+      // a Save creates a NEW project: saving this empty form under the old id would overwrite the
+      // project that failed to open, which may still be recoverable.
+      setState(() {
+        _id = null;
+        _loading = false;
+        _baseline = _compose();
+      });
+      _snack('Could not open the project: $e. Saving will create a new project and leave the '
+          'original file untouched.');
     }
   }
+
+  /// The project the form would save right now (the one normalization both [performSave] and the
+  /// dirty check use, so a difference the save would erase, like a trailing space on the name, is
+  /// never reported as unsaved).
+  NalbindProject _compose() => NalbindProject(
+        name: _name.text.trim().isEmpty ? 'Untitled' : _name.text.trim(),
+        notation: _notation.text.trim(),
+        stitchName: _stitchName,
+        notes: _notes.text,
+      );
+
+  /// Dirty-on-exit guard input (see [UnsavedChangesGuard]): the form differs from what it held when
+  /// opened or last saved. Value comparison, so typing a change and then undoing it by hand reads
+  /// clean again. Photos are NOT part of this: they are written to disk the moment they are added.
+  @override
+  bool get hasUnsavedChanges => !_loading && _baseline != null && _compose() != _baseline;
+
+  @override
+  String get unsavedChangesNoun => 'project';
 
   @override
   void dispose() {
@@ -108,25 +151,32 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen> {
     }
   }
 
-  Future<void> _save() async {
-    if (_saving) return;
+  /// The normal save flow (the Save button and the leave prompt's Save both run it, via
+  /// [guardedSave], which also makes a second request join an in-flight one). Resolves true only
+  /// when the project was written.
+  @override
+  Future<bool> performSave() async {
     setState(() => _saving = true);
+    // Capture the container BEFORE the await: the screen can be left (Discard) while the write is in
+    // flight, and `ref` throws once disposed, but the library list must still refresh.
+    final container = ProviderScope.containerOf(context, listen: false);
+    // Capture ONCE: this exact value is what gets written AND what becomes the clean baseline, so an
+    // edit typed during the write's async gap still reads as unsaved afterwards.
+    final project = _compose();
     try {
-      final repo = ref.read(nalbindRepositoryProvider);
-      final project = NalbindProject(
-        name: _name.text.trim().isEmpty ? 'Untitled' : _name.text.trim(),
-        notation: _notation.text.trim(),
-        stitchName: _stitchName,
-        notes: _notes.text,
-      );
-      final id = await repo.saveProject(project, id: _id);
-      ref.invalidate(nalbindProjectsProvider); // refresh the library list
-      if (!mounted) return;
+      final id = await container.read(nalbindRepositoryProvider).saveProject(project, id: _id);
+      container.invalidate(nalbindProjectsProvider); // refresh the library list
+      if (!mounted) return true;
       // Save in place (don't pop) so the Photos section can appear now that we have an id.
-      setState(() => _id = id);
+      setState(() {
+        _id = id;
+        _baseline = project;
+      });
       _snack('Saved.');
+      return true;
     } catch (e) {
       if (mounted) _snack('Could not save: $e');
+      return false;
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -137,14 +187,24 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen> {
     final text = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final builtins = ref.watch(nalbindBuiltinsProvider);
-    return Scaffold(
+    // Dirty-on-exit guard: canPop=false routes the back button / system back through the leave
+    // prompt. The ListenableBuilder re-evaluates canPop on every text edit but rebuilds only the
+    // PopScope (the form is its cached child); stitch-chip picks and loads rebuild via setState.
+    return ListenableBuilder(
+      listenable: _fields,
+      builder: (context, child) => PopScope<Object?>(
+        canPop: !hasUnsavedChanges,
+        onPopInvokedWithResult: onLeaveRequested,
+        child: child!,
+      ),
+      child: Scaffold(
       appBar: AppBar(
         title: Text(widget.openId == null ? 'New project' : 'Project'),
         actions: [
           IconButton(
             tooltip: 'Save',
             icon: const Icon(Icons.save_outlined),
-            onPressed: _saving ? null : _save,
+            onPressed: _saving ? null : guardedSave,
           ),
         ],
       ),
@@ -234,6 +294,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen> {
                       style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
               ],
             ),
+      ),
     );
   }
 }

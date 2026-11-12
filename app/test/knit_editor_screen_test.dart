@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/knit_repository.dart';
+import 'package:ply/src/models/draft_meta.dart';
+import 'package:ply/src/models/knit_entry.dart';
 import 'package:ply/src/models/knit_stitches.dart';
 import 'package:ply/src/rust/dto.dart' show SeverityKind, ColorDto, UnitKind;
 import 'package:ply/src/rust/knit_dto.dart';
@@ -15,7 +17,8 @@ import 'package:ply/src/state/knit_editor_state.dart';
 
 // Host coverage for the knit editor's inline validation band: it collapses to a worst-severity
 // summary, expands on tap to the full Errors-first list, and shows zero chrome when clean. A fake
-// repo stubs blank/render/validate so the screen builds without FFI.
+// repo stubs blank/render/validate so the screen builds without FFI. Also the dirty-on-exit guard
+// (Save / Discard / Keep editing on a back with unsaved edits), via a fake that stubs the save.
 
 class FakeEditorRepo extends KnitRepository {
   FakeEditorRepo({this.issues = const []});
@@ -61,6 +64,95 @@ KnitPatternDto _fourByFour() => KnitPatternDto(
       ),
       notes: '',
     );
+
+/// [FakeEditorRepo] plus the persistence calls the leave guard drives (no disk, no FFI).
+class FakeSavingRepo extends FakeEditorRepo {
+  int saveCount = 0;
+  KnitPatternDto? savedPattern;
+  DraftMeta? savedMeta;
+  String? savedId;
+
+  /// When set, saveKnit suspends on this until completed (holds one save in flight).
+  Completer<void>? saveGate;
+
+  /// When true, saveKnit throws (a failed write).
+  bool saveError = false;
+
+  @override
+  Future<String> saveKnit({
+    required KnitPatternDto pattern,
+    required DraftMeta meta,
+    String? id,
+  }) async {
+    saveCount++;
+    if (saveGate != null) await saveGate!.future;
+    if (saveError) throw Exception('disk full');
+    savedPattern = pattern;
+    savedMeta = meta;
+    savedId = id;
+    return id ?? 'new-id';
+  }
+
+  @override
+  Future<KnitPatternDto> readPattern(String id) async => _fourByFour();
+
+  @override
+  Future<KnitEntry> openKnit(String id) async => KnitEntry(
+        id: id,
+        meta: DraftMeta(
+          name: 'Saved hat',
+          craft: 'Knitting',
+          savedAt: DateTime.utc(2020),
+          lastOpened: DateTime.utc(2020),
+        ),
+        patternPath: '/tmp/$id.plyknit',
+      );
+}
+
+/// Pumps a host that PUSHES the editor (so a back has somewhere to go), mirroring the library's
+/// `push<void>`. [openId] opens a saved pattern (no naming step on save); null starts a new one.
+Future<ProviderContainer> pumpHostedEditor(WidgetTester tester, FakeSavingRepo repo,
+    {String? openId}) async {
+  final c = ProviderContainer(overrides: [knitRepositoryProvider.overrideWithValue(repo)]);
+  addTearDown(c.dispose);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: c,
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => KnitEditorScreen(openId: openId)),
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('open'));
+  await tester.pumpAndSettle();
+  expect(find.byType(KnitEditorScreen), findsOneWidget);
+  return c;
+}
+
+/// Paint one cell (a real edit: a new pattern instance on the undo stack).
+void editChart(ProviderContainer c, {int row = 0, int col = 0}) =>
+    c.read(knitEditorProvider.notifier).paintCell(row, col, KnitStitch.purl, null);
+
+/// Bounded pumps for when a save is held in flight (its spinner never settles).
+Future<void> pumpFrames(WidgetTester tester) async {
+  await tester.pump();
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 30));
+  }
+}
+
+const _leaveTitle = 'Leave without saving?';
 
 Future<ProviderContainer> pumpEditor(WidgetTester tester, FakeEditorRepo repo) async {
   final c = ProviderContainer(overrides: [knitRepositoryProvider.overrideWithValue(repo)]);
@@ -248,5 +340,281 @@ void main() {
     await tester.pump();
     expect(c.read(activeKnitStitchProvider), KnitStitch.purl);
     expect(c.read(activeKnitColorProvider), knitColorKeep);
+  });
+  group('dirty-on-exit guard', () {
+    testWidgets('an untouched NEW pattern pops straight back with no prompt', (tester) async {
+      final repo = FakeSavingRepo();
+      await pumpHostedEditor(tester, repo);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(_leaveTitle), findsNothing);
+      expect(find.byType(KnitEditorScreen), findsNothing, reason: 'a clean back exits immediately');
+      expect(repo.saveCount, 0);
+    });
+
+    testWidgets('an opened pattern left untouched pops with no prompt', (tester) async {
+      final repo = FakeSavingRepo();
+      await pumpHostedEditor(tester, repo, openId: 'k1');
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(_leaveTitle), findsNothing);
+      expect(find.byType(KnitEditorScreen), findsNothing);
+    });
+
+    testWidgets('undoing every edit back to the saved state reads clean', (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      editChart(c, row: 1, col: 1);
+      await tester.pump();
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.tap(find.byTooltip('Undo'));
+      await tester.pumpAndSettle();
+      expect(c.read(knitEditorProvider).isDirty, isFalse);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(_leaveTitle), findsNothing);
+      expect(find.byType(KnitEditorScreen), findsNothing);
+    });
+
+    testWidgets('back with edits prompts; Keep editing stays with the edit intact', (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo);
+      editChart(c);
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(_leaveTitle), findsOneWidget);
+      expect(find.textContaining("this pattern haven't been saved"), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(TextButton, 'Keep editing'));
+      await tester.pumpAndSettle();
+      expect(find.byType(KnitEditorScreen), findsOneWidget, reason: 'still editing');
+      expect(c.read(knitEditorProvider).pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl);
+      expect(repo.saveCount, 0);
+    });
+
+    testWidgets('Discard leaves without saving', (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Discard'));
+      await tester.pumpAndSettle();
+      expect(find.byType(KnitEditorScreen), findsNothing, reason: 'discard exits');
+      expect(find.text('open'), findsOneWidget, reason: 'exactly one pop: the host survives');
+      expect(repo.saveCount, 0, reason: 'nothing persisted on discard');
+    });
+
+    testWidgets('Save on a NEW pattern runs the naming step, saves, then leaves', (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo);
+      editChart(c);
+      await tester.pump();
+      final edited = c.read(knitEditorProvider).pattern;
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Name this pattern'), findsOneWidget, reason: 'the normal save flow names it');
+      await tester.enterText(find.widgetWithText(TextField, 'Pattern name'), 'Cabled hat');
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 1);
+      expect(repo.savedMeta!.name, 'Cabled hat');
+      expect(identical(repo.savedPattern, edited), isTrue, reason: 'the edited chart is what saved');
+      expect(find.byType(KnitEditorScreen), findsNothing, reason: 'a successful save exits');
+      expect(find.text('open'), findsOneWidget);
+    });
+
+    testWidgets('cancelling the naming step from the leave prompt stays (nothing saved)',
+        (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo);
+      editChart(c);
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(KnitEditorScreen), findsOneWidget);
+      expect(repo.saveCount, 0);
+      expect(c.read(knitEditorProvider).isDirty, isTrue, reason: 'the edit is still there');
+    });
+
+    testWidgets('Save on an opened pattern saves in place (no naming), then leaves', (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Name this pattern'), findsNothing);
+      expect(repo.saveCount, 1);
+      expect(repo.savedId, 'k1', reason: 'overwrites the opened pattern');
+      expect(repo.savedMeta!.name, 'Saved hat');
+      expect(find.byType(KnitEditorScreen), findsNothing);
+    });
+
+    testWidgets('a failed save stays on screen, keeps the edits, and still guards the back',
+        (tester) async {
+      final repo = FakeSavingRepo()..saveError = true;
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 1);
+      expect(find.byType(KnitEditorScreen), findsOneWidget, reason: 'a failed save never leaves');
+      expect(find.textContaining('Could not save'), findsOneWidget);
+      expect(c.read(knitEditorProvider).isDirty, isTrue);
+
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(_leaveTitle), findsOneWidget, reason: 'still unsaved, so still guarded');
+    });
+
+    testWidgets('an empty chart refused by Save keeps the editor open', (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      c.read(knitEditorProvider.notifier).resizeChart(0, 0); // dirty, but unsaveable
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Add some rows and stitches'), findsOneWidget);
+      expect(find.byType(KnitEditorScreen), findsOneWidget);
+      expect(repo.saveCount, 0);
+    });
+
+    testWidgets('an AppBar Save makes the editor clean; a later edit guards again', (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+      await tester.tap(find.byTooltip('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 1);
+      expect(find.byType(KnitEditorScreen), findsOneWidget, reason: 'the knit editor saves in place');
+      expect(c.read(knitEditorProvider).isDirty, isFalse);
+
+      editChart(c, row: 2, col: 2);
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(_leaveTitle), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Keep editing'));
+      await tester.pumpAndSettle();
+
+      // Undo the post-save edit: back at the SAVED pattern, which reads clean.
+      c.read(knitEditorProvider.notifier).undo();
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(_leaveTitle), findsNothing);
+      expect(find.byType(KnitEditorScreen), findsNothing);
+    });
+
+    testWidgets('AppBar Save in flight + back -> Discard pops exactly once', (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+
+      repo.saveGate = Completer<void>(); // park the write
+      await tester.tap(find.byTooltip('Save'));
+      await tester.pump();
+      expect(repo.saveCount, 1);
+
+      await tester.tap(find.byType(BackButton));
+      await pumpFrames(tester);
+      expect(find.text(_leaveTitle), findsOneWidget, reason: 'a back mid-save still offers the choice');
+
+      await tester.tap(find.widgetWithText(TextButton, 'Discard'));
+      await tester.pump(); // the discard pop begins its exit transition
+      repo.saveGate!.complete(); // the parked save resumes mid-transition
+      await tester.pumpAndSettle();
+
+      expect(find.byType(KnitEditorScreen), findsNothing, reason: 'discarded');
+      expect(find.text('open'), findsOneWidget, reason: 'the host route survives (no second pop)');
+      expect(repo.saveCount, 1, reason: 'the save the user had already started is not repeated');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('AppBar Save in flight + back -> Save joins that save (one write), then leaves',
+        (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+
+      repo.saveGate = Completer<void>();
+      await tester.tap(find.byTooltip('Save'));
+      await tester.pump();
+      await tester.tap(find.byType(BackButton));
+      await pumpFrames(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await pumpFrames(tester);
+      expect(find.byType(KnitEditorScreen), findsOneWidget, reason: 'waits for the save to land');
+
+      repo.saveGate!.complete();
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 1, reason: 'joined the in-flight save, no second write');
+      expect(find.byType(KnitEditorScreen), findsNothing, reason: 'left once the save succeeded');
+      expect(find.text('open'), findsOneWidget);
+    });
+
+    testWidgets("a second back during the leave prompt's own save is dropped", (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+
+      repo.saveGate = Completer<void>();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await pumpFrames(tester); // the write is parked; no dialog is on screen now
+      await tester.tap(find.byType(BackButton));
+      await pumpFrames(tester);
+      expect(find.text(_leaveTitle), findsNothing, reason: 'no second prompt stacked');
+
+      repo.saveGate!.complete();
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 1);
+      expect(find.byType(KnitEditorScreen), findsNothing);
+      expect(find.text('open'), findsOneWidget, reason: 'one pop only');
+    });
+
+    testWidgets("an edit landing during the leave prompt's save keeps the editor open",
+        (tester) async {
+      final repo = FakeSavingRepo();
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+
+      repo.saveGate = Completer<void>();
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await pumpFrames(tester);
+      editChart(c, row: 3, col: 3); // lands while the write is in flight
+      repo.saveGate!.complete();
+      await tester.pumpAndSettle();
+
+      expect(repo.saveCount, 1);
+      expect(find.byType(KnitEditorScreen), findsOneWidget,
+          reason: 'the newer edit was not in that save, so leaving would drop it');
+      expect(c.read(knitEditorProvider).isDirty, isTrue);
+    });
   });
 }

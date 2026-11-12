@@ -2,15 +2,25 @@ import '../models/knit_stitches.dart';
 import '../rust/dto.dart' show ColorDto, UnitKind; // shared with the weave bridge
 import '../rust/knit_dto.dart';
 
-/// Immutable editor state: the open knitting [pattern] plus a bounded undo/redo history. Every edit
-/// returns a NEW state (the generated DTOs are final-field/immutable, so an edit reconstructs the
-/// changed path). The notifier just swaps `state`; all the logic lives here so it is pure-testable.
+/// Immutable editor state: the open knitting [pattern] plus a bounded undo/redo history and the
+/// [saved] baseline the dirty check compares against. Every edit returns a NEW state (the generated
+/// DTOs are final-field/immutable, so an edit reconstructs the changed path). The notifier just swaps
+/// `state`; all the logic lives here so it is pure-testable.
 class KnitEditorState {
-  const KnitEditorState({required this.pattern, this.undo = const [], this.redo = const []});
+  const KnitEditorState({
+    required this.pattern,
+    this.undo = const [],
+    this.redo = const [],
+    this.saved,
+  });
 
   final KnitPatternDto pattern;
   final List<KnitPatternDto> undo;
   final List<KnitPatternDto> redo;
+
+  /// The pattern exactly as last loaded or saved (the "nothing to lose" baseline), or null before
+  /// the editor has loaded anything. Carried unchanged through every edit, undo, and redo.
+  final KnitPatternDto? saved;
 
   static const int _maxUndo = 100;
 
@@ -31,11 +41,23 @@ class KnitEditorState {
   bool get canUndo => undo.isNotEmpty;
   bool get canRedo => redo.isNotEmpty;
 
+  /// Whether [pattern] has unsaved edits. IDENTITY, not deep equality: every real edit builds a NEW
+  /// pattern instance (a no-op edit returns the same one), and undo/redo restore the exact instances
+  /// they stacked, so undoing back to the saved pattern reads clean again. An edit reverted by hand
+  /// (paint a cell, paint it back) is a new instance and reads dirty, which is the safe direction.
+  bool get isDirty => saved != null && !identical(pattern, saved);
+
+  /// Record [persisted] as the saved baseline (the save path passes the EXACT instance it wrote, so
+  /// an edit made while the write was in flight still reads dirty). History is untouched.
+  KnitEditorState markSaved(KnitPatternDto persisted) => identical(persisted, saved)
+      ? this
+      : KnitEditorState(pattern: pattern, undo: undo, redo: redo, saved: persisted);
+
   KnitEditorState _commit(KnitPatternDto next) {
     if (identical(next, pattern)) return this; // a no-op edit returns the same instance
     final u = [...undo, pattern];
     final trimmed = u.length > _maxUndo ? u.sublist(u.length - _maxUndo) : u;
-    return KnitEditorState(pattern: next, undo: trimmed, redo: const []);
+    return KnitEditorState(pattern: next, undo: trimmed, redo: const [], saved: saved);
   }
 
   /// Paint cell ([row], [col]) with the brush [stitch] (a legend id) and an optional colorwork
@@ -172,6 +194,7 @@ class KnitEditorState {
       pattern: undo.last,
       undo: undo.sublist(0, undo.length - 1),
       redo: [...redo, pattern],
+      saved: saved,
     );
   }
 
@@ -181,6 +204,7 @@ class KnitEditorState {
       pattern: redo.last,
       undo: [...undo, pattern],
       redo: redo.sublist(0, redo.length - 1),
+      saved: saved,
     );
   }
 }
