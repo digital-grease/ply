@@ -12,6 +12,7 @@ import 'package:uuid/uuid.dart';
 import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
+import '../models/drawdown_region.dart';
 import '../models/shadow_weave_params.dart';
 import '../rust/api.dart';
 import '../rust/dto.dart';
@@ -97,6 +98,50 @@ class DraftRepository {
         : null;
     final preview =
         await renderPreviewDto(dto: toDto(doc), cellPx: cellPx, options: options);
+    return _decodePreview(preview);
+  }
+
+  /// Render one [region] of [doc]'s drawdown to a decoded [ui.Image] at (up to) [cellPx] pixels per
+  /// intersection: the editor's viewport path for a draft too large to render whole on every edit.
+  /// Cells are uniform (per-thread thickness ignored, like the structural editor) and the image is
+  /// exactly the matching crop of the whole render: the region's highest end at the left, its first
+  /// pick at the top. The engine computes only the region (plus a small margin for the float tint),
+  /// so its cost follows the region, not the draft. Over the device budget the pitch drops to what
+  /// fits (scale the image to the region's cells); a region with too many intersections throws a
+  /// [RenderFailure] of kind `tooLarge`, an empty or out-of-draft region one of kind `invalidRegion`.
+  /// The overlay flags are as for [renderDto].
+  Future<ui.Image> renderRegion(
+    DraftDoc doc,
+    DrawdownRegion region, {
+    required int cellPx,
+    bool gridlines = false,
+    int floatThreshold = 0,
+    bool threadTexture = false,
+  }) async {
+    for (final (name, v) in [
+      ('endStart', region.endStart),
+      ('endCount', region.endCount),
+      ('pickStart', region.pickStart),
+      ('pickCount', region.pickCount),
+      ('cellPx', cellPx),
+    ]) {
+      if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, name);
+    }
+    final options = (gridlines || floatThreshold > 0 || threadTexture)
+        ? RenderOptionsDto(
+            gridlines: gridlines, floatThreshold: floatThreshold, threadTexture: threadTexture)
+        : null;
+    final preview = await renderRegionDto(
+      dto: toDto(doc),
+      region: DrawdownRegionDto(
+        endStart: region.endStart,
+        endCount: region.endCount,
+        pickStart: region.pickStart,
+        pickCount: region.pickCount,
+      ),
+      cellPx: cellPx,
+      options: options,
+    );
     return _decodePreview(preview);
   }
 
@@ -852,7 +897,19 @@ String previewErrorMessage(Object error) {
       RenderFailureKind.tooLarge => 'This draft is too large to preview on this device.',
       RenderFailureKind.outOfMemory => 'There was not enough memory to draw this preview.',
       RenderFailureKind.invalidDraft => 'This draft could not be drawn.',
+      RenderFailureKind.invalidRegion => 'This part of the draft could not be drawn.',
     };
   }
   return '$error';
+}
+
+/// A user-facing sentence for a failed VIEWPORT render (the editor's region path for a large
+/// draft). The draft itself is never too large there, only the part in view: too many intersections
+/// fit on screen at the current zoom, so the fix is to zoom in. Other failures read as in
+/// [previewErrorMessage].
+String regionPreviewErrorMessage(Object error) {
+  if (error is RenderFailure && error.kind == RenderFailureKind.tooLarge) {
+    return 'Too much of this draft is in view to draw at once. Zoom in to see the cloth.';
+  }
+  return previewErrorMessage(error);
 }

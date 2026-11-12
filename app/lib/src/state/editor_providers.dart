@@ -2,6 +2,7 @@
 // repository and the live drawdown image.
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/draft_repository.dart';
 import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
+import '../models/drawdown_region.dart';
 import '../models/loom_type.dart';
 import 'draft_editor_notifier.dart';
 
@@ -186,7 +188,8 @@ abstract class DrawdownRenderController extends AutoDisposeAsyncNotifier<ui.Imag
 /// The editor's live STRUCTURAL drawdown for the draft held by [draftEditorProvider]: the
 /// [structuralDraft] (uniform cells, thickness ignored) with the editor's view overlays. Re-renders
 /// on every edit (the engine recompute is microseconds) and decodes the RGBA buffer to a [ui.Image].
-/// Latest-wins; see [DrawdownRenderController].
+/// Latest-wins; see [DrawdownRenderController]. Only for drafts up to [kWholeRenderMaxCells]
+/// intersections; a larger draft's editor renders a viewport at a time ([regionPreviewProvider]).
 final previewProvider =
     AutoDisposeAsyncNotifierProvider<PreviewController, ui.Image>(PreviewController.new);
 
@@ -225,6 +228,167 @@ class WovenPreviewController extends DrawdownRenderController {
     final repo = ref.watch(repositoryProvider);
     final draft = ref.watch(draftEditorProvider.select((s) => s.draft));
     return repo.renderDto(draft, cellPx: previewCellPx, threadTexture: true);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Viewport (region) rendering for LARGE drafts (M7-01). See ADR 0005.
+// ---------------------------------------------------------------------------
+
+/// The largest draft (in warp/weft intersections) whose drawdown the editor still renders WHOLE on
+/// every edit ([previewProvider]). At this size the whole bitmap is already at the engine's 64 MiB
+/// raster budget, which it reaches by dropping to 8 px per cell (it renders at [previewCellPx] up to
+/// about 116,000 intersections), so every edit costs a budget-sized render, copy and decode. Above
+/// it the drawdown renders only the cells in view ([regionPreviewProvider]), a raster about the size
+/// of the screen however large the draft, which also makes drafts past the engine's 4 million
+/// intersection whole-render budget viewable and editable. Small drafts keep the whole bitmap, which
+/// pans and zooms without re-rendering.
+const int kWholeRenderMaxCells = 250000;
+
+/// Whether an [ends] x [picks] draft's editor drawdown renders a viewport at a time.
+bool usesRegionRender(int ends, int picks) => ends * picks > kWholeRenderMaxCells;
+
+/// The intersections a viewport request aims to stay under once it adds its overscan margin; past
+/// this it asks for just the cells in view. (The engine's own budget, 4 million, is the hard limit;
+/// past THAT the view says to zoom in.)
+const int kRegionOverscanMaxCells = 1000000;
+
+/// Below this engine pitch a viewport render leaves out the gridlines and the thread texture: a 1 px
+/// seam on a 2 or 3 px cell would cover a third to half of the cloth (the bridge applies the same
+/// rule to a render it had to fit down).
+const int kMinOverlayCellPx = 4;
+
+/// The largest engine pitch a viewport render asks for (the bridge fits it down further when the
+/// region's raster would pass the device budget).
+const int kMaxRegionCellPx = 256;
+
+/// How long a viewport render waits after the view stops moving before it starts, so a pan or pinch
+/// renders once where it settles instead of once per frame. Edits and overlay toggles in a still
+/// view render at once.
+const Duration kRegionDebounce = Duration(milliseconds: 60);
+
+/// What the drawdown viewport wants drawn: [region] of the drawdown at [cellPx] ENGINE pixels per
+/// intersection (the on-screen pitch in physical pixels, so the bitmap is crisp).
+class DrawdownViewRequest {
+  const DrawdownViewRequest({required this.region, required this.cellPx});
+
+  final DrawdownRegion region;
+  final int cellPx;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DrawdownViewRequest && region == other.region && cellPx == other.cellPx;
+
+  @override
+  int get hashCode => Object.hash(region, cellPx);
+
+  @override
+  String toString() => 'DrawdownViewRequest($region at $cellPx px)';
+}
+
+/// The engine pitch for a viewport render at an on-screen pitch of [cell] logical px: that many
+/// PHYSICAL pixels, so the bitmap maps about 1:1 onto the screen.
+int regionCellPx(double cell, double devicePixelRatio) =>
+    (cell * devicePixelRatio).round().clamp(1, kMaxRegionCellPx);
+
+/// The viewport request for a view showing [visible] cells of an [ends] x [picks] drawdown at
+/// [cellPx], given the [previous] request. Keeps [previous] while it still covers everything in view
+/// at the same pitch (so a pan inside the margin renders nothing); otherwise asks for the visible
+/// cells grown by a quarter of the visible span on each side (at least 2 cells, so a deep zoom does
+/// not ask for a raster far bigger than the screen), clipped to the draft, or just the visible cells
+/// when that margin would pass [maxCells]. Pure.
+DrawdownViewRequest regionRequestFor({
+  required DrawdownRegion visible,
+  required int ends,
+  required int picks,
+  required int cellPx,
+  DrawdownViewRequest? previous,
+  int maxCells = kRegionOverscanMaxCells,
+}) {
+  if (previous != null && previous.cellPx == cellPx) {
+    final kept = previous.region.clippedTo(ends, picks);
+    if (kept != null && kept.covers(visible)) return previous;
+  }
+  final grown = visible.grown(
+    ends: math.max(2, visible.endCount ~/ 4),
+    picks: math.max(2, visible.pickCount ~/ 4),
+    totalEnds: ends,
+    totalPicks: picks,
+  );
+  return DrawdownViewRequest(region: grown.cells > maxCells ? visible : grown, cellPx: cellPx);
+}
+
+/// The drawdown viewport's current request, written by the integrated view as it scrolls, zooms and
+/// resizes (only while the open draft [usesRegionRender]). Null until the view has laid out.
+/// Auto-dispose: it lives only while a region render watches it, so a stale request never outlives
+/// the view or carries over to the next draft.
+final drawdownViewRequestProvider =
+    StateProvider.autoDispose<DrawdownViewRequest?>((ref) => null);
+
+/// One rendered piece of the drawdown: [image] shows exactly [region]'s cells (highest end at the
+/// left, first pick at the top), to be stretched over that region's cells.
+class DrawdownTile {
+  const DrawdownTile({required this.region, required this.image});
+
+  final DrawdownRegion region;
+  final ui.Image image;
+}
+
+/// The VIEWPORT drawdown for a large draft held by [draftEditorProvider]: just the cells the view
+/// requests ([drawdownViewRequestProvider]), rendered from the [structuralDraft] with the editor's
+/// overlays. A request that changed (the view moved) waits [kRegionDebounce] first; an edit or an
+/// overlay toggle in a still view renders at once. Latest-wins like [DrawdownRenderController]: a
+/// superseded or orphaned frame is freed and never resolves. Stays loading until the view has
+/// written a request.
+final regionPreviewProvider =
+    AutoDisposeAsyncNotifierProvider<RegionPreviewController, DrawdownTile>(
+        RegionPreviewController.new);
+
+class RegionPreviewController extends AutoDisposeAsyncNotifier<DrawdownTile> {
+  /// Monotonic across rebuilds (the notifier instance is stable; only `build` re-runs).
+  int _seq = 0;
+
+  /// The request the most recent STARTED render drew, to tell a moved view (debounce) from an edit
+  /// in a still view (render at once).
+  DrawdownViewRequest? _started;
+
+  @override
+  Future<DrawdownTile> build() async {
+    final repo = ref.watch(repositoryProvider);
+    final draft = ref.watch(draftEditorProvider.select((s) => s.draft));
+    final request = ref.watch(drawdownViewRequestProvider);
+    final gridlines = ref.watch(showGridlinesProvider);
+    final highlightFloats = ref.watch(highlightFloatsProvider);
+    final threadTexture = ref.watch(showThreadTextureProvider);
+    final mySeq = ++_seq;
+    var disposed = false;
+    ref.onDispose(() => disposed = true);
+
+    // The draft can change size before the view writes its next request: draw what is left.
+    final region = request?.region.clippedTo(draft.ends, draft.picks);
+    if (request == null || region == null) return Completer<DrawdownTile>().future;
+    if (request != _started) {
+      await Future<void>.delayed(kRegionDebounce);
+      if (disposed || mySeq != _seq) return Completer<DrawdownTile>().future;
+    }
+    _started = request;
+
+    final fine = request.cellPx >= kMinOverlayCellPx;
+    final image = await repo.renderRegion(
+      structuralDraft(draft),
+      region,
+      cellPx: request.cellPx,
+      gridlines: gridlines && fine,
+      floatThreshold: highlightFloats ? kLongFloatThreshold : 0,
+      threadTexture: threadTexture && fine,
+    );
+    if (disposed || mySeq != _seq) {
+      // Torn down while rendering, or a newer request/edit superseded us: never shown, free it.
+      image.dispose();
+      return Completer<DrawdownTile>().future; // intentionally never completes
+    }
+    return DrawdownTile(region: region, image: image);
   }
 }
 

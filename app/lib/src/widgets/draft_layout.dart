@@ -46,8 +46,10 @@
 import 'dart:ui' show Offset, Rect, Size;
 
 import '../models/draft_region.dart';
+import '../models/drawdown_region.dart';
 
 export '../models/draft_region.dart' show DraftRegion, DraftHit;
+export '../models/drawdown_region.dart' show DrawdownRegion;
 
 /// Per-region cell<->pixel mapping in the region's OWN local space (origin = its top-left, the
 /// space a CustomPaint receives). [rectFor] (paint) and [cellAt] (hit-test) apply the IDENTICAL
@@ -381,6 +383,39 @@ class DraftLayout {
         rowBase: 0,
         bottomOrigin: false,
       );
+
+  /// Where [region] of the drawdown sits inside [drawdownRect] (in the drawdown's LOCAL space, the
+  /// space its Positioned child receives): end 1 is the rightmost column, so the region's highest end
+  /// is its left edge; pick 1 is the top row. A region bitmap from the engine (highest end left,
+  /// first pick top) stretched over exactly this rect lands every cell on its grid cell, the same
+  /// uniform scale the whole-draft bitmap uses over [drawdownRect].
+  Rect drawdownCellsRect(DrawdownRegion region) => Rect.fromLTWH(
+        (ends - region.endEnd) * cell,
+        region.pickStart * cell,
+        region.endCount * cell,
+        region.pickCount * cell,
+      );
+
+  /// The drawdown cells that [content] (a CANVAS-space rect, e.g. the visible viewport) touches, or
+  /// null when it misses the drawdown. Exact inverse of [drawdownCellsRect]: a cell counts when any
+  /// part of it is inside [content].
+  DrawdownRegion? drawdownCellsIn(Rect content) {
+    final hit = content.intersect(drawdownRect);
+    if (hit.width <= 0 || hit.height <= 0 || cell <= 0) return null;
+    final local = hit.shift(-drawdownRect.topLeft);
+    // Screen columns run left to right; end index = ends - 1 - column.
+    final colLo = (local.left / cell).floor().clamp(0, ends);
+    final colHi = (local.right / cell).ceil().clamp(0, ends);
+    final pickLo = (local.top / cell).floor().clamp(0, picks);
+    final pickHi = (local.bottom / cell).ceil().clamp(0, picks);
+    final r = DrawdownRegion.span(
+      endStart: ends - colHi,
+      endEnd: ends - colLo,
+      pickStart: pickLo,
+      pickEnd: pickHi,
+    );
+    return r.isEmpty ? null : r;
+  }
 
   RegionGeom geomOf(DraftRegion r) => switch (r) {
         DraftRegion.threading => threading,

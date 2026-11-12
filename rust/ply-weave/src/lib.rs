@@ -21,8 +21,9 @@ pub use draft::{
     Draft, Drive, Liftplan, ShaftId, ShedType, Threading, TieUp, TreadleId, Treadling,
 };
 pub use drawdown::{
-    compute, fit_cell_px, render_rgba, render_rgba_with, try_compute, try_render_rgba_with, Cell,
-    Drawdown, RenderError, RenderLimits, RenderOptions, RgbaImage,
+    compute, fit_cell_px, fit_region_cell_px, render_rgba, render_rgba_with, try_compute,
+    try_render_region, try_render_rgba_with, Cell, Drawdown, DrawdownRegion, RenderError,
+    RenderLimits, RenderOptions, RgbaImage,
 };
 pub use error::{Result, WeaveError};
 pub use wif::MAX_THREADS;

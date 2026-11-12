@@ -24,7 +24,7 @@ use ply_weave::shadow::{
     TwillDirection, WeftPhase,
 };
 use ply_weave::validate::{Severity, ValidationIssue};
-use ply_weave::{RenderError, RenderOptions};
+use ply_weave::{DrawdownRegion, RenderError, RenderOptions};
 
 /// An sRGB color. No alpha — the engine/WIF `Color` is RGB only.
 pub struct ColorDto {
@@ -315,10 +315,13 @@ pub enum RenderFailureKind {
     TooLarge,
     /// A buffer within budget could not be allocated.
     OutOfMemory,
+    /// A region render asked for an empty region or one that reaches past the draft.
+    InvalidRegion,
 }
 
-/// Why `render_preview_dto` produced no image. Thrown as an exception on the Dart side, so the UI
-/// can say "too large to preview" instead of showing a blank or a raw engine message.
+/// Why `render_preview_dto` or `render_region_dto` produced no image. Thrown as an exception on the
+/// Dart side, so the UI can say "too large to preview" instead of showing a blank or a raw engine
+/// message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderFailure {
     pub kind: RenderFailureKind,
@@ -333,10 +336,44 @@ impl From<RenderError> for RenderFailure {
             | RenderError::RasterTooLarge { .. }
             | RenderError::Overflow => RenderFailureKind::TooLarge,
             RenderError::AllocFailed { .. } => RenderFailureKind::OutOfMemory,
+            RenderError::InvalidRegion { .. } => RenderFailureKind::InvalidRegion,
         };
         RenderFailure {
             kind,
             message: e.to_string(),
+        }
+    }
+}
+
+/// A rectangle of the drawdown for a region (viewport) render: `end_count` warp ends from the
+/// 0-based end `end_start` (end 1 is `0`) by `pick_count` picks from the 0-based pick `pick_start`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DrawdownRegionDto {
+    pub end_start: u32,
+    pub end_count: u32,
+    pub pick_start: u32,
+    pub pick_count: u32,
+}
+
+impl TryFrom<DrawdownRegionDto> for DrawdownRegion {
+    type Error = RenderFailure;
+
+    /// The engine region, or an `InvalidRegion` failure when `start + count` overflows `usize`. An
+    /// empty or out-of-draft region converts and is refused by the render itself.
+    fn try_from(d: DrawdownRegionDto) -> Result<Self, RenderFailure> {
+        let span = |start: u32, count: u32| {
+            let start = usize::try_from(start).ok()?;
+            Some(start..start.checked_add(usize::try_from(count).ok()?)?)
+        };
+        match (
+            span(d.end_start, d.end_count),
+            span(d.pick_start, d.pick_count),
+        ) {
+            (Some(ends), Some(picks)) => Ok(DrawdownRegion::new(ends, picks)),
+            _ => Err(RenderFailure {
+                kind: RenderFailureKind::InvalidRegion,
+                message: format!("region {d:?} cannot be sized"),
+            }),
         }
     }
 }

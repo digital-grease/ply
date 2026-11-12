@@ -8,7 +8,8 @@
 //! Everything runs inside ONE `#[test]` so no other test thread perturbs the shared counter.
 
 use ply_weave::{
-    fit_cell_px, structure, try_render_rgba_with, wif, RenderError, RenderLimits, RenderOptions,
+    fit_cell_px, fit_region_cell_px, structure, try_render_region, try_render_rgba_with, wif,
+    DrawdownRegion, RenderError, RenderLimits, RenderOptions,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -94,4 +95,45 @@ fn render_budget_is_enforced_before_allocating() {
         bytes <= limits.max_raster_bytes + 2 * MIB,
         "fitted render allocated {bytes} bytes"
     );
+
+    // 4. Viewport rendering (M7-01, second slice): a phone-screen region of the crafted ten-billion-
+    //    intersection draft renders, and asks only for region-sized buffers: its raster, its faces
+    //    (plus the float margin), the 64 KiB shed lookup table, and per-thread extents. Nothing
+    //    scales with the whole draft. All overlays on, so every buffer the render can use is used.
+    let all_on = RenderOptions {
+        gridlines: true,
+        float_threshold: 5,
+        thread_texture: true,
+    };
+    for region in [
+        DrawdownRegion::new(50_000..50_064, 70_000..70_048), // the middle of the cloth
+        DrawdownRegion::new(99_936..100_000, 99_952..100_000), // the far corner
+        DrawdownRegion::new(0..64, 0..48),                   // end 1, pick 1
+    ] {
+        let (px, bytes) = measure(|| fit_region_cell_px(&huge, &region, 12, &limits));
+        assert_eq!(px, Ok(12));
+        assert!(bytes < 4 * KIB, "fitting a region allocated {bytes} bytes");
+        let raster = (64 * 12) * (48 * 12) * 4;
+        let (img, bytes) = measure(|| try_render_region(&huge, &region, 12, &all_on, &limits));
+        let img = img.expect("a viewport region of a huge draft renders");
+        assert_eq!((img.width, img.height), (64 * 12, 48 * 12));
+        assert_eq!(img.pixels.len(), raster);
+        assert!(
+            bytes <= raster + 256 * KIB,
+            "region {region:?} allocated {bytes} bytes for a {raster}-byte raster"
+        );
+    }
+
+    // 5. A region over the intersection budget is refused before allocating, like a whole draft.
+    let (r, bytes) = measure(|| {
+        try_render_region(
+            &huge,
+            &DrawdownRegion::new(0..3000, 0..3000),
+            1,
+            &opts,
+            &limits,
+        )
+    });
+    assert!(matches!(r, Err(RenderError::TooManyCells { .. })), "{r:?}");
+    assert!(bytes < 4 * KIB, "region refusal allocated {bytes} bytes");
 }

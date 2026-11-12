@@ -9,10 +9,16 @@
 //! checked arithmetic *before* allocating, and report a [`RenderError`] instead of allocating
 //! without bound or returning a silent blank. [`compute`], [`render_rgba`] and [`render_rgba_with`]
 //! remain as conveniences for trusted, test-sized drafts.
+//!
+//! **Regions.** A view that shows only part of a large draft renders just that part with
+//! [`try_render_region`]: uniform cells (the structural draft, thickness ignored), pixel-identical
+//! to the matching crop of a full uniform render, with the work bounded by the region rather than
+//! by the whole draft.
 
 use crate::draft::{ColorIndex, Draft};
 use ply_common::Color;
 use serde::{Deserialize, Serialize};
+use std::ops::Range;
 use thiserror::Error;
 
 /// What shows on the face of the cloth at one warp/weft intersection.
@@ -108,6 +114,82 @@ pub enum RenderError {
     /// The allocator refused a buffer that was within budget.
     #[error("could not allocate {bytes} bytes for the drawdown")]
     AllocFailed { bytes: usize },
+    /// A [`DrawdownRegion`] is empty or reaches past the draft.
+    #[error(
+        "region ends {end_start}..{end_end} by picks {pick_start}..{pick_end} is empty or outside \
+         the {ends} x {picks} draft"
+    )]
+    InvalidRegion {
+        end_start: usize,
+        end_end: usize,
+        pick_start: usize,
+        pick_end: usize,
+        ends: usize,
+        picks: usize,
+    },
+}
+
+/// A rectangle of the drawdown: the 0-based, half-open warp-end range `ends` by the 0-based,
+/// half-open pick range `picks` (end 0 is the end a weaver calls end 1, likewise for picks).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DrawdownRegion {
+    pub ends: Range<usize>,
+    pub picks: Range<usize>,
+}
+
+impl DrawdownRegion {
+    pub fn new(ends: Range<usize>, picks: Range<usize>) -> Self {
+        DrawdownRegion { ends, picks }
+    }
+
+    /// The whole drawdown of `draft`.
+    pub fn whole(draft: &Draft) -> Self {
+        DrawdownRegion::new(0..draft.ends(), 0..draft.picks())
+    }
+
+    /// Ends across the region (0 for an empty or reversed range).
+    pub fn width(&self) -> usize {
+        self.ends.len()
+    }
+
+    /// Picks down the region (0 for an empty or reversed range).
+    pub fn height(&self) -> usize {
+        self.picks.len()
+    }
+
+    /// The region's warp/weft intersections, or `None` if that overflows `usize`.
+    pub fn cells(&self) -> Option<usize> {
+        self.width().checked_mul(self.height())
+    }
+
+    /// `Ok` when the region is non-empty and lies inside `draft`.
+    fn check_within(&self, draft: &Draft) -> Result<(), RenderError> {
+        let (ends, picks) = (draft.ends(), draft.picks());
+        if self.ends.is_empty()
+            || self.picks.is_empty()
+            || self.ends.end > ends
+            || self.picks.end > picks
+        {
+            return Err(RenderError::InvalidRegion {
+                end_start: self.ends.start,
+                end_end: self.ends.end,
+                pick_start: self.picks.start,
+                pick_end: self.picks.end,
+                ends,
+                picks,
+            });
+        }
+        Ok(())
+    }
+
+    /// This region grown by `margin` on every side, clipped to an `ends` x `picks` draft.
+    fn grown(&self, margin: usize, ends: usize, picks: usize) -> DrawdownRegion {
+        DrawdownRegion::new(
+            self.ends.start.saturating_sub(margin)..self.ends.end.saturating_add(margin).min(ends),
+            self.picks.start.saturating_sub(margin)
+                ..self.picks.end.saturating_add(margin).min(picks),
+        )
+    }
 }
 
 /// Check the intersection budget; returns `(ends, picks, ends * picks)`.
@@ -136,19 +218,23 @@ fn try_vec<T>(n: usize) -> Result<Vec<T>, RenderError> {
     Ok(v)
 }
 
-/// Walk every intersection in pick-major order (the drawdown's own `[pick * ends + end]` layout),
-/// calling `visit(end, pick, warp_up)`. Shed direction comes only from [`Draft::raised_shafts`]. A
-/// per-pick lookup table makes "is one of this end's shafts raised?" an O(1) test, so a draft with
-/// many shafts (where a sinking shed raises nearly all of them) stays linear in its size.
-fn for_each_intersection(draft: &Draft, mut visit: impl FnMut(usize, usize, bool)) {
-    let ends = draft.ends();
+/// Walk the intersections of `region` in pick-major order (the drawdown's own `[pick * ends + end]`
+/// layout, restricted to the region), calling `visit(end, pick, warp_up)`. The region must lie
+/// inside the draft. Shed direction comes only from [`Draft::raised_shafts`]. A per-pick lookup
+/// table makes "is one of this end's shafts raised?" an O(1) test, so a draft with many shafts
+/// (where a sinking shed raises nearly all of them) stays linear in the region's size.
+fn for_each_intersection_in(
+    draft: &Draft,
+    region: &DrawdownRegion,
+    mut visit: impl FnMut(usize, usize, bool),
+) {
     let mut raised_table = vec![false; usize::from(u16::MAX) + 1];
-    for pick in 0..draft.picks() {
+    for pick in region.picks.clone() {
         let raised = draft.raised_shafts(pick);
         for s in &raised {
             raised_table[usize::from(s.0)] = true;
         }
-        for end in 0..ends {
+        for end in region.ends.clone() {
             let warp_up = draft.threading.0[end]
                 .iter()
                 .any(|s| raised_table[usize::from(s.0)]);
@@ -160,19 +246,47 @@ fn for_each_intersection(draft: &Draft, mut visit: impl FnMut(usize, usize, bool
     }
 }
 
+/// The face (warp up or not) of every intersection in a rectangle of the drawdown, one byte each,
+/// pick-major within the rectangle. The rectangle may be larger than the area being drawn (a region
+/// render adds a margin so floats crossing its edge are measured in full).
+struct Faces {
+    region: DrawdownRegion,
+    warp_up: Vec<bool>,
+}
+
+impl Faces {
+    /// Compute the faces of `region` (inside `draft`; its cell count already checked by the caller).
+    fn try_compute(draft: &Draft, region: DrawdownRegion) -> Result<Faces, RenderError> {
+        let n = region.cells().ok_or(RenderError::Overflow)?;
+        let mut warp_up = try_vec::<bool>(n)?;
+        for_each_intersection_in(draft, &region, |_, _, up| warp_up.push(up));
+        Ok(Faces { region, warp_up })
+    }
+
+    /// Index of the global intersection (`end`, `pick`) in [`Faces::warp_up`] (and in the float mask
+    /// computed from it).
+    fn index(&self, end: usize, pick: usize) -> usize {
+        (pick - self.region.picks.start) * self.region.width() + (end - self.region.ends.start)
+    }
+}
+
 /// Compute the drawdown for a draft, refusing drafts over `limits` before allocating.
 /// Deterministic; the heart of the engine.
 pub fn try_compute(draft: &Draft, limits: &RenderLimits) -> Result<Drawdown, RenderError> {
     let (ends, picks, n) = check_cells(draft, limits)?;
     let mut cells = try_vec::<Cell>(n)?;
     let (warp, weft) = (&draft.colors.warp, &draft.colors.weft);
-    for_each_intersection(draft, |end, pick, warp_up| {
-        cells.push(if warp_up {
-            Cell::WarpUp(warp.get(end).copied().unwrap_or(0))
-        } else {
-            Cell::WeftUp(weft.get(pick).copied().unwrap_or(0))
-        });
-    });
+    for_each_intersection_in(
+        draft,
+        &DrawdownRegion::whole(draft),
+        |end, pick, warp_up| {
+            cells.push(if warp_up {
+                Cell::WarpUp(warp.get(end).copied().unwrap_or(0))
+            } else {
+                Cell::WeftUp(weft.get(pick).copied().unwrap_or(0))
+            });
+        },
+    );
     Ok(Drawdown { ends, picks, cells })
 }
 
@@ -204,13 +318,36 @@ impl RgbaImage {
     }
 }
 
-/// Pixel geometry of one raster: per-thread extents plus the checked totals.
+/// Pixel geometry of one raster: per-thread extents of the drawn ends and picks (in the order they
+/// are drawn before the final turn) plus the checked totals.
 struct RasterLayout {
     col_w: Vec<usize>,
     row_h: Vec<usize>,
     width: usize,
     height: usize,
     bytes: usize,
+}
+
+/// The byte size of a `width` x `height` RGBA8 raster, checked against the byte and per-side
+/// budgets with checked arithmetic.
+fn check_raster(width: usize, height: usize, limits: &RenderLimits) -> Result<usize, RenderError> {
+    let bytes = width
+        .checked_mul(height)
+        .and_then(|wh| wh.checked_mul(4))
+        .ok_or(RenderError::Overflow)?;
+    if bytes > limits.max_raster_bytes
+        || width > limits.max_raster_side
+        || height > limits.max_raster_side
+    {
+        return Err(RenderError::RasterTooLarge {
+            width,
+            height,
+            bytes,
+            max_bytes: limits.max_raster_bytes,
+            max_side: limits.max_raster_side,
+        });
+    }
+    Ok(bytes)
 }
 
 /// Size the raster for `draft` at `cell_px`, checking the byte and per-side budgets with checked
@@ -229,22 +366,7 @@ fn raster_layout(
             .ok_or(RenderError::Overflow)
     };
     let (width, height) = (sum(&col_w)?, sum(&row_h)?);
-    let bytes = width
-        .checked_mul(height)
-        .and_then(|wh| wh.checked_mul(4))
-        .ok_or(RenderError::Overflow)?;
-    if bytes > limits.max_raster_bytes
-        || width > limits.max_raster_side
-        || height > limits.max_raster_side
-    {
-        return Err(RenderError::RasterTooLarge {
-            width,
-            height,
-            bytes,
-            max_bytes: limits.max_raster_bytes,
-            max_side: limits.max_raster_side,
-        });
-    }
+    let bytes = check_raster(width, height, limits)?;
     Ok(RasterLayout {
         col_w,
         row_h,
@@ -252,6 +374,61 @@ fn raster_layout(
         height,
         bytes,
     })
+}
+
+/// Size the UNIFORM raster of `region` at `cell_px` (every cell `cell_px` square, thickness
+/// ignored), checking the budgets before allocating the region-sized extents.
+fn region_layout(
+    region: &DrawdownRegion,
+    cell_px: u32,
+    limits: &RenderLimits,
+) -> Result<RasterLayout, RenderError> {
+    let base = cell_px.max(1) as usize;
+    let width = region
+        .width()
+        .checked_mul(base)
+        .ok_or(RenderError::Overflow)?;
+    let height = region
+        .height()
+        .checked_mul(base)
+        .ok_or(RenderError::Overflow)?;
+    let bytes = check_raster(width, height, limits)?;
+    let mut col_w = try_vec::<usize>(region.width())?;
+    col_w.resize(region.width(), base);
+    let mut row_h = try_vec::<usize>(region.height())?;
+    row_h.resize(region.height(), base);
+    Ok(RasterLayout {
+        col_w,
+        row_h,
+        width,
+        height,
+        bytes,
+    })
+}
+
+/// The largest pitch `<= max_cell_px` (and at least 1) that `fits`. `fits(1)`'s error is returned
+/// when even 1 px is over budget. Relies on the raster never shrinking as the pitch grows.
+fn largest_fitting_px(
+    max_cell_px: u32,
+    fits: impl Fn(u32) -> Result<(), RenderError>,
+) -> Result<u32, RenderError> {
+    let mut hi = max_cell_px.max(1);
+    if fits(hi).is_ok() {
+        return Ok(hi);
+    }
+    // Report the real reason when even the smallest pitch is over budget.
+    fits(1)?;
+    // Invariant: `lo` fits and `hi` does not.
+    let mut lo = 1;
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        if fits(mid).is_ok() {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(lo)
 }
 
 /// The largest pixel pitch `<= max_cell_px` (and at least 1) at which `draft` renders within
@@ -263,24 +440,52 @@ pub fn fit_cell_px(
     limits: &RenderLimits,
 ) -> Result<u32, RenderError> {
     check_cells(draft, limits)?;
-    let fits = |px: u32| raster_layout(draft, px, limits).is_ok();
-    let mut hi = max_cell_px.max(1);
-    if fits(hi) {
-        return Ok(hi);
+    largest_fitting_px(max_cell_px, |px| {
+        raster_layout(draft, px, limits).map(|_| ())
+    })
+}
+
+/// The largest pixel pitch `<= max_cell_px` (and at least 1) at which [`try_render_region`] can
+/// draw `region` of `draft` within the raster budget of `limits`. An error means the region is
+/// invalid, has more intersections than `limits` allows, or is too large even at 1 px per
+/// intersection. (The render itself also counts the float-highlight margin against the budget.)
+pub fn fit_region_cell_px(
+    draft: &Draft,
+    region: &DrawdownRegion,
+    max_cell_px: u32,
+    limits: &RenderLimits,
+) -> Result<u32, RenderError> {
+    region.check_within(draft)?;
+    check_region_cells(region, limits)?;
+    largest_fitting_px(max_cell_px, |px| {
+        let base = px as usize;
+        let width = region
+            .width()
+            .checked_mul(base)
+            .ok_or(RenderError::Overflow)?;
+        let height = region
+            .height()
+            .checked_mul(base)
+            .ok_or(RenderError::Overflow)?;
+        check_raster(width, height, limits).map(|_| ())
+    })
+}
+
+/// Check that `region` has at most `limits.max_cells` intersections.
+fn check_region_cells(
+    region: &DrawdownRegion,
+    limits: &RenderLimits,
+) -> Result<usize, RenderError> {
+    let cells = region.cells().ok_or(RenderError::Overflow)?;
+    if cells > limits.max_cells {
+        return Err(RenderError::TooManyCells {
+            ends: region.width(),
+            picks: region.height(),
+            cells,
+            limit: limits.max_cells,
+        });
     }
-    // Report the real reason when even the smallest pitch is over budget.
-    raster_layout(draft, 1, limits)?;
-    // Invariant: `lo` fits and `hi` does not. The raster never shrinks as the pitch grows.
-    let mut lo = 1;
-    while hi - lo > 1 {
-        let mid = lo + (hi - lo) / 2;
-        if fits(mid) {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    Ok(lo)
+    Ok(cells)
 }
 
 /// Per-thread pixel extents from relative thickness values.
@@ -370,37 +575,96 @@ pub fn try_render_rgba_with(
     opts: &RenderOptions,
     limits: &RenderLimits,
 ) -> Result<RgbaImage, RenderError> {
-    let (ends, picks, n) = check_cells(draft, limits)?;
+    let (_, _, n) = check_cells(draft, limits)?;
     if n == 0 {
         return Ok(RgbaImage::empty());
     }
+    let layout = raster_layout(draft, cell_px, limits)?;
+    // The face of every intersection, one byte each (the render needs no per-cell color copy).
+    let faces = Faces::try_compute(draft, DrawdownRegion::whole(draft))?;
+    paint_window(draft, &DrawdownRegion::whole(draft), &layout, &faces, opts)
+}
+
+/// Render one rectangle of the drawdown (see [`DrawdownRegion`]) to an RGBA8 buffer at `cell_px`
+/// pixels per intersection, for a view that shows only part of a large draft.
+///
+/// Cells are UNIFORM: every intersection is `cell_px` square and per-thread thickness is ignored,
+/// matching the structural draft editor. The pixels equal the matching crop of a full uniform render
+/// ([`try_render_rgba_with`] of the same draft with its thickness cleared) at the same pitch and
+/// options, in the conventional orientation: the region's highest end at the LEFT, its lowest end at
+/// the RIGHT, its first pick at the TOP. That crop starts at x = `(ends - region.ends.end) * cell_px`,
+/// y = `region.picks.start * cell_px`. In particular:
+///   * gridline seams sit where the full render puts them, on the interior boundaries of the WHOLE
+///     draft, so a region that starts or stops inside the draft carries the seam on that edge;
+///   * the long-float tint sees floats that cross the region's edge: the faces are computed for the
+///     region plus a margin of `float_threshold - 1` intersections on each side (clipped to the
+///     draft), which is exactly enough to tell whether a float through any region cell reaches the
+///     threshold.
+///
+/// The work and every allocation are bounded by the region plus that margin, never by the whole
+/// draft. The region's intersections, the margin-grown rectangle's intersections, and the raster
+/// are all checked against `limits` before anything sizable is allocated. An empty region or one
+/// that reaches past the draft is [`RenderError::InvalidRegion`].
+pub fn try_render_region(
+    draft: &Draft,
+    region: &DrawdownRegion,
+    cell_px: u32,
+    opts: &RenderOptions,
+    limits: &RenderLimits,
+) -> Result<RgbaImage, RenderError> {
+    region.check_within(draft)?;
+    check_region_cells(region, limits)?;
+    let layout = region_layout(region, cell_px, limits)?;
+    // A float of length `t` through a region cell is detected exactly when the faces extend `t - 1`
+    // past the region on each side: a run cut short by that margin already spans at least `t` cells.
+    let threshold = opts.float_threshold as usize;
+    let margin = if threshold >= 2 { threshold - 1 } else { 0 };
+    let context = region.grown(margin, draft.ends(), draft.picks());
+    check_region_cells(&context, limits)?;
+    let faces = Faces::try_compute(draft, context)?;
+    paint_window(draft, region, &layout, &faces, opts)
+}
+
+/// Paint `window` of the drawdown (inside `faces.region`) with the per-thread extents of `layout`
+/// (one entry per end and per pick of the window), then turn it 180° to the conventional
+/// orientation. Shared by the full render (window = the whole draft) and the region render, so a
+/// region's pixels are its crop of the full render by construction.
+fn paint_window(
+    draft: &Draft,
+    window: &DrawdownRegion,
+    layout: &RasterLayout,
+    faces: &Faces,
+    opts: &RenderOptions,
+) -> Result<RgbaImage, RenderError> {
     let RasterLayout {
         col_w,
         row_h,
         width: w,
         height: h,
         bytes,
-    } = raster_layout(draft, cell_px, limits)?;
+    } = layout;
+    let (w, h, bytes) = (*w, *h, *bytes);
+    let mask = long_float_mask(
+        &faces.warp_up,
+        faces.region.width(),
+        faces.region.height(),
+        opts.float_threshold as usize,
+    )?;
 
-    // The face of every intersection, one byte each (the render needs no per-cell color copy).
-    let mut warp_up = try_vec::<bool>(n)?;
-    for_each_intersection(draft, |_, _, up| warp_up.push(up));
-    let mask = long_float_mask(&warp_up, ends, picks, opts.float_threshold as usize)?;
-
-    // Cumulative left edge per end (end 0 at the left). Every partial sum is bounded by the checked
-    // total width, so plain addition cannot overflow here.
-    let mut col_left = try_vec::<usize>(ends)?;
+    // Cumulative left edge per drawn end (the window's first end at the left). Every partial sum is
+    // bounded by the checked total width, so plain addition cannot overflow here.
+    let mut col_left = try_vec::<usize>(col_w.len())?;
     let mut acc = 0usize;
-    for &cw in &col_w {
+    for &cw in col_w {
         col_left.push(acc);
         acc += cw;
     }
 
-    // Pick 0 sits at the BOTTOM, so build top edges from the bottom up: a pick's top edge is the
-    // image height minus the cloth woven up to and including it.
-    let mut row_top = try_vec::<usize>(picks)?;
+    // The window's first pick sits at the BOTTOM, so build top edges from the bottom up: a pick's
+    // top edge is the image height minus the cloth woven up to and including it.
+    let mut row_top = try_vec::<usize>(row_h.len())?;
     let mut from_bottom = 0usize;
-    for &rh in &row_h {
+    for &rh in row_h {
         from_bottom += rh;
         row_top.push(h - from_bottom);
     }
@@ -410,15 +674,15 @@ pub fn try_render_rgba_with(
     let palette = &draft.colors.palette;
     let color_at = |idx: ColorIndex| -> Color { palette.get(idx).copied().unwrap_or(Color::WHITE) };
 
-    for pick in 0..picks {
-        let top = row_top[pick];
-        let ch = row_h[pick];
+    for (j, pick) in window.picks.clone().enumerate() {
+        let top = row_top[j];
+        let ch = row_h[j];
         let weft_c = color_at(draft.colors.weft.get(pick).copied().unwrap_or(0));
-        for end in 0..ends {
-            let i = pick * ends + end;
+        for (k, end) in window.ends.clone().enumerate() {
+            let i = faces.index(end, pick);
             // Warp on top => a vertical thread; weft on top => a horizontal one. Drives the texture's
             // shading axis below.
-            let warp_up = warp_up[i];
+            let warp_up = faces.warp_up[i];
             let base_c = if warp_up {
                 color_at(draft.colors.warp.get(end).copied().unwrap_or(0))
             } else {
@@ -430,8 +694,8 @@ pub fn try_render_rgba_with(
             } else {
                 base_c
             };
-            let left = col_left[end];
-            let cw = col_w[end];
+            let left = col_left[k];
+            let cw = col_w[k];
             for dy in 0..ch {
                 let row = ((top + dy) * w + left) * 4;
                 for dx in 0..cw {
@@ -457,7 +721,14 @@ pub fn try_render_rgba_with(
     }
 
     if opts.gridlines {
-        draw_gridlines(&mut px, w, h, &col_left, &row_top);
+        // Seams belong to the WHOLE draft's interior boundaries: none left of end 0 (the outer border)
+        // and none above the draft's last pick, but a window that starts after end 0 or stops before
+        // the last pick keeps the seam on that edge.
+        let seams = Seams {
+            skip_first_col: window.ends.start == 0,
+            skip_last_row: window.picks.end == draft.picks(),
+        };
+        draw_gridlines(&mut px, w, h, &col_left, &row_top, seams);
     }
 
     // Turn the finished buffer 180° to the conventional weaving orientation (end 1 right, pick 1 top).
@@ -580,10 +851,27 @@ fn long_float_mask(
     Ok(Some(mask))
 }
 
-/// Draw interior cell-boundary seams (one between each pair of adjacent ends/picks; no outer
-/// border) in [`GRID_LINE`], aligned to the variable cell positions so the grid stays true under
-/// per-thread thickness.
-fn draw_gridlines(px: &mut [u8], w: usize, h: usize, col_left: &[usize], row_top: &[usize]) {
+/// Which of a window's edge seams are the whole draft's outer border (and so are not drawn).
+#[derive(Debug, Clone, Copy)]
+struct Seams {
+    /// The window's first end is end 0: no seam on its (pre-turn) left edge.
+    skip_first_col: bool,
+    /// The window's last pick is the draft's last pick: no seam on its (pre-turn) top edge.
+    skip_last_row: bool,
+}
+
+/// Draw interior cell-boundary seams (one between each pair of adjacent ends/picks of the WHOLE
+/// draft; no outer border) in [`GRID_LINE`], aligned to the variable cell positions so the grid stays
+/// true under per-thread thickness. `col_left`/`row_top` are the window's own cell edges, before the
+/// final turn; `seams` says which window edges are the draft's border.
+fn draw_gridlines(
+    px: &mut [u8],
+    w: usize,
+    h: usize,
+    col_left: &[usize],
+    row_top: &[usize],
+    seams: Seams,
+) {
     let mut set = |x: usize, y: usize| {
         if x < w && y < h {
             let o = (y * w + x) * 4;
@@ -593,18 +881,16 @@ fn draw_gridlines(px: &mut [u8], w: usize, h: usize, col_left: &[usize], row_top
             px[o + 3] = 255;
         }
     };
-    // Vertical seams at the left edge of every end except the first (an interior boundary).
-    for &x in col_left.iter().skip(1) {
+    // Vertical seams at the left edge of every end except end 0 (the draft's outer border).
+    for &x in col_left.iter().skip(usize::from(seams.skip_first_col)) {
         for y in 0..h {
             set(x, y);
         }
     }
-    // Horizontal seams at the top edge of every cell except the topmost pick (whose top edge is the
-    // outer image border at y == 0).
-    for &y in row_top {
-        if y == 0 {
-            continue;
-        }
+    // Horizontal seams at the top edge of every pick except the draft's last pick (whose top edge is
+    // the outer border). The window's last pick is the topmost row (`row_top` ends at y == 0).
+    let rows = row_top.len() - usize::from(seams.skip_last_row && !row_top.is_empty());
+    for &y in &row_top[..rows] {
         for x in 0..w {
             set(x, y);
         }

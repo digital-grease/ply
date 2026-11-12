@@ -27,9 +27,9 @@ use ply_weave::{self as weave, Draft};
 // M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
-    ColorDto, DraftDto, DriveDto, RenderFailure, RenderFailureKind, RenderOptionsDto,
-    RetainedEntryDto, RetainedSectionDto, SeverityKind, ShadowBlockDto, ShadowLayoutKind,
-    ShadowParamsDto, ShadowSystemKind, ShedKind, StructureFamily, ThreadingKind,
+    ColorDto, DraftDto, DrawdownRegionDto, DriveDto, RenderFailure, RenderFailureKind,
+    RenderOptionsDto, RetainedEntryDto, RetainedSectionDto, SeverityKind, ShadowBlockDto,
+    ShadowLayoutKind, ShadowParamsDto, ShadowSystemKind, ShedKind, StructureFamily, ThreadingKind,
     TwillDirectionKind, UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPhaseKind,
     WeftPlanDto, YarnEstimateDto,
 };
@@ -132,6 +132,55 @@ fn render_preview_within(
         opts.thread_texture = false;
     }
     let img = weave::try_render_rgba_with(&draft, px, &opts, limits)?;
+    Ok(PreviewImage {
+        width: img.width,
+        height: img.height,
+        rgba: img.pixels,
+    })
+}
+
+/// Render one rectangle of an editor `DraftDto`'s drawdown (`region`) to an RGBA preview, for a view
+/// that shows only part of a large draft. Cells are UNIFORM (per-thread thickness ignored, matching
+/// the structural editor) and the image is pixel-identical to the matching crop of the full uniform
+/// render: the region's highest end at the left, its first pick at the top, gridline seams on the
+/// whole draft's interior boundaries, and the long-float tint measured past the region's edges.
+/// Only the region (plus a float margin of `float_threshold - 1`) is computed, so a draft far over
+/// the whole-render budget can still be shown a viewport at a time.
+///
+/// RESOURCE BOUNDS, as [`render_preview_dto`]: `cell_px` is the pitch the caller would LIKE; when the
+/// region's raster would exceed the device budget the render drops to the largest pitch that fits
+/// (the caller scales the image to the region's cells anyway), and below 4 px a fitted render drops
+/// gridlines and thread texture. A region with more intersections than the budget allows is a
+/// `TooLarge` failure; an empty region or one past the draft is `InvalidRegion`.
+pub fn render_region_dto(
+    dto: DraftDto,
+    region: DrawdownRegionDto,
+    cell_px: u32,
+    options: Option<RenderOptionsDto>,
+) -> Result<PreviewImage, RenderFailure> {
+    render_region_within(dto, region, cell_px, options, &weave::RenderLimits::DEFAULT)
+}
+
+/// [`render_region_dto`] against explicit limits (tests use small ones).
+fn render_region_within(
+    dto: DraftDto,
+    region: DrawdownRegionDto,
+    cell_px: u32,
+    options: Option<RenderOptionsDto>,
+    limits: &weave::RenderLimits,
+) -> Result<PreviewImage, RenderFailure> {
+    let draft = Draft::try_from(dto).map_err(|message| RenderFailure {
+        kind: RenderFailureKind::InvalidDraft,
+        message,
+    })?;
+    let region = weave::DrawdownRegion::try_from(region)?;
+    let mut opts: weave::RenderOptions = options.map(Into::into).unwrap_or_default();
+    let px = weave::fit_region_cell_px(&draft, &region, cell_px, limits)?;
+    if px < cell_px && px < MIN_OVERLAY_CELL_PX {
+        opts.gridlines = false;
+        opts.thread_texture = false;
+    }
+    let img = weave::try_render_region(&draft, &region, px, &opts, limits)?;
     Ok(PreviewImage {
         width: img.width,
         height: img.height,
@@ -611,6 +660,126 @@ mod tests {
             panic!("expected a render failure");
         };
         assert_eq!(err.kind, RenderFailureKind::TooLarge);
+    }
+
+    fn region(
+        end_start: u32,
+        end_count: u32,
+        pick_start: u32,
+        pick_count: u32,
+    ) -> DrawdownRegionDto {
+        DrawdownRegionDto {
+            end_start,
+            end_count,
+            pick_start,
+            pick_count,
+        }
+    }
+
+    /// The DTO names the same cells as the engine region (0-based start + count), and the bridge
+    /// render is the engine's region render, byte for byte, with the options passed through.
+    #[test]
+    fn region_dto_round_trips_to_the_engine_render() {
+        assert_eq!(
+            weave::DrawdownRegion::try_from(region(3, 4, 10, 2)).unwrap(),
+            weave::DrawdownRegion::new(3..7, 10..12)
+        );
+        let mut twill = weave::structure::plain_weave(12, 9);
+        twill.colors.palette = vec![
+            ply_common::Color::BLACK,
+            ply_common::Color::rgb(200, 90, 20),
+        ];
+        twill.colors.weft = vec![1; 9];
+        twill.warp_thickness = vec![2.0; 12]; // ignored by a region render, kept by the DTO
+        let opts = RenderOptionsDto {
+            gridlines: true,
+            float_threshold: 2,
+            thread_texture: true,
+        };
+        let img =
+            render_region_dto(DraftDto::from(&twill), region(3, 4, 6, 3), 5, Some(opts)).unwrap();
+        let engine = weave::try_render_region(
+            &twill,
+            &weave::DrawdownRegion::new(3..7, 6..9),
+            5,
+            &weave::RenderOptions {
+                gridlines: true,
+                float_threshold: 2,
+                thread_texture: true,
+            },
+            &weave::RenderLimits::DEFAULT,
+        )
+        .unwrap();
+        assert_eq!((img.width, img.height), (20, 15));
+        assert_eq!(img.rgba, engine.pixels);
+        // No options is a plain cloth.
+        let plain_img =
+            render_region_dto(DraftDto::from(&twill), region(3, 4, 6, 3), 5, None).unwrap();
+        assert_ne!(plain_img.rgba, img.rgba);
+    }
+
+    /// A region of a draft far over the whole-render budget renders; the whole draft does not.
+    #[test]
+    fn a_region_of_the_largest_wif_draft_renders() {
+        let huge = plain(100_000, 100_000);
+        let img = render_region_dto(huge, region(99_990, 10, 0, 8), 12, overlays()).unwrap();
+        assert_eq!((img.width, img.height), (120, 96));
+    }
+
+    #[test]
+    fn invalid_regions_are_typed_failures() {
+        for bad in [
+            region(0, 0, 0, 2),               // no ends
+            region(0, 2, 0, 0),               // no picks
+            region(3, 2, 0, 2),               // past the last end
+            region(0, 2, 1, 4),               // past the last pick
+            region(u32::MAX, u32::MAX, 0, 1), // start + count past the draft (or usize)
+        ] {
+            let Err(err) = render_region_dto(plain(4, 4), bad, 8, None) else {
+                panic!("expected a failure for {bad:?}");
+            };
+            assert_eq!(err.kind, RenderFailureKind::InvalidRegion, "{bad:?}");
+            assert!(err.message.contains("region"), "{}", err.message);
+        }
+    }
+
+    /// Over the raster budget the region drops to the largest pitch that fits (and, below 4 px, to a
+    /// plain cloth), exactly like the whole preview; over the intersection budget it is `TooLarge`.
+    #[test]
+    fn region_renders_fit_the_budget_or_fail_as_too_large() {
+        // 10 x 10 cells: 40 x 40 px fits 4 px.
+        let img = render_region_within(
+            plain(20, 20),
+            region(5, 10, 5, 10),
+            12,
+            overlays(),
+            &limits(1000, 40 * 40 * 4),
+        )
+        .unwrap();
+        assert_eq!((img.width, img.height), (40, 40));
+        let tiny = limits(1000, 20 * 20 * 4); // fits 2 px: overlays dropped
+        let with = render_region_within(plain(20, 20), region(5, 10, 5, 10), 12, overlays(), &tiny)
+            .unwrap();
+        let without =
+            render_region_within(plain(20, 20), region(5, 10, 5, 10), 12, None, &tiny).unwrap();
+        assert_eq!((with.width, with.height), (20, 20));
+        assert_eq!(with.rgba, without.rgba);
+        // Asked for 2 px directly: the overlays stay.
+        let asked = render_region_within(plain(20, 20), region(5, 10, 5, 10), 2, overlays(), &tiny)
+            .unwrap();
+        assert_ne!(asked.rgba, without.rgba);
+
+        let Err(err) = render_region_within(
+            plain(20, 20),
+            region(0, 10, 0, 10),
+            4,
+            None,
+            &limits(99, usize::MAX),
+        ) else {
+            panic!("expected a render failure");
+        };
+        assert_eq!(err.kind, RenderFailureKind::TooLarge);
+        assert!(err.message.contains("intersections"), "{}", err.message);
     }
 
     #[test]
