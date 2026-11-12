@@ -15,5 +15,9 @@ pub mod validate;
 pub use diagram::{diagram, Diagram};
 pub use dictionary::builtin;
 pub use error::NalbindError;
+pub use notation::{
+    parse_lenient, parse_strict, DiagnosticCode, Fidelity, NotationDiagnostic, NotationSeverity,
+    ParseMode, ParsedNotation, StrictRejection,
+};
 pub use stitch::{ConnSide, Connection, Pass, PublishedCode, Step, StitchType, Twist};
 pub use validate::{validate, NalbindIssue, Severity};

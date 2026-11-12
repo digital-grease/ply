@@ -1,8 +1,8 @@
 //! The curated builtin stitch dictionary (~12 stitches). Each entry's `passes`/`connections` are
-//! PARSED from a canonical Hansen string (so the dictionary also exercises the parser), with the
-//! `a+b` thumb-loop alias, source-attributed published codes (sources genuinely disagree — see the
-//! second code on several entries), alternate names, and a one-line description for the reference
-//! screen + glossary.
+//! PARSED in STRICT mode from a canonical Hansen string (so the dictionary also exercises the parser
+//! and can never hold a lossy structure), with the `a+b` thumb-loop alias, source-attributed
+//! published codes (sources genuinely disagree, see the second code on several entries), alternate
+//! names, and a one-line description for the reference screen + glossary.
 //!
 //! Codes are recorded "as published"; where sources differ we keep both rather than assert one
 //! canonical string (see `docs/NALBIND_DESIGN.md`). These are a starting reference, not gospel.
@@ -18,11 +18,11 @@ fn s(
     codes: &[(&str, &str)],
     note: &str,
 ) -> StitchType {
-    let (passes, connections) = notation::parse(code).expect("a builtin code must parse");
+    let parsed = notation::parse_strict(code).expect("a builtin code must parse in strict mode");
     StitchType {
         name: name.to_string(),
-        passes,
-        connections,
+        passes: parsed.passes,
+        connections: parsed.connections,
         thumb_loops: thumb,
         twist: Twist::Untwisted,
         also_known_as: aka.iter().map(|a| a.to_string()).collect(),
@@ -185,6 +185,57 @@ mod tests {
         let asle = dict.iter().find(|s| s.name == "Åsle").unwrap();
         assert_eq!(asle.passes.len(), 3, "two turns -> three passes");
         assert_eq!(asle.connections.len(), 2, "B1 + F1");
+    }
+
+    #[test]
+    fn every_canonical_code_round_trips_exactly_in_strict_mode() {
+        // Each entry's first published code is the canonical string it was built from.
+        for st in builtin() {
+            let canonical = &st.codes[0].code;
+            let parsed = notation::parse_strict(canonical)
+                .unwrap_or_else(|e| panic!("{}: {canonical:?} refused: {e}", st.name));
+            assert_eq!(parsed.fidelity, notation::Fidelity::Exact, "{}", st.name);
+            assert!(parsed.diagnostics.is_empty(), "{}", st.name);
+            assert_eq!(parsed.passes, st.passes, "{}", st.name);
+            assert_eq!(parsed.connections, st.connections, "{}", st.name);
+            assert_eq!(
+                notation::print(&st.passes, &st.connections),
+                *canonical,
+                "{} prints back to its canonical code",
+                st.name
+            );
+        }
+    }
+
+    #[test]
+    fn every_published_code_is_strict_clean_except_the_asle_plus_form() {
+        for st in builtin() {
+            for code in &st.codes {
+                let strict = notation::parse_strict(&code.code);
+                if st.name == "Åsle" && code.code == "F1+1" {
+                    // JUSTIFIED EXCEPTION: the Åsle "alt form" `F1+1` uses the `+` dialect, which
+                    // docs/NALBIND_DESIGN.md never defines (it only calls `a+b` thumb-loop naming
+                    // "not Hansen syntax"), and it has no needle path. Strict mode must refuse it;
+                    // lenient mode keeps the `+1` verbatim on the F1 connection.
+                    let err = strict.expect_err("the `+` dialect is not strict");
+                    assert!(err
+                        .codes()
+                        .contains(&notation::DiagnosticCode::UnsupportedDialect));
+                    let lenient = notation::parse_lenient(&code.code);
+                    assert_eq!(lenient.connections[0].extra.as_deref(), Some("+1"));
+                    assert!(lenient.is_lossy());
+                    continue;
+                }
+                let parsed = strict
+                    .unwrap_or_else(|e| panic!("{} code {:?} refused: {e}", st.name, code.code));
+                assert_eq!(
+                    parsed.fidelity,
+                    notation::Fidelity::Exact,
+                    "{:?}",
+                    code.code
+                );
+            }
+        }
     }
 
     #[test]
