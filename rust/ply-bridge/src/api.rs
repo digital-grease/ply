@@ -27,10 +27,32 @@ use ply_weave::{self as weave, Draft};
 // M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
-    ColorDto, DraftDto, DriveDto, RenderOptionsDto, RetainedEntryDto, RetainedSectionDto,
-    SeverityKind, ShedKind, StructureFamily, ThreadingKind, UnitKind, ValidationIssueDto,
-    WarpPlanDto, WeftEstimateDto, WeftPlanDto, YarnEstimateDto,
+    ColorDto, DraftDto, DriveDto, RenderFailure, RenderFailureKind, RenderOptionsDto,
+    RetainedEntryDto, RetainedSectionDto, SeverityKind, ShedKind, StructureFamily, ThreadingKind,
+    UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPlanDto, YarnEstimateDto,
 };
+
+/// Most shafts a structure generator will build a tie-up for. Real looms stop far below this (the
+/// editor caps input at 200); the cap stops an absurd request (e.g. a 65535-shaft twill, about
+/// 8.6 GB of tie-up) from aborting the app.
+const MAX_GENERATED_SHAFTS: u32 = 1024;
+
+/// Below this pitch a FITTED render drops the gridline and thread-texture overlays: a 1 px seam on a
+/// 2 or 3 px cell would cover a third to half of the cloth once the view scales it up.
+const MIN_OVERLAY_CELL_PX: u32 = 4;
+
+/// Reject an ends/picks request above the document cap shared with WIF import.
+fn check_threads(ends: u32, picks: u32) -> Result<(usize, usize), String> {
+    let (e, p) = (ends as usize, picks as usize);
+    if e > weave::MAX_THREADS || p > weave::MAX_THREADS {
+        return Err(format!(
+            "a draft can have at most {} ends and {} picks (asked for {e} x {p})",
+            weave::MAX_THREADS,
+            weave::MAX_THREADS
+        ));
+    }
+    Ok((e, p))
+}
 
 /// Serialize an editor `DraftDto` back to WIF text. Takes the mirrored DTO (not an opaque
 /// handle), so the editor's Save path can re-serialize the live document. `Err` if the DTO
@@ -75,14 +97,39 @@ pub fn parse_wif_dto(text: String) -> Result<DraftDto, String> {
 ///
 /// `options` carries the optional drawdown overlays (gridlines, long-float highlight); pass `None`
 /// (the library/thumbnail path) for a plain cloth, byte-identical to the pre-overlay render.
+///
+/// RESOURCE BOUNDS: `cell_px` is the pitch the caller would LIKE. When that raster would exceed the
+/// device budget (`RenderLimits::DEFAULT`), the render drops to the largest pitch that fits; every
+/// current view scales the image to its own layout, so a big draft draws at lower resolution
+/// instead of going blank. Below 4 px a fitted render also drops gridlines and thread texture.
+/// A draft too large even at 1 px per intersection (or an invalid DTO) is an `Err(RenderFailure)`,
+/// which Dart receives as a thrown `RenderFailure`. Nothing is allocated before the size checks.
 pub fn render_preview_dto(
     dto: DraftDto,
     cell_px: u32,
     options: Option<RenderOptionsDto>,
-) -> Result<PreviewImage, String> {
-    let draft = Draft::try_from(dto)?;
-    let opts = options.map(Into::into).unwrap_or_default();
-    let img = weave::render_rgba_with(&draft, cell_px, &opts);
+) -> Result<PreviewImage, RenderFailure> {
+    render_preview_within(dto, cell_px, options, &weave::RenderLimits::DEFAULT)
+}
+
+/// [`render_preview_dto`] against explicit limits (tests use small ones).
+fn render_preview_within(
+    dto: DraftDto,
+    cell_px: u32,
+    options: Option<RenderOptionsDto>,
+    limits: &weave::RenderLimits,
+) -> Result<PreviewImage, RenderFailure> {
+    let draft = Draft::try_from(dto).map_err(|message| RenderFailure {
+        kind: RenderFailureKind::InvalidDraft,
+        message,
+    })?;
+    let mut opts: weave::RenderOptions = options.map(Into::into).unwrap_or_default();
+    let px = weave::fit_cell_px(&draft, cell_px, limits)?;
+    if px < cell_px && px < MIN_OVERLAY_CELL_PX {
+        opts.gridlines = false;
+        opts.thread_texture = false;
+    }
+    let img = weave::try_render_rgba_with(&draft, px, &opts, limits)?;
     Ok(PreviewImage {
         width: img.width,
         height: img.height,
@@ -119,7 +166,8 @@ pub fn to_liftplan_dto(dto: DraftDto) -> Result<DraftDto, String> {
 /// Resize a draft to `ends` x `picks` over `shafts`/`treadles`. SHRINKING prunes every shaft/
 /// treadle reference the smaller header no longer has (so the result never leaves a dangling
 /// reference for the user to hand-fix); GROWING pads blanks; warp/weft color lengths stay coupled
-/// to ends/picks. `Err` if the DTO can't convert back to a `Draft`.
+/// to ends/picks. `Err` if the DTO can't convert back to a `Draft`, or if `ends`/`picks` exceed the
+/// per-axis document cap shared with WIF import (`ply_weave::MAX_THREADS`).
 pub fn resize_dto(
     dto: DraftDto,
     ends: u32,
@@ -127,13 +175,11 @@ pub fn resize_dto(
     shafts: u16,
     treadles: u16,
 ) -> Result<DraftDto, String> {
+    let (ends, picks) = check_threads(ends, picks)?;
     let draft = Draft::try_from(dto)?;
-    Ok(DraftDto::from(&draft.resized(
-        ends as usize,
-        picks as usize,
-        shafts,
-        treadles,
-    )))
+    Ok(DraftDto::from(
+        &draft.resized(ends, picks, shafts, treadles),
+    ))
 }
 
 /// Remove palette color `index` and SAFELY remap every warp/weft reference so none dangles: a thread
@@ -185,13 +231,23 @@ pub fn estimate_weft_dto(plan: WeftPlanDto) -> WeftEstimateDto {
 /// Generate a tie-up for a weave-structure family (the editor's "Generate structure" action). Each
 /// inner list is the 1-based shaft(s) raised by that treadle. `over`/`under` apply to Twill,
 /// `counter` to Satin, and `shafts` to Plain/Satin (Twill's shaft count is `over + under`).
+/// `Err` past `MAX_GENERATED_SHAFTS` (a twill's tie-up grows with the square of its shaft count).
 pub fn generate_tieup_dto(
     family: StructureFamily,
     shafts: u16,
     over: u16,
     under: u16,
     counter: u16,
-) -> Vec<Vec<u16>> {
+) -> Result<Vec<Vec<u16>>, String> {
+    let n = match family {
+        StructureFamily::Twill => u32::from(over) + u32::from(under),
+        _ => u32::from(shafts),
+    };
+    if n > MAX_GENERATED_SHAFTS {
+        return Err(format!(
+            "a generated tie-up can have at most {MAX_GENERATED_SHAFTS} shafts (asked for {n})"
+        ));
+    }
     let tieup = match family {
         StructureFamily::Plain => weave::draft::TieUp::plain(shafts),
         StructureFamily::Twill => weave::draft::TieUp::twill(over, under),
@@ -202,11 +258,11 @@ pub fn generate_tieup_dto(
             weave::draft::TieUp::plain(shafts)
         }
     };
-    tieup
+    Ok(tieup
         .0
         .iter()
         .map(|r| r.iter().map(|s| s.0).collect())
-        .collect()
+        .collect())
 }
 
 /// Generate a COMPLETE draft for a whole-draft weave structure (overshot, shadow weave, double weave).
@@ -215,16 +271,16 @@ pub fn generate_tieup_dto(
 /// built whole in the engine and returned as a ready-to-edit `DraftDto`. `block` is the block width
 /// (overshot) or the log-cabin color-phase block (shadow weave); `twill` selects shadow weave's 2/2
 /// twill ground over plain weave. Plain/Twill/Satin are not expected here (they use the tie-up path);
-/// a plain weave is returned as a harmless fallback.
+/// a plain weave is returned as a harmless fallback. `Err` if `ends`/`picks` exceed the per-axis
+/// document cap shared with WIF import (`ply_weave::MAX_THREADS`).
 pub fn generate_structure_dto(
     family: StructureFamily,
     ends: u32,
     picks: u32,
     block: u32,
     twill: bool,
-) -> DraftDto {
-    let e = ends as usize;
-    let p = picks as usize;
+) -> Result<DraftDto, String> {
+    let (e, p) = check_threads(ends, picks)?;
     let b = (block as usize).max(2);
     let draft = match family {
         StructureFamily::Overshot => weave::structure::overshot(e, p, b),
@@ -234,21 +290,26 @@ pub fn generate_structure_dto(
             weave::structure::plain_weave(e, p)
         }
     };
-    DraftDto::from(&draft)
+    Ok(DraftDto::from(&draft))
 }
 
 /// Generate a threading (per warp end, the 1-based shaft it threads) for the chosen draw over
-/// `ends` ends and `shafts` shafts.
-pub fn generate_threading_dto(kind: ThreadingKind, ends: u32, shafts: u16) -> Vec<Vec<u16>> {
+/// `ends` ends and `shafts` shafts. `Err` if `ends` exceeds the per-axis document cap.
+pub fn generate_threading_dto(
+    kind: ThreadingKind,
+    ends: u32,
+    shafts: u16,
+) -> Result<Vec<Vec<u16>>, String> {
+    let (ends, _) = check_threads(ends, 0)?;
     let threading = match kind {
-        ThreadingKind::Straight => weave::draft::Threading::straight(ends as usize, shafts),
-        ThreadingKind::Point => weave::draft::Threading::point(ends as usize, shafts),
+        ThreadingKind::Straight => weave::draft::Threading::straight(ends, shafts),
+        ThreadingKind::Point => weave::draft::Threading::point(ends, shafts),
     };
-    threading
+    Ok(threading
         .0
         .iter()
         .map(|r| r.iter().map(|s| s.0).collect())
-        .collect()
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -386,4 +447,117 @@ pub fn validate_nalbind(dto: NalbindStitchDto) -> Vec<NalbindIssueDto> {
         .iter()
         .map(NalbindIssueDto::from)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plain(ends: usize, picks: usize) -> DraftDto {
+        DraftDto::from(&weave::structure::plain_weave(ends, picks))
+    }
+
+    fn limits(max_cells: usize, max_raster_bytes: usize) -> weave::RenderLimits {
+        weave::RenderLimits {
+            max_cells,
+            max_raster_bytes,
+            max_raster_side: usize::MAX,
+        }
+    }
+
+    fn overlays() -> Option<RenderOptionsDto> {
+        Some(RenderOptionsDto {
+            gridlines: true,
+            float_threshold: 0,
+            thread_texture: true,
+        })
+    }
+
+    #[test]
+    fn preview_keeps_the_requested_pitch_when_it_fits() {
+        let img = render_preview_dto(plain(4, 3), 12, None).unwrap();
+        assert_eq!((img.width, img.height), (48, 36));
+    }
+
+    /// Over budget at the requested pitch: the preview drops to the largest pitch that fits instead
+    /// of coming back blank (10 x 10 at 12 px = 120 x 120; a 40 x 40 budget fits 4 px).
+    #[test]
+    fn preview_fits_the_pitch_to_the_budget() {
+        let img =
+            render_preview_within(plain(10, 10), 12, None, &limits(1000, 40 * 40 * 4)).unwrap();
+        assert_eq!((img.width, img.height), (40, 40));
+    }
+
+    /// A fitted pitch under 4 px drops gridlines and texture; a fitted pitch of 4 px or more keeps
+    /// them, and an unfitted render always honors the request.
+    #[test]
+    fn fitted_previews_drop_fine_overlays_only_below_four_px() {
+        let tiny = limits(1000, 20 * 20 * 4); // fits 2 px for a 10 x 10 draft
+        let with = render_preview_within(plain(10, 10), 12, overlays(), &tiny).unwrap();
+        let without = render_preview_within(plain(10, 10), 12, None, &tiny).unwrap();
+        assert_eq!((with.width, with.height), (20, 20));
+        assert_eq!(
+            with.rgba, without.rgba,
+            "2 px fitted render is a plain cloth"
+        );
+
+        let roomy = limits(1000, 40 * 40 * 4); // fits 4 px
+        let with = render_preview_within(plain(10, 10), 12, overlays(), &roomy).unwrap();
+        let without = render_preview_within(plain(10, 10), 12, None, &roomy).unwrap();
+        assert_ne!(
+            with.rgba, without.rgba,
+            "4 px fitted render keeps its overlays"
+        );
+
+        // Asked for 2 px directly (no fitting): overlays stay as requested.
+        let asked = render_preview_within(plain(10, 10), 2, overlays(), &tiny).unwrap();
+        let plain2 = render_preview_within(plain(10, 10), 2, None, &tiny).unwrap();
+        assert_ne!(asked.rgba, plain2.rgba);
+    }
+
+    #[test]
+    fn oversized_draft_is_a_typed_too_large_failure() {
+        let Err(err) = render_preview_within(plain(10, 10), 12, None, &limits(50, usize::MAX))
+        else {
+            panic!("expected a render failure");
+        };
+        assert_eq!(err.kind, RenderFailureKind::TooLarge);
+        assert!(err.message.contains("intersections"), "{}", err.message);
+    }
+
+    /// The real default budget refuses the largest draft a WIF can declare, without rendering.
+    #[test]
+    fn default_budget_refuses_the_largest_wif_draft() {
+        let Err(err) = render_preview_dto(plain(100_000, 100_000), 12, None) else {
+            panic!("expected a render failure");
+        };
+        assert_eq!(err.kind, RenderFailureKind::TooLarge);
+    }
+
+    #[test]
+    fn resize_and_generators_refuse_more_than_max_threads() {
+        let over = (weave::MAX_THREADS + 1) as u32;
+        assert!(resize_dto(plain(2, 2), over, 2, 2, 2).is_err());
+        assert!(resize_dto(plain(2, 2), 2, over, 2, 2).is_err());
+        assert!(resize_dto(plain(2, 2), 3, 3, 2, 2).is_ok());
+        assert!(generate_structure_dto(StructureFamily::Overshot, over, 8, 4, false).is_err());
+        assert!(generate_structure_dto(StructureFamily::DoubleWeave, 8, 8, 4, false).is_ok());
+        assert!(generate_threading_dto(ThreadingKind::Straight, over, 4).is_err());
+        assert_eq!(
+            generate_threading_dto(ThreadingKind::Straight, 4, 2).unwrap(),
+            vec![vec![1], vec![2], vec![1], vec![2]]
+        );
+    }
+
+    /// A twill tie-up grows with the square of its shaft count; absurd requests are refused rather
+    /// than allocating gigabytes.
+    #[test]
+    fn tieup_generation_refuses_absurd_shaft_counts() {
+        assert!(generate_tieup_dto(StructureFamily::Twill, 0, u16::MAX, 1, 1).is_err());
+        assert!(generate_tieup_dto(StructureFamily::Satin, 5000, 0, 0, 2).is_err());
+        assert_eq!(
+            generate_tieup_dto(StructureFamily::Twill, 0, 2, 2, 1).unwrap(),
+            vec![vec![1, 2], vec![2, 3], vec![3, 4], vec![4, 1]]
+        );
+    }
 }

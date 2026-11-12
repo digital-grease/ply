@@ -1,0 +1,5 @@
+# Workspace clippy settings (CI runs `cargo clippy --workspace --all-targets -- -D warnings`).
+#
+# The chart and drawdown painters pass geometry (buffer, width, origin, cell size, colors) as plain
+# arguments; bundling them into structs only to satisfy the default limit of 7 would obscure them.
+too-many-arguments-threshold = 9

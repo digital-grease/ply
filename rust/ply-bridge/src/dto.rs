@@ -20,7 +20,7 @@ use ply_weave::draft::{
     TreadleId, Treadling,
 };
 use ply_weave::validate::{Severity, ValidationIssue};
-use ply_weave::RenderOptions;
+use ply_weave::{RenderError, RenderOptions};
 
 /// An sRGB color. No alpha — the engine/WIF `Color` is RGB only.
 pub struct ColorDto {
@@ -202,6 +202,42 @@ impl From<RenderOptionsDto> for RenderOptions {
             gridlines: d.gridlines,
             float_threshold: d.float_threshold,
             thread_texture: d.thread_texture,
+        }
+    }
+}
+
+/// What kind of problem stopped a preview render (see [`RenderFailure`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderFailureKind {
+    /// The DTO does not convert back to a draft. Reserved: the conversion currently accepts every
+    /// DTO (structural problems are reported by validation, not by rendering).
+    InvalidDraft,
+    /// The draft is too large to preview within the device budget, even at 1 px per intersection.
+    TooLarge,
+    /// A buffer within budget could not be allocated.
+    OutOfMemory,
+}
+
+/// Why `render_preview_dto` produced no image. Thrown as an exception on the Dart side, so the UI
+/// can say "too large to preview" instead of showing a blank or a raw engine message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderFailure {
+    pub kind: RenderFailureKind,
+    /// Human-readable detail (dimensions and the limit hit), for logs and diagnostics.
+    pub message: String,
+}
+
+impl From<RenderError> for RenderFailure {
+    fn from(e: RenderError) -> Self {
+        let kind = match e {
+            RenderError::TooManyCells { .. }
+            | RenderError::RasterTooLarge { .. }
+            | RenderError::Overflow => RenderFailureKind::TooLarge,
+            RenderError::AllocFailed { .. } => RenderFailureKind::OutOfMemory,
+        };
+        RenderFailure {
+            kind,
+            message: e.to_string(),
         }
     }
 }

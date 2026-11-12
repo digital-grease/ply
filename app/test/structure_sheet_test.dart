@@ -224,6 +224,21 @@ void main() {
     expect(repo.args!.block, 4, reason: 'the default color block');
   });
 
+  testWidgets('generated cloth is capped at the preview budget per axis', (t) async {
+    final repo = FakeStructureRepo();
+    await openSheet(t, repo);
+    await t.enterText(find.widgetWithText(TextFormField, 'Warp ends'), '${kMaxGeneratedThreads + 1}');
+    await t.tap(find.text('Generate'));
+    await t.pumpAndSettle();
+    expect(find.text('At most $kMaxGeneratedThreads'), findsOneWidget);
+    expect(repo.args, isNull, reason: 'an over-budget size never reaches the engine');
+
+    await t.enterText(find.widgetWithText(TextFormField, 'Warp ends'), '$kMaxGeneratedThreads');
+    await t.tap(find.text('Generate'));
+    await t.pumpAndSettle();
+    expect(repo.args, isNotNull);
+  });
+
   testWidgets('Double weave hides the family knobs and generates from ends x picks only', (t) async {
     final repo = FakeStructureRepo();
     await openSheet(t, repo);

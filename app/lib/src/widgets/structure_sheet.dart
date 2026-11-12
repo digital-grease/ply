@@ -39,6 +39,11 @@ typedef _StructureParams = ({
 
 final _lastStructureParamsProvider = StateProvider<_StructureParams?>((ref) => null);
 
+/// Largest generated cloth per axis (ends and picks). 2000 x 2000 is the 4-million-intersection
+/// preview budget (`RenderLimits::DEFAULT` in ply-weave), so a generated draft always previews;
+/// larger drafts can still be imported from WIF.
+const int kMaxGeneratedThreads = 2000;
+
 class StructureSheet extends ConsumerStatefulWidget {
   const StructureSheet({super.key});
 
@@ -116,7 +121,9 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
   }
 
   static const int _maxShafts = 200; // a generous loom ceiling, far below the u16 wire limit
+  /// Offsets may reach anywhere in a draft, up to the per-axis document cap shared with WIF import.
   static const int _maxThreads = 100000;
+
 
   static int _gcd(int a, int b) => b == 0 ? a : _gcd(b, a % b);
 
@@ -159,7 +166,7 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
   String? _threadCount(String? s) {
     final v = int.tryParse((s ?? '').trim());
     if (v == null || v < 1) return 'At least 1';
-    return v > _maxThreads ? 'Too many' : null;
+    return v > kMaxGeneratedThreads ? 'At most $kMaxGeneratedThreads' : null;
   }
 
   /// Block width (overshot) / color-phase block (shadow weave): needs >= 2 (a block alternates a pair

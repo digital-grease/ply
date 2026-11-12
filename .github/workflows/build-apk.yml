@@ -43,12 +43,14 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.44.0"
+          flutter-version: "3.47.9"
           channel: stable
           cache: true
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Add Android Rust targets
         run: rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
@@ -72,6 +74,15 @@ jobs:
       # The bindings are gitignored, so generate them from rust/ply-bridge (reads flutter_rust_bridge.yaml).
       - name: Generate Rust <-> Dart bindings
         run: flutter_rust_bridge_codegen generate
+
+      # Both run after codegen: the bridge crate declares the generated `frb_generated.rs` module.
+      - name: Rust format check
+        working-directory: rust
+        run: cargo fmt --all --check
+
+      - name: Rust lint
+        working-directory: rust
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       # Regenerate freezed unions (e.g. DriveDto) that depend on the generated DTOs.
       - name: Generate freezed code

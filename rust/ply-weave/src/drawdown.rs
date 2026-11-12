@@ -3,10 +3,17 @@
 //! The drawdown is the over/under interlacement grid — what the cloth actually looks
 //! like. It is a pure function of the draft and cheap to recompute (microseconds for
 //! normal drafts), which is what makes live preview feel instant.
+//!
+//! **Resource bounds.** Draft sizes come from untrusted files and FFI calls, and the drawdown grows
+//! with `ends * picks`. The `try_*` entry points check every size against [`RenderLimits`] with
+//! checked arithmetic *before* allocating, and report a [`RenderError`] instead of allocating
+//! without bound or returning a silent blank. [`compute`], [`render_rgba`] and [`render_rgba_with`]
+//! remain as conveniences for trusted, test-sized drafts.
 
 use crate::draft::{ColorIndex, Draft};
 use ply_common::Color;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// What shows on the face of the cloth at one warp/weft intersection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,32 +39,151 @@ impl Drawdown {
     }
 }
 
-/// Compute the drawdown for a draft. Deterministic; the heart of the engine.
-pub fn compute(draft: &Draft) -> Drawdown {
-    let ends = draft.ends();
-    let picks = draft.picks();
-    let mut cells = Vec::with_capacity(ends * picks);
+/// Size budgets for computing and rendering a drawdown.
+///
+/// [`RenderLimits::DEFAULT`] is sized for an average mid-range phone (roughly 4 to 6 GB of RAM and a
+/// GPU that accepts 8192 px textures). A render briefly holds its raster about three times over
+/// (the engine buffer, the FFI copy, the decoded image), so a 64 MiB raster keeps the peak near
+/// 200 MB; the interlacement itself costs one byte per intersection while rendering. These are
+/// budgets, not physical facts: revisit them with measurements from real devices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderLimits {
+    /// Most warp/weft intersections (`ends * picks`) computed in one call.
+    pub max_cells: usize,
+    /// Most bytes in one RGBA8 raster.
+    pub max_raster_bytes: usize,
+    /// Most pixels along either side of one raster.
+    pub max_raster_side: usize,
+}
 
-    for pick in 0..picks {
+impl RenderLimits {
+    /// The phone budget: 4 million intersections (e.g. 2000 x 2000), a 64 MiB raster, and at most
+    /// 8192 px per side.
+    pub const DEFAULT: RenderLimits = RenderLimits {
+        max_cells: 4_000_000,
+        max_raster_bytes: 64 * 1024 * 1024,
+        max_raster_side: 8192,
+    };
+
+    /// No budget beyond what `usize` arithmetic allows. For trusted, test-sized drafts only.
+    pub const UNBOUNDED: RenderLimits = RenderLimits {
+        max_cells: usize::MAX,
+        max_raster_bytes: usize::MAX,
+        max_raster_side: usize::MAX,
+    };
+}
+
+impl Default for RenderLimits {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+/// Why a drawdown could not be computed or rendered within its [`RenderLimits`].
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum RenderError {
+    /// `ends * picks` exceeds [`RenderLimits::max_cells`].
+    #[error("a {ends} x {picks} draft has {cells} intersections; the limit is {limit}")]
+    TooManyCells {
+        ends: usize,
+        picks: usize,
+        cells: usize,
+        limit: usize,
+    },
+    /// The raster at the requested pitch exceeds the byte or the per-side budget.
+    #[error(
+        "a {width} x {height} px preview needs {bytes} bytes; the limit is {max_bytes} bytes \
+         and {max_side} px per side"
+    )]
+    RasterTooLarge {
+        width: usize,
+        height: usize,
+        bytes: usize,
+        max_bytes: usize,
+        max_side: usize,
+    },
+    /// A size computation overflowed `usize` (only reachable with absurd dimensions or pitch).
+    #[error("the draft's dimensions are too large to size")]
+    Overflow,
+    /// The allocator refused a buffer that was within budget.
+    #[error("could not allocate {bytes} bytes for the drawdown")]
+    AllocFailed { bytes: usize },
+}
+
+/// Check the intersection budget; returns `(ends, picks, ends * picks)`.
+fn check_cells(draft: &Draft, limits: &RenderLimits) -> Result<(usize, usize, usize), RenderError> {
+    let (ends, picks) = (draft.ends(), draft.picks());
+    let cells = ends.checked_mul(picks).ok_or(RenderError::Overflow)?;
+    if cells > limits.max_cells {
+        return Err(RenderError::TooManyCells {
+            ends,
+            picks,
+            cells,
+            limit: limits.max_cells,
+        });
+    }
+    Ok((ends, picks, cells))
+}
+
+/// An empty `Vec` with room for exactly `n` items, or [`RenderError::AllocFailed`] (instead of an
+/// abort) when the allocator says no.
+fn try_vec<T>(n: usize) -> Result<Vec<T>, RenderError> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(n)
+        .map_err(|_| RenderError::AllocFailed {
+            bytes: n.saturating_mul(std::mem::size_of::<T>()),
+        })?;
+    Ok(v)
+}
+
+/// Walk every intersection in pick-major order (the drawdown's own `[pick * ends + end]` layout),
+/// calling `visit(end, pick, warp_up)`. Shed direction comes only from [`Draft::raised_shafts`]. A
+/// per-pick lookup table makes "is one of this end's shafts raised?" an O(1) test, so a draft with
+/// many shafts (where a sinking shed raises nearly all of them) stays linear in its size.
+fn for_each_intersection(draft: &Draft, mut visit: impl FnMut(usize, usize, bool)) {
+    let ends = draft.ends();
+    let mut raised_table = vec![false; usize::from(u16::MAX) + 1];
+    for pick in 0..draft.picks() {
         let raised = draft.raised_shafts(pick);
-        let weft_color = draft.colors.weft.get(pick).copied().unwrap_or(0);
+        for s in &raised {
+            raised_table[usize::from(s.0)] = true;
+        }
         for end in 0..ends {
-            // Is this warp end on a raised shaft?
-            let warp_up = draft
-                .threading
-                .0
-                .get(end)
-                .map(|shafts| shafts.iter().any(|s| raised.contains(s)))
-                .unwrap_or(false);
-            cells.push(if warp_up {
-                Cell::WarpUp(draft.colors.warp.get(end).copied().unwrap_or(0))
-            } else {
-                Cell::WeftUp(weft_color)
-            });
+            let warp_up = draft.threading.0[end]
+                .iter()
+                .any(|s| raised_table[usize::from(s.0)]);
+            visit(end, pick, warp_up);
+        }
+        for s in &raised {
+            raised_table[usize::from(s.0)] = false;
         }
     }
+}
 
-    Drawdown { ends, picks, cells }
+/// Compute the drawdown for a draft, refusing drafts over `limits` before allocating.
+/// Deterministic; the heart of the engine.
+pub fn try_compute(draft: &Draft, limits: &RenderLimits) -> Result<Drawdown, RenderError> {
+    let (ends, picks, n) = check_cells(draft, limits)?;
+    let mut cells = try_vec::<Cell>(n)?;
+    let (warp, weft) = (&draft.colors.warp, &draft.colors.weft);
+    for_each_intersection(draft, |end, pick, warp_up| {
+        cells.push(if warp_up {
+            Cell::WarpUp(warp.get(end).copied().unwrap_or(0))
+        } else {
+            Cell::WeftUp(weft.get(pick).copied().unwrap_or(0))
+        });
+    });
+    Ok(Drawdown { ends, picks, cells })
+}
+
+/// Compute the drawdown for a trusted, reasonably sized draft: [`try_compute`] with
+/// [`RenderLimits::UNBOUNDED`]. Panics if the drawdown cannot be sized or allocated, so anything
+/// that handles untrusted input (files, FFI) uses [`try_compute`] or [`try_render_rgba_with`].
+pub fn compute(draft: &Draft) -> Drawdown {
+    match try_compute(draft, &RenderLimits::UNBOUNDED) {
+        Ok(dd) => dd,
+        Err(e) => panic!("drawdown: {e}"),
+    }
 }
 
 /// A flat RGBA8 image buffer suitable for handing to Flutter (decode into a `ui.Image`).
@@ -66,6 +192,95 @@ pub struct RgbaImage {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
+}
+
+impl RgbaImage {
+    fn empty() -> Self {
+        RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        }
+    }
+}
+
+/// Pixel geometry of one raster: per-thread extents plus the checked totals.
+struct RasterLayout {
+    col_w: Vec<usize>,
+    row_h: Vec<usize>,
+    width: usize,
+    height: usize,
+    bytes: usize,
+}
+
+/// Size the raster for `draft` at `cell_px`, checking the byte and per-side budgets with checked
+/// arithmetic. Allocates only the per-thread extents (linear in ends + picks).
+fn raster_layout(
+    draft: &Draft,
+    cell_px: u32,
+    limits: &RenderLimits,
+) -> Result<RasterLayout, RenderError> {
+    let base = cell_px.max(1) as usize;
+    let col_w = thread_extents(&draft.warp_thickness, draft.ends(), base);
+    let row_h = thread_extents(&draft.weft_thickness, draft.picks(), base);
+    let sum = |v: &[usize]| {
+        v.iter()
+            .try_fold(0usize, |acc, &x| acc.checked_add(x))
+            .ok_or(RenderError::Overflow)
+    };
+    let (width, height) = (sum(&col_w)?, sum(&row_h)?);
+    let bytes = width
+        .checked_mul(height)
+        .and_then(|wh| wh.checked_mul(4))
+        .ok_or(RenderError::Overflow)?;
+    if bytes > limits.max_raster_bytes
+        || width > limits.max_raster_side
+        || height > limits.max_raster_side
+    {
+        return Err(RenderError::RasterTooLarge {
+            width,
+            height,
+            bytes,
+            max_bytes: limits.max_raster_bytes,
+            max_side: limits.max_raster_side,
+        });
+    }
+    Ok(RasterLayout {
+        col_w,
+        row_h,
+        width,
+        height,
+        bytes,
+    })
+}
+
+/// The largest pixel pitch `<= max_cell_px` (and at least 1) at which `draft` renders within
+/// `limits`. Every current preview scales its image to fit, so a caller can trade resolution for
+/// memory instead of failing. An error means the draft is too large even at 1 px per intersection.
+pub fn fit_cell_px(
+    draft: &Draft,
+    max_cell_px: u32,
+    limits: &RenderLimits,
+) -> Result<u32, RenderError> {
+    check_cells(draft, limits)?;
+    let fits = |px: u32| raster_layout(draft, px, limits).is_ok();
+    let mut hi = max_cell_px.max(1);
+    if fits(hi) {
+        return Ok(hi);
+    }
+    // Report the real reason when even the smallest pitch is over budget.
+    raster_layout(draft, 1, limits)?;
+    // Invariant: `lo` fits and `hi` does not. The raster never shrinks as the pitch grows.
+    let mut lo = 1;
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        if fits(mid) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    Ok(lo)
 }
 
 /// Per-thread pixel extents from relative thickness values.
@@ -102,7 +317,7 @@ fn thread_extents(thickness: &[f32], n: usize, base: usize) -> Vec<usize> {
 /// Optional overlays drawn onto the drawdown raster. Default-OFF (a plain cloth render): the live
 /// editor turns these on per-view; the thumbnail/library path leaves them off so the saved preview
 /// stays a clean cloth.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RenderOptions {
     /// Draw a 1px separator between cells so the interlacement reads as a grid (aligned to the
     /// variable cell boundaries, so it stays correct under per-thread thickness).
@@ -114,16 +329,6 @@ pub struct RenderOptions {
     /// weft-faced cell as a horizontal one — so the cloth looks woven instead of a flat color grid
     /// (see [`thread_shade`]). Off by default (a plain flat fill, byte-identical to the old raster).
     pub thread_texture: bool,
-}
-
-impl Default for RenderOptions {
-    fn default() -> Self {
-        RenderOptions {
-            gridlines: false,
-            float_threshold: 0,
-            thread_texture: false,
-        }
-    }
 }
 
 /// Render the drawdown to an RGBA8 buffer at `cell_px` pixels per (thinnest) intersection, with no
@@ -147,73 +352,80 @@ pub fn render_rgba(draft: &Draft, cell_px: u32) -> RgbaImage {
 /// left and a newly-appended pick at the bottom. The buffer is built in the natural raster order
 /// (end 0 left, pick 0 bottom) and turned 180° as a final step; the UI grids use the matching
 /// right/top origins, so the bitmap blits 1:1 with NO second flip on the Dart side.
+///
+/// Infallible convenience over [`try_render_rgba_with`] with [`RenderLimits::DEFAULT`]: a draft over
+/// budget yields an EMPTY image, which a caller cannot tell apart from an empty draft. The FFI
+/// bridge uses the `try_` form so the UI can explain an oversized draft instead.
 pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> RgbaImage {
-    let dd = compute(draft);
-    if dd.ends == 0 || dd.picks == 0 {
-        return RgbaImage {
-            width: 0,
-            height: 0,
-            pixels: Vec::new(),
-        };
-    }
-    let base = cell_px.max(1) as usize;
-    let col_w = thread_extents(&draft.warp_thickness, dd.ends, base);
-    let row_h = thread_extents(&draft.weft_thickness, dd.picks, base);
+    try_render_rgba_with(draft, cell_px, opts, &RenderLimits::DEFAULT)
+        .unwrap_or_else(|_| RgbaImage::empty())
+}
 
-    // Cumulative left edge per end (end 0 at the left); total width is the running sum.
-    let mut col_left = Vec::with_capacity(dd.ends);
+/// Render the drawdown like [`render_rgba_with`], but check every size against `limits` (with
+/// checked arithmetic, before any large allocation) and report why a render is impossible rather
+/// than returning a blank. A 0-end or 0-pick draft renders as an empty image, not an error.
+pub fn try_render_rgba_with(
+    draft: &Draft,
+    cell_px: u32,
+    opts: &RenderOptions,
+    limits: &RenderLimits,
+) -> Result<RgbaImage, RenderError> {
+    let (ends, picks, n) = check_cells(draft, limits)?;
+    if n == 0 {
+        return Ok(RgbaImage::empty());
+    }
+    let RasterLayout {
+        col_w,
+        row_h,
+        width: w,
+        height: h,
+        bytes,
+    } = raster_layout(draft, cell_px, limits)?;
+
+    // The face of every intersection, one byte each (the render needs no per-cell color copy).
+    let mut warp_up = try_vec::<bool>(n)?;
+    for_each_intersection(draft, |_, _, up| warp_up.push(up));
+    let mask = long_float_mask(&warp_up, ends, picks, opts.float_threshold as usize)?;
+
+    // Cumulative left edge per end (end 0 at the left). Every partial sum is bounded by the checked
+    // total width, so plain addition cannot overflow here.
+    let mut col_left = try_vec::<usize>(ends)?;
     let mut acc = 0usize;
     for &cw in &col_w {
         col_left.push(acc);
         acc += cw;
     }
-    let w = acc;
 
     // Pick 0 sits at the BOTTOM, so build top edges from the bottom up: a pick's top edge is the
     // image height minus the cloth woven up to and including it.
-    let h: usize = row_h.iter().sum();
-
-    // Guard the raster allocation: w/h derive from untrusted dimensions and the caller's cell_px, so
-    // `w * h * 4` can overflow `usize` (a debug panic, or a release wrap -> under-alloc -> OOB writes)
-    // or demand a petabyte buffer. Size it with CHECKED math and bail to an empty image past a cap.
-    const MAX_RASTER_BYTES: usize = 512 * 1024 * 1024; // 512 MB
-    let Some(total) = w
-        .checked_mul(h)
-        .and_then(|wh| wh.checked_mul(4))
-        .filter(|&t| t <= MAX_RASTER_BYTES)
-    else {
-        return RgbaImage {
-            width: 0,
-            height: 0,
-            pixels: Vec::new(),
-        };
-    };
-
-    let mut row_top = vec![0usize; dd.picks];
+    let mut row_top = try_vec::<usize>(picks)?;
     let mut from_bottom = 0usize;
-    for pick in 0..dd.picks {
-        from_bottom += row_h[pick];
-        row_top[pick] = h - from_bottom;
+    for &rh in &row_h {
+        from_bottom += rh;
+        row_top.push(h - from_bottom);
     }
 
-    let mask = long_float_mask(&dd, opts.float_threshold as usize);
-    let mut px = vec![0u8; total];
+    let mut px = try_vec::<u8>(bytes)?;
+    px.resize(bytes, 0);
     let palette = &draft.colors.palette;
     let color_at = |idx: ColorIndex| -> Color { palette.get(idx).copied().unwrap_or(Color::WHITE) };
 
-    for pick in 0..dd.picks {
+    for pick in 0..picks {
         let top = row_top[pick];
         let ch = row_h[pick];
-        for end in 0..dd.ends {
-            let cell = dd.cell(end, pick);
+        let weft_c = color_at(draft.colors.weft.get(pick).copied().unwrap_or(0));
+        for end in 0..ends {
+            let i = pick * ends + end;
             // Warp on top => a vertical thread; weft on top => a horizontal one. Drives the texture's
             // shading axis below.
-            let warp_up = matches!(cell, Cell::WarpUp(_));
-            let base_c = match cell {
-                Cell::WarpUp(i) | Cell::WeftUp(i) => color_at(i),
+            let warp_up = warp_up[i];
+            let base_c = if warp_up {
+                color_at(draft.colors.warp.get(end).copied().unwrap_or(0))
+            } else {
+                weft_c
             };
             // Tint cells that belong to a long float so they read at a glance (over any palette).
-            let c = if mask[pick * dd.ends + end] {
+            let c = if mask.as_ref().is_some_and(|m| m[i]) {
                 blend(base_c, FLOAT_HIGHLIGHT, 0.5)
             } else {
                 base_c
@@ -245,7 +457,7 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
     }
 
     if opts.gridlines {
-        draw_gridlines(&mut px, w, h, &col_left, &row_top, dd.ends, dd.picks);
+        draw_gridlines(&mut px, w, h, &col_left, &row_top);
     }
 
     // Turn the finished buffer 180° to the conventional weaving orientation (end 1 right, pick 1 top).
@@ -260,11 +472,13 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
         }
     }
 
-    RgbaImage {
-        width: w as u32,
-        height: h as u32,
+    // `w`/`h` are within `max_raster_side`; with the default limits that is far below `u32::MAX`, and
+    // a caller-supplied larger side still cannot exceed the checked `usize` byte total.
+    Ok(RgbaImage {
+        width: u32::try_from(w).map_err(|_| RenderError::Overflow)?,
+        height: u32::try_from(h).map_err(|_| RenderError::Overflow)?,
         pixels: px,
-    }
+    })
 }
 
 /// The grid-seam color: a neutral mid-gray that reads on most cloth colors (it can vanish on a
@@ -294,6 +508,7 @@ fn blend(base: Color, over: [u8; 3], a: f32) -> Color {
 ///     neighbour at the cell boundary (`ENDS`);
 ///   * a slim additive ridge of light rides the centre line so even a near-black strand catches a
 ///     little sheen instead of reading flat (`RIDGE`).
+///
 /// All three are gentle so the cloth's color stays legible; the centre of every cell keeps
 /// essentially the base color.
 fn thread_shade(c: Color, perp: f32, along: f32) -> Color {
@@ -317,62 +532,58 @@ fn thread_shade(c: Color, perp: f32, along: f32) -> Color {
 
 /// Mark every cell that belongs to a float — a maximal run of same-face cells along the warp (down
 /// a column) or weft (across a row) — of length `>= threshold`. A `threshold` below 2 marks nothing
-/// (a "float" of one is just ordinary interlacement). The flat mask is indexed like the drawdown.
-fn long_float_mask(dd: &Drawdown, threshold: usize) -> Vec<bool> {
-    let mut mask = vec![false; dd.cells.len()];
+/// (a "float" of one is just ordinary interlacement), and then no mask is allocated at all. The flat
+/// mask is indexed like the drawdown (`[pick * ends + end]`, from `warp_up`).
+fn long_float_mask(
+    warp_up: &[bool],
+    ends: usize,
+    picks: usize,
+    threshold: usize,
+) -> Result<Option<Vec<bool>>, RenderError> {
     if threshold < 2 {
-        return mask;
+        return Ok(None);
     }
-    // Warp floats: consecutive WarpUp down each column. The `0..=picks` sweep uses the final
+    let mut mask = try_vec::<bool>(warp_up.len())?;
+    mask.resize(warp_up.len(), false);
+    // Warp floats: consecutive warp-up cells down each column. The `0..=picks` sweep uses the final
     // out-of-range step as a sentinel that flushes a run ending at the top edge.
-    for end in 0..dd.ends {
-        let mut run: Vec<usize> = Vec::new();
-        for pick in 0..=dd.picks {
-            let is_warp = pick < dd.picks && matches!(dd.cell(end, pick), Cell::WarpUp(_));
-            if is_warp {
-                run.push(pick);
+    for end in 0..ends {
+        let mut run = 0usize;
+        for pick in 0..=picks {
+            if pick < picks && warp_up[pick * ends + end] {
+                run += 1;
             } else {
-                if run.len() >= threshold {
-                    for &p in &run {
-                        mask[p * dd.ends + end] = true;
+                if run >= threshold {
+                    for p in pick - run..pick {
+                        mask[p * ends + end] = true;
                     }
                 }
-                run.clear();
+                run = 0;
             }
         }
     }
-    // Weft floats: consecutive WeftUp across each row.
-    for pick in 0..dd.picks {
-        let mut run: Vec<usize> = Vec::new();
-        for end in 0..=dd.ends {
-            let is_weft = end < dd.ends && matches!(dd.cell(end, pick), Cell::WeftUp(_));
-            if is_weft {
-                run.push(end);
+    // Weft floats: consecutive weft-up cells across each row.
+    for pick in 0..picks {
+        let row = pick * ends;
+        let mut run = 0usize;
+        for end in 0..=ends {
+            if end < ends && !warp_up[row + end] {
+                run += 1;
             } else {
-                if run.len() >= threshold {
-                    for &e in &run {
-                        mask[pick * dd.ends + e] = true;
-                    }
+                if run >= threshold {
+                    mask[row + end - run..row + end].fill(true);
                 }
-                run.clear();
+                run = 0;
             }
         }
     }
-    mask
+    Ok(Some(mask))
 }
 
 /// Draw interior cell-boundary seams (one between each pair of adjacent ends/picks; no outer
 /// border) in [`GRID_LINE`], aligned to the variable cell positions so the grid stays true under
 /// per-thread thickness.
-fn draw_gridlines(
-    px: &mut [u8],
-    w: usize,
-    h: usize,
-    col_left: &[usize],
-    row_top: &[usize],
-    ends: usize,
-    picks: usize,
-) {
+fn draw_gridlines(px: &mut [u8], w: usize, h: usize, col_left: &[usize], row_top: &[usize]) {
     let mut set = |x: usize, y: usize| {
         if x < w && y < h {
             let o = (y * w + x) * 4;
@@ -383,15 +594,14 @@ fn draw_gridlines(
         }
     };
     // Vertical seams at the left edge of every end except the first (an interior boundary).
-    for end in 1..ends {
-        let x = col_left[end];
+    for &x in col_left.iter().skip(1) {
         for y in 0..h {
             set(x, y);
         }
     }
     // Horizontal seams at the top edge of every cell except the topmost pick (whose top edge is the
     // outer image border at y == 0).
-    for &y in row_top.iter().take(picks) {
+    for &y in row_top {
         if y == 0 {
             continue;
         }
@@ -702,5 +912,289 @@ mod tests {
         let img = render_rgba(&plain_2x2(), u32::MAX);
         assert_eq!((img.width, img.height), (0, 0));
         assert!(img.pixels.is_empty());
+    }
+
+    // --- Resource bounds (M7-01) -------------------------------------------------------------
+
+    /// An `ends` x `picks` liftplan draft that raises nothing: cheap to BUILD at any size (the
+    /// document is linear in ends + picks), so tests can probe the quadratic drawdown budget.
+    fn blank(ends: usize, picks: usize) -> Draft {
+        let mut d = plain_2x2();
+        d.threading = Threading(vec![vec![ShaftId(1)]; ends]);
+        d.drive = Drive::Liftplan(Liftplan(vec![Vec::new(); picks]));
+        d.colors.warp = vec![0; ends];
+        d.colors.weft = vec![1; picks];
+        d
+    }
+
+    fn limits(max_cells: usize, max_raster_bytes: usize, max_raster_side: usize) -> RenderLimits {
+        RenderLimits {
+            max_cells,
+            max_raster_bytes,
+            max_raster_side,
+        }
+    }
+
+    /// The pre-M7-01 interlacement, kept verbatim as a test oracle for the lookup-table rewrite.
+    fn reference_compute(draft: &Draft) -> Vec<Cell> {
+        let mut cells = Vec::new();
+        for pick in 0..draft.picks() {
+            let raised = draft.raised_shafts(pick);
+            let weft_color = draft.colors.weft.get(pick).copied().unwrap_or(0);
+            for end in 0..draft.ends() {
+                let warp_up = draft
+                    .threading
+                    .0
+                    .get(end)
+                    .map(|shafts| shafts.iter().any(|s| raised.contains(s)))
+                    .unwrap_or(false);
+                cells.push(if warp_up {
+                    Cell::WarpUp(draft.colors.warp.get(end).copied().unwrap_or(0))
+                } else {
+                    Cell::WeftUp(weft_color)
+                });
+            }
+        }
+        cells
+    }
+
+    proptest::proptest! {
+        /// Random drafts (both drives, both sheds, multi-shaft and unthreaded ends, ids past the
+        /// header, ragged colors): the bounded drawdown equals the original algorithm cell for cell.
+        #[test]
+        fn interlacement_matches_the_reference(
+            shafts in 1u16..12,
+            sinking in proptest::bool::ANY,
+            liftplan in proptest::bool::ANY,
+            threading in proptest::collection::vec(proptest::collection::vec(1u16..14, 0..3), 0..9),
+            rows in proptest::collection::vec(proptest::collection::vec(1u16..14, 0..4), 0..9),
+            tieup in proptest::collection::vec(proptest::collection::vec(1u16..14, 0..4), 0..6),
+            warp in proptest::collection::vec(0usize..3, 0..9),
+            weft in proptest::collection::vec(0usize..3, 0..9),
+        ) {
+            let mut d = plain_2x2();
+            d.shafts = shafts;
+            d.shed = if sinking { ShedType::Sinking } else { ShedType::Rising };
+            d.threading = Threading(
+                threading.iter().map(|e| e.iter().map(|&s| ShaftId(s)).collect()).collect(),
+            );
+            d.drive = if liftplan {
+                Drive::Liftplan(Liftplan(
+                    rows.iter().map(|r| r.iter().map(|&s| ShaftId(s)).collect()).collect(),
+                ))
+            } else {
+                Drive::Treadled {
+                    tieup: TieUp(
+                        tieup.iter().map(|t| t.iter().map(|&s| ShaftId(s)).collect()).collect(),
+                    ),
+                    treadling: Treadling(
+                        rows.iter().map(|r| r.iter().map(|&t| TreadleId(t)).collect()).collect(),
+                    ),
+                }
+            };
+            d.colors.warp = warp;
+            d.colors.weft = weft;
+            proptest::prop_assert_eq!(compute(&d).cells, reference_compute(&d));
+        }
+    }
+
+    /// The infallible wrapper is exactly the bounded render under the default budget.
+    #[test]
+    fn render_rgba_with_is_try_render_under_default_limits() {
+        let mut fat = plain_2x2();
+        fat.warp_thickness = vec![1.0, 2.5];
+        fat.weft_thickness = vec![3.0, 1.0];
+        let all_on = RenderOptions {
+            gridlines: true,
+            float_threshold: 2,
+            thread_texture: true,
+        };
+        for d in [plain_2x2(), fat, warp_cell(), weft_cell()] {
+            for opts in [RenderOptions::default(), all_on] {
+                let legacy = render_rgba_with(&d, 6, &opts);
+                let bounded = try_render_rgba_with(&d, 6, &opts, &RenderLimits::DEFAULT).unwrap();
+                assert_eq!(legacy, bounded);
+            }
+        }
+    }
+
+    #[test]
+    fn try_compute_matches_compute() {
+        let mut d = plain_2x2();
+        d.shed = ShedType::Sinking;
+        d.drive = Drive::Treadled {
+            tieup: TieUp(vec![vec![ShaftId(1)], vec![ShaftId(2)]]),
+            treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(2)]]),
+        };
+        assert_eq!(
+            try_compute(&d, &RenderLimits::DEFAULT).unwrap(),
+            compute(&d)
+        );
+    }
+
+    #[test]
+    fn empty_draft_renders_empty_not_an_error() {
+        let img = try_render_rgba_with(
+            &blank(0, 5),
+            12,
+            &RenderOptions::default(),
+            &RenderLimits::DEFAULT,
+        )
+        .unwrap();
+        assert_eq!((img.width, img.height, img.pixels.len()), (0, 0, 0));
+    }
+
+    #[test]
+    fn cell_budget_is_exact() {
+        let d = plain_2x2(); // 4 intersections
+        let opts = RenderOptions::default();
+        assert!(try_render_rgba_with(&d, 1, &opts, &limits(4, usize::MAX, usize::MAX)).is_ok());
+        assert_eq!(
+            try_render_rgba_with(&d, 1, &opts, &limits(3, usize::MAX, usize::MAX)),
+            Err(RenderError::TooManyCells {
+                ends: 2,
+                picks: 2,
+                cells: 4,
+                limit: 3
+            })
+        );
+        assert!(matches!(
+            try_compute(&d, &limits(3, usize::MAX, usize::MAX)),
+            Err(RenderError::TooManyCells { .. })
+        ));
+    }
+
+    #[test]
+    fn raster_byte_and_side_budgets_are_exact() {
+        let d = plain_2x2();
+        let opts = RenderOptions::default();
+        // At 4 px the raster is 8 x 8 = 256 bytes.
+        assert!(try_render_rgba_with(&d, 4, &opts, &limits(usize::MAX, 256, 8)).is_ok());
+        assert!(matches!(
+            try_render_rgba_with(&d, 4, &opts, &limits(usize::MAX, 255, 8)),
+            Err(RenderError::RasterTooLarge {
+                width: 8,
+                height: 8,
+                bytes: 256,
+                ..
+            })
+        ));
+        assert!(matches!(
+            try_render_rgba_with(&d, 4, &opts, &limits(usize::MAX, 256, 7)),
+            Err(RenderError::RasterTooLarge { .. })
+        ));
+    }
+
+    /// A pitch whose raster cannot even be SIZED in `usize` is reported, not wrapped or panicked on.
+    #[test]
+    fn unsizeable_raster_is_an_overflow_error() {
+        let r = try_render_rgba_with(
+            &plain_2x2(),
+            u32::MAX,
+            &RenderOptions::default(),
+            &RenderLimits::UNBOUNDED,
+        );
+        // 64-bit: (2 * 4.29e9)^2 * 4 overflows the byte count. 32-bit: the extents themselves do.
+        assert_eq!(r, Err(RenderError::Overflow));
+    }
+
+    /// The default budget rejects a 100,000 x 100,000 draft (the largest a WIF can declare) up front,
+    /// where the old renderer asked for about 160 GB.
+    #[test]
+    fn default_budget_rejects_the_largest_wif_draft() {
+        let d = blank(100_000, 100_000);
+        assert!(matches!(
+            try_render_rgba_with(&d, 12, &RenderOptions::default(), &RenderLimits::DEFAULT),
+            Err(RenderError::TooManyCells {
+                cells: 10_000_000_000,
+                ..
+            })
+        ));
+        assert!(matches!(
+            fit_cell_px(&d, 12, &RenderLimits::DEFAULT),
+            Err(RenderError::TooManyCells { .. })
+        ));
+    }
+
+    /// A 1000 x 1000 draft used to come back blank at the editor's 12 px; it now fits at a smaller
+    /// pitch that renders.
+    #[test]
+    fn fit_cell_px_finds_the_largest_pitch_that_fits() {
+        let lim = RenderLimits::DEFAULT;
+        let big = blank(1000, 1000);
+        assert!(matches!(
+            try_render_rgba_with(&big, 12, &RenderOptions::default(), &lim),
+            Err(RenderError::RasterTooLarge { .. })
+        ));
+        // 64 MiB / 4 bytes = 16.7 M px, so 4000 x 4000 (4 px per cell) fits and 5 px does not.
+        assert_eq!(fit_cell_px(&big, 12, &lim), Ok(4));
+        // A small draft keeps the requested pitch; 0 is treated as 1.
+        assert_eq!(fit_cell_px(&plain_2x2(), 12, &lim), Ok(12));
+        assert_eq!(fit_cell_px(&plain_2x2(), 0, &lim), Ok(1));
+        // Exact boundary on a tiny budget: 2 x 2 at 4 px = 256 bytes.
+        assert_eq!(
+            fit_cell_px(&plain_2x2(), 12, &limits(usize::MAX, 256, usize::MAX)),
+            Ok(4)
+        );
+        // Variable thickness widens columns; the fitted pitch still respects the budget.
+        let mut fat = plain_2x2();
+        fat.warp_thickness = vec![1.0, 3.0];
+        let px = fit_cell_px(&fat, 50, &limits(usize::MAX, 4096, usize::MAX)).unwrap();
+        let img = try_render_rgba_with(
+            &fat,
+            px,
+            &RenderOptions::default(),
+            &limits(usize::MAX, 4096, usize::MAX),
+        );
+        assert!(img.is_ok());
+        assert!(try_render_rgba_with(
+            &fat,
+            px + 1,
+            &RenderOptions::default(),
+            &limits(usize::MAX, 4096, usize::MAX)
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn fit_cell_px_reports_why_even_one_px_is_too_big() {
+        // 10 ends at 1 px is already wider than an 8 px side budget.
+        assert!(matches!(
+            fit_cell_px(&blank(10, 2), 12, &limits(usize::MAX, usize::MAX, 8)),
+            Err(RenderError::RasterTooLarge { width: 10, .. })
+        ));
+    }
+
+    /// A sinking shed on a huge shaft count raises nearly every shaft; the drawdown must still be
+    /// right (and is now linear in size, via the per-pick lookup table).
+    #[test]
+    fn sinking_shed_with_many_shafts_is_correct() {
+        let mut d = plain_2x2();
+        d.shafts = u16::MAX;
+        d.shed = ShedType::Sinking;
+        d.threading = Threading(vec![vec![ShaftId(1)], vec![ShaftId(u16::MAX)]]);
+        d.drive = Drive::Treadled {
+            tieup: TieUp(vec![vec![ShaftId(1)], vec![ShaftId(u16::MAX)]]),
+            treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(2)]]),
+        };
+        let dd = compute(&d);
+        // Pick 0 sinks shaft 1 (everything else rises): end 0 weft-up, end 1 warp-up. Pick 1 inverts.
+        assert!(matches!(dd.cell(0, 0), Cell::WeftUp(_)));
+        assert!(matches!(dd.cell(1, 0), Cell::WarpUp(_)));
+        assert!(matches!(dd.cell(0, 1), Cell::WarpUp(_)));
+        assert!(matches!(dd.cell(1, 1), Cell::WeftUp(_)));
+    }
+
+    /// The float tint is unchanged by the run-length rewrite: only runs at or over the threshold.
+    #[test]
+    fn float_mask_marks_runs_at_or_over_threshold() {
+        // warp_up, 3 ends x 2 picks, row-major by pick: [W W W] / [W . .]
+        let up = [true, true, true, true, false, false];
+        assert_eq!(long_float_mask(&up, 3, 2, 0).unwrap(), None);
+        let m = long_float_mask(&up, 3, 2, 2).unwrap().unwrap();
+        // End 0 is a 2-long warp float; pick 1's two weft-up cells are a 2-long weft float.
+        assert_eq!(m, vec![true, false, false, true, true, true]);
+        let m3 = long_float_mask(&up, 3, 2, 3).unwrap().unwrap();
+        assert_eq!(m3, vec![false; 6]);
     }
 }

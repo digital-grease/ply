@@ -314,7 +314,7 @@ impl KnitPattern {
         match self.construction {
             Construction::InTheRound => Side::Rs,
             Construction::Flat => {
-                let even = row % 2 == 0;
+                let even = row.is_multiple_of(2);
                 match (self.first_row_side, even) {
                     (Side::Rs, true) | (Side::Ws, false) => Side::Rs,
                     _ => Side::Ws,

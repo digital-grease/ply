@@ -15,6 +15,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/draft_repository.dart' show previewErrorMessage;
 import '../models/draft_doc.dart';
 import '../models/treadling_entries.dart';
 import '../state/draft_editor_notifier.dart';
@@ -396,7 +397,19 @@ class _DrawdownChild extends ConsumerWidget {
         isAntiAlias: false,
       ),
       loading: () => ColoredBox(color: colors.surfaceContainerHighest),
-      error: (e, _) => ColoredBox(color: colors.errorContainer),
+      error: (e, _) => ColoredBox(
+        color: colors.errorContainer,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              previewErrorMessage(e),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.onErrorContainer),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

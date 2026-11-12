@@ -29,8 +29,14 @@ import '../rust/dto.dart';
 /// Since Phase 2.3 the editor speaks the transparent `DraftDto` end to end (no opaque,
 /// single-use `Draft` handle): a [DraftDoc] can be rendered, validated, and written
 /// repeatedly with no use-after-free.
+///
+/// Renders are BOUNDED by the engine's device budget: a draft too large for the requested pitch is
+/// drawn at the largest pitch that fits (the views scale the image anyway), and only a draft too
+/// large even at one pixel per intersection throws a typed [RenderFailure]. Use
+/// [previewErrorMessage] to turn that into a sentence for the UI.
 class DraftRepository {
-  DraftRepository();
+  DraftRepository({@visibleForTesting Directory? draftsDirOverride})
+      : _draftsDirCache = draftsDirOverride;
 
   /// Pixels-per-intersection for saved thumbnails. Small: tiles are ~180px wide.
   static const int _thumbCellPx = 4;
@@ -579,7 +585,10 @@ class DraftRepository {
   /// so a concurrent scan never sees a half-deleted draft as present.
   Future<void> delete(String id) async {
     final dir = await _draftsDir();
-    for (final path in [_jsonPath(dir, id), _wifPath(dir, id), _pngPath(dir, id)]) {
+    final owned = [_jsonPath(dir, id), _wifPath(dir, id), _pngPath(dir, id)];
+    // Also any `.tmp` an interrupted atomic save left behind: it holds draft content too, and the
+    // delete promises the draft is gone.
+    for (final path in [...owned, for (final o in owned) '$o.tmp']) {
       final f = File(path);
       if (await f.exists()) {
         try {
@@ -769,4 +778,18 @@ class DraftRepository {
   /// Wire `List<Uint16List>` -> plain growable `List<List<int>>`.
   static List<List<int>> _rowsFromU16(List<Uint16List> rows) =>
       [for (final r in rows) List<int>.of(r)];
+}
+
+/// A user-facing sentence for a failed preview render. The engine already falls back to the largest
+/// resolution that fits the device budget, so a [RenderFailure] means the draft is too large to draw
+/// even at one pixel per intersection (or memory ran out); anything else keeps its own message.
+String previewErrorMessage(Object error) {
+  if (error is RenderFailure) {
+    return switch (error.kind) {
+      RenderFailureKind.tooLarge => 'This draft is too large to preview on this device.',
+      RenderFailureKind.outOfMemory => 'There was not enough memory to draw this preview.',
+      RenderFailureKind.invalidDraft => 'This draft could not be drawn.',
+    };
+  }
+  return '$error';
 }

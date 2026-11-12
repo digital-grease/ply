@@ -3,9 +3,9 @@
 //! Deterministic, host-only (`cargo test`) — no Flutter, no FFI. They lock two things
 //! at once:
 //!   1. interlacement correctness (which intersections show warp vs weft), and
-//!   2. the vertical-flip ORIENTATION contract: `render_rgba` draws pick 0 at the
-//!      BOTTOM of the image (`row_top = (picks - 1 - pick) * cell`, see
-//!      `drawdown.rs`), so the Flutter side must NOT flip again.
+//!   2. the ORIENTATION contract: `render_rgba` emits the conventional draft orientation,
+//!      end 1 at the RIGHT and pick 1 at the TOP (built in raster order and turned 180°
+//!      as its last step, see `drawdown.rs`), so the Flutter side must NOT flip again.
 //!
 //! The fixtures use a black warp (palette idx 1 = 0,0,0) over a white weft
 //! (idx 2 = 255,255,255), so every warp-up pixel is pure black and every weft-up
@@ -83,14 +83,10 @@ fn twill_2_2_golden() {
 
     let dd = compute(&d);
     let expected_black: [&[usize]; 4] = [&[0, 1], &[1, 2], &[2, 3], &[0, 3]];
-    for pick in 0..4usize {
+    for (pick, black) in expected_black.iter().enumerate() {
         for end in 0..4usize {
             let is_warp_up = matches!(dd.cell(end, pick), Cell::WarpUp(_));
-            assert_eq!(
-                is_warp_up,
-                expected_black[pick].contains(&end),
-                "pick {pick} end {end}"
-            );
+            assert_eq!(is_warp_up, black.contains(&end), "pick {pick} end {end}");
         }
     }
 

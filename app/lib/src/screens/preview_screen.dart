@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../data/draft_repository.dart';
 import '../models/draft_meta.dart';
+import '../rust/dto.dart' show RenderFailure;
 import '../widgets/drawdown_view.dart';
 import '../widgets/save_draft_dialog.dart';
 import 'editor_screen.dart';
@@ -115,6 +116,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   String _friendlyError(Object e) {
     if (e is FormatException) return "That file isn't a weaving pattern.";
+    if (e is RenderFailure) return previewErrorMessage(e);
     // Engine parse errors arrive as the bridge's exception; its message
     // ("WIF parse error: …") is already user-meaningful.
     return 'Could not open this pattern: $e';

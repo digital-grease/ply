@@ -14,3 +14,9 @@ ply-common = { path = "ply-common" }
 ply-weave = { path = "ply-weave" }
 ply-knit = { path = "ply-knit" }
 ply-nalbind = { path = "ply-nalbind" }
+
+# Release builds normally WRAP on integer overflow. The engines size buffers from untrusted files,
+# and the tests (debug) always run with overflow checks, so keep that behavior in the shipped app:
+# an unexpected overflow becomes a panic that the FFI layer reports, never a silently wrong size.
+[profile.release]
+overflow-checks = true

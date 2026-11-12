@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/draft_repository.dart' show previewErrorMessage;
 import '../models/double_weave_layers.dart';
 import '../models/draft_doc.dart';
 import '../state/editor_providers.dart';
@@ -86,7 +87,7 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
     } catch (e) {
       if (!mounted || mySeq != _seq) return;
       setState(() {
-        _error = 'Could not render the layers: $e';
+        _error = 'Could not render the layers: ${previewErrorMessage(e)}';
         _loading = false;
       });
     }

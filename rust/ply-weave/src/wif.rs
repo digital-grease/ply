@@ -75,8 +75,11 @@ impl Ini {
 /// WIF — an attacker-controlled `Threads=` count OR a sparse high numeric key like `4000000000=1`
 /// would otherwise drive `vec![..; max]` into a multi-GB allocation that ABORTS the process (an
 /// abort `catch_unwind` can't stop). 100,000 is far past any real draft (a wide fine-sett warp runs
-/// a few thousand ends), and caps the worst-case bogus-file allocation at a few MB.
-const MAX_THREADS: usize = 100_000;
+/// a few thousand ends), and caps the worst-case bogus-file allocation at a few MB. The FFI bridge
+/// applies the same per-axis cap to resize and structure generation. It bounds the DOCUMENT (which
+/// is linear in ends + picks); the quadratic drawdown is bounded separately by
+/// [`crate::RenderLimits`].
+pub const MAX_THREADS: usize = 100_000;
 
 /// Parse a numeric-keyed section (`1=3,5`) into a position-indexed `Vec<Vec<u16>>`
 /// (1-based keys map to 0-based slots; gaps become empty lists). Length is capped at [`MAX_THREADS`]

@@ -559,9 +559,12 @@ mod tests {
 
     #[test]
     fn twill_does_not_overflow_at_the_u16_ceiling() {
-        // `over + under` near u16::MAX must not panic (the sum is computed in u32).
-        let t = TieUp::twill(u16::MAX, 1);
+        // `over + under` past u16::MAX must not panic (the sum is computed in u32). `over = 1` keeps
+        // the tie-up at 65,536 entries; `over = u16::MAX` would build 4.3 billion (about 8.6 GB),
+        // which no test may allocate. The FFI bridge refuses tie-ups this large anyway.
+        let t = TieUp::twill(1, u16::MAX);
         assert_eq!(t.treadles(), u16::MAX as usize + 1);
+        assert!(t.0.iter().all(|row| row.len() == 1));
     }
 
     #[test]
