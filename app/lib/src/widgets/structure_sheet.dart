@@ -143,13 +143,20 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
   }
 
   /// Shafts validator that depends on the family: plain needs >= 2 (one odd, one even); satin needs
-  /// >= 5 (no true satin exists below 5 shafts).
+  /// >= 5 (no true satin exists below 5 shafts). Plain weave lifts the odd shafts against the even
+  /// ones, so neighbouring ends must alternate odd/even shafts: a POINT draw always does, but a
+  /// STRAIGHT draw over an odd count puts the last shaft (odd) next to shaft 1 (odd), which then rise
+  /// together and break the plain weave at every repeat.
   String? _structureShafts(String? s) {
     final v = int.tryParse((s ?? '').trim());
     if (v == null) return 'At least 1';
     if (v > _maxShafts) return 'Too many';
     if (_family == StructureFamily.satin) return v < 5 ? 'Satin needs at least 5 shafts' : null;
-    return v < 2 ? 'Plain needs at least 2 shafts' : null;
+    if (v < 2) return 'Plain needs at least 2 shafts';
+    if (v.isOdd && _applyThreading && _threading == ThreadingKind.straight) {
+      return 'Use an even number, or a point draw';
+    }
+    return null;
   }
 
   /// Satin counter validator (cross-field on the shafts value).

@@ -10,8 +10,11 @@ import 'draft_doc.dart';
 ///
 /// The user chooses which shafts are the TOP layer; the rest are the bottom. Which PICKS weave each
 /// layer is derived from the structure (the textbook top-on-top double weave): a TOP pick leaves the
-/// bottom layer down (no bottom shaft raised — it sits below the top weft), a BOTTOM pick lifts the
-/// whole top layer clear (every top shaft raised) so the bottom weft passes under it.
+/// bottom layer down (no bottom shaft raised, it sits below the top weft) and raises SOME but not all
+/// top shafts (so it actually interlaces with the top layer); a BOTTOM pick lifts the whole top layer
+/// clear (every top shaft raised) and raises some but not all bottom shafts. Every other pick weaves
+/// neither layer and is REPORTED by [classifyPicks] with a reason, never silently dropped or counted
+/// twice. Each layer view is that layer's own interlacement, not the face of the finished cloth.
 
 /// The highest shaft the cloth uses (max of the header and any threaded shaft) — the number of shafts
 /// the layer picker offers.
@@ -54,14 +57,77 @@ Set<int> raisedShafts(DraftDoc doc, int pick) {
   }
 }
 
+/// Why a pick weaves neither layer under the current shaft assignment.
+enum UnclassifiedPick {
+  /// Every shaft is in one layer, so there is no second layer to split off.
+  noSplit,
+
+  /// Raises nothing: the weft floats over both layers.
+  overEverything,
+
+  /// Raises every shaft: the weft passes under both layers.
+  underEverything,
+
+  /// Raises exactly the top layer: the weft lies between the layers, interlacing with neither.
+  betweenLayers,
+
+  /// Raises shafts of both layers in a way that is neither a top nor a bottom pick (a stitching pick
+  /// that joins the layers, or a draft that is not double weave with this assignment).
+  crossesLayers,
+}
+
+/// The layer each pick weaves, for one shaft assignment. Every pick is in exactly one of [top],
+/// [bottom], or [unclassified] (0-based pick indices, ascending).
+class PickLayers {
+  const PickLayers({required this.top, required this.bottom, required this.unclassified});
+  final List<int> top;
+  final List<int> bottom;
+  final Map<int, UnclassifiedPick> unclassified;
+}
+
+/// Classify every pick of [doc] for the TOP layer [topShafts] (the rest of `1..maxLayerShaft` is the
+/// bottom). See the library doc for the rule; picks that fit neither layer carry their reason.
+PickLayers classifyPicks(DraftDoc doc, Set<int> topShafts) {
+  final n = maxLayerShaft(doc);
+  final all = {for (var s = 1; s <= n; s++) s};
+  final topSet = topShafts.intersection(all);
+  final bottomSet = all.difference(topSet);
+  final top = <int>[];
+  final bottom = <int>[];
+  final unclassified = <int, UnclassifiedPick>{};
+  for (var p = 0; p < doc.picks; p++) {
+    if (topSet.isEmpty || bottomSet.isEmpty) {
+      unclassified[p] = UnclassifiedPick.noSplit;
+      continue;
+    }
+    final raised = raisedShafts(doc, p).intersection(all);
+    final raisedTop = raised.intersection(topSet);
+    final raisedBottom = raised.intersection(bottomSet);
+    bool proper(Set<int> part, Set<int> whole) => part.isNotEmpty && part.length < whole.length;
+    if (raisedBottom.isEmpty && proper(raisedTop, topSet)) {
+      top.add(p);
+    } else if (raisedTop.length == topSet.length && proper(raisedBottom, bottomSet)) {
+      bottom.add(p);
+    } else if (raised.isEmpty) {
+      unclassified[p] = UnclassifiedPick.overEverything;
+    } else if (raised.length == all.length) {
+      unclassified[p] = UnclassifiedPick.underEverything;
+    } else if (raisedBottom.isEmpty && raisedTop.length == topSet.length) {
+      unclassified[p] = UnclassifiedPick.betweenLayers;
+    } else {
+      unclassified[p] = UnclassifiedPick.crossesLayers;
+    }
+  }
+  return PickLayers(top: top, bottom: bottom, unclassified: unclassified);
+}
+
 /// Build the sub-draft for ONE layer of a double weave so the existing renderer draws just that
 /// layer's cloth face. [topShafts] is the user's assignment of shafts to the TOP layer (the rest are
 /// bottom). For the requested layer ([top] = top vs bottom):
 ///   - WARP: ends threaded on the layer's shafts (an UNTHREADED end goes to the top so the two layers
 ///     still partition every end).
-///   - WEFT: the picks that weave THIS layer — a TOP pick leaves the bottom layer down (no bottom
-///     shaft raised); a BOTTOM pick lifts the whole top layer clear (every top shaft raised). A pick
-///     that fits neither (a malformed / non-double-weave draft) is dropped from both layers.
+///   - WEFT: the picks that weave THIS layer per [classifyPicks]. A pick that weaves neither layer is
+///     in neither sub-draft; the inspector lists those picks and why, so none disappears silently.
 /// The tie-up + shed and the header counts are preserved; only the threading, drive rows, and the
 /// per-thread colors AND thickness are narrowed to the layer (so the kept threads keep their widths).
 DraftDoc doubleWeaveLayerDraft(DraftDoc doc, {required Set<int> topShafts, required bool top}) {
@@ -75,15 +141,9 @@ DraftDoc doubleWeaveLayerDraft(DraftDoc doc, {required Set<int> topShafts, requi
     return row.any(layerShafts.contains);
   }
 
-  bool pickOnLayer(int pick) {
-    final raised = raisedShafts(doc, pick);
-    return top
-        ? bottomShafts.isNotEmpty && bottomShafts.every((s) => !raised.contains(s)) // bottom stays down
-        : topShafts.isNotEmpty && topShafts.every(raised.contains); // top lifted clear
-  }
-
+  final layers = classifyPicks(doc, topShafts);
   final keepEnds = [for (var e = 0; e < doc.ends; e++) if (endOnLayer(e)) e];
-  final keepPicks = [for (var p = 0; p < doc.picks; p++) if (pickOnLayer(p)) p];
+  final keepPicks = top ? layers.top : layers.bottom;
 
   // Read the parallel per-thread arrays defensively: the model permits a color band SHORTER than the
   // threading (validation, not the model, enforces parallelism, and the engine falls back to index 0).

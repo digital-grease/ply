@@ -82,6 +82,24 @@ impl TieUp {
         self.0.len()
     }
 
+    /// The tie-up for a loom with the OTHER shed direction: each treadle ties exactly the shafts in
+    /// `1..=shafts` it did not tie before. A rising (jack) tie-up names the shafts that go up and a
+    /// sinking (counterbalance/countermarch) one names the shafts that go down, so a pick that presses
+    /// ONE treadle raises the same shafts either way. Ids above `shafts` are dropped.
+    pub fn complement(&self, shafts: u16) -> TieUp {
+        TieUp(
+            self.0
+                .iter()
+                .map(|tied| {
+                    (1..=shafts)
+                        .map(ShaftId)
+                        .filter(|s| !tied.contains(s))
+                        .collect()
+                })
+                .collect(),
+        )
+    }
+
     /// Shafts tied to a given 1-based treadle, or empty if out of range.
     pub fn shafts_for(&self, t: TreadleId) -> &[ShaftId] {
         self.0
@@ -345,6 +363,30 @@ impl Draft {
         Liftplan((0..self.picks()).map(|p| self.raised_shafts(p)).collect())
     }
 
+    /// The same draft re-expressed for a loom with shed direction `shed`. A treadled draft keeps its
+    /// threading and treadling and swaps its tie-up for the [complement](TieUp::complement), so the
+    /// cloth is IDENTICAL whenever every pick presses exactly one treadle (true of every structure
+    /// generator, which all assume a rising shed). Picks that press several treadles, or none, combine
+    /// differently on the two shed directions, so their cloth can change; that is loom physics, not a
+    /// conversion choice. A liftplan names raised shafts directly and only its `shed` label changes.
+    pub fn with_shed(&self, shed: ShedType) -> Draft {
+        if shed == self.shed {
+            return self.clone();
+        }
+        let drive = match &self.drive {
+            Drive::Treadled { tieup, treadling } => Drive::Treadled {
+                tieup: tieup.complement(self.shafts),
+                treadling: treadling.clone(),
+            },
+            Drive::Liftplan(lp) => Drive::Liftplan(lp.clone()),
+        };
+        Draft {
+            shed,
+            drive,
+            ..self.clone()
+        }
+    }
+
     /// A canonical **liftplan-driven** copy of this draft. The drawdown is unchanged: the
     /// raised-shaft set per pick is baked in via `to_liftplan` (so a sinking-shed tie-up is
     /// already complemented). Because a liftplan names raised shafts *directly*, the shed
@@ -565,6 +607,29 @@ mod tests {
         let t = TieUp::twill(1, u16::MAX);
         assert_eq!(t.treadles(), u16::MAX as usize + 1);
         assert!(t.0.iter().all(|row| row.len() == 1));
+    }
+
+    #[test]
+    fn tieup_complement_flips_each_treadle_within_the_shaft_count() {
+        let t = TieUp(vec![vec![ShaftId(1), ShaftId(3)], vec![], vec![ShaftId(9)]]);
+        assert_eq!(
+            ids(&t.complement(4).0),
+            vec![vec![2, 4], vec![1, 2, 3, 4], vec![1, 2, 3, 4]]
+        );
+    }
+
+    #[test]
+    fn with_shed_leaves_a_liftplan_unchanged_except_its_label() {
+        let mut d = Draft::blank(4, 0);
+        d.threading = Threading::straight(4, 4);
+        d.drive = Drive::Liftplan(Liftplan(vec![
+            vec![ShaftId(1), ShaftId(2)],
+            vec![ShaftId(3)],
+        ]));
+        let s = d.with_shed(ShedType::Sinking);
+        assert_eq!(s.drive, d.drive);
+        assert_eq!(s.shed, ShedType::Sinking);
+        assert_eq!(s.with_shed(ShedType::Sinking), s, "same shed is a no-op");
     }
 
     #[test]

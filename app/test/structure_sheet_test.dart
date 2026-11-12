@@ -147,6 +147,30 @@ void main() {
     expect(repo.args!.counter, 2);
   });
 
+  testWidgets('plain weave on an odd shaft count needs a point draw', (t) async {
+    final repo = FakeStructureRepo();
+    await openSheet(t, repo);
+    await t.tap(find.text('Twill'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Plain weave').last);
+    await t.pumpAndSettle();
+    await t.enterText(find.widgetWithText(TextFormField, 'Shafts'), '3');
+    await t.tap(find.text('Generate'));
+    await t.pumpAndSettle();
+    expect(find.text('Use an even number, or a point draw'), findsOneWidget);
+    expect(repo.args, isNull, reason: 'a straight draw on 3 shafts is not plain weave');
+
+    await t.tap(find.text('Straight draw'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Point draw').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Generate'));
+    await t.pumpAndSettle();
+    expect(repo.args!.family, StructureFamily.plain);
+    expect(repo.args!.shafts, 3);
+    expect(repo.args!.threading, ThreadingKind.point);
+  });
+
   testWidgets('an empty parameter blocks generation', (t) async {
     final repo = FakeStructureRepo();
     await openSheet(t, repo);

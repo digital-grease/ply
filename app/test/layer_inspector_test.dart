@@ -101,7 +101,18 @@ void main() {
     await settle(tester);
     await tester.tap(find.widgetWithText(FilterChip, '4'));
     await settle(tester);
-    expect(find.text('No threads on this layer.'), findsWidgets);
+    expect(find.text("No warp ends are on this layer's shafts."), findsOneWidget,
+        reason: 'the bottom layer has no shafts left');
+    expect(find.text('No picks weave this layer with this shaft assignment.'), findsOneWidget,
+        reason: 'with every shaft on top there is no second layer to weave against');
+    expect(find.text('4 of 4 picks weave neither layer, so neither view shows them:'), findsOneWidget);
+    expect(find.text('Picks 1, 2, 3, 4: every shaft is in one layer'), findsOneWidget);
     expect(tester.takeException(), isNull, reason: 'no NaN AspectRatio from an empty layer');
+  });
+
+  testWidgets('a clean double weave reports no unclassified picks and labels the views', (tester) async {
+    await pump(tester);
+    expect(find.textContaining('weave neither layer'), findsNothing);
+    expect(find.textContaining("one layer's own interlacement"), findsOneWidget);
   });
 }

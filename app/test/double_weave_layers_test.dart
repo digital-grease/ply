@@ -190,4 +190,75 @@ void main() {
       ], reason: 'ends on shafts 1, 3, and now 4');
     });
   });
+
+  group('classifyPicks', () {
+    DraftDoc liftplan(List<List<int>> rows) => DraftDoc.blank(shafts: 4, treadles: 0).copyWith(
+          threading: const [
+            [1],
+            [2],
+            [3],
+            [4],
+          ],
+          drive: DraftLiftplan(liftplan: rows),
+          warpColors: const [0, 0, 0, 0],
+          weftColors: [for (final _ in rows) 0],
+        );
+
+    void expectPartition(PickLayers l, int picks) {
+      final all = [...l.top, ...l.bottom, ...l.unclassified.keys]..sort();
+      expect(all, [for (var p = 0; p < picks; p++) p], reason: 'every pick in exactly one place');
+    }
+
+    test('the generated double weave splits cleanly with nothing left over', () {
+      final l = classifyPicks(doubleWeave(), {1, 3});
+      expect(l.top, [0, 2]);
+      expect(l.bottom, [1, 3]);
+      expect(l.unclassified, isEmpty);
+    });
+
+    test('degenerate picks are reported with their reason, never counted twice', () {
+      final d = liftplan(const [
+        [1], // top pick
+        [1, 2, 3], // bottom pick
+        [1, 3], // exactly the top layer raised: between the layers (was counted in BOTH)
+        [], // nothing raised: over everything (was counted as a top pick)
+        [1, 2, 3, 4], // everything raised
+        [1, 2], // raises shafts of both layers without clearing the top: crosses
+      ]);
+      final l = classifyPicks(d, {1, 3});
+      expect(l.top, [0]);
+      expect(l.bottom, [1]);
+      expect(l.unclassified, {
+        2: UnclassifiedPick.betweenLayers,
+        3: UnclassifiedPick.overEverything,
+        4: UnclassifiedPick.underEverything,
+        5: UnclassifiedPick.crossesLayers,
+      });
+      expectPartition(l, 6);
+      final top = doubleWeaveLayerDraft(d, topShafts: {1, 3}, top: true);
+      final bottom = doubleWeaveLayerDraft(d, topShafts: {1, 3}, top: false);
+      expect(top.picks + bottom.picks, 2, reason: 'no pick appears in both layer views');
+    });
+
+    test('a 2/2 twill is not double weave: every pick crosses the layers', () {
+      final twill = liftplan(const [
+        [1, 2],
+        [2, 3],
+        [3, 4],
+        [4, 1],
+      ]);
+      final l = classifyPicks(twill, {1, 3});
+      expect(l.top, isEmpty);
+      expect(l.bottom, isEmpty);
+      expect(l.unclassified.values.toSet(), {UnclassifiedPick.crossesLayers});
+    });
+
+    test('a one-shaft layer cannot be woven, and an all-top assignment has no split', () {
+      final d = doubleWeave();
+      expect(classifyPicks(d, {1, 2, 3}).bottom, isEmpty, reason: 'a single bottom shaft');
+      final none = classifyPicks(d, {1, 2, 3, 4});
+      expect(none.unclassified.values.toSet(), {UnclassifiedPick.noSplit});
+      expectPartition(none, 4);
+    });
+  });
 }

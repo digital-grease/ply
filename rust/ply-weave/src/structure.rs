@@ -469,4 +469,47 @@ mod tests {
             );
         }
     }
+
+    /// Every generator assumes a rising shed. Re-expressed for a sinking-shed loom (counterbalance or
+    /// countermarch) the tie-up flips but the CLOTH must not: same interlacement, cell for cell.
+    #[test]
+    fn generators_weave_the_same_cloth_on_a_sinking_shed() {
+        use crate::draft::ShedType;
+        use crate::drawdown::compute;
+        let drafts = [
+            plain_weave(12, 10),
+            overshot(16, 16, 4),
+            shadow_weave(16, 16, false, 4),
+            shadow_weave(16, 16, true, 4),
+            double_weave(8, 8),
+        ];
+        for d in drafts {
+            assert_eq!(
+                d.shed,
+                ShedType::Rising,
+                "{}: generators emit a rising shed",
+                d.name
+            );
+            let sinking = d.with_shed(ShedType::Sinking);
+            assert_eq!(sinking.shed, ShedType::Sinking);
+            assert_eq!(
+                compute(&sinking),
+                compute(&d),
+                "{}: cloth changed on a sinking shed",
+                d.name
+            );
+            assert_eq!(
+                compute(&sinking.with_shed(ShedType::Rising)),
+                compute(&d),
+                "{}: converting back changed the cloth",
+                d.name
+            );
+            assert!(
+                validate(&sinking).is_empty(),
+                "{}: {:?}",
+                d.name,
+                validate(&sinking)
+            );
+        }
+    }
 }

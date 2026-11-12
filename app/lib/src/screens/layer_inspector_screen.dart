@@ -30,8 +30,9 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
 
   ui.Image? _topImage;
   ui.Image? _bottomImage;
-  bool _topEmpty = false;
-  bool _bottomEmpty = false;
+  /// Why a layer has nothing to draw (null = it rendered).
+  String? _topEmpty;
+  String? _bottomEmpty;
   bool _loading = true;
   String? _error;
 
@@ -56,9 +57,9 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
     final repo = ref.read(repositoryProvider);
     final topDraft = doubleWeaveLayerDraft(widget.draft, topShafts: _topShafts, top: true);
     final botDraft = doubleWeaveLayerDraft(widget.draft, topShafts: _topShafts, top: false);
-    // A 0x0 layer can't be rendered (its image would NaN the AspectRatio), so flag it instead.
-    final topEmpty = topDraft.ends == 0 || topDraft.picks == 0;
-    final botEmpty = botDraft.ends == 0 || botDraft.picks == 0;
+    // A 0x0 layer can't be rendered (its image would NaN the AspectRatio), so say why instead.
+    final topEmpty = _emptyReason(topDraft);
+    final botEmpty = _emptyReason(botDraft);
     final mySeq = ++_seq;
     setState(() {
       _loading = true;
@@ -66,8 +67,8 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
     });
     try {
       // Kick off BOTH layer renders concurrently (don't serialize on the first decode), then await.
-      final topFut = topEmpty ? null : repo.renderDto(topDraft, cellPx: 18, gridlines: true);
-      final botFut = botEmpty ? null : repo.renderDto(botDraft, cellPx: 18, gridlines: true);
+      final topFut = topEmpty != null ? null : repo.renderDto(topDraft, cellPx: 18, gridlines: true);
+      final botFut = botEmpty != null ? null : repo.renderDto(botDraft, cellPx: 18, gridlines: true);
       final topImg = topFut == null ? null : await topFut;
       final botImg = botFut == null ? null : await botFut;
       if (!mounted || mySeq != _seq) {
@@ -93,6 +94,36 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
     }
   }
 
+  static String? _emptyReason(DraftDoc layer) {
+    if (layer.ends == 0) return 'No warp ends are on this layer\'s shafts.';
+    if (layer.picks == 0) return 'No picks weave this layer with this shaft assignment.';
+    return null;
+  }
+
+  /// One line per reason a pick weaves neither layer, listing the (1-based) picks.
+  static List<String> _unclassifiedLines(PickLayers layers) {
+    const why = {
+      UnclassifiedPick.noSplit: 'every shaft is in one layer',
+      UnclassifiedPick.overEverything: 'nothing raised, the weft floats over both layers',
+      UnclassifiedPick.underEverything: 'every shaft raised, the weft passes under both layers',
+      UnclassifiedPick.betweenLayers: 'top layer raised, the weft lies between the layers',
+      UnclassifiedPick.crossesLayers: 'joins or crosses the layers (or not double weave here)',
+    };
+    final byReason = <UnclassifiedPick, List<int>>{};
+    layers.unclassified.forEach((pick, reason) => byReason.putIfAbsent(reason, () => []).add(pick + 1));
+    return [
+      for (final reason in UnclassifiedPick.values)
+        if (byReason[reason] case final picks?)
+          '${picks.length == 1 ? 'Pick' : 'Picks'} ${_pickList(picks)}: ${why[reason]}',
+    ];
+  }
+
+  static String _pickList(List<int> picks) {
+    const shown = 8;
+    final head = picks.take(shown).join(', ');
+    return picks.length > shown ? '$head and ${picks.length - shown} more' : head;
+  }
+
   void _toggleShaft(int shaft) {
     setState(() {
       if (!_topShafts.remove(shaft)) _topShafts.add(shaft);
@@ -105,6 +136,8 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
     final cs = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final shaftCount = maxLayerShaft(widget.draft);
+    final layers = classifyPicks(widget.draft, _topShafts);
+    final unclassified = _unclassifiedLines(layers);
     return Scaffold(
       appBar: AppBar(title: const Text('Double-weave layers')),
       body: Column(
@@ -118,6 +151,11 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
                 Text('Top-layer shafts', style: text.titleSmall),
                 const SizedBox(height: 2),
                 Text('Tap a shaft to move it between the top and bottom layer.',
+                    style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                const SizedBox(height: 2),
+                Text(
+                    "Each view shows one layer's own interlacement, not the face of the finished "
+                    'cloth.',
                     style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                 const SizedBox(height: 8),
                 Wrap(
@@ -135,6 +173,22 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
               ],
             ),
           ),
+          if (unclassified.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${layers.unclassified.length} of ${widget.draft.picks} picks weave neither '
+                    'layer, so neither view shows them:',
+                    style: text.bodySmall?.copyWith(color: cs.onSurface),
+                  ),
+                  for (final line in unclassified)
+                    Text(line, style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                ],
+              ),
+            ),
           const Divider(height: 12),
           if (_error != null)
             Expanded(
@@ -155,7 +209,7 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
     );
   }
 
-  Widget _layerPanel(BuildContext context, String label, ui.Image? image, bool empty) {
+  Widget _layerPanel(BuildContext context, String label, ui.Image? image, String? empty) {
     final cs = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     return Padding(
@@ -172,8 +226,9 @@ class _LayerInspectorScreenState extends ConsumerState<LayerInspectorScreen> {
             child: Center(
               child: _loading
                   ? const CircularProgressIndicator()
-                  : empty
-                      ? Text('No threads on this layer.',
+                  : empty != null
+                      ? Text(empty,
+                          textAlign: TextAlign.center,
                           style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant))
                       : image != null
                           ? DrawdownView(image)
