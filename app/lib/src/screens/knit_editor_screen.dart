@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/draft_doc.dart' show DraftColor;
 import '../models/draft_meta.dart';
 import '../models/knit_stitches.dart';
+import '../models/native_format.dart';
 import '../rust/dto.dart' show ColorDto, SeverityKind;
 import '../rust/knit_dto.dart' show KnitIssueDto, KnitPatternDto;
 import '../state/knit_editor_providers.dart';
@@ -58,7 +59,9 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     try {
       final repo = ref.read(knitRepositoryProvider);
       if (widget.openId != null) {
-        // Open a saved pattern: read its chart + bump lastOpened.
+        // Open a saved pattern: read its chart + bump lastOpened. The id is adopted only after the
+        // file parsed, so a pattern that fails to open (unreadable, or saved by a newer Ply) can never
+        // become this session's save target; Save is also disabled while [_error] is set.
         final pattern = await repo.readPattern(widget.openId!);
         final entry = await repo.openKnit(widget.openId!);
         if (!mounted) return;
@@ -87,7 +90,9 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Could not open the knitting pattern: $e';
+        _error = e is NativeFormatException
+            ? e.message
+            : 'Could not open the knitting pattern: $e';
         _loading = false;
       });
     }
@@ -155,6 +160,16 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
       });
       _snack('Saved to your knit patterns.');
       return true;
+    } on NativeFormatException catch (e) {
+      // The file on disk is one this build must not replace (a newer Ply's, say). Forget the id so the
+      // next Save asks for a name and creates a NEW pattern, leaving the original untouched.
+      if (!mounted) return false;
+      setState(() {
+        _id = null;
+        _saving = false;
+      });
+      _snack('${e.message} Save again to keep your changes as a new pattern.');
+      return false;
     } catch (e) {
       if (!mounted) return false;
       setState(() => _saving = false);
@@ -231,7 +246,9 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                 ? const SizedBox(
                     width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.save_outlined),
-            onPressed: _saving ? null : guardedSave,
+            // Nothing to save while loading or after a failed open (the provider may still hold a
+            // PREVIOUS session's pattern).
+            onPressed: _saving || _loading || _error != null ? null : guardedSave,
           ),
           IconButton(
             visualDensity: VisualDensity.compact,

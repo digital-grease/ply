@@ -7,14 +7,30 @@ import 'package:uuid/uuid.dart';
 
 import '../models/draft_meta.dart';
 import '../models/nalbind_project.dart';
+import '../models/native_format.dart';
 import '../rust/api.dart';
 import '../rust/nalbind_dto.dart';
+
+/// One reading of a Hansen-notation string: the parse with its diagnostics, the loop diagram of its
+/// best-effort stitch, and the stitch's validation issues (empty unless the parse is exact).
+typedef NotationReading = ({
+  ParsedNotationDto parsed,
+  DiagramDto diagram,
+  List<NalbindIssueDto> issues,
+});
+
+/// How far a notation reading can be trusted, the one rule both notation screens use.
+extension ParsedNotationX on ParsedNotationDto {
+  /// True when the stitch IS what the text says: strict acceptance (only formatting was tidied) and
+  /// a non-lossy fidelity. Anything else is a best effort and must not be presented as exact.
+  bool get isExact => accepted && fidelity != FidelityKind.lossy;
+}
 
 /// The one place the app touches the generated bridge symbols for `ply-nalbind` — the nalbind analog
 /// of [DraftRepository] / [KnitRepository]. The reference screen + notation playground depend on this,
 /// never on `api.dart` directly.
 ///
-/// The stitch reference (builtins, parse, diagram, validate) is engine-backed and read-only; the
+/// The stitch reference (builtins, analyze, diagram, validate) is engine-backed and read-only; the
 /// PROJECT layer (save/list/open/rename/delete) is on-device persistence — a `<documents>/nalbinds/
 /// <id>.{plynal,json}` pair mirroring the knit triplet, MINUS the engine-native body and the thumbnail
 /// (nalbinding has no chart to render). A saved project may also own a `<id>.photos/` folder of
@@ -28,9 +44,24 @@ class NalbindRepository {
   /// The curated builtin stitch dictionary (~12 stitches).
   Future<List<NalbindStitchDto>> builtins() => nalbindBuiltin();
 
-  /// Parse a Hansen-notation string into an anonymous stitch (the notation playground). Throws on an
-  /// unrecognized character (the bridge returns the parse message).
-  Future<NalbindStitchDto> parse(String notation) => parseNalbind(notation: notation);
+  /// Read a Hansen-notation string with provenance: its diagnostics, fidelity, strict acceptance
+  /// and best-effort stitch. [strict] is the AUTHORING mode (a project's notation field: every
+  /// problem is an error); otherwise the REFERENCE mode (the playground: each problem at its own
+  /// severity).
+  /// Never fails on any text. The stitch is always a best effort: present it as what the text says
+  /// only when [ParsedNotationX.isExact].
+  Future<ParsedNotationDto> analyze(String notation, {required bool strict}) =>
+      analyzeNalbind(text: notation, strict: strict);
+
+  /// [analyze] plus the loop diagram of its best-effort stitch, and the stitch's validation issues
+  /// when the notation was read exactly (validating an approximate reading would only repeat the
+  /// notation's own problems).
+  Future<NotationReading> read(String notation, {required bool strict}) async {
+    final parsed = await analyze(notation, strict: strict);
+    final sketch = await diagram(parsed.stitch);
+    final issues = parsed.isExact ? await validate(parsed.stitch) : const <NalbindIssueDto>[];
+    return (parsed: parsed, diagram: sketch, issues: issues);
+  }
 
   /// The canonical Hansen string for a stitch.
   Future<String> printNotation(NalbindStitchDto dto) => printNalbind(dto: dto);
@@ -83,30 +114,59 @@ class NalbindRepository {
 
   /// Save a project as the `<id>.{plynal,json}` pair, returning its id. The project body is written
   /// FIRST and the sidecar LAST, so [listProjects] never sees a `.json` without its `.plynal`.
+  ///
+  /// A `.plynal` already on disk that this build cannot read (saved by a newer Ply, another format,
+  /// unreadable) is never replaced: nothing is written and a [NativeFormatException] (`whileSaving`)
+  /// is thrown. A legacy (version 1) body needs no backup: version 2 only adds the version keys.
+  ///
+  /// The sidecar is MERGED into an existing one (keeping its savedAt, author and every key this build
+  /// does not know); only the name, craft, notes and lastOpened are set from this save.
   Future<String> saveProject(NalbindProject project, {String? id}) async {
     final dir = await _dir();
     final projectId = id ?? _uuid.v4();
     final now = DateTime.now();
     try {
-      await _atomicWrite(File(_projectPath(dir, projectId)), jsonEncode(project.toJson()));
-      // Preserve the original savedAt on a re-save; bump lastOpened.
-      DateTime savedAt = now;
+      final body = File(_projectPath(dir, projectId));
+      await _refuseUnreadable(body);
+      await _atomicWrite(body, jsonEncode(project.toJson()));
+      final name = project.name.isEmpty ? 'Untitled' : project.name;
+      DraftMeta? existing;
       if (id != null) {
         try {
-          savedAt = (await _readSidecar(dir, id)).savedAt;
-        } catch (_) {/* first save / missing sidecar */}
+          existing = await _readSidecar(dir, id);
+        } catch (_) {/* first save / missing or unreadable sidecar: write a fresh one */}
       }
-      final meta = DraftMeta(
-        name: project.name.isEmpty ? 'Untitled' : project.name,
-        craft: 'Nalbinding',
-        notes: project.notes,
-        savedAt: savedAt,
-        lastOpened: now,
-      );
+      final meta = existing?.copyWith(
+            name: name,
+            craft: 'Nalbinding',
+            notes: project.notes,
+            lastOpened: now,
+          ) ??
+          DraftMeta(
+            name: name,
+            craft: 'Nalbinding',
+            notes: project.notes,
+            savedAt: now,
+            lastOpened: now,
+          );
       await _atomicWrite(File(_jsonPath(dir, projectId)), jsonEncode(meta.toJson()));
       return projectId;
     } on FileSystemException catch (e) {
       throw Exception('Could not save the project: ${e.message}');
+    }
+  }
+
+  /// Throw (writing nothing) if [body] exists but this build cannot read it.
+  Future<void> _refuseUnreadable(File body) async {
+    if (!await body.exists()) return;
+    try {
+      NalbindProject.decode(await body.readAsString());
+    } on NativeFormatException catch (e) {
+      throw NativeFormatException(e.problem,
+          document: NativeDocument.nalbindProject, whileSaving: true, detail: e.detail);
+    } on FileSystemException catch (e) {
+      throw NativeFormatException(NativeFormatProblem.unreadable,
+          document: NativeDocument.nalbindProject, whileSaving: true, detail: e.message);
     }
   }
 
@@ -141,15 +201,17 @@ class NalbindRepository {
     return entries;
   }
 
-  /// Read a saved project's `.plynal` body.
+  /// Read a saved project's `.plynal` body (any supported version; read-only). A file this build must
+  /// not open (saved by a newer Ply, another format, unreadable) throws a [NativeFormatException].
   Future<NalbindProject> readProject(String id) async {
     final dir = await _dir();
+    final String text;
     try {
-      final json = jsonDecode(await File(_projectPath(dir, id)).readAsString());
-      return NalbindProject.fromJson(json as Map<String, dynamic>);
+      text = await File(_projectPath(dir, id)).readAsString();
     } on FileSystemException catch (e) {
       throw Exception('Could not open the project: ${e.message}');
     }
+    return NalbindProject.decode(text);
   }
 
   /// Mark a project opened (bumps `lastOpened`, rewrites the sidecar).

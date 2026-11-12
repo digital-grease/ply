@@ -1,14 +1,30 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/nalbind_repository.dart';
 import 'package:ply/src/data/photo_store.dart';
+import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/models/nalbind_project.dart';
+import 'package:ply/src/models/native_format.dart';
 
 // The nalbind PROJECT model + persistence: JSON round-trip, and the on-device <id>.{plynal,json}
 // save/list/read/rename(via re-save)/delete cycle over a temp dir (no FFI, no path_provider). Also
 // the privacy cleanup: delete removes the project's <id>.photos/ folder, and the orphan sweep removes
-// photo folders left behind by earlier deletes without ever touching a live project's photos.
+// photo folders left behind by earlier deletes without ever touching a live project's photos. And the
+// `.plynal` version contract: released (legacy) files load, newer files are refused and never
+// overwritten, the current form round-trips, and the released reader still loads a current file.
+
+/// The released (v0.1.0 to v0.1.7) `NalbindProject.fromJson`, verbatim: tolerant per field. Used to
+/// prove a CURRENT file still opens correctly in an already-installed older app.
+NalbindProject releasedReader(Map<String, dynamic> json) => NalbindProject(
+      name: (json['name'] as String?) ?? '',
+      notation: (json['notation'] as String?) ?? '',
+      stitchName: (json['stitchName'] as String?) ?? '',
+      notes: (json['notes'] as String?) ?? '',
+    );
+
+String fixtureText(String rel) => File('../fixtures/migrations/$rel').readAsStringSync();
 
 void main() {
   test('NalbindProject JSON round-trips', () {
@@ -24,6 +40,77 @@ void main() {
   test('NalbindProject.fromJson tolerates a partial/empty map', () {
     expect(NalbindProject.fromJson(const {}), const NalbindProject());
     expect(NalbindProject.fromJson(const {'name': 'X'}), const NalbindProject(name: 'X'));
+  });
+
+  group('.plynal versions', () {
+    const mittens = NalbindProject(
+      name: 'Oslo mittens',
+      notation: 'UO/UOO F1',
+      stitchName: 'Oslo',
+      notes: 'Cast on 32 loops.\nThumb gusset at round 6. Nålbinding in grå ull, "worked" left-handed.',
+    );
+
+    test('released files are legacy version 1 and load field for field', () {
+      final text = fixtureText('plynal/v0.1.7/oslo-mittens.plynal');
+      expect(NalbindProject.schemaVersionOf(jsonDecode(text) as Map<String, dynamic>), 1);
+      expect(NalbindProject.decode(text), mittens);
+      expect(
+        NalbindProject.decode(fixtureText('plynal/v0.1.7/typed-notation.plynal')),
+        const NalbindProject(name: 'Swatch', notation: 'UUOO/UUOOO F2', notes: 'Typed notation only.'),
+      );
+    });
+
+    test('the current form carries its version inline and round-trips', () {
+      final json = mittens.toJson();
+      expect(json['format'], 'ply.nalbind');
+      expect(json['schemaVersion'], NalbindProject.currentSchemaVersion);
+      expect(NalbindProject.currentSchemaVersion, 2);
+      final text = jsonEncode(json);
+      expect(NalbindProject.schemaVersionOf(jsonDecode(text) as Map<String, dynamic>), 2);
+      expect(NalbindProject.decode(text), mittens);
+    });
+
+    test('migrating a released file is idempotent (load -> save -> load)', () {
+      final once = NalbindProject.decode(fixtureText('plynal/v0.1.7/oslo-mittens.plynal'));
+      final saved = jsonEncode(once.toJson());
+      final twice = NalbindProject.decode(saved);
+      expect(twice, once);
+      expect(jsonEncode(twice.toJson()), saved, reason: 'a re-save is byte-stable');
+    });
+
+    test('an already-installed release still reads a current file correctly', () {
+      // The shape rule for this format: inline version keys, NOT an envelope, because the released
+      // reader would load an envelope as an empty project that a save then writes over the real one.
+      final current = jsonDecode(jsonEncode(mittens.toJson())) as Map<String, dynamic>;
+      expect(releasedReader(current), mittens);
+      final enveloped = {'format': 'ply.nalbind', 'schemaVersion': 2, 'document': mittens.toJson()};
+      expect(releasedReader(enveloped), const NalbindProject(),
+          reason: 'why an envelope was rejected for .plynal');
+    });
+
+    test('a newer version is refused with a plain explanation', () {
+      final newer = jsonEncode({...mittens.toJson(), 'schemaVersion': 3, 'pieces': <Object>[]});
+      expect(
+        () => NalbindProject.decode(newer),
+        throwsA(isA<NativeFormatException>()
+            .having((e) => e.problem, 'problem', NativeFormatProblem.newerVersion)
+            .having((e) => e.message, 'message', contains('newer version of Ply'))),
+      );
+    });
+
+    test('another format, a bad version, and non-objects are refused', () {
+      Matcher refused(NativeFormatProblem problem) =>
+          throwsA(isA<NativeFormatException>().having((e) => e.problem, 'problem', problem));
+      expect(() => NalbindProject.decode('{"format":"ply.knit","schema_version":2,"document":{}}'),
+          refused(NativeFormatProblem.wrongFormat));
+      expect(() => NalbindProject.decode('{"format":"ply.nalbind","schemaVersion":"2"}'),
+          refused(NativeFormatProblem.unreadable));
+      expect(() => NalbindProject.decode('{"format":"ply.nalbind","schemaVersion":0}'),
+          refused(NativeFormatProblem.unreadable));
+      expect(() => NalbindProject.decode('[]'), refused(NativeFormatProblem.unreadable));
+      expect(() => NalbindProject.decode('{nope'), refused(NativeFormatProblem.unreadable));
+      expect(() => NalbindProject.decode('{"name": 7}'), refused(NativeFormatProblem.unreadable));
+    });
   });
 
   group('NalbindRepository persistence', () {
@@ -81,6 +168,56 @@ void main() {
       final b = await repo.saveProject(const NalbindProject(name: 'B'));
       // B saved last -> highest lastOpened -> first.
       expect((await repo.listProjects()).map((e) => e.id).toList(), [b, a]);
+    });
+
+    test('a released project opens read-only, and its first save upgrades it in place', () async {
+      final original = fixtureText('plynal/v0.1.7/oslo-mittens.plynal');
+      File('${dir.path}/p1.plynal').writeAsStringSync(original);
+      File('${dir.path}/p1.json').writeAsStringSync(fixtureText('sidecar/v0.1.7/nalbind.json'));
+
+      final read = await repo.readProject('p1');
+      await repo.touchOpened('p1');
+      expect(read.name, 'Oslo mittens');
+      expect(File('${dir.path}/p1.plynal').readAsStringSync(), original,
+          reason: 'opening never rewrites the body');
+
+      await repo.saveProject(read, id: 'p1');
+      final saved = jsonDecode(File('${dir.path}/p1.plynal').readAsStringSync()) as Map<String, dynamic>;
+      expect(saved['schemaVersion'], 2);
+      expect(NalbindProject.fromJson(saved), read);
+    });
+
+    test('a project saved by a newer Ply is never overwritten', () async {
+      const newer = '{"format":"ply.nalbind","schemaVersion":3,"name":"Future","pieces":[1]}';
+      File('${dir.path}/p1.plynal').writeAsStringSync(newer);
+      await expectLater(repo.readProject('p1'), throwsA(isA<NativeFormatException>()));
+      await expectLater(
+        repo.saveProject(const NalbindProject(name: 'Mine'), id: 'p1'),
+        throwsA(isA<NativeFormatException>()
+            .having((e) => e.whileSaving, 'whileSaving', isTrue)
+            .having((e) => e.problem, 'problem', NativeFormatProblem.newerVersion)),
+      );
+      expect(File('${dir.path}/p1.plynal').readAsStringSync(), newer);
+      expect(File('${dir.path}/p1.json').existsSync(), isFalse, reason: 'nothing written');
+    });
+
+    test('a save merges into the existing sidecar (author, savedAt, unknown keys kept)', () async {
+      final id = await repo.saveProject(const NalbindProject(name: 'Hat', notes: 'v1'));
+      final path = '${dir.path}/$id.json';
+      final sidecar = jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
+      File(path).writeAsStringSync(jsonEncode({
+        ...sidecar,
+        'author': 'Ada',
+        'savedAt': '2020-01-01T00:00:00.000Z',
+        'futureKey': [1, 2, 3],
+      }));
+      await repo.saveProject(const NalbindProject(name: 'Hood', notes: 'v2'), id: id);
+      final after = DraftMeta.fromJson(jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>);
+      expect(after.name, 'Hood');
+      expect(after.notes, 'v2');
+      expect(after.author, 'Ada');
+      expect(after.savedAt, DateTime.utc(2020));
+      expect(after.extra['futureKey'], [1, 2, 3]);
     });
 
     test('a sidecar without its .plynal body is skipped (atomic save invariant)', () async {

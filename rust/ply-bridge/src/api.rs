@@ -252,10 +252,12 @@ pub fn generate_tieup_dto(
         StructureFamily::Plain => weave::draft::TieUp::plain(shafts),
         StructureFamily::Twill => weave::draft::TieUp::twill(over, under),
         StructureFamily::Satin => weave::draft::TieUp::satin(shafts, counter),
-        // The whole-draft families (overshot/shadow/double) route through `generate_structure_dto`
-        // and never reach here; a plain tie-up is a harmless default if ever misrouted.
+        // The whole-draft families (overshot/shadow/double) must go through `generate_structure_dto`:
+        // a misrouted request is an error, never a silently different structure.
         StructureFamily::Overshot | StructureFamily::ShadowWeave | StructureFamily::DoubleWeave => {
-            weave::draft::TieUp::plain(shafts)
+            return Err(format!(
+                "{family:?} is a whole-draft structure; generate it with generate_structure_dto"
+            ));
         }
     };
     Ok(tieup
@@ -270,8 +272,8 @@ pub fn generate_tieup_dto(
 /// interdependent (the threading, tie-up, treadling, AND warp/weft colors must agree), so they are
 /// built whole in the engine and returned as a ready-to-edit `DraftDto`. `block` is the block width
 /// (overshot) or the log-cabin color-phase block (shadow weave); `twill` selects shadow weave's 2/2
-/// twill ground over plain weave. Plain/Twill/Satin are not expected here (they use the tie-up path);
-/// a plain weave is returned as a harmless fallback. `Err` if `ends`/`picks` exceed the per-axis
+/// twill ground over plain weave. Plain/Twill/Satin use the tie-up path and are an `Err` here, as is
+/// a request where `ends`/`picks` exceed the per-axis
 /// document cap shared with WIF import (`ply_weave::MAX_THREADS`).
 pub fn generate_structure_dto(
     family: StructureFamily,
@@ -286,8 +288,12 @@ pub fn generate_structure_dto(
         StructureFamily::Overshot => weave::structure::overshot(e, p, b),
         StructureFamily::ShadowWeave => weave::structure::shadow_weave(e, p, twill, b),
         StructureFamily::DoubleWeave => weave::structure::double_weave(e, p),
+        // Basic families are composed from tie-up + threading (`generate_tieup_dto`); a misrouted
+        // request is an error, never a silently different structure.
         StructureFamily::Plain | StructureFamily::Twill | StructureFamily::Satin => {
-            weave::structure::plain_weave(e, p)
+            return Err(format!(
+                "{family:?} is composed from a tie-up and threading; use generate_tieup_dto"
+            ));
         }
     };
     Ok(DraftDto::from(&draft))
@@ -312,6 +318,40 @@ pub fn generate_threading_dto(
         .collect())
 }
 
+fn shed_type(shed: ShedKind) -> weave::ShedType {
+    match shed {
+        ShedKind::Rising => weave::ShedType::Rising,
+        ShedKind::Sinking => weave::ShedType::Sinking,
+    }
+}
+
+/// Re-express a draft for a loom with shed direction `shed`, keeping the cloth: a treadled draft's
+/// tie-up becomes its complement (exact when each pick presses one treadle, as every generated
+/// structure does). The structure generators assume a rising shed, so the editor passes their
+/// output through this before giving it to a counterbalance or countermarch draft.
+pub fn draft_with_shed_dto(dto: DraftDto, shed: ShedKind) -> Result<DraftDto, String> {
+    let draft = Draft::try_from(dto)?;
+    Ok(DraftDto::from(&draft.with_shed(shed_type(shed))))
+}
+
+/// Convert a GENERATED tie-up (rising-shed semantics, as `generate_tieup_dto` returns) into the
+/// tie-up that weaves the same cloth on a loom with shed direction `shed`, over `shafts` shafts.
+pub fn tieup_for_shed_dto(rows: Vec<Vec<u16>>, shafts: u16, shed: ShedKind) -> Vec<Vec<u16>> {
+    match shed {
+        ShedKind::Rising => rows,
+        ShedKind::Sinking => weave::draft::TieUp(
+            rows.iter()
+                .map(|r| r.iter().map(|&s| weave::ShaftId(s)).collect())
+                .collect(),
+        )
+        .complement(shafts)
+        .0
+        .iter()
+        .map(|r| r.iter().map(|s| s.0).collect())
+        .collect(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // M5 KNITTING surface (transparent DTOs). Mirrors the weaving surface — parse / write / render /
 // validate over a mirrored `KnitPatternDto`, plus the gauge/yardage calculators. See `knit_dto.rs`.
@@ -319,20 +359,23 @@ pub fn generate_threading_dto(
 // ---------------------------------------------------------------------------
 
 pub use crate::knit_dto::{
-    CableDefDto, CellDto, ChartDto, ConstructionKind, CrossKind, GaugeDto, KnitIssueDto,
-    KnitPatternDto, RepeatDto, RepeatSpanDto, RowDto, SideKind, StitchDefDto, StitchLegendDto,
-    YarnWeightKind,
+    CableDefDto, CellDto, ChartDto, ConstructionKind, CrossKind, GaugeDto, KnitFormatFailure,
+    KnitFormatFailureKind, KnitIssueDto, KnitPatternDto, RepeatDto, RepeatSpanDto, RowDto,
+    SideKind, StitchDefDto, StitchLegendDto, YarnWeightKind,
 };
 
-/// Parse the native `.plyknit` JSON into the editor's `KnitPatternDto`.
-pub fn parse_knit(json: String) -> Result<KnitPatternDto, String> {
+/// Parse a native `.plyknit` file (any supported schema version) into the editor's
+/// `KnitPatternDto`. A legacy file is migrated in memory; nothing is written. A file saved by a newer
+/// Ply, a foreign format, or an unreadable file is an `Err(KnitFormatFailure)`, which Dart receives
+/// as a thrown `KnitFormatFailure`.
+pub fn parse_knit(json: String) -> Result<KnitPatternDto, KnitFormatFailure> {
     ply_knit::KnitPattern::from_json(&json)
         .map(|p| KnitPatternDto::from(&p))
-        .map_err(|e| e.to_string())
+        .map_err(KnitFormatFailure::from)
 }
 
-/// Serialize the editor's `KnitPatternDto` back to native `.plyknit` JSON. `Err` if the gauge is
-/// non-finite (the engine rejects a NaN/Inf gauge that JSON can't round-trip).
+/// Serialize the editor's `KnitPatternDto` as a current-version native `.plyknit` envelope. `Err` if
+/// the gauge is non-finite (the engine rejects a NaN/Inf gauge that JSON can't round-trip).
 pub fn write_knit(dto: KnitPatternDto) -> Result<String, String> {
     ply_knit::KnitPattern::from(dto)
         .to_json()
@@ -407,9 +450,10 @@ pub fn knit_written(dto: KnitPatternDto) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 pub use crate::nalbind_dto::{
-    ConnArrowDto, ConnSideKind, ConnectionDto, DiagramDto, LoopGlyphDto, LoopKindDto,
-    NalbindIssueDto, NalbindStitchDto, PassDto, PublishedCodeDto, StepKind, ThumbLoopsDto,
-    TwistKind,
+    ConnArrowDto, ConnSideKind, ConnectionDto, DiagramDto, FidelityKind, LoopGlyphDto, LoopKindDto,
+    NalbindIssueDto, NalbindStitchDto, NotationDiagnosticDto, NotationModeKind,
+    NotationSeverityKind, NotationSpanDto, OpaqueTokenDto, ParsedNotationDto, PassDto,
+    PublishedCodeDto, StepKind, ThumbLoopsDto, TwistKind,
 };
 
 /// The curated builtin stitch dictionary (~12 stitches) for the reference screen.
@@ -420,8 +464,18 @@ pub fn nalbind_builtin() -> Vec<NalbindStitchDto> {
         .collect()
 }
 
-/// Parse a Hansen-notation string into an anonymous stitch (the notation playground). `Err` carries
-/// the parse message for an unrecognized character.
+/// Read a Hansen-notation string with provenance: the exact source, the best-effort stitch (for the
+/// diagram), strict acceptance, fidelity, the uninterpreted tokens, and every diagnostic with its span
+/// in UTF-16 code units. `strict = true` is the AUTHORING mode (a project's notation field: every
+/// problem is reported as an `Error`); `false` is the REFERENCE mode (the playground: each problem at
+/// its own severity). Never fails.
+pub fn analyze_nalbind(text: String, strict: bool) -> ParsedNotationDto {
+    crate::nalbind_dto::analyze_notation(&text, strict)
+}
+
+/// LEGACY lenient parse into an anonymous stitch, kept for compatibility: it discards warnings and
+/// provenance, so the app reads notation through [`analyze_nalbind`]. `Err` carries the parse
+/// message for an uninterpretable character.
 pub fn parse_nalbind(notation: String) -> Result<NalbindStitchDto, String> {
     ply_nalbind::notation::parse(&notation)
         .map(|(passes, connections)| {
@@ -547,6 +601,38 @@ mod tests {
             generate_threading_dto(ThreadingKind::Straight, 4, 2).unwrap(),
             vec![vec![1], vec![2], vec![1], vec![2]]
         );
+    }
+
+    /// A generated structure moved onto a sinking-shed draft weaves the same cloth (pixel-identical
+    /// preview), with the tie-up flipped to name the shafts that sink.
+    #[test]
+    fn generated_structure_keeps_its_cloth_on_a_sinking_shed() {
+        let rising = generate_structure_dto(StructureFamily::Overshot, 16, 16, 4, false).unwrap();
+        let sinking = draft_with_shed_dto(
+            generate_structure_dto(StructureFamily::Overshot, 16, 16, 4, false).unwrap(),
+            ShedKind::Sinking,
+        )
+        .unwrap();
+        assert!(matches!(sinking.shed, ShedKind::Sinking));
+        let a = render_preview_dto(rising, 4, None).ok().unwrap();
+        let b = render_preview_dto(sinking, 4, None).ok().unwrap();
+        assert_eq!(a.rgba, b.rgba);
+
+        assert_eq!(
+            tieup_for_shed_dto(vec![vec![1, 2], vec![2, 3]], 4, ShedKind::Sinking),
+            vec![vec![3, 4], vec![1, 4]]
+        );
+        assert_eq!(
+            tieup_for_shed_dto(vec![vec![1, 2]], 4, ShedKind::Rising),
+            vec![vec![1, 2]]
+        );
+    }
+
+    /// A family sent to the wrong generator is an error, not a silently different structure.
+    #[test]
+    fn misrouted_structure_requests_are_errors() {
+        assert!(generate_structure_dto(StructureFamily::Twill, 8, 8, 4, false).is_err());
+        assert!(generate_tieup_dto(StructureFamily::Overshot, 4, 2, 2, 1).is_err());
     }
 
     /// A twill tie-up grows with the square of its shaft count; absurd requests are refused rather

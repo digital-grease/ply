@@ -52,5 +52,41 @@ void main() {
       await File('${tmp.path}/app_settings.json').writeAsString('{not valid json');
       expect(await repo.load(), const AppSettings());
     });
+
+    test('a corrupt file is kept aside, so the next save cannot overwrite the only copy', () async {
+      final file = File('${tmp.path}/app_settings.json');
+      await file.writeAsString('{not valid json');
+      expect(await repo.load(), const AppSettings());
+      final kept = File('${tmp.path}/app_settings.json.corrupt');
+      expect(kept.readAsStringSync(), '{not valid json', reason: 'the original bytes');
+      expect(file.existsSync(), isFalse);
+
+      const s = AppSettings(themeMode: ThemeMode.dark);
+      await repo.save(s);
+      expect(await repo.load(), s);
+      expect(kept.readAsStringSync(), '{not valid json', reason: 'a later save leaves it alone');
+    });
+
+    test('valid JSON of the wrong shape is treated as corrupt too', () async {
+      for (final bad in ['{"accentSeed":"purple"}', '[1, 2]', '"settings"']) {
+        await File('${tmp.path}/app_settings.json').writeAsString(bad);
+        expect(await repo.load(), const AppSettings(), reason: bad);
+        expect(File('${tmp.path}/app_settings.json.corrupt').readAsStringSync(), bad);
+      }
+    });
+
+    test('a file that is not UTF-8 is treated as corrupt', () async {
+      await File('${tmp.path}/app_settings.json').writeAsBytes(const [0xFF, 0xFE, 0x00, 0x7B]);
+      expect(await repo.load(), const AppSettings());
+      expect(File('${tmp.path}/app_settings.json.corrupt').readAsBytesSync(),
+          const [0xFF, 0xFE, 0x00, 0x7B]);
+    });
+
+    test('save is atomic: no temp file is left and a reload sees the new value', () async {
+      await repo.save(const AppSettings(useDynamicColor: false));
+      await repo.save(const AppSettings(useDynamicColor: true, accentSeed: 0xFF00696E));
+      expect(File('${tmp.path}/app_settings.json.tmp').existsSync(), isFalse);
+      expect(await repo.load(), const AppSettings(accentSeed: 0xFF00696E));
+    });
   });
 }

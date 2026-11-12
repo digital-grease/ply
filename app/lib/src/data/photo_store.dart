@@ -47,11 +47,37 @@ class PhotoStore {
 
   /// Copy [source] (a freshly captured / picked image) into the store, returning the stored file.
   /// Keeps the source extension (defaults to `.jpg`).
+  ///
+  /// Atomic: the bytes go to `<name>.tmp` (not an image extension, so [list] never shows it), are
+  /// flushed to disk, and only then renamed to the final name. A failed or interrupted copy therefore
+  /// never leaves a truncated photo in the store; a failed copy also removes its temp file.
   Future<File> add(File source) async {
     final dir = await _dir();
     final ext = p.extension(source.path).toLowerCase();
     final dest = File(p.join(dir.path, '${_uuid.v4()}${ext.isEmpty ? '.jpg' : ext}'));
-    return source.copy(dest.path);
+    final tmp = File('${dest.path}.tmp');
+    try {
+      await _copyFlushed(source, tmp);
+      return await tmp.rename(dest.path);
+    } catch (_) {
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {/* best effort; a stray .tmp is never listed and goes with the folder */}
+      rethrow;
+    }
+  }
+
+  /// Stream [source] into [target] and flush it to disk before returning (no whole-photo buffer).
+  static Future<void> _copyFlushed(File source, File target) async {
+    final out = await target.open(mode: FileMode.writeOnly);
+    try {
+      await for (final chunk in source.openRead()) {
+        await out.writeFrom(chunk);
+      }
+      await out.flush();
+    } finally {
+      await out.close();
+    }
   }
 
   /// Delete one stored photo. Tolerant of an already-missing file.

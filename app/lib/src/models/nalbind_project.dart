@@ -6,6 +6,20 @@
 // model in docs/NALBIND_DESIGN.md. Pure data; no FFI symbols imported. Persisted as `<id>.plynal`
 // JSON beside a craft-agnostic `<id>.json` DraftMeta sidecar (craft = 'Nalbinding'), mirroring the
 // knit `<id>.{plyknit,json}` pair.
+//
+// FORMAT VERSIONING. A `.plynal` file is one JSON object with the document fields at the TOP level
+// plus `format` ("ply.nalbind") and `schemaVersion` keys. Not an envelope on purpose: released readers
+// (v0.1.0 to v0.1.7) read each field tolerantly, defaulting a missing one to empty, so they would load
+// an enveloped file as an EMPTY project that a later save would write over the real one. With inline
+// keys they load a current file correctly instead. A file without a `format` key is legacy version 1
+// (what those releases wrote); version 2 only adds the two keys, so the v1 -> v2 migration is the
+// identity on the fields. A file whose version is newer than [NalbindProject.currentSchemaVersion] is
+// refused (never loaded with fields dropped, never overwritten). `format` and `schemaVersion` are
+// reserved: no document field may use those names.
+
+import 'dart:convert';
+
+import 'native_format.dart';
 
 /// One saved nalbinding project: a name, the chosen stitch (its Hansen [notation] + display
 /// [stitchName]), and free-text [notes].
@@ -37,20 +51,76 @@ class NalbindProject {
         notes: notes ?? this.notes,
       );
 
+  /// The `format` value of every `.plynal` file.
+  static const String formatId = 'ply.nalbind';
+
+  /// The `.plynal` schema version this build writes, and the newest it can read.
+  static const int currentSchemaVersion = 2;
+
+  /// The current on-disk form: the version keys, then the document fields (see the file header).
   Map<String, dynamic> toJson() => {
+        'format': formatId,
+        'schemaVersion': currentSchemaVersion,
         'name': name,
         'notation': notation,
         'stitchName': stitchName,
         'notes': notes,
       };
 
-  /// Tolerant parse so a partially-written or older file still loads rather than crashing the list.
-  factory NalbindProject.fromJson(Map<String, dynamic> json) => NalbindProject(
-        name: (json['name'] as String?) ?? '',
-        notation: (json['notation'] as String?) ?? '',
-        stitchName: (json['stitchName'] as String?) ?? '',
-        notes: (json['notes'] as String?) ?? '',
-      );
+  /// The schema version of a decoded `.plynal` object, by the deterministic rule: no `format` key is
+  /// legacy version 1; otherwise `format` must be [formatId] and `schemaVersion` a positive integer.
+  /// Throws a [NativeFormatException] for a foreign format, a bad version, or a version newer than
+  /// [currentSchemaVersion].
+  static int schemaVersionOf(Map<String, dynamic> json) {
+    if (!json.containsKey('format')) return 1;
+    if (json['format'] != formatId) {
+      throw NativeFormatException(NativeFormatProblem.wrongFormat,
+          document: NativeDocument.nalbindProject, detail: 'format ${json['format']}');
+    }
+    final version = json['schemaVersion'];
+    if (version is! int || version < 1) {
+      throw NativeFormatException(NativeFormatProblem.unreadable,
+          document: NativeDocument.nalbindProject, detail: 'schemaVersion $version');
+    }
+    if (version > currentSchemaVersion) {
+      throw NativeFormatException(NativeFormatProblem.newerVersion,
+          document: NativeDocument.nalbindProject,
+          detail: 'schemaVersion $version, this build reads up to $currentSchemaVersion');
+    }
+    return version;
+  }
+
+  /// Decode a `.plynal` object of any supported version. Reads the fields tolerantly (a missing one
+  /// becomes empty) so a partially-written or older file still loads. Version 1 to 2 needs no field
+  /// change. Throws a [NativeFormatException] per [schemaVersionOf].
+  factory NalbindProject.fromJson(Map<String, dynamic> json) {
+    schemaVersionOf(json); // refuses a foreign / newer file before any field is read
+    return NalbindProject(
+      name: (json['name'] as String?) ?? '',
+      notation: (json['notation'] as String?) ?? '',
+      stitchName: (json['stitchName'] as String?) ?? '',
+      notes: (json['notes'] as String?) ?? '',
+    );
+  }
+
+  /// Decode `.plynal` file text. Anything that is not a JSON object of the expected shape is a
+  /// [NativeFormatException] ([NativeFormatProblem.unreadable] unless it is newer or foreign).
+  static NalbindProject decode(String text) {
+    try {
+      final json = jsonDecode(text);
+      if (json is! Map<String, dynamic>) {
+        throw const NativeFormatException(NativeFormatProblem.unreadable,
+            document: NativeDocument.nalbindProject, detail: 'not a JSON object');
+      }
+      return NalbindProject.fromJson(json);
+    } on NativeFormatException {
+      rethrow;
+    } catch (e) {
+      // Bad JSON (FormatException) or a field of the wrong type (TypeError).
+      throw NativeFormatException(NativeFormatProblem.unreadable,
+          document: NativeDocument.nalbindProject, detail: '$e');
+    }
+  }
 
   @override
   bool operator ==(Object other) =>

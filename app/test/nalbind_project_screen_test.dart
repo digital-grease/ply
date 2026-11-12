@@ -6,13 +6,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/nalbind_repository.dart';
 import 'package:ply/src/models/nalbind_project.dart';
+import 'package:ply/src/models/native_format.dart';
 import 'package:ply/src/rust/nalbind_dto.dart';
 import 'package:ply/src/screens/nalbind_project_screen.dart';
 import 'package:ply/src/state/nalbind_providers.dart';
+import 'package:ply/src/widgets/nalbind_diagram_view.dart';
+
+import 'nalbind_test_support.dart';
 
 // Host coverage for the nalbind PROJECT screen's dirty-on-exit guard: a back with unsaved form edits
 // prompts Save / Discard / Keep editing, a clean form pops straight through, Save runs the normal
-// save flow and leaves only on success, and the in-flight-save races behave. A fake repo stubs the
+// save flow and leaves only on success, and the in-flight-save races behave. Also the AUTHORING
+// notation field: read in strict mode, every problem listed under the field, an inexact reading's
+// diagram labelled approximate, and saving still allowed with problems. A fake repo stubs the
 // stitch FFI and the persistence calls (no disk, no FFI).
 
 const _oslo = NalbindStitchDto(
@@ -41,6 +47,23 @@ final _diagram = DiagramDto(
   connections: const [ConnArrowDto(x: 6, side: ConnSideKind.front, count: 1)],
 );
 
+/// The best-effort structure of `UO/XYZ` (just `UO`).
+const _uo = NalbindStitchDto(
+  name: '',
+  passes: [
+    PassDto(steps: [StepKind.under, StepKind.over]),
+  ],
+  connections: [],
+  twist: TwistKind.untwisted,
+  alsoKnownAs: [],
+  codes: [],
+  note: '',
+);
+
+const _caption = "Sketch of one stitch's needle path, not a picture of finished fabric.";
+const _approximate = 'Approximate: the notation was not read exactly, so this sketch may be wrong.';
+const _saveHint = 'You can save with these problems and fix them later.';
+
 const _stored = NalbindProject(
   name: 'Mittens',
   notation: 'UO/UOO F1',
@@ -66,17 +89,33 @@ class FakeProjectRepo extends NalbindRepository {
   @override
   Future<DiagramDto> diagram(NalbindStitchDto dto) async => _diagram;
 
+  /// The `strict` flag of every analyze call, in order.
+  final modes = <bool>[];
+
   @override
-  Future<NalbindStitchDto> parse(String notation) async => _oslo;
+  Future<ParsedNotationDto> analyze(String notation, {required bool strict}) async {
+    modes.add(strict);
+    return notation == 'UO/XYZ'
+        ? badReading(_uo, strict: strict)
+        : reading(notation, _oslo, strict: strict);
+  }
 
   @override
   Future<List<NalbindIssueDto>> validate(NalbindStitchDto dto) async => const [];
+
+  /// When set, the NEXT saveProject throws it (the repository refusing to replace the file on disk).
+  NativeFormatException? refuseNextSave;
 
   @override
   Future<String> saveProject(NalbindProject project, {String? id}) async {
     saveCount++;
     if (saveGate != null) await saveGate!.future;
     if (saveError) throw Exception('disk full');
+    final refusal = refuseNextSave;
+    if (refusal != null) {
+      refuseNextSave = null;
+      throw refusal;
+    }
     saved = project;
     savedId = id;
     return id ?? 'new-id';
@@ -85,10 +124,18 @@ class FakeProjectRepo extends NalbindRepository {
   /// When true, readProject throws (a project file that cannot be read or parsed).
   bool readError = false;
 
+  /// When set, readProject throws it instead (a typed format problem).
+  Object? readFailure;
+
+  /// What readProject returns.
+  NalbindProject stored = _stored;
+
   @override
   Future<NalbindProject> readProject(String id) async {
     if (readError) throw const FormatException('corrupt project');
-    return _stored;
+    final failure = readFailure;
+    if (failure != null) throw failure;
+    return stored;
   }
 
   @override
@@ -133,6 +180,12 @@ Future<ProviderContainer> pumpProject(WidgetTester tester, FakeProjectRepo repo,
 }
 
 Finder get _nameField => find.widgetWithText(TextField, 'Project name');
+Finder get _notationField => find.widgetWithText(TextField, 'Hansen notation');
+
+final _xyzError = shownFinding(
+    'Error', 'XYZ', 'unexpected characters `XYZ`; kept verbatim as an opaque token');
+final _turnError =
+    shownFinding('Error', '/', 'turn `/` comes after the last needle step; dropped');
 
 Future<void> tapBack(WidgetTester tester) async {
   await tester.tap(find.byType(BackButton));
@@ -155,6 +208,47 @@ void main() {
     expect(repo.saveCount, 1);
     expect(repo.savedId, isNull, reason: 'saved as a NEW project, not over the unreadable p1');
     expect(repo.saved?.name, 'Rescued notes');
+  });
+
+  testWidgets('a project saved by a newer Ply says so, and Save never writes over it', (tester) async {
+    final repo = FakeProjectRepo()
+      ..readFailure = const NativeFormatException(NativeFormatProblem.newerVersion,
+          document: NativeDocument.nalbindProject);
+    await pumpProject(tester, repo, openId: 'p1');
+    expect(
+        find.textContaining('This project was saved by a newer version of Ply. Update the app to '
+            'open it. Saving will create a new project and leave the original file untouched.'),
+        findsOneWidget);
+
+    await tester.enterText(_nameField, 'Notes from memory');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 1);
+    expect(repo.savedId, isNull, reason: 'a NEW project, never over the newer p1');
+  });
+
+  testWidgets('a save the repository refuses forgets the file; the next save makes a new project',
+      (tester) async {
+    final repo = FakeProjectRepo()
+      ..refuseNextSave = const NativeFormatException(NativeFormatProblem.newerVersion,
+          document: NativeDocument.nalbindProject, whileSaving: true);
+    await pumpProject(tester, repo, openId: 'p1');
+    await tester.enterText(_nameField, 'Mittens v2');
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 1);
+    expect(find.textContaining('from a newer version of Ply, so it was not replaced'),
+        findsOneWidget);
+    expect(find.textContaining('Save again to keep your changes as a new project'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 2);
+    expect(repo.savedId, isNull, reason: 'saved as a NEW project');
+    expect(repo.saved?.name, 'Mittens v2');
   });
 
   testWidgets('a fresh, untouched project pops straight back with no prompt', (tester) async {
@@ -386,5 +480,81 @@ void main() {
         reason: 'the newer edit was not in that save, so leaving would drop it');
     await tapBack(tester);
     expect(find.text(_leaveTitle), findsOneWidget);
+  });
+
+  testWidgets('the notation field reads in strict mode and lists every problem as an error',
+      (tester) async {
+    final repo = FakeProjectRepo();
+    await pumpProject(tester, repo);
+    await tester.enterText(_notationField, 'UO/XYZ');
+    await tester.pumpAndSettle();
+
+    expect(repo.modes, [true], reason: 'the project field is authoring');
+    expect(find.text(_xyzError), findsOneWidget);
+    expect(find.text(_turnError), findsOneWidget, reason: 'strict makes the warning an error too');
+    expect(find.text(_saveHint), findsOneWidget);
+    // The best effort is drawn, labelled approximate, and captioned as a schematic.
+    final view = tester.widget<NalbindDiagramView>(find.byType(NalbindDiagramView));
+    expect(view.approximate, isTrue);
+    expect(find.text(_approximate), findsOneWidget);
+    expect(find.text(_caption), findsOneWidget);
+  });
+
+  testWidgets('a builtin chip reads exactly: no problems, and the diagram is not approximate',
+      (tester) async {
+    final repo = FakeProjectRepo();
+    await pumpProject(tester, repo);
+    await tester.tap(find.widgetWithText(ActionChip, 'Oslo'));
+    await tester.pumpAndSettle();
+    expect(repo.modes, [true]);
+    expect(find.textContaining('Error at'), findsNothing);
+    expect(find.text(_saveHint), findsNothing);
+    expect(find.text(_approximate), findsNothing);
+    expect(tester.widget<NalbindDiagramView>(find.byType(NalbindDiagramView)).approximate, isFalse);
+    expect(find.text(_caption), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved.'), findsOneWidget);
+  });
+
+  testWidgets('a project with notation problems still saves, says so, and keeps them listed',
+      (tester) async {
+    final repo = FakeProjectRepo();
+    await pumpProject(tester, repo);
+    await tester.enterText(_nameField, 'Draft socks');
+    await tester.enterText(_notationField, 'UO/XYZ');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 1, reason: 'a project is a draft: problems never block a save');
+    expect(repo.saved?.notation, 'UO/XYZ', reason: 'saved as written');
+    expect(find.text('Saved. The stitch notation still has problems.'), findsOneWidget);
+    expect(find.text(_xyzError), findsOneWidget, reason: 'the problems stay visible');
+    expect(find.text(_approximate), findsOneWidget);
+  });
+
+  testWidgets('an opened project shows its notation problems straight away', (tester) async {
+    final repo = FakeProjectRepo()
+      ..stored = const NalbindProject(name: 'Old mitten', notation: 'UO/XYZ');
+    await pumpProject(tester, repo, openId: 'p1');
+    expect(repo.modes, [true]);
+    expect(find.text(_xyzError), findsOneWidget);
+    expect(find.text(_turnError), findsOneWidget);
+    expect(find.text(_approximate), findsOneWidget);
+  });
+
+  testWidgets('clearing the notation clears its problems and its diagram', (tester) async {
+    final repo = FakeProjectRepo();
+    await pumpProject(tester, repo);
+    await tester.enterText(_notationField, 'UO/XYZ');
+    await tester.pumpAndSettle();
+    expect(find.text(_xyzError), findsOneWidget);
+    await tester.enterText(_notationField, '');
+    await tester.pumpAndSettle();
+    expect(find.text(_xyzError), findsNothing);
+    expect(find.text(_saveHint), findsNothing);
+    expect(find.byType(NalbindDiagramView), findsNothing);
   });
 }

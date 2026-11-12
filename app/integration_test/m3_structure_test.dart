@@ -9,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/models/draft_meta.dart';
+import 'package:ply/src/rust/api.dart' show renderPreviewDto;
 import 'package:ply/src/rust/dto.dart' show StructureFamily, ThreadingKind;
 import 'package:ply/src/rust/frb_generated.dart';
 
@@ -17,6 +18,35 @@ void main() {
 
   setUpAll(() async {
     await RustLib.init();
+  });
+
+  // Every generator assumes a rising shed. Generated onto a SINKING-shed draft (counterbalance or
+  // countermarch), the tie-up must name the sinking shafts so the loom weaves the SAME cloth: the
+  // rendered drawdown is pixel-identical to the rising-shed generation.
+  testWidgets('generated structures weave the same cloth on a sinking-shed draft', (tester) async {
+    final repo = DraftRepository();
+    Future<DraftDoc> gen(Shed shed, StructureFamily family) => repo.generateStructureDoc(
+          DraftDoc.blank().copyWith(shed: shed),
+          family: family,
+          threading: ThreadingKind.straight,
+          shafts: 4,
+          over: 2,
+          under: 2,
+          counter: 2,
+          ends: 16,
+          picks: 16,
+        );
+    for (final family in [StructureFamily.twill, StructureFamily.overshot, StructureFamily.doubleWeave]) {
+      final rising = await gen(Shed.rising, family);
+      final sinking = await gen(Shed.sinking, family);
+      expect(sinking.shed, Shed.sinking, reason: '$family keeps the draft\'s sinking shed');
+      final a = await renderPreviewDto(dto: repo.toDto(rising), cellPx: 2);
+      final b = await renderPreviewDto(dto: repo.toDto(sinking), cellPx: 2);
+      expect(b.rgba, equals(a.rgba), reason: '$family: same cloth on a sinking shed');
+    }
+    final twill = await gen(Shed.sinking, StructureFamily.twill);
+    expect((twill.drive as DraftTreadled).tieup, equals([[3, 4], [1, 4], [1, 2], [2, 3]]),
+        reason: 'the 2/2 twill tie-up names the two shafts each treadle sinks');
   });
 
   testWidgets('a 2/2 twill generates the canonical tie-up, validates clean, and renders',

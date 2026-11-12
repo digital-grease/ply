@@ -65,6 +65,15 @@ extension LoomTypeX on LoomType {
       };
 }
 
+/// Parse a sidecar [serialName] back to a [LoomType], or null when this build does not know it (a loom
+/// type added by a newer build). `DraftMeta` uses this to keep such a value instead of erasing it.
+LoomType? loomTypeFromSerialOrNull(String serialName) {
+  for (final type in LoomType.values) {
+    if (type.serialName == serialName) return type;
+  }
+  return null;
+}
+
 /// Parse a sidecar [serialName] back to a [LoomType], defaulting to [LoomType.jack] for an absent or
 /// unknown value (tolerant, like the rest of DraftMeta).
 LoomType loomTypeFromSerial(String? serialName) => switch (serialName) {

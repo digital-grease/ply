@@ -170,8 +170,10 @@ class DraftRepository {
   }) async {
     // Whole-draft structures (overshot / shadow weave / double weave) are interdependent, so the
     // engine builds them complete and returns a ready `DraftDto`. Keep the user's draft IDENTITY
-    // (name, notes) and display prefs (unit, shed); take the structure + its colors from the
-    // generator. (Plain/Twill/Satin fall through to the Dart tie-up + threading composition below.)
+    // (name, notes) and unit; take the structure + its colors from the generator. Every generator
+    // assumes a RISING shed, so on a sinking-shed draft (counterbalance / countermarch) the engine
+    // re-expresses it with the complementary tie-up: same cloth, tie-up naming the sinking shafts.
+    // (Plain/Twill/Satin fall through to the Dart tie-up + threading composition below.)
     const wholeDraft = {
       StructureFamily.overshot,
       StructureFamily.shadowWeave,
@@ -181,18 +183,18 @@ class DraftRepository {
       for (final (name, v) in [('ends', ends), ('picks', picks), ('block', block)]) {
         if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, name);
       }
-      final gen = fromDto(await generateStructureDto(
+      final generated = await generateStructureDto(
         family: family,
         ends: ends,
         picks: picks,
         block: block,
         twill: twill,
-      ));
+      );
+      final gen = fromDto(await draftWithShedDto(dto: generated, shed: _shedKind(base.shed)));
       return gen.copyWith(
         name: base.name,
         notes: base.notes,
         unit: base.unit,
-        shed: base.shed,
       );
     }
 
@@ -220,13 +222,19 @@ class DraftRepository {
       if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, name);
     }
 
-    final genTieup = await generateTieupDto(
+    // The generated tie-up names RAISED shafts (rising shed). Onto a sinking-shed draft it becomes
+    // the complement over the structure's shafts (which the result adopts whenever a tie-up is
+    // applied), so the generated straight treadling weaves the same cloth on that loom.
+    final risingTieup = await generateTieupDto(
       family: family,
       shafts: effShafts,
       over: over,
       under: under,
       counter: counter,
     );
+    final genTieup = base.shed == Shed.sinking
+        ? await tieupForShedDto(rows: risingTieup, shafts: effShafts, shed: ShedKind.sinking)
+        : risingTieup;
     final genThreading = applyThreading
         ? [
             for (final r
@@ -246,6 +254,11 @@ class DraftRepository {
       pickStart: pickStart,
     );
   }
+
+  static ShedKind _shedKind(Shed shed) => switch (shed) {
+        Shed.rising => ShedKind.rising,
+        Shed.sinking => ShedKind.sinking,
+      };
 
   /// The PURE overlay step of [generateStructureDoc] for basic families, split out so it is
   /// host-unit-testable without the FFI threading/tie-up generators. Overlays the (already generated)

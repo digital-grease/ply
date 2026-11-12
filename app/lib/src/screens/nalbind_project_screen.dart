@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/nalbind_repository.dart';
 import '../models/nalbind_project.dart';
+import '../models/native_format.dart';
 import '../state/nalbind_providers.dart';
-import '../rust/nalbind_dto.dart';
 import '../widgets/nalbind_diagram_view.dart';
+import '../widgets/notation_feedback.dart';
 import '../widgets/project_photos.dart';
 import '../widgets/unsaved_changes_guard.dart';
 
 /// The nalbinding PROJECT editor (M6 write path): name the project, pick a stitch (tap a builtin chip
 /// or type a Hansen string), and keep free-text working notes — the way the craft is shared, since
 /// there is no chart. Saves to the on-device nalbind library. The notation drives a live loop diagram.
+///
+/// The notation field is AUTHORING, so it is read in strict mode: every problem is listed under
+/// the field as an error, and a reading that is not exact draws its diagram labelled approximate.
+/// Saving is still allowed with problems (a project is a draft); they stay listed until fixed.
 class NalbindProjectScreen extends ConsumerStatefulWidget {
   const NalbindProjectScreen({this.openId, super.key});
 
@@ -41,8 +47,8 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
   NalbindProject? _baseline;
 
   int _seq = 0;
-  DiagramDto? _diagram;
-  String? _diagramError;
+  NotationReading? _reading;
+  String? _readError;
 
   @override
   void initState() {
@@ -72,7 +78,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
         _loading = false;
         _baseline = _compose();
       });
-      _refreshDiagram(project.notation);
+      _refreshNotation(project.notation);
     } catch (e) {
       if (!mounted) return;
       // The form stays empty; anything typed from here on still counts as unsaved. Forget the id so
@@ -83,8 +89,10 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
         _loading = false;
         _baseline = _compose();
       });
-      _snack('Could not open the project: $e. Saving will create a new project and leave the '
-          'original file untouched.');
+      // A format problem (a newer Ply's file, say) has its own plain explanation; anything else
+      // keeps the raw error for diagnosis.
+      final why = e is NativeFormatException ? e.message : 'Could not open the project: $e.';
+      _snack('$why Saving will create a new project and leave the original file untouched.');
     }
   }
 
@@ -120,33 +128,31 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  /// Parse the notation to a diagram, latest-wins (a fast edit supersedes an older parse).
-  Future<void> _refreshDiagram(String notation) async {
+  /// Read the notation in strict (authoring) mode for its findings and diagram, latest-wins (a fast
+  /// edit supersedes an older read). The trimmed text is read because that is what a save stores.
+  Future<void> _refreshNotation(String notation) async {
     final trimmed = notation.trim();
     final mySeq = ++_seq;
     if (trimmed.isEmpty) {
       setState(() {
-        _diagram = null;
-        _diagramError = null;
+        _reading = null;
+        _readError = null;
       });
       return;
     }
     try {
-      final repo = ref.read(nalbindRepositoryProvider);
-      final stitch = await repo.parse(trimmed);
-      final diagram = await repo.diagram(stitch);
+      final reading = await ref.read(nalbindRepositoryProvider).read(trimmed, strict: true);
       if (!mounted || mySeq != _seq) return;
       setState(() {
-        _diagram = diagram;
-        _diagramError = null;
+        _reading = reading;
+        _readError = null;
       });
     } catch (e) {
+      // Reading never fails on any text, so this is the bridge itself failing.
       if (!mounted || mySeq != _seq) return;
-      final s = e.toString();
-      final i = s.indexOf('invalid Hansen notation:');
       setState(() {
-        _diagram = null;
-        _diagramError = i >= 0 ? s.substring(i) : s;
+        _reading = null;
+        _readError = 'Could not read the notation: $e';
       });
     }
   }
@@ -172,8 +178,20 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
         _id = id;
         _baseline = project;
       });
-      _snack('Saved.');
+      // A draft may be saved with notation problems; say so, since the list under the field is the
+      // only other sign of them.
+      final parsed = _reading?.parsed;
+      final withProblems = parsed != null && parsed.source == project.notation && !parsed.accepted;
+      _snack(withProblems ? 'Saved. The stitch notation still has problems.' : 'Saved.');
       return true;
+    } on NativeFormatException catch (e) {
+      // The file on disk is one this build must not replace (a newer Ply's, say). Forget the id so the
+      // next Save creates a NEW project and the original stays untouched.
+      if (mounted) {
+        setState(() => _id = null);
+        _snack('${e.message} Save again to keep your changes as a new project.');
+      }
+      return false;
     } catch (e) {
       if (mounted) _snack('Could not save: $e');
       return false;
@@ -187,6 +205,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
     final text = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final builtins = ref.watch(nalbindBuiltinsProvider);
+    final reading = _reading;
     // Dirty-on-exit guard: canPop=false routes the back button / system back through the leave
     // prompt. The ListenableBuilder re-evaluates canPop on every text edit but rebuilds only the
     // PopScope (the form is its cached child); stitch-chip picks and loads rebuild via setState.
@@ -230,7 +249,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
                   onChanged: (v) {
                     // Hand-editing the notation makes it a custom string (no builtin name).
                     setState(() => _stitchName = '');
-                    _refreshDiagram(v);
+                    _refreshNotation(v);
                   },
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
@@ -238,6 +257,20 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
                     hintText: 'e.g. UO/UOO F1',
                   ),
                 ),
+                if (_readError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(_readError!, style: TextStyle(color: cs.error)),
+                  ),
+                if (reading != null) ...[
+                  NotationFeedback(parsed: reading.parsed, issues: reading.issues),
+                  if (!reading.parsed.accepted)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('You can save with these problems and fix them later.',
+                          style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                    ),
+                ],
                 const SizedBox(height: 8),
                 // Tap a builtin to fill the notation + remember its name.
                 builtins.maybeWhen(
@@ -252,22 +285,20 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
                             final code = e.stitch.codes.isNotEmpty ? e.stitch.codes.first.code : '';
                             _notation.text = code;
                             setState(() => _stitchName = e.stitch.name);
-                            _refreshDiagram(code);
+                            _refreshNotation(code);
                           },
                         ),
                     ],
                   ),
                   orElse: () => const SizedBox.shrink(),
                 ),
-                if (_diagramError != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(_diagramError!, style: TextStyle(color: cs.error)),
-                  ),
-                if (_diagram != null)
+                if (reading != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
-                    child: NalbindDiagramView(diagram: _diagram!),
+                    child: NalbindDiagramView(
+                      diagram: reading.diagram,
+                      approximate: !reading.parsed.isExact,
+                    ),
                   ),
                 const SizedBox(height: 20),
                 Text('Notes', style: text.titleSmall),

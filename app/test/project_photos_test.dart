@@ -46,6 +46,33 @@ void main() {
       expect(list.last.path, a.path);
     });
 
+    test('add is atomic: identical bytes, no temp file left behind', () async {
+      final store = PhotoStore(subdir: 'knits', id: 'a', docsOverride: docs);
+      final stored = await store.add(await source('pic.png'));
+      expect(stored.readAsBytesSync(), _png1x1);
+      expect(stored.path, endsWith('.png'));
+      final names = Directory('${docs.path}/knits/a.photos')
+          .listSync()
+          .map((e) => e.uri.pathSegments.last)
+          .toList();
+      expect(names, hasLength(1));
+      expect(names.single.endsWith('.tmp'), isFalse);
+    });
+
+    test('a failed add leaves nothing in the store (no partial photo)', () async {
+      final store = PhotoStore(subdir: 'knits', id: 'b', docsOverride: docs);
+      await expectLater(store.add(File('${docs.path}/missing.jpg')), throwsA(isA<FileSystemException>()));
+      expect(Directory('${docs.path}/knits/b.photos').listSync(), isEmpty);
+      expect(await store.list(), isEmpty);
+    });
+
+    test('list never shows a leftover temp file from an interrupted add', () async {
+      final store = PhotoStore(subdir: 'knits', id: 'c', docsOverride: docs);
+      await Directory('${docs.path}/knits/c.photos').create(recursive: true);
+      File('${docs.path}/knits/c.photos/half.jpg.tmp').writeAsBytesSync(const [0xFF, 0xD8]);
+      expect(await store.list(), isEmpty);
+    });
+
     test('delete removes a photo; list ignores non-images', () async {
       final store = PhotoStore(subdir: 'knits', id: 'k', docsOverride: docs);
       final stored = await store.add(await source('p.png'));

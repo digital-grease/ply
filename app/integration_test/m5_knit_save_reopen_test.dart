@@ -2,9 +2,12 @@
 //
 // Verifies the `<documents>/knits/<id>.{plyknit,json,png}` triplet end to end: a painted chart
 // saves, appears in listKnits(), reopens byte-faithfully (the painted cell survives), bumps
-// lastOpened on open, and deletes cleanly (drops out of the list).
+// lastOpened on open, writes the current `.plyknit` envelope, refuses a newer file with the typed
+// error, and deletes cleanly (drops out of the list).
 //
 //   flutter test integration_test/m5_knit_save_reopen_test.dart -d emulator-5554
+
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -12,6 +15,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:ply/src/data/knit_repository.dart';
 import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/models/knit_stitches.dart';
+import 'package:ply/src/models/native_format.dart';
 import 'package:ply/src/rust/frb_generated.dart';
 import 'package:ply/src/state/knit_editor_state.dart';
 
@@ -61,6 +65,15 @@ void main() {
     final entry = await repo.openKnit(id);
     expect(entry.meta.lastOpened.isBefore(savedAt), isFalse,
         reason: 'opening bumps lastOpened forward, never back');
+
+    // The file on disk is a current-version envelope, and the real engine refuses a newer one with
+    // the typed error the editor turns into "saved by a newer version of Ply".
+    expect(plyknitSchemaVersion(File(entry.patternPath).readAsStringSync()), 2);
+    await expectLater(
+      repo.parse('{"format":"ply.knit","schema_version":99,"document":{}}'),
+      throwsA(isA<NativeFormatException>()
+          .having((e) => e.problem, 'problem', NativeFormatProblem.newerVersion)),
+    );
 
     // The reopened pattern still renders (a real, non-empty image).
     final img = await repo.render(reopened, cellPx: 8);

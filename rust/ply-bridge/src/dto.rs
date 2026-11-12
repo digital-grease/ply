@@ -45,6 +45,7 @@ pub enum UnitKind {
 /// tie-up (composed Dart-side with a threading + straight treadling); Overshot/ShadowWeave/DoubleWeave
 /// are interdependent WHOLE-DRAFT structures built in the engine and returned as a complete `DraftDto`
 /// via [`generate_structure_dto`]. Flat C-like enum so frb mirrors it as a plain Dart enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StructureFamily {
     Plain,
     Twill,

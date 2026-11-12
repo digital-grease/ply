@@ -2,7 +2,8 @@
 //! ADVERSARIAL patterns (ragged rows, dangling stitch/color ids, malformed cables, out-of-range
 //! repeats, overflowing cell sizes, non-finite calculator inputs):
 //!
-//! 1. the JSON write -> parse round-trip is identity (over finite-gauge patterns), and
+//! 1. the `.plyknit` write -> parse round-trip is identity (over finite-gauge patterns), and a
+//!    legacy (version 1) file migrates with every cell on the stitch it named, and
 //! 2. `validate` / `render_rgba` / `to_written` / the calculators NEVER panic — they return a value
 //!    (often a flagged issue or a clamped 0), the contract the FFI boundary relies on.
 //!
@@ -14,7 +15,7 @@ use ply_knit::calc::{
     finished_width, seed_gauge, total_stitches, with_buffer,
 };
 use ply_knit::pattern::*;
-use ply_knit::{render_rgba, to_written, validate};
+use ply_knit::{render_rgba, to_written, validate, KNIT_FORMAT, KNIT_SCHEMA_VERSION};
 use proptest::prelude::*;
 
 // --- strategies --------------------------------------------------------------------------------
@@ -152,12 +153,76 @@ fn arb_yarn_weight() -> impl Strategy<Value = YarnWeight> {
 // --- properties --------------------------------------------------------------------------------
 
 proptest! {
-    /// `from_json(to_json(p)) == p` for finite-gauge patterns — the JSON round-trip is identity.
+    /// `from_json(to_json(p)) == p` for finite-gauge patterns: the envelope round-trip is identity,
+    /// the output is always a current-version `ply.knit` envelope, and it reads back as current.
     #[test]
     fn json_round_trip_is_identity(p in arb_pattern()) {
         let json = p.to_json().expect("a finite-gauge pattern serializes");
-        let back = KnitPattern::from_json(&json).expect("our own output parses back");
-        prop_assert_eq!(back, p);
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        prop_assert_eq!(&v["format"], KNIT_FORMAT);
+        prop_assert_eq!(v["schema_version"].as_u64(), Some(u64::from(KNIT_SCHEMA_VERSION)));
+        let loaded = ply_knit::native::read(&json).expect("our own output parses back");
+        prop_assert_eq!(loaded.source_version, KNIT_SCHEMA_VERSION);
+        prop_assert_eq!(&loaded.pattern, &p);
+        // Saving what was loaded writes the same bytes (a re-save is stable).
+        prop_assert_eq!(loaded.pattern.to_json().unwrap(), json);
+    }
+
+    /// A LEGACY (bare, version 1) file of a pattern already on the full built-in vocabulary, as
+    /// v0.1.7 wrote it, loads unchanged: the v1 -> v2 migration only re-bases older vocabularies.
+    #[test]
+    fn legacy_file_on_the_full_vocabulary_loads_unchanged(p in arb_pattern()) {
+        let legacy = serde_json::to_string(&p).expect("serializes");
+        let loaded = ply_knit::native::read(&legacy).expect("a legacy file parses");
+        prop_assert_eq!(loaded.source_version, 1);
+        prop_assert_eq!(loaded.pattern, p);
+    }
+
+    /// A pattern as v0.1.0 to v0.1.5 held it (12 built-ins, then its custom cables) migrates so every
+    /// cell names the same stitch definition, with the same color, that it named before.
+    #[test]
+    fn twelve_builtin_legacy_file_keeps_every_cell_on_its_stitch(p in arb_pattern()) {
+        let n = StitchLegend::builtin().stitches.len();
+        let customs = p.legend.stitches.len() - n;
+        let mut old = p.clone();
+        old.legend.stitches.drain(12..n);
+        for (r, row) in old.chart.rows.iter_mut().enumerate() {
+            for (c, cell) in row.cells.iter_mut().enumerate() {
+                cell.stitch = if customs > 0 && (r + c) % 3 == 0 {
+                    12 + c % customs // a custom cable, at its old index
+                } else if (12..n).contains(&cell.stitch) {
+                    builtin::KNIT // a built-in that release did not have yet
+                } else {
+                    cell.stitch
+                };
+            }
+        }
+        let migrated = KnitPattern::from_json(&serde_json::to_string(&old).unwrap()).unwrap();
+        prop_assert_eq!(&migrated.legend, &p.legend);
+        prop_assert_eq!(migrated.chart.rows.len(), old.chart.rows.len());
+        for (old_row, new_row) in old.chart.rows.iter().zip(&migrated.chart.rows) {
+            prop_assert_eq!(old_row.cells.len(), new_row.cells.len());
+            for (o, m) in old_row.cells.iter().zip(&new_row.cells) {
+                prop_assert_eq!(old.legend.get(o.stitch), migrated.legend.get(m.stitch));
+                prop_assert_eq!(o.color, m.color);
+            }
+        }
+    }
+
+    /// A legacy file whose cells carry ANY integer id (up to u64::MAX) never panics the migration.
+    #[test]
+    fn legacy_migration_never_panics_on_huge_ids(ids in prop::collection::vec(any::<u64>(), 0..6)) {
+        let builtins = serde_json::to_value(&StitchLegend::builtin().stitches[..12]).unwrap();
+        let cells: Vec<_> =
+            ids.iter().map(|id| serde_json::json!({"stitch": id, "color": null})).collect();
+        let legacy = serde_json::json!({
+            "name": "x", "construction": "Flat", "first_row_side": "Rs",
+            "gauge": {"sts": 20.0, "rows": 28.0, "unit": "Inches"},
+            "palette": [], "legend": {"stitches": builtins},
+            "chart": {"width": ids.len(), "rows": [{"cells": cells, "repeats": []}]},
+            "notes": "",
+        });
+        let _ = KnitPattern::from_json(&legacy.to_string());
     }
 
     /// `validate` never panics on arbitrary (adversarial) patterns.

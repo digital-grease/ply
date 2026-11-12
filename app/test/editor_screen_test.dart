@@ -353,6 +353,24 @@ void main() {
         reason: 'lastOpened bumped to ~now');
   });
 
+  testWidgets('saving keeps sidecar values from a newer build that this one cannot read',
+      (tester) async {
+    final fake = FakeRepo();
+    final existing = DraftMeta.fromJson({
+      'name': 'Original',
+      'loomType': 'RigidHeddle', // unknown here: the editor shows it as jack
+      'savedAt': '2020-01-01T00:00:00.000Z',
+      'futureKey': {'kept': true},
+    });
+    await pumpEditor(tester, fake, id: 'abc', meta: existing);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+
+    final json = fake.capturedMeta!.toJson();
+    expect(json['loomType'], 'RigidHeddle', reason: 'an untouched loom type is not rewritten');
+    expect(json['futureKey'], {'kept': true});
+  });
+
   testWidgets('a double-tap of Save collapses to ONE save (re-entrancy guard)', (tester) async {
     final fake = FakeRepo()..saveGate = Completer<void>();
     await pumpEditor(tester, fake); // clean draft -> no dialog

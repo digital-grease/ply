@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../rust/dto.dart' show SeverityKind;
+import '../data/nalbind_repository.dart';
 import '../rust/nalbind_dto.dart';
 import '../state/nalbind_providers.dart';
 import '../widgets/nalbind_diagram_view.dart';
+import '../widgets/notation_feedback.dart';
 import 'nalbind_project_screen.dart';
 
 /// Open the nalbind project editor ([id] null = new); refresh the saved-projects list on return.
@@ -18,7 +19,8 @@ Future<void> _openNalbindProject(BuildContext context, WidgetRef ref, String? id
 /// The Nalbinding tab: a stitch REFERENCE (M6 v1). A notation playground at the top (type a Hansen
 /// string → live loop diagram + validation), then the curated builtin dictionary, each stitch showing
 /// its notation, the `a+b` thumb-loop alias, alternate names, the generated structural diagram, and a
-/// one-line description. No project editor or persistence yet (see `docs/NALBIND_DESIGN.md`).
+/// one-line description, plus the "My projects" list of saved pieces (open, rename, delete) and the
+/// New project button. See `docs/NALBIND_DESIGN.md`.
 class NalbindReferenceScreen extends ConsumerWidget {
   const NalbindReferenceScreen({super.key});
 
@@ -199,7 +201,9 @@ class _NotationPrimer extends StatelessWidget {
   }
 }
 
-/// Type a Hansen string and see its diagram + validation live.
+/// Type a Hansen string and see its findings and loop diagram live. This is the REFERENCE reading
+/// (lenient), so each problem shows at its own severity; a reading that is not exact draws its
+/// best-effort diagram labelled approximate (see [NalbindDiagramView.approximate]).
 class _NotationPlayground extends ConsumerStatefulWidget {
   const _NotationPlayground();
 
@@ -210,8 +214,7 @@ class _NotationPlayground extends ConsumerStatefulWidget {
 class _NotationPlaygroundState extends ConsumerState<_NotationPlayground> {
   final _controller = TextEditingController();
   int _seq = 0;
-  DiagramDto? _diagram;
-  List<NalbindIssueDto> _issues = const [];
+  NotationReading? _reading;
   String? _error;
 
   @override
@@ -225,41 +228,32 @@ class _NotationPlaygroundState extends ConsumerState<_NotationPlayground> {
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
       setState(() {
-        _diagram = null;
-        _issues = const [];
+        _reading = null;
         _error = null;
       });
       return;
     }
-    final repo = ref.read(nalbindRepositoryProvider);
     try {
-      final stitch = await repo.parse(trimmed);
-      final diagram = await repo.diagram(stitch);
-      final issues = await repo.validate(stitch);
+      final reading = await ref.read(nalbindRepositoryProvider).read(trimmed, strict: false);
       if (!mounted || mySeq != _seq) return; // a newer keystroke superseded this
       setState(() {
-        _diagram = diagram;
-        _issues = issues;
+        _reading = reading;
         _error = null;
       });
     } catch (e) {
+      // Reading never fails on any text, so this is the bridge itself failing.
       if (!mounted || mySeq != _seq) return;
       setState(() {
-        _diagram = null;
-        _error = _cleanError(e);
+        _reading = null;
+        _error = 'Could not read the notation: $e';
       });
     }
-  }
-
-  String _cleanError(Object e) {
-    final s = e.toString();
-    final i = s.indexOf('invalid Hansen notation:');
-    return i >= 0 ? s.substring(i) : s;
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final reading = _reading;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -283,29 +277,10 @@ class _NotationPlaygroundState extends ConsumerState<_NotationPlayground> {
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(_error!, style: TextStyle(color: cs.error)),
               ),
-            if (_diagram != null) ...[
+            if (reading != null) ...[
+              NotationFeedback(parsed: reading.parsed, issues: reading.issues),
               const SizedBox(height: 12),
-              NalbindDiagramView(diagram: _diagram!),
-              for (final issue in _issues)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        issue.severity == SeverityKind.error
-                            ? Icons.error_outline
-                            : Icons.warning_amber_rounded,
-                        size: 16,
-                        color: issue.severity == SeverityKind.error ? cs.error : cs.tertiary,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(issue.message, style: Theme.of(context).textTheme.bodySmall),
-                      ),
-                    ],
-                  ),
-                ),
+              NalbindDiagramView(diagram: reading.diagram, approximate: !reading.parsed.isExact),
             ],
           ],
         ),

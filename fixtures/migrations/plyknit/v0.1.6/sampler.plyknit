@@ -1,0 +1,424 @@
+{
+  "name": "Cable and colorwork sampler",
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "gauge": {
+    "sts": 22.0,
+    "rows": 30.0,
+    "unit": "Centimeters"
+  },
+  "palette": [
+    {
+      "r": 255,
+      "g": 255,
+      "b": 255
+    },
+    {
+      "r": 178,
+      "g": 34,
+      "b": 52
+    },
+    {
+      "r": 30,
+      "g": 60,
+      "b": 120
+    }
+  ],
+  "legend": {
+    "stitches": [
+      {
+        "symbol": "ns",
+        "consumes": 0,
+        "produces": 0,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "k",
+        "consumes": 1,
+        "produces": 1,
+        "ws_variant": 2,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "p",
+        "consumes": 1,
+        "produces": 1,
+        "ws_variant": 1,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "yo",
+        "consumes": 0,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "k2tog",
+        "consumes": 2,
+        "produces": 1,
+        "ws_variant": 6,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "ssk",
+        "consumes": 2,
+        "produces": 1,
+        "ws_variant": 6,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "p2tog",
+        "consumes": 2,
+        "produces": 1,
+        "ws_variant": 4,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "cdd",
+        "consumes": 3,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "m1l",
+        "consumes": 0,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "m1r",
+        "consumes": 0,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "kfb",
+        "consumes": 1,
+        "produces": 2,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "sl",
+        "consumes": 1,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "k3tog",
+        "consumes": 3,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "sk2po",
+        "consumes": 3,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "ssp",
+        "consumes": 2,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "kbf",
+        "consumes": 1,
+        "produces": 2,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "pfb",
+        "consumes": 1,
+        "produces": 2,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "m1p",
+        "consumes": 0,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "m1lp",
+        "consumes": 0,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "m1rp",
+        "consumes": 0,
+        "produces": 1,
+        "ws_variant": null,
+        "cable": null,
+        "macro_rows": 1
+      },
+      {
+        "symbol": "2/2 RC",
+        "consumes": 4,
+        "produces": 4,
+        "ws_variant": null,
+        "cable": {
+          "front": 2,
+          "back": 2,
+          "direction": "Right",
+          "front_purl": false,
+          "back_purl": false
+        },
+        "macro_rows": 1
+      },
+      {
+        "symbol": "1/1 LC",
+        "consumes": 2,
+        "produces": 2,
+        "ws_variant": null,
+        "cable": {
+          "front": 1,
+          "back": 1,
+          "direction": "Left",
+          "front_purl": false,
+          "back_purl": true
+        },
+        "macro_rows": 1
+      }
+    ]
+  },
+  "chart": {
+    "width": 8,
+    "rows": [
+      {
+        "cells": [
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 2,
+            "color": null
+          },
+          {
+            "stitch": 2,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 2,
+            "color": null
+          },
+          {
+            "stitch": 2,
+            "color": null
+          }
+        ],
+        "repeats": [
+          {
+            "start": 0,
+            "end": 4,
+            "count": {
+              "Times": 2
+            }
+          }
+        ]
+      },
+      {
+        "cells": [
+          {
+            "stitch": 2,
+            "color": null
+          },
+          {
+            "stitch": 2,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 2,
+            "color": null
+          },
+          {
+            "stitch": 2,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          }
+        ],
+        "repeats": []
+      },
+      {
+        "cells": [
+          {
+            "stitch": 20,
+            "color": null
+          },
+          {
+            "stitch": 0,
+            "color": null
+          },
+          {
+            "stitch": 0,
+            "color": null
+          },
+          {
+            "stitch": 0,
+            "color": null
+          },
+          {
+            "stitch": 3,
+            "color": null
+          },
+          {
+            "stitch": 4,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 2,
+            "color": null
+          }
+        ],
+        "repeats": []
+      },
+      {
+        "cells": [
+          {
+            "stitch": 1,
+            "color": 1
+          },
+          {
+            "stitch": 1,
+            "color": 2
+          },
+          {
+            "stitch": 1,
+            "color": 1
+          },
+          {
+            "stitch": 1,
+            "color": 2
+          },
+          {
+            "stitch": 21,
+            "color": 2
+          },
+          {
+            "stitch": 0,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 11,
+            "color": null
+          }
+        ],
+        "repeats": []
+      },
+      {
+        "cells": [
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 17,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 1,
+            "color": null
+          },
+          {
+            "stitch": 20,
+            "color": null
+          },
+          {
+            "stitch": 0,
+            "color": null
+          },
+          {
+            "stitch": 0,
+            "color": null
+          },
+          {
+            "stitch": 0,
+            "color": null
+          }
+        ],
+        "repeats": [
+          {
+            "start": 0,
+            "end": 8,
+            "count": "ToEnd"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": "Migration fixture: two custom cables, colorwork, repeat spans."
+}

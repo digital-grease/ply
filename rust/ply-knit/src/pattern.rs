@@ -104,6 +104,9 @@ impl StitchDef {
 }
 
 /// Stable ids for the [`StitchLegend::builtin`] seed vocabulary.
+///
+/// The ids AND the definitions are part of the `.plyknit` schema (a saved legend stores its built-in
+/// entries by position). See [`StitchLegend::builtin`] for the rule on changing them.
 pub mod builtin {
     use super::StitchId;
     pub const NO_STITCH: StitchId = 0;
@@ -145,6 +148,14 @@ impl StitchLegend {
     /// vocabulary a pattern extends with custom stitches. WS pairings are approximate where a stitch
     /// lacks an exact built-in mirror (e.g. ssk's WS is seeded as p2tog); the appended shaping stitches
     /// keep `ws_variant: None` (emitted as themselves), like the other increases and double decreases.
+    ///
+    /// SCHEMA RULE: this vocabulary is part of the `.plyknit` format. Changing it in ANY way (adding,
+    /// removing, reordering, or correcting an existing definition such as ssk's approximate WS
+    /// variant) must bump [`crate::KNIT_SCHEMA_VERSION`], freeze the new vocabulary beside the
+    /// current frozen copy in `native.rs`, and append a migration that knows exactly which entries
+    /// changed and how saved charts map onto them. A saved legend is never re-matched against this
+    /// list by guesswork; the test `current_builtins_are_the_frozen_schema_vocabulary` fails until
+    /// that is done. See the format ADR.
     pub fn builtin() -> Self {
         use builtin::*;
         let def = |symbol: &str, consumes: u8, produces: u8, ws: Option<StitchId>| StitchDef {
@@ -323,71 +334,20 @@ impl KnitPattern {
         }
     }
 
-    /// Upgrade a pattern deserialized with an OLDER built-in vocabulary to the current one: splice in
-    /// any built-ins added since it was saved, shift its custom stitches (cables) up to sit after the
-    /// full current built-in set, and remap every chart cell + `ws_variant` that referenced a moved
-    /// custom.
-    ///
-    /// Built-ins are append-only and immutable, so a saved legend is always
-    /// `[current built-in prefix] ++ [custom stitches]`; this finds the prefix length `k` (the built-in
-    /// count at save time) and rebuilds on the full current set, moving each custom from old index
-    /// `k + j` to new index `n + j`. Idempotent — a pattern already on the current built-ins (`k == n`)
-    /// is left untouched — so it is safe to run on every load (see [`from_json`]).
-    pub fn upgrade_builtins(&mut self) {
-        let current = StitchLegend::builtin().stitches;
-        let n = current.len();
-        // The longest leading run of saved entries still equal to the current built-ins is the built-in
-        // count this pattern was saved with; everything from there on is a custom stitch.
-        let mut k = 0;
-        {
-            let saved = &self.legend.stitches;
-            while k < saved.len() && k < n && saved[k] == current[k] {
-                k += 1;
-            }
-        }
-        if k == n {
-            return; // already on the current built-in set; customs already sit after it.
-        }
-        let remap = |id: StitchId| -> StitchId {
-            if id < k {
-                id
-            } else {
-                n + (id - k)
-            }
-        };
-        // Detach the customs (old indices k..) and re-seat them after the full current built-in set.
-        let customs = self.legend.stitches.split_off(k);
-        let mut stitches = current;
-        for mut c in customs {
-            c.ws_variant = c.ws_variant.map(remap);
-            stitches.push(c);
-        }
-        self.legend = StitchLegend { stitches };
-        // Every chart cell that pointed at a moved custom follows it to its new index.
-        for row in &mut self.chart.rows {
-            for cell in &mut row.cells {
-                cell.stitch = remap(cell.stitch);
-            }
-        }
-    }
-
-    /// Serialize to the native `.plyknit` format (pretty JSON). Round-trips losslessly for a valid
-    /// pattern. A NaN/infinite gauge is REJECTED here: serde would emit JSON `null`, which then fails
-    /// to parse back (a write-then-unreadable file), so we fail the save cleanly instead.
+    /// Serialize to the native `.plyknit` format: a current-version envelope (pretty JSON), see
+    /// [`crate::native`]. Round-trips losslessly for a valid pattern. A NaN/infinite gauge is REJECTED:
+    /// serde would emit JSON `null`, which then fails to parse back (a write-then-unreadable file), so
+    /// the save fails cleanly instead.
     pub fn to_json(&self) -> Result<String, KnitError> {
-        if !self.gauge.sts.is_finite() || !self.gauge.rows.is_finite() {
-            return Err(KnitError::NonFiniteGauge);
-        }
-        Ok(serde_json::to_string_pretty(self)?)
+        crate::native::write(self)
     }
 
-    /// Parse the native `.plyknit` format, upgrading an older saved built-in vocabulary to the current
-    /// one (see [`KnitPattern::upgrade_builtins`]) so a pattern saved before a built-in was added still
-    /// opens with the right stitches and chart.
+    /// Parse the native `.plyknit` format at any supported schema version. A legacy (version 1) file is
+    /// migrated in memory, including its built-in stitch vocabulary; a current file loads exactly as
+    /// saved; a newer one is [`KnitError::NewerVersion`]. See [`crate::native::read`], which also
+    /// reports the file's own version.
     pub fn from_json(s: &str) -> Result<Self, KnitError> {
-        let mut p: KnitPattern = serde_json::from_str(s)?;
-        p.upgrade_builtins();
-        Ok(p)
+        crate::native::read(s).map(|loaded| loaded.pattern)
     }
 }
 
@@ -500,94 +460,6 @@ mod tests {
             leg.stitches.len(),
             21,
             "12 original builtins + 8 appended shaping stitches + ktbl"
-        );
-    }
-
-    #[test]
-    fn upgrade_builtins_splices_new_builtins_into_an_old_pattern() {
-        // A pattern saved with the OLD 12-built-in legend (no customs), charting k & p.
-        let mut p = ribbing();
-        p.legend.stitches.truncate(12);
-        p.upgrade_builtins();
-        assert_eq!(
-            p.legend.stitches.len(),
-            21,
-            "the 9 newer built-ins are spliced in"
-        );
-        assert_eq!(p.legend.get(builtin::K3TOG).unwrap().symbol, "k3tog");
-        // The k/p chart cells (ids 1 & 2, below the splice point) are untouched.
-        assert_eq!(p.chart.rows[0].cells[0].stitch, builtin::KNIT);
-        assert_eq!(p.chart.rows[0].cells[1].stitch, builtin::PURL);
-    }
-
-    #[test]
-    fn upgrade_builtins_moves_a_custom_cable_and_remaps_its_cells() {
-        // OLD legend: 12 built-ins + a custom cable saved at index 12; a chart cell points at it.
-        let mut p = ribbing();
-        p.legend.stitches.truncate(12);
-        p.legend.stitches.push(StitchDef {
-            symbol: "2/2RC".into(),
-            consumes: 4,
-            produces: 4,
-            ws_variant: None,
-            cable: Some(CableDef {
-                front: 2,
-                back: 2,
-                direction: Cross::Right,
-                front_purl: false,
-                back_purl: false,
-            }),
-            macro_rows: 1,
-        });
-        p.chart = Chart {
-            width: 2,
-            rows: vec![Row::plain(vec![Cell::of(builtin::KNIT), Cell::of(12)])],
-        };
-
-        p.upgrade_builtins();
-
-        assert_eq!(
-            p.legend.stitches.len(),
-            22,
-            "21 built-ins + the one moved cable"
-        );
-        assert_eq!(p.legend.stitches[21].symbol, "2/2RC");
-        assert!(
-            p.legend.stitches[21].cable.is_some(),
-            "the cable now sits after the full built-in set"
-        );
-        // The knit cell is unchanged; the cable cell (old index 12) follows the cable to its new index.
-        assert_eq!(p.chart.rows[0].cells[0].stitch, builtin::KNIT);
-        assert_eq!(p.chart.rows[0].cells[1].stitch, 21);
-    }
-
-    #[test]
-    fn upgrade_builtins_is_idempotent_on_a_current_pattern() {
-        let mut p = ribbing(); // already carries the current 21-built-in legend
-        let before = p.clone();
-        p.upgrade_builtins();
-        assert_eq!(
-            p, before,
-            "a pattern already on the current built-ins is left untouched"
-        );
-    }
-
-    #[test]
-    fn from_json_upgrades_an_old_saved_legend_on_load() {
-        // A `.plyknit` written with the OLD 12-built-in legend must open on the current built-ins.
-        let mut old = ribbing();
-        old.legend.stitches.truncate(12);
-        let json = serde_json::to_string(&old).unwrap();
-        let back = KnitPattern::from_json(&json).unwrap();
-        assert_eq!(
-            back.legend.stitches.len(),
-            21,
-            "from_json migrates the built-in set on load"
-        );
-        assert_eq!(
-            back.chart.rows[0].cells[0].stitch,
-            builtin::KNIT,
-            "the chart survives unchanged"
         );
     }
 

@@ -236,8 +236,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final loomType = ref.read(loomTypeProvider);
       final overshotTreadling = ref.read(overshotTreadlingProvider);
       if (widget.meta != null) {
-        meta = widget.meta!.copyWith(
-            loomType: loomType, overshotTreadling: overshotTreadling, lastOpened: DateTime.now());
+        // Pass a field only when this session changed it: an untouched one keeps whatever the sidecar
+        // held, including a value written by a newer build that this one could not interpret.
+        final old = widget.meta!;
+        meta = old.copyWith(
+            loomType: loomType == old.loomType ? null : loomType,
+            overshotTreadling: overshotTreadling == old.overshotTreadling ? null : overshotTreadling,
+            lastOpened: DateTime.now());
       } else {
         final input = await showSaveDraftDialog(context, initialName: widget.title);
         if (input == null || !mounted) return; // cancelled the name prompt

@@ -10,12 +10,14 @@
 
 pub mod calc;
 pub mod error;
+pub mod native;
 pub mod pattern;
 pub mod render;
 pub mod validate;
 pub mod written;
 
 pub use error::KnitError;
+pub use native::{LoadedPattern, KNIT_FORMAT, KNIT_SCHEMA_VERSION};
 pub use pattern::{
     builtin, CableDef, Cell, Chart, ColorIndex, Construction, Cross, Gauge, KnitPattern, Repeat,
     RepeatSpan, Row, Side, StitchDef, StitchId, StitchLegend,

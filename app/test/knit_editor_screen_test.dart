@@ -9,6 +9,7 @@ import 'package:ply/src/data/knit_repository.dart';
 import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/models/knit_entry.dart';
 import 'package:ply/src/models/knit_stitches.dart';
+import 'package:ply/src/models/native_format.dart';
 import 'package:ply/src/rust/dto.dart' show SeverityKind, ColorDto, UnitKind;
 import 'package:ply/src/rust/knit_dto.dart';
 import 'package:ply/src/screens/knit_editor_screen.dart';
@@ -78,6 +79,14 @@ class FakeSavingRepo extends FakeEditorRepo {
   /// When true, saveKnit throws (a failed write).
   bool saveError = false;
 
+  /// When set, the NEXT saveKnit throws it (the repository refusing to replace the file on disk).
+  NativeFormatException? refuseNextSave;
+
+  /// When set, readPattern throws it (a file that cannot be opened).
+  Object? readError;
+
+  int openCount = 0;
+
   @override
   Future<String> saveKnit({
     required KnitPatternDto pattern,
@@ -87,6 +96,11 @@ class FakeSavingRepo extends FakeEditorRepo {
     saveCount++;
     if (saveGate != null) await saveGate!.future;
     if (saveError) throw Exception('disk full');
+    final refusal = refuseNextSave;
+    if (refusal != null) {
+      refuseNextSave = null;
+      throw refusal;
+    }
     savedPattern = pattern;
     savedMeta = meta;
     savedId = id;
@@ -94,10 +108,16 @@ class FakeSavingRepo extends FakeEditorRepo {
   }
 
   @override
-  Future<KnitPatternDto> readPattern(String id) async => _fourByFour();
+  Future<KnitPatternDto> readPattern(String id) async {
+    final error = readError;
+    if (error != null) throw error;
+    return _fourByFour();
+  }
 
   @override
-  Future<KnitEntry> openKnit(String id) async => KnitEntry(
+  Future<KnitEntry> openKnit(String id) async {
+    openCount++;
+    return KnitEntry(
         id: id,
         meta: DraftMeta(
           name: 'Saved hat',
@@ -107,6 +127,7 @@ class FakeSavingRepo extends FakeEditorRepo {
         ),
         patternPath: '/tmp/$id.plyknit',
       );
+  }
 }
 
 /// Pumps a host that PUSHES the editor (so a back has somewhere to go), mirroring the library's
@@ -615,6 +636,70 @@ void main() {
       expect(find.byType(KnitEditorScreen), findsOneWidget,
           reason: 'the newer edit was not in that save, so leaving would drop it');
       expect(c.read(knitEditorProvider).isDirty, isTrue);
+    });
+  });
+
+  group('format safety', () {
+    IconButton saveButton(WidgetTester tester) =>
+        tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.save_outlined));
+
+    testWidgets('a pattern saved by a newer Ply opens to a plain message and can never be saved over',
+        (tester) async {
+      final repo = FakeSavingRepo()
+        ..readError = const NativeFormatException(NativeFormatProblem.newerVersion,
+            document: NativeDocument.knitPattern, detail: 'schema 3');
+      await pumpHostedEditor(tester, repo, openId: 'k1');
+
+      expect(
+        find.text('This pattern was saved by a newer version of Ply. Update the app to open it.'),
+        findsOneWidget,
+      );
+      expect(repo.openCount, 0, reason: 'the sidecar is not even touched');
+      expect(saveButton(tester).onPressed, isNull, reason: 'nothing to save after a failed open');
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.save_outlined));
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 0);
+
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text(_leaveTitle), findsNothing);
+      expect(find.byType(KnitEditorScreen), findsNothing, reason: 'leaves with no prompt');
+    });
+
+    testWidgets('any other open failure also disables Save', (tester) async {
+      final repo = FakeSavingRepo()..readError = Exception('disk gone');
+      await pumpHostedEditor(tester, repo, openId: 'k1');
+      expect(find.textContaining('Could not open the knitting pattern'), findsOneWidget);
+      expect(saveButton(tester).onPressed, isNull);
+    });
+
+    testWidgets('a save the repository refuses forgets the file; the next save makes a new pattern',
+        (tester) async {
+      final repo = FakeSavingRepo()
+        ..refuseNextSave = const NativeFormatException(NativeFormatProblem.newerVersion,
+            document: NativeDocument.knitPattern, whileSaving: true);
+      final c = await pumpHostedEditor(tester, repo, openId: 'k1');
+      editChart(c);
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 1);
+      expect(find.textContaining('from a newer version of Ply, so it was not replaced'),
+          findsOneWidget);
+      expect(find.textContaining('Save again to keep your changes as a new pattern'),
+          findsOneWidget);
+      expect(c.read(knitEditorProvider).isDirty, isTrue, reason: 'the edits are kept');
+
+      await tester.tap(find.byTooltip('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('Name this pattern'), findsOneWidget, reason: 'a new pattern needs a name');
+      await tester.enterText(find.widgetWithText(TextField, 'Pattern name'), 'Rescued hat');
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 2);
+      expect(repo.savedId, isNull, reason: 'saved as a NEW pattern, never over k1');
+      expect(repo.savedMeta!.name, 'Rescued hat');
     });
   });
 }

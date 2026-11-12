@@ -15,6 +15,7 @@ use ply_knit::pattern::{
     StitchDef, StitchLegend,
 };
 use ply_knit::validate::{KnitIssue, Severity};
+use ply_knit::KnitError;
 
 use crate::dto::{ColorDto, SeverityKind, UnitKind};
 
@@ -124,6 +125,42 @@ pub struct KnitPatternDto {
 pub struct KnitIssueDto {
     pub severity: SeverityKind,
     pub message: String,
+}
+
+/// Why a `.plyknit` file could not be opened (see [`KnitFormatFailure`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnitFormatFailureKind {
+    /// Saved by a newer Ply with a schema this build does not know. The file must not be written to.
+    NewerVersion,
+    /// A Ply file of some other format (for example a nalbinding project).
+    WrongFormat,
+    /// Not a readable `.plyknit` file (bad JSON, a malformed envelope, or a missing field).
+    Unreadable,
+}
+
+/// The typed error `parse_knit` returns, thrown as an exception on the Dart side so the app can say
+/// "saved by a newer version of Ply" instead of showing a raw parser message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KnitFormatFailure {
+    pub kind: KnitFormatFailureKind,
+    /// Human-readable detail (versions found / supported, or the parse error), for logs.
+    pub message: String,
+}
+
+impl From<KnitError> for KnitFormatFailure {
+    fn from(e: KnitError) -> Self {
+        let kind = match e {
+            KnitError::NewerVersion { .. } => KnitFormatFailureKind::NewerVersion,
+            KnitError::WrongFormat { .. } => KnitFormatFailureKind::WrongFormat,
+            KnitError::Json(_) | KnitError::Malformed(_) | KnitError::NonFiniteGauge => {
+                KnitFormatFailureKind::Unreadable
+            }
+        };
+        KnitFormatFailure {
+            kind,
+            message: e.to_string(),
+        }
+    }
 }
 
 // --- conversions (engine <-> DTO, the only place the base conversions live) ------------------------
@@ -493,5 +530,25 @@ mod tests {
         };
         let back = KnitPattern::from(KnitPatternDto::from(&p));
         assert_eq!(back, p);
+    }
+
+    /// Format problems reach Dart as a typed kind, not a raw parser string.
+    #[test]
+    fn format_errors_map_to_typed_failures() {
+        let kind =
+            |text: &str| KnitFormatFailure::from(KnitPattern::from_json(text).unwrap_err()).kind;
+        assert_eq!(
+            kind(r#"{"format":"ply.knit","schema_version":3,"document":{}}"#),
+            KnitFormatFailureKind::NewerVersion
+        );
+        assert_eq!(
+            kind(r#"{"format":"ply.nalbind","schemaVersion":2}"#),
+            KnitFormatFailureKind::WrongFormat
+        );
+        assert_eq!(kind("{not json"), KnitFormatFailureKind::Unreadable);
+        assert_eq!(
+            kind(r#"{"format":"ply.knit","schema_version":2,"document":{}}"#),
+            KnitFormatFailureKind::Unreadable
+        );
     }
 }

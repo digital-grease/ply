@@ -13,6 +13,15 @@
 // book-keeping (Library sort order); nothing on the Rust side reads it.
 //
 // No generated bridge symbols are imported here on purpose: this file is pure data.
+//
+// FORWARD COMPATIBILITY. The sidecar is REWRITTEN on every open (the lastOpened bump), rename, and
+// save, so a build must never drop what it does not understand: every key this build does not know,
+// and any known key whose value it cannot interpret (say a loom type added later), is kept in
+// [DraftMeta.extra] and written back verbatim. Sidecar changes are therefore ADDITIVE ONLY: a new
+// build may add keys, but an existing key never changes meaning or type (use a new key instead), and
+// `schemaVersion` stays 1 while that holds. See the format ADR.
+
+import 'package:collection/collection.dart';
 
 import 'loom_type.dart';
 
@@ -28,7 +37,9 @@ class DraftMeta {
     required DateTime savedAt,
     required DateTime lastOpened,
     this.schemaVersion = 1,
-  })  : // Normalize to UTC at the boundary so the sidecar is timezone-stable: a
+    Map<String, Object?> extra = const {},
+  })  : extra = Map.unmodifiable(extra),
+        // Normalize to UTC at the boundary so the sidecar is timezone-stable: a
         // local DateTime serializes with NO offset, which would resolve to a
         // different instant if the device tz changes (travel/DST/restore) and
         // silently reorder the lastOpened-sorted Library. UTC also serializes with
@@ -66,6 +77,25 @@ class DraftMeta {
   /// Sidecar schema version, for tolerant forward migration.
   final int schemaVersion;
 
+  /// Sidecar entries this build does not interpret, written back verbatim by [toJson] so a rewrite
+  /// (open, rename, save) never erases what another build stored: every unknown key, plus any known
+  /// key whose stored value this build could not read. Setting that field through [copyWith] drops
+  /// the preserved value in favour of the new one. Unmodifiable.
+  final Map<String, Object?> extra;
+
+  /// The keys this build reads into fields. Everything else in a sidecar goes to [extra].
+  static const Set<String> knownKeys = {
+    'name',
+    'craft',
+    'author',
+    'notes',
+    'loomType',
+    'overshotTreadling',
+    'savedAt',
+    'lastOpened',
+    'schemaVersion',
+  };
+
   DraftMeta copyWith({
     String? name,
     String? craft,
@@ -77,6 +107,20 @@ class DraftMeta {
     DateTime? lastOpened,
     int? schemaVersion,
   }) {
+    // A field set here replaces any value preserved for its key.
+    final kept = Map<String, Object?>.of(extra)
+      ..removeWhere((key, _) => switch (key) {
+            'name' => name != null,
+            'craft' => craft != null,
+            'author' => author != null,
+            'notes' => notes != null,
+            'loomType' => loomType != null,
+            'overshotTreadling' => overshotTreadling != null,
+            'savedAt' => savedAt != null,
+            'lastOpened' => lastOpened != null,
+            'schemaVersion' => schemaVersion != null,
+            _ => false,
+          });
     return DraftMeta(
       name: name ?? this.name,
       craft: craft ?? this.craft,
@@ -87,11 +131,13 @@ class DraftMeta {
       savedAt: savedAt ?? this.savedAt,
       lastOpened: lastOpened ?? this.lastOpened,
       schemaVersion: schemaVersion ?? this.schemaVersion,
+      extra: kept,
     );
   }
 
   /// Serialize to a JSON-encodable map. Dates are ISO-8601. `author` is omitted
-  /// when null (matches serde's `Option` -> absent-key convention).
+  /// when null (matches serde's `Option` -> absent-key convention). The [extra] entries are written
+  /// last and win, so a value this build could not interpret goes back exactly as it was read.
   Map<String, dynamic> toJson() => {
         'name': name,
         'craft': craft,
@@ -102,23 +148,43 @@ class DraftMeta {
         'savedAt': savedAt.toIso8601String(),
         'lastOpened': lastOpened.toIso8601String(),
         'schemaVersion': schemaVersion,
+        ...extra,
       };
 
-  /// Parse a sidecar map. Tolerant of missing optionals and malformed dates so a
-  /// partially-written or older sidecar still loads rather than crashing the Library.
+  /// Parse a sidecar map. Tolerant of missing or malformed values so a partially-written, older, or
+  /// newer sidecar still loads rather than crashing the Library: a value of the wrong type falls back
+  /// to its default, and is kept in [extra] (with every unknown key) so a rewrite preserves it.
   factory DraftMeta.fromJson(Map<String, dynamic> json) {
-    final savedAt = _parseDate(json['savedAt']);
+    final extra = <String, Object?>{
+      for (final e in json.entries)
+        if (!knownKeys.contains(e.key)) e.key: e.value,
+    };
+    // Read a known key; keep its raw value in `extra` when present but not readable here.
+    T? read<T>(String key, T? Function(Object? raw) parse) {
+      if (!json.containsKey(key)) return null;
+      final raw = json[key];
+      final value = parse(raw);
+      if (value == null && raw != null) extra[key] = raw;
+      return value;
+    }
+
+    String? string(Object? raw) => raw is String ? raw : null;
+    DateTime? date(Object? raw) => raw is String ? DateTime.tryParse(raw) : null;
+
+    final savedAt = read('savedAt', date) ?? _epoch;
     return DraftMeta(
-      name: (json['name'] as String?) ?? 'Untitled',
-      craft: (json['craft'] as String?) ?? 'Weaving',
-      author: json['author'] as String?,
-      notes: (json['notes'] as String?) ?? '',
-      loomType: loomTypeFromSerial(json['loomType'] as String?),
-      overshotTreadling: (json['overshotTreadling'] as bool?) ?? false,
+      name: read('name', string) ?? 'Untitled',
+      craft: read('craft', string) ?? 'Weaving',
+      author: read('author', string),
+      notes: read('notes', string) ?? '',
+      loomType: read('loomType', (raw) => raw is String ? loomTypeFromSerialOrNull(raw) : null) ??
+          LoomType.jack,
+      overshotTreadling: read('overshotTreadling', (raw) => raw is bool ? raw : null) ?? false,
       savedAt: savedAt,
       // Fall back to savedAt so sort order is still sensible if lastOpened is absent.
-      lastOpened: _parseDate(json['lastOpened'], fallback: savedAt),
-      schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 1,
+      lastOpened: read('lastOpened', date) ?? savedAt,
+      schemaVersion: read('schemaVersion', (raw) => raw is num ? raw.toInt() : null) ?? 1,
+      extra: extra,
     );
   }
 
@@ -135,7 +201,8 @@ class DraftMeta {
           overshotTreadling == other.overshotTreadling &&
           savedAt == other.savedAt &&
           lastOpened == other.lastOpened &&
-          schemaVersion == other.schemaVersion;
+          schemaVersion == other.schemaVersion &&
+          const DeepCollectionEquality().equals(extra, other.extra);
 
   @override
   int get hashCode => Object.hash(
@@ -148,6 +215,7 @@ class DraftMeta {
         savedAt,
         lastOpened,
         schemaVersion,
+        const DeepCollectionEquality().hash(extra),
       );
 
   @override
@@ -155,15 +223,8 @@ class DraftMeta {
       'DraftMeta(name: $name, craft: $craft, author: $author, savedAt: $savedAt)';
 }
 
-/// Parse an ISO-8601 string, falling back gracefully. Returns [fallback] (or the
-/// epoch) for null/non-string/unparseable input so a corrupt sidecar still loads.
-DateTime _parseDate(Object? value, {DateTime? fallback}) {
-  if (value is String) {
-    final parsed = DateTime.tryParse(value);
-    if (parsed != null) return parsed;
-  }
-  return fallback ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-}
+/// The date a sidecar without a readable `savedAt` sorts at.
+final DateTime _epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
 
 /// An in-memory pairing of a sidecar with its on-disk files. Built by
 /// `DraftRepository.list()`; not itself serialized.

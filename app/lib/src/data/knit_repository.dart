@@ -7,8 +7,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../diagnostics/log_buffer.dart';
 import '../models/draft_meta.dart';
 import '../models/knit_entry.dart';
+import '../models/native_format.dart';
 import '../rust/api.dart';
 import '../rust/knit_dto.dart';
 
@@ -35,10 +37,18 @@ class KnitRepository {
   Future<List<KnitIssueDto>> validate(KnitPatternDto pattern) =>
       validateKnit(dto: pattern);
 
-  /// Parse native `.plyknit` JSON into an editor [KnitPatternDto].
-  Future<KnitPatternDto> parse(String json) => parseKnit(json: json);
+  /// Parse a native `.plyknit` file (any supported schema version; a legacy one is migrated in
+  /// memory, never rewritten) into an editor [KnitPatternDto]. A file this build must not open (saved
+  /// by a newer Ply, another format, unreadable) throws a [NativeFormatException].
+  Future<KnitPatternDto> parse(String json) async {
+    try {
+      return await parseKnit(json: json);
+    } on KnitFormatFailure catch (f) {
+      throw nativeFormatExceptionFromKnit(f);
+    }
+  }
 
-  /// Serialize an editor [KnitPatternDto] to native `.plyknit` JSON.
+  /// Serialize an editor [KnitPatternDto] as a current-version native `.plyknit` envelope.
   Future<String> write(KnitPatternDto pattern) => writeKnit(dto: pattern);
 
   /// A blank starter pattern to begin editing (builtin stitch legend, a worsted seed gauge, a
@@ -113,9 +123,23 @@ class KnitRepository {
   String _jsonPath(Directory d, String id) => p.join(d.path, '$id.json');
   String _pngPath(Directory d, String id) => p.join(d.path, '$id.png');
 
+  /// The one-time backup of a pattern's original bytes, kept before a save upgrades the file from
+  /// schema [version] to the current one.
+  static String backupPath(String patternPath, int version) => '$patternPath.v$version.bak';
+
   /// Save a pattern as the `<id>.{plyknit,json,png}` triplet, returning its id. Atomic + ordered:
   /// the native JSON first, the sidecar LAST (so [listKnits] never sees a `.json` without its
   /// `.plyknit`); the thumbnail is best-effort.
+  ///
+  /// Saving over an existing `.plyknit`:
+  /// - written at an OLDER schema version: its original bytes are first copied to
+  ///   `<id>.plyknit.v<old>.bak` (once; an existing backup is never replaced), then it is upgraded;
+  /// - written by a NEWER Ply, or not readable at all: nothing is written and a
+  ///   [NativeFormatException] (`whileSaving`) is thrown.
+  ///
+  /// The sidecar is MERGED, not rebuilt: an existing sidecar keeps its savedAt, author, notes and
+  /// every key this build does not know; only [meta]'s name, craft and lastOpened are applied. With no
+  /// existing sidecar, [meta] is written as given.
   Future<String> saveKnit({
     required KnitPatternDto pattern,
     required DraftMeta meta,
@@ -125,12 +149,50 @@ class KnitRepository {
     final knitId = id ?? _uuid.v4();
     try {
       final json = await write(pattern); // engine re-serialize (rejects a non-finite gauge)
-      await _atomicWriteString(File(_patternPath(dir, knitId)), json);
+      final target = File(_patternPath(dir, knitId));
+      await _guardExisting(target, json);
+      await _atomicWriteString(target, json);
       await _writeThumb(dir, knitId, pattern);
-      await _writeSidecar(dir, knitId, meta);
+      await _writeSidecar(dir, knitId, await _mergedSidecar(dir, knitId, meta));
       return knitId;
     } on FileSystemException catch (e) {
       throw Exception('Could not save the pattern: ${e.message}');
+    }
+  }
+
+  /// Before [json] replaces [target]: refuse if the file on disk is newer than, or unreadable to, this
+  /// build; keep a one-time backup if it is older (a format upgrade). A missing target needs nothing.
+  Future<void> _guardExisting(File target, String json) async {
+    if (!await target.exists()) return;
+    final original = await target.readAsBytes();
+    final onDisk = plyknitSchemaVersion(utf8.decode(original, allowMalformed: true));
+    final writing = plyknitSchemaVersion(json);
+    if (writing == null) throw StateError('the engine wrote an unrecognized .plyknit');
+    if (onDisk == null || onDisk > writing) {
+      throw NativeFormatException(
+        onDisk == null ? NativeFormatProblem.unreadable : NativeFormatProblem.newerVersion,
+        document: NativeDocument.knitPattern,
+        whileSaving: true,
+        detail: 'on disk: version $onDisk, writing: version $writing',
+      );
+    }
+    if (onDisk == writing) return;
+    final backup = File(backupPath(target.path, onDisk));
+    if (await backup.exists()) return; // the first backup holds the true original; keep it
+    await _atomicWriteBytes(backup, original);
+    PlyLog.instance.info('Upgrading ${p.basename(target.path)} from format version $onDisk to '
+        '$writing; the original is kept as ${p.basename(backup.path)}.');
+  }
+
+  /// The sidecar to write for [id]: the existing one with [meta]'s name, craft and lastOpened applied,
+  /// or [meta] itself when there is no readable sidecar yet.
+  Future<DraftMeta> _mergedSidecar(Directory dir, String id, DraftMeta meta) async {
+    if (!await File(_jsonPath(dir, id)).exists()) return meta;
+    try {
+      final existing = await _readSidecar(dir, id);
+      return existing.copyWith(name: meta.name, craft: meta.craft, lastOpened: meta.lastOpened);
+    } catch (_) {
+      return meta; // unreadable: it could not be listed anyway, so a fresh sidecar replaces it
     }
   }
 
@@ -139,6 +201,12 @@ class KnitRepository {
   Future<List<KnitEntry>> listKnits() async {
     final dir = await _knitsDir();
     if (!await dir.exists()) return const [];
+    if (!_sweptOrphanedBackups) {
+      _sweptOrphanedBackups = true;
+      try {
+        await sweepOrphanedBackups();
+      } catch (_) {/* best-effort: a failed sweep never breaks the list; next run retries */}
+    }
     final entries = <KnitEntry>[];
     await for (final ent in dir.list()) {
       if (ent is! File || p.extension(ent.path) != '.json') continue;
@@ -163,14 +231,18 @@ class KnitRepository {
     return entries;
   }
 
-  /// Read + parse a saved pattern's native `.plyknit` into a [KnitPatternDto].
+  /// Read + parse a saved pattern's native `.plyknit` into a [KnitPatternDto]. Read-only: an older
+  /// file is migrated in memory and stays as it is on disk until the user saves. Throws a
+  /// [NativeFormatException] for a file this build must not open (see [parse]).
   Future<KnitPatternDto> readPattern(String id) async {
     final dir = await _knitsDir();
+    final String text;
     try {
-      return await parse(await File(_patternPath(dir, id)).readAsString());
+      text = await File(_patternPath(dir, id)).readAsString();
     } on FileSystemException catch (e) {
       throw Exception('Could not open the pattern file: ${e.message}');
     }
+    return parse(text);
   }
 
   /// Mark a pattern opened (bumps `lastOpened`, rewrites the sidecar) and return the refreshed entry.
@@ -196,12 +268,25 @@ class KnitRepository {
   }
 
   /// Delete a pattern's whole triplet (sidecar FIRST so [listKnits] drops it atomically), plus any
-  /// `.tmp` a save interrupted mid-write left behind (it holds pattern content too). Tolerates
-  /// already-missing files.
+  /// `.tmp` a save interrupted mid-write left behind and every format-upgrade backup
+  /// (`<id>.plyknit.v<n>.bak`): they hold pattern content too, and the delete promises the pattern is
+  /// permanently removed. Tolerates already-missing files.
   Future<void> deleteKnit(String id) async {
     final dir = await _knitsDir();
     final files = [_jsonPath(dir, id), _patternPath(dir, id), _pngPath(dir, id)];
-    for (final path in [...files, for (final f in files) '$f.tmp']) {
+    final backups = <String>[];
+    final backupPrefix = '$id.plyknit.v';
+    try {
+      await for (final ent in dir.list(followLinks: false)) {
+        final name = p.basename(ent.path);
+        if (ent is File &&
+            name.startsWith(backupPrefix) &&
+            (name.endsWith('.bak') || name.endsWith('.bak.tmp'))) {
+          backups.add(ent.path);
+        }
+      }
+    } catch (_) {/* can't list: still remove the known files below */}
+    for (final path in [...files, for (final f in files) '$f.tmp', ...backups]) {
       final f = File(path);
       if (await f.exists()) {
         try {
@@ -210,6 +295,38 @@ class KnitRepository {
           // Tolerate races / permission quirks; a leftover file is harmless.
         }
       }
+    }
+  }
+
+  /// Whether this repository instance (one per app run) has already swept orphaned backups.
+  bool _sweptOrphanedBackups = false;
+
+  /// Remove format-upgrade backups (`<id>.plyknit.v<n>.bak`, and their `.tmp`) whose pattern is gone,
+  /// i.e. for which NEITHER `<id>.plyknit` NOR `<id>.json` exists. [deleteKnit] removes backups with
+  /// their pattern, but an OLDER app version deletes only the files it knows about, so a pattern
+  /// upgraded here and later deleted there leaves its backup behind. Runs once per app run from the
+  /// first [listKnits]; never touches a backup whose pattern or sidecar still exists.
+  Future<void> sweepOrphanedBackups() async {
+    final dir = await _knitsDir();
+    if (!await dir.exists()) return;
+    final backup = RegExp(r'^(.+)\.plyknit\.v\d+\.bak(\.tmp)?$');
+    final orphans = <File>[];
+    await for (final ent in dir.list(followLinks: false)) {
+      if (ent is! File) continue;
+      final id = backup.firstMatch(p.basename(ent.path))?.group(1);
+      if (id == null) continue;
+      try {
+        if (await File(_patternPath(dir, id)).exists()) continue;
+        if (await File(_jsonPath(dir, id)).exists()) continue;
+      } catch (_) {
+        continue; // can't tell, so leave it alone
+      }
+      orphans.add(ent);
+    }
+    for (final f in orphans) {
+      try {
+        await f.delete();
+      } catch (_) {/* tolerate races / permission quirks; the next run retries */}
     }
   }
 
@@ -249,3 +366,16 @@ class KnitRepository {
     await tmp.rename(target.path);
   }
 }
+
+/// The app-side form of a `.plyknit` [KnitFormatFailure] from the engine, so screens handle one
+/// exception type for every craft's format problems.
+NativeFormatException nativeFormatExceptionFromKnit(KnitFormatFailure failure) =>
+    NativeFormatException(
+      switch (failure.kind) {
+        KnitFormatFailureKind.newerVersion => NativeFormatProblem.newerVersion,
+        KnitFormatFailureKind.wrongFormat => NativeFormatProblem.wrongFormat,
+        KnitFormatFailureKind.unreadable => NativeFormatProblem.unreadable,
+      },
+      document: NativeDocument.knitPattern,
+      detail: failure.message,
+    );
