@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/draft_repository.dart';
+import '../state/backup_providers.dart';
 import 'calculators_screen.dart';
 import 'help_screen.dart';
 import 'knit_library_screen.dart';
@@ -11,7 +13,10 @@ import 'settings_screen.dart';
 /// The app home: one library with a tab per craft (Weaving, Knitting, Nalbinding). The shared chrome
 /// — the title and the Help / Settings actions — lives here; each tab hosts that craft's library (its
 /// grid + FABs) as an AppBar-less [Scaffold]. The Help ("?") action opens the FAQ + Glossary hub.
-class HomeScreen extends StatelessWidget {
+///
+/// The library tabs are keyed by [libraryRevisionProvider]: a library restore (in Settings) bumps it,
+/// so every tab is rebuilt and reloads its list.
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({required this.repository, super.key});
 
   /// The weave repository (the sole owner of the weave FFI + storage), handed to the Weaving tab.
@@ -19,7 +24,8 @@ class HomeScreen extends StatelessWidget {
   final DraftRepository repository;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final revision = ref.watch(libraryRevisionProvider);
     return DefaultTabController(
       length: 4,
       child: Scaffold(
@@ -54,9 +60,9 @@ class HomeScreen extends StatelessWidget {
         ),
         body: TabBarView(
           children: [
-            LibraryScreen(repository: repository),
-            const KnitLibraryScreen(),
-            const NalbindReferenceScreen(),
+            LibraryScreen(key: ValueKey('weaving-$revision'), repository: repository),
+            KnitLibraryScreen(key: ValueKey('knitting-$revision')),
+            NalbindReferenceScreen(key: ValueKey('nalbinding-$revision')),
             const CalculatorsScreen(),
           ],
         ),

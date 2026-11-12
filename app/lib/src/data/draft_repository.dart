@@ -603,8 +603,23 @@ class DraftRepository {
   Future<String> resolveSaveWif(DraftDoc doc, String? sourceWif) async =>
       sourceWif ?? await writeWif(dto: toDto(doc));
 
+  /// Re-render the thumbnail of saved draft [id] from its `.wif` (a library restore leaves the
+  /// rebuildable thumbnail out of the backup). Best-effort like the save path: a draft that cannot
+  /// be read or drawn keeps no thumbnail and the Library shows its placeholder.
+  Future<void> rebuildThumbnail(String id) async {
+    final dir = await _draftsDir();
+    final String wifText;
+    try {
+      wifText = await File(_wifPath(dir, id)).readAsString();
+    } on FileSystemException {
+      return;
+    }
+    await _writeThumbnail(dir, id, wifText);
+  }
+
   /// Render a small PNG thumbnail next to the draft. Best-effort: a null PNG encode
-  /// or any render error is swallowed (the Library re-renders lazily if it's missing).
+  /// or any render error is swallowed (the Library then shows a placeholder; only a save or a
+  /// library restore writes the thumbnail again).
   Future<void> _writeThumbnail(Directory dir, String id, String wifText) async {
     ui.Image? img;
     try {

@@ -36,7 +36,7 @@ class DraftMeta {
     this.overshotTreadling = false,
     required DateTime savedAt,
     required DateTime lastOpened,
-    this.schemaVersion = 1,
+    this.schemaVersion = currentSchemaVersion,
     Map<String, Object?> extra = const {},
   })  : extra = Map.unmodifiable(extra),
         // Normalize to UTC at the boundary so the sidecar is timezone-stable: a
@@ -80,6 +80,11 @@ class DraftMeta {
 
   /// Sidecar schema version, for tolerant forward migration.
   final int schemaVersion;
+
+  /// The sidecar schema version this build writes. It stays 1 while sidecar changes are additive (see
+  /// the file header); a sidecar with a higher version was written by a build that broke that rule,
+  /// and a backup restore refuses it.
+  static const int currentSchemaVersion = 1;
 
   /// Sidecar entries this build does not interpret, written back verbatim by [toJson] so a rewrite
   /// (open, rename, save) never erases what another build stored: every unknown key, plus any known
@@ -250,7 +255,7 @@ class DraftEntry {
   /// skips entries whose `.wif` is missing).
   final String wifPath;
 
-  /// Absolute path to the `<id>.png` thumbnail, or null if it hasn't been
-  /// generated yet (rendered lazily by the Library in that case).
+  /// Absolute path to the `<id>.png` thumbnail, or null if there is none (the Library then shows
+  /// a placeholder; a save or a library restore writes it).
   final String? thumbPath;
 }

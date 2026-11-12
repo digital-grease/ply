@@ -20,6 +20,7 @@ dependencies:
   freezed_annotation: ^2.4.4 # frb mirrors the DriveDto sum-type as a freezed sealed class
   flutter_riverpod: ^2.5.1 # editor state: the live-preview provider ref.watches DraftDoc (next phase)
   collection: ^1.18.0 # DeepCollectionEquality/.hash for deep value-equality of DraftDoc's nested lists
+  crypto: ^3.0.6 # SHA-256 checksums in library backups (already in the build as a transitive dependency)
   dynamic_color: ^1.7.0 # M4: Material You dynamic color from the device palette (with seed fallback)
   http: ^1.2.2 # OPTIONAL Ravelry connector only (the rest of the app is fully offline)
   flutter_secure_storage: ^9.2.2 # store the user's own Ravelry key in the platform keystore
