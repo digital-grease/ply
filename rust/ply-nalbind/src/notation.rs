@@ -22,12 +22,16 @@ pub fn parse(input: &str) -> Result<(Vec<Pass>, Vec<Connection>), NalbindError> 
     while i < chars.len() {
         let c = chars[i];
         match c {
-            'U' | 'u' => last(&mut passes)
-                .steps
-                .push(if skipping { Step::SkippedUnder } else { Step::Under }),
-            'O' | 'o' => last(&mut passes)
-                .steps
-                .push(if skipping { Step::SkippedOver } else { Step::Over }),
+            'U' | 'u' => last(&mut passes).steps.push(if skipping {
+                Step::SkippedUnder
+            } else {
+                Step::Under
+            }),
+            'O' | 'o' => last(&mut passes).steps.push(if skipping {
+                Step::SkippedOver
+            } else {
+                Step::Over
+            }),
             '-' => last(&mut passes).steps.push(Step::NoEngage),
             '(' => skipping = true,
             ')' => skipping = false,
@@ -112,7 +116,9 @@ pub fn print(passes: &[Pass], connections: &[Connection]) -> String {
 }
 
 fn last(passes: &mut [Pass]) -> &mut Pass {
-    passes.last_mut().expect("passes is seeded with one element and never emptied")
+    passes
+        .last_mut()
+        .expect("passes is seeded with one element and never emptied")
 }
 
 /// Read a base-10 loop count starting at `start`. A missing number defaults to 1 (a bare `F`); the
@@ -123,10 +129,19 @@ fn read_count(chars: &[char], start: usize) -> (u8, usize) {
     let mut saw = false;
     while j < chars.len() && chars[j].is_ascii_digit() {
         saw = true;
-        num = num.saturating_mul(10).saturating_add(chars[j].to_digit(10).unwrap_or(0));
+        num = num
+            .saturating_mul(10)
+            .saturating_add(chars[j].to_digit(10).unwrap_or(0));
         j += 1;
     }
-    (if saw { num.min(u8::MAX as u32) as u8 } else { 1 }, j)
+    (
+        if saw {
+            num.min(u8::MAX as u32) as u8
+        } else {
+            1
+        },
+        j,
+    )
 }
 
 #[cfg(test)]
@@ -166,7 +181,13 @@ mod tests {
         let (passes, _) = parse("U(UU)O-").unwrap();
         assert_eq!(
             passes[0].steps,
-            vec![Step::Under, Step::SkippedUnder, Step::SkippedUnder, Step::Over, Step::NoEngage]
+            vec![
+                Step::Under,
+                Step::SkippedUnder,
+                Step::SkippedUnder,
+                Step::Over,
+                Step::NoEngage
+            ]
         );
     }
 
@@ -175,7 +196,10 @@ mod tests {
         let (_, conns) = parse("UO/UOO F Mid2").unwrap();
         assert_eq!(
             conns,
-            vec![Connection::new(ConnSide::Front, 1), Connection::new(ConnSide::Middle, 2)]
+            vec![
+                Connection::new(ConnSide::Front, 1),
+                Connection::new(ConnSide::Middle, 2)
+            ]
         );
     }
 
@@ -188,7 +212,11 @@ mod tests {
     #[test]
     fn plus_dialect_is_tolerated() {
         let (_, conns) = parse("U(U)O/UO:UOO F1+1").unwrap();
-        assert_eq!(conns, vec![Connection::new(ConnSide::Front, 1)], "the +1 is dropped");
+        assert_eq!(
+            conns,
+            vec![Connection::new(ConnSide::Front, 1)],
+            "the +1 is dropped"
+        );
     }
 
     #[test]

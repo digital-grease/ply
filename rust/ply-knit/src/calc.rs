@@ -66,7 +66,10 @@ pub fn cast_on(width: f32, ease: f32, gauge: Gauge, repeat: u32) -> u32 {
 /// single row). 0 on an unusable gauge or non-positive dimensions.
 pub fn total_stitches(width: f32, length: f32, gauge: Gauge) -> f32 {
     let (gs, gr) = (gauge.sts_per_unit(), gauge.rows_per_unit());
-    if !positive_finite(gs) || !positive_finite(gr) || !positive_finite(width) || !positive_finite(length)
+    if !positive_finite(gs)
+        || !positive_finite(gr)
+        || !positive_finite(width)
+        || !positive_finite(length)
     {
         return 0.0;
     }
@@ -127,7 +130,11 @@ pub fn estimate_yards_from_swatch(
 /// Apply a planning buffer (a fraction, e.g. 0.15 for +15%) to a raw yardage estimate. A negative
 /// fraction is clamped to 0 (never reduce the estimate).
 pub fn with_buffer(yards: f32, fraction: f32) -> f32 {
-    let f = if fraction.is_finite() { fraction.max(0.0) } else { 0.0 };
+    let f = if fraction.is_finite() {
+        fraction.max(0.0)
+    } else {
+        0.0
+    };
     yards * (1.0 + f)
 }
 
@@ -137,17 +144,21 @@ pub fn with_buffer(yards: f32, fraction: f32) -> f32 {
 /// overrides it.
 pub fn seed_gauge(weight: YarnWeight) -> Gauge {
     let sts = match weight {
-        YarnWeight::Lace => 36.5,       // 33-40
-        YarnWeight::SuperFine => 29.5,  // 27-32
-        YarnWeight::Fine => 24.5,       // 23-26
-        YarnWeight::Light => 22.5,      // 21-24 (DK)
-        YarnWeight::Medium => 18.0,     // 16-20 (worsted)
-        YarnWeight::Bulky => 13.5,      // 12-15
-        YarnWeight::SuperBulky => 9.0,  // 7-11
-        YarnWeight::Jumbo => 5.0,       // <=6
+        YarnWeight::Lace => 36.5,      // 33-40
+        YarnWeight::SuperFine => 29.5, // 27-32
+        YarnWeight::Fine => 24.5,      // 23-26
+        YarnWeight::Light => 22.5,     // 21-24 (DK)
+        YarnWeight::Medium => 18.0,    // 16-20 (worsted)
+        YarnWeight::Bulky => 13.5,     // 12-15
+        YarnWeight::SuperBulky => 9.0, // 7-11
+        YarnWeight::Jumbo => 5.0,      // <=6
     };
     // Per 4 in (CYC convention); rows estimated at the stockinette ~4:3 row:stitch ratio.
-    Gauge { sts, rows: sts * 4.0 / 3.0, unit: Unit::Inches }
+    Gauge {
+        sts,
+        rows: sts * 4.0 / 3.0,
+        unit: Unit::Inches,
+    }
 }
 
 #[cfg(test)]
@@ -156,7 +167,11 @@ mod tests {
 
     fn worsted() -> Gauge {
         // 20 sts & 30 rows per 4 in => 5 sts/in, 7.5 rows/in.
-        Gauge { sts: 20.0, rows: 30.0, unit: Unit::Inches }
+        Gauge {
+            sts: 20.0,
+            rows: 30.0,
+            unit: Unit::Inches,
+        }
     }
 
     #[test]
@@ -168,7 +183,7 @@ mod tests {
     #[test]
     fn cast_on_rounds_to_stitch_and_repeat() {
         assert_eq!(cast_on(20.0, 0.0, worsted(), 1), 100); // 20in * 5
-        // 22in * 5 = 110, rounded to the nearest multiple of 4 (k2p2 rib) -> 112.
+                                                           // 22in * 5 = 110, rounded to the nearest multiple of 4 (k2p2 rib) -> 112.
         assert_eq!(cast_on(20.0, 2.0, worsted(), 4), 112);
     }
 
@@ -185,8 +200,15 @@ mod tests {
         // same yards for the same physical size — proving both the per-window divisor and the cm
         // normalization. 5 sts/in -> 5/2.54 sts/cm -> *10 per 10 cm.
         let sts_per_in = worsted().sts_per_unit(); // 5.0
-        let cm = Gauge { sts: sts_per_in / CM_PER_IN * 10.0, rows: 30.0, unit: Unit::Centimeters };
-        assert!((cm.sts_per_unit() - sts_per_in / CM_PER_IN).abs() < 1e-4, "cm density is sts/cm");
+        let cm = Gauge {
+            sts: sts_per_in / CM_PER_IN * 10.0,
+            rows: 30.0,
+            unit: Unit::Centimeters,
+        };
+        assert!(
+            (cm.sts_per_unit() - sts_per_in / CM_PER_IN).abs() < 1e-4,
+            "cm density is sts/cm"
+        );
         let y_cm = estimate_yards_stockinette(8.0 * CM_PER_IN, 8.0 * CM_PER_IN, cm);
         let y_in = estimate_yards_stockinette(8.0, 8.0, worsted());
         assert!((y_cm - y_in).abs() < 0.5, "cm {y_cm} vs in {y_in}");
@@ -203,7 +225,11 @@ mod tests {
     #[test]
     fn buffer_adds_and_clamps() {
         assert_eq!(with_buffer(100.0, 0.15), 115.0);
-        assert_eq!(with_buffer(100.0, -0.5), 100.0, "a negative buffer never reduces");
+        assert_eq!(
+            with_buffer(100.0, -0.5),
+            100.0,
+            "a negative buffer never reduces"
+        );
     }
 
     #[test]
@@ -216,12 +242,20 @@ mod tests {
 
     #[test]
     fn unusable_gauge_yields_zero_not_nan() {
-        let zero = Gauge { sts: 0.0, rows: 0.0, unit: Unit::Inches };
+        let zero = Gauge {
+            sts: 0.0,
+            rows: 0.0,
+            unit: Unit::Inches,
+        };
         assert_eq!(finished_width(40, zero), 0.0);
         assert_eq!(finished_length(40, zero), 0.0);
         assert_eq!(cast_on(20.0, 0.0, zero, 1), 0);
         assert_eq!(estimate_yards_stockinette(8.0, 8.0, zero), 0.0);
-        let nan = Gauge { sts: f32::NAN, rows: f32::NAN, unit: Unit::Inches };
+        let nan = Gauge {
+            sts: f32::NAN,
+            rows: f32::NAN,
+            unit: Unit::Inches,
+        };
         assert_eq!(finished_width(40, nan), 0.0);
         assert!(!estimate_yards_stockinette(8.0, 8.0, nan).is_nan());
     }
@@ -236,7 +270,13 @@ mod tests {
     #[test]
     fn swatch_rejects_negative_inputs() {
         // Two negatives must NOT multiply into a bogus positive yardage.
-        assert_eq!(estimate_yards_from_swatch(-14.0, 40.625, 1440.0, -220.0, 100.0), 0.0);
-        assert_eq!(estimate_yards_from_swatch(14.0, 40.625, 1440.0, -220.0, 100.0), 0.0);
+        assert_eq!(
+            estimate_yards_from_swatch(-14.0, 40.625, 1440.0, -220.0, 100.0),
+            0.0
+        );
+        assert_eq!(
+            estimate_yards_from_swatch(14.0, 40.625, 1440.0, -220.0, 100.0),
+            0.0
+        );
     }
 }

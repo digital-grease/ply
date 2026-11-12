@@ -157,29 +157,29 @@ impl StitchLegend {
         };
         StitchLegend {
             stitches: vec![
-                def("ns", 0, 0, None),            // NO_STITCH
-                def("k", 1, 1, Some(PURL)),       // KNIT  -> worked as purl on the WS
-                def("p", 1, 1, Some(KNIT)),       // PURL  -> worked as knit on the WS
-                def("yo", 0, 1, None),            // YO    (increase)
-                def("k2tog", 2, 1, Some(P2TOG)),  // K2TOG (right-leaning dec)
-                def("ssk", 2, 1, Some(P2TOG)),    // SSK   (left-leaning dec; ws approx)
-                def("p2tog", 2, 1, Some(K2TOG)),  // P2TOG
-                def("cdd", 3, 1, None),           // CDD   (centered double dec)
-                def("m1l", 0, 1, None),           // M1L   (increase)
-                def("m1r", 0, 1, None),           // M1R   (increase)
-                def("kfb", 1, 2, None),           // KFB   (1->2 increase)
-                def("sl", 1, 1, None),            // SLIP
+                def("ns", 0, 0, None),           // NO_STITCH
+                def("k", 1, 1, Some(PURL)),      // KNIT  -> worked as purl on the WS
+                def("p", 1, 1, Some(KNIT)),      // PURL  -> worked as knit on the WS
+                def("yo", 0, 1, None),           // YO    (increase)
+                def("k2tog", 2, 1, Some(P2TOG)), // K2TOG (right-leaning dec)
+                def("ssk", 2, 1, Some(P2TOG)),   // SSK   (left-leaning dec; ws approx)
+                def("p2tog", 2, 1, Some(K2TOG)), // P2TOG
+                def("cdd", 3, 1, None),          // CDD   (centered double dec)
+                def("m1l", 0, 1, None),          // M1L   (increase)
+                def("m1r", 0, 1, None),          // M1R   (increase)
+                def("kfb", 1, 2, None),          // KFB   (1->2 increase)
+                def("sl", 1, 1, None),           // SLIP
                 // --- appended shaping stitches (ids 12..=19) ---
-                def("k3tog", 3, 1, None),         // K3TOG (right-leaning double dec, 3->1)
-                def("sk2po", 3, 1, None),         // SK2PO (sl1-k2tog-psso, left-leaning double dec)
-                def("ssp", 2, 1, None),           // SSP   (left-leaning purl-side dec, 2->1)
-                def("kbf", 1, 2, None),           // KBF   (1->2 increase, kfb's mirror)
-                def("pfb", 1, 2, None),           // PFB   (1->2 purl-side increase)
-                def("m1p", 0, 1, None),           // M1P   (purlwise make-one increase)
-                def("m1lp", 0, 1, None),          // M1LP  (left purlwise increase)
-                def("m1rp", 0, 1, None),          // M1RP  (right purlwise increase)
-                def("ktbl", 1, 1, None),          // KTBL  (knit through back loop — a twisted knit;
-                                                  //        no built-in ptbl WS mirror yet, so emitted as itself)
+                def("k3tog", 3, 1, None), // K3TOG (right-leaning double dec, 3->1)
+                def("sk2po", 3, 1, None), // SK2PO (sl1-k2tog-psso, left-leaning double dec)
+                def("ssp", 2, 1, None),   // SSP   (left-leaning purl-side dec, 2->1)
+                def("kbf", 1, 2, None),   // KBF   (1->2 increase, kfb's mirror)
+                def("pfb", 1, 2, None),   // PFB   (1->2 purl-side increase)
+                def("m1p", 0, 1, None),   // M1P   (purlwise make-one increase)
+                def("m1lp", 0, 1, None),  // M1LP  (left purlwise increase)
+                def("m1rp", 0, 1, None),  // M1RP  (right purlwise increase)
+                def("ktbl", 1, 1, None),  // KTBL  (knit through back loop — a twisted knit;
+                                          //        no built-in ptbl WS mirror yet, so emitted as itself)
             ],
         }
     }
@@ -233,10 +233,16 @@ pub struct Cell {
 
 impl Cell {
     pub fn of(stitch: StitchId) -> Self {
-        Cell { stitch, color: None }
+        Cell {
+            stitch,
+            color: None,
+        }
     }
     pub fn colored(stitch: StitchId, color: ColorIndex) -> Self {
-        Cell { stitch, color: Some(color) }
+        Cell {
+            stitch,
+            color: Some(color),
+        }
     }
 }
 
@@ -268,7 +274,10 @@ pub struct Row {
 impl Row {
     /// A row of plain cells with no authored repeats.
     pub fn plain(cells: Vec<Cell>) -> Self {
-        Row { cells, repeats: Vec::new() }
+        Row {
+            cells,
+            repeats: Vec::new(),
+        }
     }
 }
 
@@ -339,7 +348,13 @@ impl KnitPattern {
         if k == n {
             return; // already on the current built-in set; customs already sit after it.
         }
-        let remap = |id: StitchId| -> StitchId { if id < k { id } else { n + (id - k) } };
+        let remap = |id: StitchId| -> StitchId {
+            if id < k {
+                id
+            } else {
+                n + (id - k)
+            }
+        };
         // Detach the customs (old indices k..) and re-seat them after the full current built-in set.
         let customs = self.legend.stitches.split_off(k);
         let mut stitches = current;
@@ -389,7 +404,11 @@ mod tests {
             name: "1x1 rib".into(),
             construction: Construction::Flat,
             first_row_side: Side::Rs,
-            gauge: Gauge { sts: 24.0, rows: 32.0, unit: Unit::Inches },
+            gauge: Gauge {
+                sts: 24.0,
+                rows: 32.0,
+                unit: Unit::Inches,
+            },
             palette: vec![Color::WHITE],
             legend: StitchLegend::builtin(),
             chart: Chart {
@@ -411,12 +430,22 @@ mod tests {
     #[test]
     fn builtin_ws_variants_resolve() {
         let leg = StitchLegend::builtin();
-        assert_eq!(leg.get(builtin::KNIT).unwrap().ws_variant, Some(builtin::PURL));
-        assert_eq!(leg.get(builtin::PURL).unwrap().ws_variant, Some(builtin::KNIT));
+        assert_eq!(
+            leg.get(builtin::KNIT).unwrap().ws_variant,
+            Some(builtin::PURL)
+        );
+        assert_eq!(
+            leg.get(builtin::PURL).unwrap().ws_variant,
+            Some(builtin::KNIT)
+        );
         // Every ws_variant points at a real legend entry.
         for s in &leg.stitches {
             if let Some(ws) = s.ws_variant {
-                assert!(leg.get(ws).is_some(), "ws_variant {ws} for '{}' must exist", s.symbol);
+                assert!(
+                    leg.get(ws).is_some(),
+                    "ws_variant {ws} for '{}' must exist",
+                    s.symbol
+                );
             }
         }
     }
@@ -424,9 +453,21 @@ mod tests {
     #[test]
     fn stitch_deltas_match_knitting_reality() {
         let leg = StitchLegend::builtin();
-        assert_eq!(leg.get(builtin::YO).unwrap().delta(), 1, "yo is an increase");
-        assert_eq!(leg.get(builtin::K2TOG).unwrap().delta(), -1, "k2tog is a decrease");
-        assert_eq!(leg.get(builtin::CDD).unwrap().delta(), -2, "cdd removes two");
+        assert_eq!(
+            leg.get(builtin::YO).unwrap().delta(),
+            1,
+            "yo is an increase"
+        );
+        assert_eq!(
+            leg.get(builtin::K2TOG).unwrap().delta(),
+            -1,
+            "k2tog is a decrease"
+        );
+        assert_eq!(
+            leg.get(builtin::CDD).unwrap().delta(),
+            -2,
+            "cdd removes two"
+        );
         assert_eq!(leg.get(builtin::KFB).unwrap().delta(), 1, "kfb is 1->2");
         assert_eq!(leg.get(builtin::KNIT).unwrap().delta(), 0);
         assert_eq!(leg.get(builtin::NO_STITCH).unwrap().delta(), 0);
@@ -449,11 +490,17 @@ mod tests {
             (builtin::M1RP, "m1rp", 1),
             (builtin::KTBL, "ktbl", 0),
         ] {
-            let s = leg.get(id).unwrap_or_else(|| panic!("legend missing id {id} ({sym})"));
+            let s = leg
+                .get(id)
+                .unwrap_or_else(|| panic!("legend missing id {id} ({sym})"));
             assert_eq!(s.symbol, sym, "id {id} symbol");
             assert_eq!(s.delta(), delta, "id {id} ({sym}) delta");
         }
-        assert_eq!(leg.stitches.len(), 21, "12 original builtins + 8 appended shaping stitches + ktbl");
+        assert_eq!(
+            leg.stitches.len(),
+            21,
+            "12 original builtins + 8 appended shaping stitches + ktbl"
+        );
     }
 
     #[test]
@@ -462,7 +509,11 @@ mod tests {
         let mut p = ribbing();
         p.legend.stitches.truncate(12);
         p.upgrade_builtins();
-        assert_eq!(p.legend.stitches.len(), 21, "the 9 newer built-ins are spliced in");
+        assert_eq!(
+            p.legend.stitches.len(),
+            21,
+            "the 9 newer built-ins are spliced in"
+        );
         assert_eq!(p.legend.get(builtin::K3TOG).unwrap().symbol, "k3tog");
         // The k/p chart cells (ids 1 & 2, below the splice point) are untouched.
         assert_eq!(p.chart.rows[0].cells[0].stitch, builtin::KNIT);
@@ -495,9 +546,16 @@ mod tests {
 
         p.upgrade_builtins();
 
-        assert_eq!(p.legend.stitches.len(), 22, "21 built-ins + the one moved cable");
+        assert_eq!(
+            p.legend.stitches.len(),
+            22,
+            "21 built-ins + the one moved cable"
+        );
         assert_eq!(p.legend.stitches[21].symbol, "2/2RC");
-        assert!(p.legend.stitches[21].cable.is_some(), "the cable now sits after the full built-in set");
+        assert!(
+            p.legend.stitches[21].cable.is_some(),
+            "the cable now sits after the full built-in set"
+        );
         // The knit cell is unchanged; the cable cell (old index 12) follows the cable to its new index.
         assert_eq!(p.chart.rows[0].cells[0].stitch, builtin::KNIT);
         assert_eq!(p.chart.rows[0].cells[1].stitch, 21);
@@ -508,7 +566,10 @@ mod tests {
         let mut p = ribbing(); // already carries the current 21-built-in legend
         let before = p.clone();
         p.upgrade_builtins();
-        assert_eq!(p, before, "a pattern already on the current built-ins is left untouched");
+        assert_eq!(
+            p, before,
+            "a pattern already on the current built-ins is left untouched"
+        );
     }
 
     #[test]
@@ -518,13 +579,27 @@ mod tests {
         old.legend.stitches.truncate(12);
         let json = serde_json::to_string(&old).unwrap();
         let back = KnitPattern::from_json(&json).unwrap();
-        assert_eq!(back.legend.stitches.len(), 21, "from_json migrates the built-in set on load");
-        assert_eq!(back.chart.rows[0].cells[0].stitch, builtin::KNIT, "the chart survives unchanged");
+        assert_eq!(
+            back.legend.stitches.len(),
+            21,
+            "from_json migrates the built-in set on load"
+        );
+        assert_eq!(
+            back.chart.rows[0].cells[0].stitch,
+            builtin::KNIT,
+            "the chart survives unchanged"
+        );
     }
 
     #[test]
     fn cable_span_is_count_neutral() {
-        let c = CableDef { front: 2, back: 2, direction: Cross::Right, front_purl: false, back_purl: false };
+        let c = CableDef {
+            front: 2,
+            back: 2,
+            direction: Cross::Right,
+            front_purl: false,
+            back_purl: false,
+        };
         assert_eq!(c.span(), 4);
     }
 
@@ -543,11 +618,19 @@ mod tests {
 
     #[test]
     fn gauge_derives_per_unit_window_aware() {
-        let inch = Gauge { sts: 22.0, rows: 30.0, unit: Unit::Inches };
+        let inch = Gauge {
+            sts: 22.0,
+            rows: 30.0,
+            unit: Unit::Inches,
+        };
         assert_eq!(inch.sts_per_unit(), 5.5); // 22 / 4 in
         assert_eq!(inch.rows_per_unit(), 7.5);
         // The metric convention is per 10 cm, so the divisor is 10 — not 4.
-        let cm = Gauge { sts: 22.0, rows: 30.0, unit: Unit::Centimeters };
+        let cm = Gauge {
+            sts: 22.0,
+            rows: 30.0,
+            unit: Unit::Centimeters,
+        };
         assert_eq!(cm.sts_per_unit(), 2.2); // 22 / 10 cm
         assert_eq!(cm.rows_per_unit(), 3.0);
     }

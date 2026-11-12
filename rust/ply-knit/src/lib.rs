@@ -16,10 +16,10 @@ pub mod validate;
 pub mod written;
 
 pub use error::KnitError;
-pub use render::{render_rgba, RgbaImage};
-pub use validate::{validate, KnitIssue, Severity};
-pub use written::to_written;
 pub use pattern::{
     builtin, CableDef, Cell, Chart, ColorIndex, Construction, Cross, Gauge, KnitPattern, Repeat,
     RepeatSpan, Row, Side, StitchDef, StitchId, StitchLegend,
 };
+pub use render::{render_rgba, RgbaImage};
+pub use validate::{validate, KnitIssue, Severity};
+pub use written::to_written;

@@ -2,7 +2,7 @@
 //! can surface problems live (shafts out of range, color counts that don't line up,
 //! treadles with no tie-up, etc.).
 
-use crate::draft::{Drive, Draft};
+use crate::draft::{Draft, Drive};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,7 +31,12 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
                 push(
                     &mut issues,
                     Severity::Error,
-                    format!("warp end {} uses shaft {} outside 1..={}", i + 1, s.0, draft.shafts),
+                    format!(
+                        "warp end {} uses shaft {} outside 1..={}",
+                        i + 1,
+                        s.0,
+                        draft.shafts
+                    ),
                 );
             }
         }
@@ -42,14 +47,22 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
         push(
             &mut issues,
             Severity::Warning,
-            format!("warp color count ({}) != warp ends ({})", draft.colors.warp.len(), draft.ends()),
+            format!(
+                "warp color count ({}) != warp ends ({})",
+                draft.colors.warp.len(),
+                draft.ends()
+            ),
         );
     }
     if draft.colors.weft.len() != draft.picks() {
         push(
             &mut issues,
             Severity::Warning,
-            format!("weft color count ({}) != picks ({})", draft.colors.weft.len(), draft.picks()),
+            format!(
+                "weft color count ({}) != picks ({})",
+                draft.colors.weft.len(),
+                draft.picks()
+            ),
         );
     }
 
@@ -60,7 +73,11 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
                 push(
                     &mut issues,
                     Severity::Warning,
-                    format!("tie-up has {} treadles, header says {}", tieup.treadles(), draft.treadles),
+                    format!(
+                        "tie-up has {} treadles, header says {}",
+                        tieup.treadles(),
+                        draft.treadles
+                    ),
                 );
             }
             // Tie-up shafts within range. A dangling tie (shaft > header) renders white silently
@@ -71,7 +88,12 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
                         push(
                             &mut issues,
                             Severity::Error,
-                            format!("treadle {} ties shaft {} outside 1..={}", t + 1, s.0, draft.shafts),
+                            format!(
+                                "treadle {} ties shaft {} outside 1..={}",
+                                t + 1,
+                                s.0,
+                                draft.shafts
+                            ),
                         );
                     }
                 }
@@ -95,7 +117,12 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
                         push(
                             &mut issues,
                             Severity::Error,
-                            format!("liftplan pick {} raises shaft {} outside 1..={}", p + 1, s.0, draft.shafts),
+                            format!(
+                                "liftplan pick {} raises shaft {} outside 1..={}",
+                                p + 1,
+                                s.0,
+                                draft.shafts
+                            ),
                         );
                     }
                 }
@@ -112,7 +139,12 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
             push(
                 &mut issues,
                 Severity::Error,
-                format!("warp end {} uses color {} outside palette 0..{}", i + 1, idx, palette_len),
+                format!(
+                    "warp end {} uses color {} outside palette 0..{}",
+                    i + 1,
+                    idx,
+                    palette_len
+                ),
             );
         }
     }
@@ -121,7 +153,12 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
             push(
                 &mut issues,
                 Severity::Error,
-                format!("pick {} uses color {} outside palette 0..{}", p + 1, idx, palette_len),
+                format!(
+                    "pick {} uses color {} outside palette 0..{}",
+                    p + 1,
+                    idx,
+                    palette_len
+                ),
             );
         }
     }
@@ -133,8 +170,10 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
     // meaningful once the cloth has picks.
     if draft.picks() > 0 {
         use std::collections::BTreeSet;
-        let raised: BTreeSet<u16> =
-            (0..draft.picks()).flat_map(|p| draft.raised_shafts(p)).map(|s| s.0).collect();
+        let raised: BTreeSet<u16> = (0..draft.picks())
+            .flat_map(|p| draft.raised_shafts(p))
+            .map(|s| s.0)
+            .collect();
         let mut warned: BTreeSet<u16> = BTreeSet::new();
         for shafts in draft.threading.0.iter() {
             for s in shafts {
@@ -173,7 +212,11 @@ mod tests {
             threading: Threading::straight(8, 8),
             drive: Drive::Treadled {
                 tieup: TieUp::satin(8, 2), // raises only shafts 1,3,5,7
-                treadling: Treadling((0..8).map(|i| vec![TreadleId((i % 8) as u16 + 1)]).collect()),
+                treadling: Treadling(
+                    (0..8)
+                        .map(|i| vec![TreadleId((i % 8) as u16 + 1)])
+                        .collect(),
+                ),
             },
             colors: ColorPlan {
                 palette: vec![ply_common::Color::WHITE, ply_common::Color::BLACK],
@@ -186,7 +229,10 @@ mod tests {
             retained: Vec::new(),
         };
         let issues = validate(&d);
-        assert!(issues.iter().all(|i| i.severity != Severity::Error), "no Errors: {issues:?}");
+        assert!(
+            issues.iter().all(|i| i.severity != Severity::Error),
+            "no Errors: {issues:?}"
+        );
         let warns = issues
             .iter()
             .filter(|i| i.severity == Severity::Warning && i.message.contains("never raised"))
@@ -225,8 +271,10 @@ mod tests {
             tieup.0[0] = vec![ShaftId(5)]; // treadle 1 ties shaft 5 of a 2-shaft draft
         }
         assert!(
-            validate(&d).iter().any(|i| i.severity == Severity::Error
-                && i.message.contains("treadle 1 ties shaft 5")),
+            validate(&d)
+                .iter()
+                .any(|i| i.severity == Severity::Error
+                    && i.message.contains("treadle 1 ties shaft 5")),
             "expected a tie-up shaft-range Error, got {:?}",
             validate(&d)
         );

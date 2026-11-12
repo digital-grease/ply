@@ -29,7 +29,10 @@ pub struct KnitIssue {
 
 impl KnitIssue {
     fn error(message: String) -> Self {
-        KnitIssue { severity: Severity::Error, message }
+        KnitIssue {
+            severity: Severity::Error,
+            message,
+        }
     }
 }
 
@@ -45,8 +48,8 @@ pub fn validate(pattern: &KnitPattern) -> Vec<KnitIssue> {
     let mut totals: Vec<(u32, u32)> = Vec::with_capacity(pattern.chart.rows.len());
     for (r, row) in pattern.chart.rows.iter().enumerate() {
         let rownum = r + 1; // 1-based for human-facing messages
-        // Number stitches in READING/WORKING order so a reported "col" names the same stitch the
-        // written instructions and the knitter count to (a right-side row is worked right-to-left).
+                            // Number stitches in READING/WORKING order so a reported "col" names the same stitch the
+                            // written instructions and the knitter count to (a right-side row is worked right-to-left).
         let rs = matches!(pattern.row_side(r), Side::Rs);
 
         if row.cells.len() != width {
@@ -140,7 +143,9 @@ fn check_cable_spans(
     issues: &mut Vec<KnitIssue>,
 ) {
     for (c, cell) in row.cells.iter().enumerate() {
-        let Some(def) = legend.get(cell.stitch) else { continue };
+        let Some(def) = legend.get(cell.stitch) else {
+            continue;
+        };
         let Some(cable) = def.cable else { continue };
         let col = reading_col(rs, width, c);
         let span = cable.span() as usize;
@@ -183,12 +188,21 @@ mod tests {
     use crate::pattern::*;
     use ply_common::{Color, Unit};
 
-    fn pattern(width: usize, rows: Vec<Row>, palette: Vec<Color>, legend: StitchLegend) -> KnitPattern {
+    fn pattern(
+        width: usize,
+        rows: Vec<Row>,
+        palette: Vec<Color>,
+        legend: StitchLegend,
+    ) -> KnitPattern {
         KnitPattern {
             name: "t".into(),
             construction: Construction::Flat,
             first_row_side: Side::Rs,
-            gauge: Gauge { sts: 20.0, rows: 28.0, unit: Unit::Inches },
+            gauge: Gauge {
+                sts: 20.0,
+                rows: 28.0,
+                unit: Unit::Inches,
+            },
             palette,
             legend,
             chart: Chart { width, rows },
@@ -207,8 +221,18 @@ mod tests {
     fn balanced_lace_is_clean() {
         // row 0: k k k k (4 sts).  row 1: k yo k2tog k (consumes 4, produces 4) — a balanced eyelet.
         let row0 = Row::plain(vec![k(), k(), k(), k()]);
-        let row1 = Row::plain(vec![k(), Cell::of(builtin::YO), Cell::of(builtin::K2TOG), k()]);
-        let p = pattern(4, vec![row0, row1], vec![Color::WHITE], StitchLegend::builtin());
+        let row1 = Row::plain(vec![
+            k(),
+            Cell::of(builtin::YO),
+            Cell::of(builtin::K2TOG),
+            k(),
+        ]);
+        let p = pattern(
+            4,
+            vec![row0, row1],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
         assert!(validate(&p).is_empty(), "{:?}", validate(&p));
     }
 
@@ -217,10 +241,17 @@ mod tests {
         // row 1 has a yo but NO matching decrease: consumes 3, produces 4, below produced 4.
         let row0 = Row::plain(vec![k(), k(), k(), k()]);
         let row1 = Row::plain(vec![k(), Cell::of(builtin::YO), k(), k()]);
-        let p = pattern(4, vec![row0, row1], vec![Color::WHITE], StitchLegend::builtin());
+        let p = pattern(
+            4,
+            vec![row0, row1],
+            vec![Color::WHITE],
+            StitchLegend::builtin(),
+        );
         let issues = validate(&p);
         assert!(
-            issues.iter().any(|i| i.message.contains("consumes 3") && i.message.contains("produced 4")),
+            issues
+                .iter()
+                .any(|i| i.message.contains("consumes 3") && i.message.contains("produced 4")),
             "{issues:?}"
         );
     }
@@ -228,42 +259,91 @@ mod tests {
     #[test]
     fn ragged_row_dangling_stitch_and_bad_color_are_caught() {
         let row = Row {
-            cells: vec![k(), Cell { stitch: 999, color: Some(7) }], // width says 3 -> ragged; stitch 999, color 7
+            cells: vec![
+                k(),
+                Cell {
+                    stitch: 999,
+                    color: Some(7),
+                },
+            ], // width says 3 -> ragged; stitch 999, color 7
             repeats: vec![],
         };
         let p = pattern(3, vec![row], vec![Color::WHITE], StitchLegend::builtin());
         let issues = validate(&p);
-        assert!(issues.iter().any(|i| i.message.contains("2 cells but the chart width is 3")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("2 cells but the chart width is 3")));
         assert!(issues.iter().any(|i| i.message.contains("stitch #999")));
         assert!(issues.iter().any(|i| i.message.contains("color #7")));
     }
 
     #[test]
     fn out_of_range_repeat_is_caught() {
-        let row = Row { cells: vec![k(), k(), k(), k()], repeats: vec![RepeatSpan { start: 2, end: 9, count: Repeat::ToEnd }] };
+        let row = Row {
+            cells: vec![k(), k(), k(), k()],
+            repeats: vec![RepeatSpan {
+                start: 2,
+                end: 9,
+                count: Repeat::ToEnd,
+            }],
+        };
         let p = pattern(4, vec![row], vec![Color::WHITE], StitchLegend::builtin());
-        assert!(validate(&p).iter().any(|i| i.message.contains("out-of-range repeat")));
+        assert!(validate(&p)
+            .iter()
+            .any(|i| i.message.contains("out-of-range repeat")));
     }
 
     #[test]
     fn cable_must_fit_and_be_trailed_by_no_stitch() {
         // A 2/2 cable (span 4, count-neutral 4->4) plus 3 trailing no-stitch = a valid 4-wide cable.
-        let cable = CableDef { front: 2, back: 2, direction: Cross::Right, front_purl: false, back_purl: false };
+        let cable = CableDef {
+            front: 2,
+            back: 2,
+            direction: Cross::Right,
+            front_purl: false,
+            back_purl: false,
+        };
         let mut legend = StitchLegend::builtin();
-        legend.stitches.push(StitchDef { symbol: "2/2RC".into(), consumes: 4, produces: 4, ws_variant: None, cable: Some(cable), macro_rows: 1 });
+        legend.stitches.push(StitchDef {
+            symbol: "2/2RC".into(),
+            consumes: 4,
+            produces: 4,
+            ws_variant: None,
+            cable: Some(cable),
+            macro_rows: 1,
+        });
         let cable_id = legend.stitches.len() - 1;
 
         // GOOD: cable at col 0 + 3 no-stitch.
-        let good = pattern(4, vec![Row::plain(vec![Cell::of(cable_id), ns(), ns(), ns()])], vec![Color::WHITE], legend.clone());
+        let good = pattern(
+            4,
+            vec![Row::plain(vec![Cell::of(cable_id), ns(), ns(), ns()])],
+            vec![Color::WHITE],
+            legend.clone(),
+        );
         assert!(validate(&good).is_empty(), "{:?}", validate(&good));
 
         // BAD: a knit where a no-stitch filler must be.
-        let bad = pattern(4, vec![Row::plain(vec![Cell::of(cable_id), k(), ns(), ns()])], vec![Color::WHITE], legend.clone());
-        assert!(validate(&bad).iter().any(|i| i.message.contains("must be followed by no-stitch")));
+        let bad = pattern(
+            4,
+            vec![Row::plain(vec![Cell::of(cable_id), k(), ns(), ns()])],
+            vec![Color::WHITE],
+            legend.clone(),
+        );
+        assert!(validate(&bad)
+            .iter()
+            .any(|i| i.message.contains("must be followed by no-stitch")));
 
         // BAD: cable runs past the edge (span 4 at width 2).
-        let off = pattern(2, vec![Row::plain(vec![Cell::of(cable_id), ns()])], vec![Color::WHITE], legend);
-        assert!(validate(&off).iter().any(|i| i.message.contains("runs past the chart edge")));
+        let off = pattern(
+            2,
+            vec![Row::plain(vec![Cell::of(cable_id), ns()])],
+            vec![Color::WHITE],
+            legend,
+        );
+        assert!(validate(&off)
+            .iter()
+            .any(|i| i.message.contains("runs past the chart edge")));
     }
 
     #[test]
@@ -271,15 +351,35 @@ mod tests {
         // Regression: a RAGGED row (fewer cells than chart.width) carrying a cable used to PANIC —
         // the `c + span > width` edge check used chart.width, but the trailing-filler scan indexed
         // the (shorter) row cells, so `c + k` ran past the slice. It must report, never panic.
-        let cable = CableDef { front: 2, back: 2, direction: Cross::Right, front_purl: false, back_purl: false };
+        let cable = CableDef {
+            front: 2,
+            back: 2,
+            direction: Cross::Right,
+            front_purl: false,
+            back_purl: false,
+        };
         let mut legend = StitchLegend::builtin();
-        legend.stitches.push(StitchDef { symbol: "2/2RC".into(), consumes: 4, produces: 4, ws_variant: None, cable: Some(cable), macro_rows: 1 });
+        legend.stitches.push(StitchDef {
+            symbol: "2/2RC".into(),
+            consumes: 4,
+            produces: 4,
+            ws_variant: None,
+            cable: Some(cable),
+            macro_rows: 1,
+        });
         let cable_id = legend.stitches.len() - 1;
         // width 6, but a lone span-4 cable cell (no fillers): c+span=4 <= 6 passes the edge check.
-        let p = pattern(6, vec![Row::plain(vec![Cell::of(cable_id)])], vec![Color::WHITE], legend);
+        let p = pattern(
+            6,
+            vec![Row::plain(vec![Cell::of(cable_id)])],
+            vec![Color::WHITE],
+            legend,
+        );
         let issues = validate(&p); // must NOT panic
         assert!(
-            issues.iter().any(|i| i.message.contains("must be followed by no-stitch")),
+            issues
+                .iter()
+                .any(|i| i.message.contains("must be followed by no-stitch")),
             "{issues:?}"
         );
     }
@@ -291,7 +391,15 @@ mod tests {
         // left-origin storage index (the bug the alpha user hit: errors numbered the opposite way).
         let leftmost_bad = pattern(
             4,
-            vec![Row::plain(vec![Cell { stitch: 999, color: None }, k(), k(), k()])],
+            vec![Row::plain(vec![
+                Cell {
+                    stitch: 999,
+                    color: None,
+                },
+                k(),
+                k(),
+                k(),
+            ])],
             vec![Color::WHITE],
             StitchLegend::builtin(),
         );
@@ -305,7 +413,15 @@ mod tests {
 
         let rightmost_bad = pattern(
             4,
-            vec![Row::plain(vec![k(), k(), k(), Cell { stitch: 999, color: None }])],
+            vec![Row::plain(vec![
+                k(),
+                k(),
+                k(),
+                Cell {
+                    stitch: 999,
+                    color: None,
+                },
+            ])],
             vec![Color::WHITE],
             StitchLegend::builtin(),
         );

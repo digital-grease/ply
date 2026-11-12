@@ -20,7 +20,12 @@ const WHITE: [u8; 4] = [255, 255, 255, 255];
 /// top-to-bottom.
 fn px(img: &RgbaImage, x: usize, y: usize) -> [u8; 4] {
     let o = (y * img.width as usize + x) * 4;
-    [img.pixels[o], img.pixels[o + 1], img.pixels[o + 2], img.pixels[o + 3]]
+    [
+        img.pixels[o],
+        img.pixels[o + 1],
+        img.pixels[o + 2],
+        img.pixels[o + 3],
+    ]
 }
 
 /// How many pixels exactly equal `want`.
@@ -81,7 +86,11 @@ fn twill_2_2_golden() {
     for pick in 0..4usize {
         for end in 0..4usize {
             let is_warp_up = matches!(dd.cell(end, pick), Cell::WarpUp(_));
-            assert_eq!(is_warp_up, expected_black[pick].contains(&end), "pick {pick} end {end}");
+            assert_eq!(
+                is_warp_up,
+                expected_black[pick].contains(&end),
+                "pick {pick} end {end}"
+            );
         }
     }
 

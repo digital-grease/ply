@@ -236,16 +236,24 @@ pub struct DraftDto {
 // ---------------------------------------------------------------------------
 
 fn shaft_rows_out(rows: &[Vec<ShaftId>]) -> Vec<Vec<u16>> {
-    rows.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
+    rows.iter()
+        .map(|r| r.iter().map(|s| s.0).collect())
+        .collect()
 }
 fn treadle_rows_out(rows: &[Vec<TreadleId>]) -> Vec<Vec<u16>> {
-    rows.iter().map(|r| r.iter().map(|t| t.0).collect()).collect()
+    rows.iter()
+        .map(|r| r.iter().map(|t| t.0).collect())
+        .collect()
 }
 fn shaft_rows_in(rows: &[Vec<u16>]) -> Vec<Vec<ShaftId>> {
-    rows.iter().map(|r| r.iter().map(|&n| ShaftId(n)).collect()).collect()
+    rows.iter()
+        .map(|r| r.iter().map(|&n| ShaftId(n)).collect())
+        .collect()
 }
 fn treadle_rows_in(rows: &[Vec<u16>]) -> Vec<Vec<TreadleId>> {
-    rows.iter().map(|r| r.iter().map(|&n| TreadleId(n)).collect()).collect()
+    rows.iter()
+        .map(|r| r.iter().map(|&n| TreadleId(n)).collect())
+        .collect()
 }
 
 impl From<&ValidationIssue> for ValidationIssueDto {
@@ -288,7 +296,11 @@ impl From<&Draft> for DraftDto {
                 .colors
                 .palette
                 .iter()
-                .map(|c| ColorDto { r: c.r, g: c.g, b: c.b })
+                .map(|c| ColorDto {
+                    r: c.r,
+                    g: c.g,
+                    b: c.b,
+                })
                 .collect(),
             warp_colors: d.colors.warp.iter().map(|&i| i as u32).collect(),
             weft_colors: d.colors.weft.iter().map(|&i| i as u32).collect(),
@@ -303,7 +315,10 @@ impl From<&Draft> for DraftDto {
                     entries: s
                         .entries
                         .iter()
-                        .map(|(k, v)| RetainedEntryDto { key: k.clone(), value: v.clone() })
+                        .map(|(k, v)| RetainedEntryDto {
+                            key: k.clone(),
+                            value: v.clone(),
+                        })
                         .collect(),
                 })
                 .collect(),
@@ -338,7 +353,11 @@ impl TryFrom<DraftDto> for Draft {
                 }
             },
             colors: ColorPlan {
-                palette: dto.palette.iter().map(|c| Color::rgb(c.r, c.g, c.b)).collect(),
+                palette: dto
+                    .palette
+                    .iter()
+                    .map(|c| Color::rgb(c.r, c.g, c.b))
+                    .collect(),
                 warp: dto.warp_colors.iter().map(|&i| i as usize).collect(),
                 weft: dto.weft_colors.iter().map(|&i| i as usize).collect(),
             },

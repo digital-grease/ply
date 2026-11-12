@@ -63,7 +63,10 @@ pub struct YarnEstimate {
 pub fn estimate_warp(plan: &WarpPlan) -> YarnEstimate {
     let per_item = plan.finished_length * (1.0 + plan.takeup_shrinkage);
     let warp_length = per_item * plan.items as f32 + plan.loom_waste;
-    YarnEstimate { warp_length, total_warp: warp_length * plan.ends as f32 }
+    YarnEstimate {
+        warp_length,
+        total_warp: warp_length * plan.ends as f32,
+    }
 }
 
 /// Inputs for a weft-yarn estimate. Lengths are in the draft's unit; `picks_per_unit`

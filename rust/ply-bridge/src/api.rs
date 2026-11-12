@@ -83,7 +83,11 @@ pub fn render_preview_dto(
     let draft = Draft::try_from(dto)?;
     let opts = options.map(Into::into).unwrap_or_default();
     let img = weave::render_rgba_with(&draft, cell_px, &opts);
-    Ok(PreviewImage { width: img.width, height: img.height, rgba: img.pixels })
+    Ok(PreviewImage {
+        width: img.width,
+        height: img.height,
+        rgba: img.pixels,
+    })
 }
 
 /// Validate an editor `DraftDto`; returns one structured issue per problem (empty = clean),
@@ -124,9 +128,12 @@ pub fn resize_dto(
     treadles: u16,
 ) -> Result<DraftDto, String> {
     let draft = Draft::try_from(dto)?;
-    Ok(DraftDto::from(
-        &draft.resized(ends as usize, picks as usize, shafts, treadles),
-    ))
+    Ok(DraftDto::from(&draft.resized(
+        ends as usize,
+        picks as usize,
+        shafts,
+        treadles,
+    )))
 }
 
 /// Remove palette color `index` and SAFELY remap every warp/weft reference so none dangles: a thread
@@ -195,7 +202,11 @@ pub fn generate_tieup_dto(
             weave::draft::TieUp::plain(shafts)
         }
     };
-    tieup.0.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
+    tieup
+        .0
+        .iter()
+        .map(|r| r.iter().map(|s| s.0).collect())
+        .collect()
 }
 
 /// Generate a COMPLETE draft for a whole-draft weave structure (overshot, shadow weave, double weave).
@@ -233,7 +244,11 @@ pub fn generate_threading_dto(kind: ThreadingKind, ends: u32, shafts: u16) -> Ve
         ThreadingKind::Straight => weave::draft::Threading::straight(ends as usize, shafts),
         ThreadingKind::Point => weave::draft::Threading::point(ends as usize, shafts),
     };
-    threading.0.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
+    threading
+        .0
+        .iter()
+        .map(|r| r.iter().map(|s| s.0).collect())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -258,14 +273,20 @@ pub fn parse_knit(json: String) -> Result<KnitPatternDto, String> {
 /// Serialize the editor's `KnitPatternDto` back to native `.plyknit` JSON. `Err` if the gauge is
 /// non-finite (the engine rejects a NaN/Inf gauge that JSON can't round-trip).
 pub fn write_knit(dto: KnitPatternDto) -> Result<String, String> {
-    ply_knit::KnitPattern::from(dto).to_json().map_err(|e| e.to_string())
+    ply_knit::KnitPattern::from(dto)
+        .to_json()
+        .map_err(|e| e.to_string())
 }
 
 /// Render a knitting chart `KnitPatternDto` to an RGBA preview (symbols + colorwork + cable spans).
 /// A mirrored value, so the caller may render the SAME dto repeatedly (no single-use handle).
 pub fn render_knit_preview(dto: KnitPatternDto, cell_px: u32) -> PreviewImage {
     let img = ply_knit::render_rgba(&ply_knit::KnitPattern::from(dto), cell_px);
-    PreviewImage { width: img.width, height: img.height, rgba: img.pixels }
+    PreviewImage {
+        width: img.width,
+        height: img.height,
+        rgba: img.pixels,
+    }
 }
 
 /// Validate a knitting chart (full stitch-count balancing); one issue per problem, empty = clean.
@@ -286,7 +307,10 @@ pub fn knit_blank_pattern() -> KnitPatternDto {
         gauge: ply_knit::calc::seed_gauge(ply_common::YarnWeight::Medium),
         palette: vec![ply_common::Color::WHITE],
         legend: ply_knit::StitchLegend::builtin(),
-        chart: ply_knit::Chart { width: 0, rows: Vec::new() },
+        chart: ply_knit::Chart {
+            width: 0,
+            rows: Vec::new(),
+        },
         notes: String::new(),
     };
     KnitPatternDto::from(&pattern)
@@ -323,12 +347,16 @@ pub fn knit_written(dto: KnitPatternDto) -> Vec<String> {
 
 pub use crate::nalbind_dto::{
     ConnArrowDto, ConnSideKind, ConnectionDto, DiagramDto, LoopGlyphDto, LoopKindDto,
-    NalbindIssueDto, NalbindStitchDto, PassDto, PublishedCodeDto, StepKind, ThumbLoopsDto, TwistKind,
+    NalbindIssueDto, NalbindStitchDto, PassDto, PublishedCodeDto, StepKind, ThumbLoopsDto,
+    TwistKind,
 };
 
 /// The curated builtin stitch dictionary (~12 stitches) for the reference screen.
 pub fn nalbind_builtin() -> Vec<NalbindStitchDto> {
-    ply_nalbind::builtin().into_iter().map(NalbindStitchDto::from).collect()
+    ply_nalbind::builtin()
+        .into_iter()
+        .map(NalbindStitchDto::from)
+        .collect()
 }
 
 /// Parse a Hansen-notation string into an anonymous stitch (the notation playground). `Err` carries

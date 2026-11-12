@@ -176,34 +176,52 @@ impl From<LoopKind> for LoopKindDto {
 
 impl From<Pass> for PassDto {
     fn from(p: Pass) -> Self {
-        PassDto { steps: p.steps.into_iter().map(Into::into).collect() }
+        PassDto {
+            steps: p.steps.into_iter().map(Into::into).collect(),
+        }
     }
 }
 impl From<PassDto> for Pass {
     fn from(p: PassDto) -> Self {
-        Pass { steps: p.steps.into_iter().map(Into::into).collect() }
+        Pass {
+            steps: p.steps.into_iter().map(Into::into).collect(),
+        }
     }
 }
 
 impl From<Connection> for ConnectionDto {
     fn from(c: Connection) -> Self {
-        ConnectionDto { side: c.side.into(), count: c.count, extra: c.extra }
+        ConnectionDto {
+            side: c.side.into(),
+            count: c.count,
+            extra: c.extra,
+        }
     }
 }
 impl From<ConnectionDto> for Connection {
     fn from(c: ConnectionDto) -> Self {
-        Connection { side: c.side.into(), count: c.count, extra: c.extra }
+        Connection {
+            side: c.side.into(),
+            count: c.count,
+            extra: c.extra,
+        }
     }
 }
 
 impl From<PublishedCode> for PublishedCodeDto {
     fn from(c: PublishedCode) -> Self {
-        PublishedCodeDto { code: c.code, source: c.source }
+        PublishedCodeDto {
+            code: c.code,
+            source: c.source,
+        }
     }
 }
 impl From<PublishedCodeDto> for PublishedCode {
     fn from(c: PublishedCodeDto) -> Self {
-        PublishedCode { code: c.code, source: c.source }
+        PublishedCode {
+            code: c.code,
+            source: c.source,
+        }
     }
 }
 
@@ -238,12 +256,19 @@ impl From<NalbindStitchDto> for StitchType {
 
 impl From<LoopGlyph> for LoopGlyphDto {
     fn from(g: LoopGlyph) -> Self {
-        LoopGlyphDto { x: g.x, kind: g.kind.into() }
+        LoopGlyphDto {
+            x: g.x,
+            kind: g.kind.into(),
+        }
     }
 }
 impl From<ConnArrow> for ConnArrowDto {
     fn from(a: ConnArrow) -> Self {
-        ConnArrowDto { x: a.x, side: a.side.into(), count: a.count }
+        ConnArrowDto {
+            x: a.x,
+            side: a.side.into(),
+            count: a.count,
+        }
     }
 }
 impl From<Diagram> for DiagramDto {

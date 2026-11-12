@@ -49,12 +49,16 @@ impl Ini {
             }
             if let Some(rest) = line.strip_prefix('[') {
                 let name = rest.split(']').next().unwrap_or("").trim().to_uppercase();
-                sections.push(Section { name, entries: Vec::new() });
+                sections.push(Section {
+                    name,
+                    entries: Vec::new(),
+                });
             } else if let Some(eq) = line.find('=') {
                 if let Some(sec) = sections.last_mut() {
                     // Trim the KEY but keep the VALUE raw so `[NOTES]` preserves a line's leading
                     // whitespace (the outer `line.trim()` still strips trailing whitespace).
-                    sec.entries.push((line[..eq].trim().into(), line[eq + 1..].into()));
+                    sec.entries
+                        .push((line[..eq].trim().into(), line[eq + 1..].into()));
                 }
             }
         }
@@ -90,7 +94,10 @@ fn parse_indexed_lists(section: &Section, count_hint: usize) -> Vec<Vec<u16>> {
     for (k, v) in &section.entries {
         if let Ok(i) = k.parse::<usize>() {
             if i >= 1 && i <= max {
-                out[i - 1] = v.split(',').filter_map(|t| t.trim().parse::<u16>().ok()).collect();
+                out[i - 1] = v
+                    .split(',')
+                    .filter_map(|t| t.trim().parse::<u16>().ok())
+                    .collect();
             }
         }
     }
@@ -107,7 +114,11 @@ fn parse_notes(section: &Section) -> String {
         .filter_map(|(k, v)| k.parse::<usize>().ok().map(|i| (i, v.as_str())))
         .collect();
     lines.sort_by_key(|(i, _)| *i);
-    lines.into_iter().map(|(_, v)| v).collect::<Vec<_>>().join("\n")
+    lines
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -119,20 +130,39 @@ pub fn parse(text: &str) -> Result<Draft> {
     let ini = Ini::parse(text);
 
     let weaving = ini.section("WEAVING");
-    let shafts = weaving.and_then(|s| s.get("Shafts")).and_then(|v| v.parse().ok()).unwrap_or(0);
-    let treadles = weaving.and_then(|s| s.get("Treadles")).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let shafts = weaving
+        .and_then(|s| s.get("Shafts"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let treadles = weaving
+        .and_then(|s| s.get("Treadles"))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let rising = weaving
         .and_then(|s| s.get("Rising Shed"))
         .map(|v| matches!(v.to_lowercase().as_str(), "true" | "yes" | "1" | "on"))
         .unwrap_or(true);
-    let shed = if rising { ShedType::Rising } else { ShedType::Sinking };
+    let shed = if rising {
+        ShedType::Rising
+    } else {
+        ShedType::Sinking
+    };
 
     let warp_sec = ini.section("WARP");
     let weft_sec = ini.section("WEFT");
-    let warp_threads = warp_sec.and_then(|s| s.get("Threads")).and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
-    let weft_threads = weft_sec.and_then(|s| s.get("Threads")).and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+    let warp_threads = warp_sec
+        .and_then(|s| s.get("Threads"))
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
+    let weft_threads = weft_sec
+        .and_then(|s| s.get("Threads"))
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
 
-    let unit = match warp_sec.and_then(|s| s.get("Units")).map(|u| u.to_lowercase()) {
+    let unit = match warp_sec
+        .and_then(|s| s.get("Units"))
+        .map(|u| u.to_lowercase())
+    {
         Some(u) if u.contains("cent") => Unit::Centimeters,
         _ => Unit::Inches,
     };
@@ -198,11 +228,19 @@ pub fn parse(text: &str) -> Result<Draft> {
         .section("COLOR TABLE")
         .map(|s| parse_color_table(s, palette_range))
         .unwrap_or_default();
-    let warp_default = warp_sec.and_then(|s| s.get("Color")).and_then(parse_color_ref);
-    let weft_default = weft_sec.and_then(|s| s.get("Color")).and_then(parse_color_ref);
+    let warp_default = warp_sec
+        .and_then(|s| s.get("Color"))
+        .and_then(parse_color_ref);
+    let weft_default = weft_sec
+        .and_then(|s| s.get("Color"))
+        .and_then(parse_color_ref);
     let warp_colors = colors_for(ini.section("WARP COLORS"), threading.ends(), warp_default);
     let weft_colors = colors_for(ini.section("WEFT COLORS"), drive.picks(), weft_default);
-    let colors = ColorPlan { palette, warp: warp_colors, weft: weft_colors };
+    let colors = ColorPlan {
+        palette,
+        warp: warp_colors,
+        weft: weft_colors,
+    };
 
     let name = ini
         .section("TEXT")
@@ -220,19 +258,38 @@ pub fn parse(text: &str) -> Result<Draft> {
     // Retain every section Ply does NOT model, verbatim, so `write` can re-emit it (spacing,
     // vendor sections). Section names are already uppercased by the Ini reader.
     const MODELED: &[&str] = &[
-        "WIF", "TEXT", "CONTENTS", "WEAVING", "WARP", "WEFT", "COLOR TABLE", "COLOR PALETTE",
-        "THREADING", "TIEUP", "TREADLING", "LIFTPLAN", "WARP COLORS", "WEFT COLORS", "NOTES",
-        "WARP THICKNESS", "WEFT THICKNESS",
+        "WIF",
+        "TEXT",
+        "CONTENTS",
+        "WEAVING",
+        "WARP",
+        "WEFT",
+        "COLOR TABLE",
+        "COLOR PALETTE",
+        "THREADING",
+        "TIEUP",
+        "TREADLING",
+        "LIFTPLAN",
+        "WARP COLORS",
+        "WEFT COLORS",
+        "NOTES",
+        "WARP THICKNESS",
+        "WEFT THICKNESS",
     ];
     let retained = ini
         .sections
         .iter()
         .filter(|s| !MODELED.contains(&s.name.as_str()))
-        .map(|s| RetainedSection { name: s.name.clone(), entries: s.entries.clone() })
+        .map(|s| RetainedSection {
+            name: s.name.clone(),
+            entries: s.entries.clone(),
+        })
         .collect();
 
     if shafts == 0 && threading.ends() == 0 {
-        return Err(WeaveError::WifParse("no recognizable draft data (missing WEAVING/THREADING)".into()));
+        return Err(WeaveError::WifParse(
+            "no recognizable draft data (missing WEAVING/THREADING)".into(),
+        ));
     }
 
     let draft = Draft {
@@ -294,7 +351,11 @@ fn parse_color_table(section: &Section, range: u32) -> Vec<Color> {
         .into_iter()
         .map(|rgb| {
             if rgb.len() >= 3 {
-                Color::rgb(scale8(rgb[0], range), scale8(rgb[1], range), scale8(rgb[2], range))
+                Color::rgb(
+                    scale8(rgb[0], range),
+                    scale8(rgb[1], range),
+                    scale8(rgb[2], range),
+                )
             } else {
                 Color::WHITE
             }
@@ -313,7 +374,12 @@ fn scale8(v: u16, range: u32) -> u8 {
 
 /// A `Color=` value in WARP/WEFT is a 1-based palette index; convert to 0-based.
 fn parse_color_ref(v: &str) -> Option<ColorIndex> {
-    v.split(',').next()?.trim().parse::<usize>().ok().map(|i| i.saturating_sub(1))
+    v.split(',')
+        .next()?
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .map(|i| i.saturating_sub(1))
 }
 
 fn colors_for(section: Option<&Section>, n: usize, default: Option<ColorIndex>) -> Vec<ColorIndex> {
@@ -570,7 +636,9 @@ Threads=4
         assert_eq!(d.colors.palette.len(), 2);
         assert!(matches!(d.shed, ShedType::Rising));
         match &d.drive {
-            Drive::Treadled { tieup, .. } => assert_eq!(tieup.shafts_for(TreadleId(1)), &[ShaftId(1), ShaftId(2)]),
+            Drive::Treadled { tieup, .. } => {
+                assert_eq!(tieup.shafts_for(TreadleId(1)), &[ShaftId(1), ShaftId(2)])
+            }
             _ => panic!("expected treadled drive"),
         }
     }
@@ -602,7 +670,10 @@ Threads=4
         let mut d = parse(SAMPLE).unwrap();
         d.name = "Ada's Scarf".into();
         let text = write(&d);
-        assert!(text.contains("[TEXT]"), "a named draft writes a [TEXT] section");
+        assert!(
+            text.contains("[TEXT]"),
+            "a named draft writes a [TEXT] section"
+        );
         assert!(text.contains("Title=Ada's Scarf"));
         assert_eq!(parse(&text).unwrap().name, "Ada's Scarf");
     }
@@ -626,7 +697,10 @@ Threads=4
         d.notes = "Line one, with a comma.\nLine two.".into();
         let text = write(&d);
         assert!(text.contains("[NOTES]"));
-        assert_eq!(parse(&text).unwrap().notes, "Line one, with a comma.\nLine two.");
+        assert_eq!(
+            parse(&text).unwrap().notes,
+            "Line one, with a comma.\nLine two."
+        );
     }
 
     /// A note line's LEADING whitespace survives the round-trip (values are stored raw; only the
@@ -670,9 +744,23 @@ Threads=4
                    [COLOR PALETTE]\nRange=0,999\nForm=RGB\n[COLOR TABLE]\n1=999,0,500\n2=600,600,600\n";
         let d = parse(wif).unwrap();
         // 999->255, 0->0, round(500/999*255)=128 — NOT the broken (255,0,255)-style clip.
-        assert_eq!((d.colors.palette[0].r, d.colors.palette[0].g, d.colors.palette[0].b), (255, 0, 128));
+        assert_eq!(
+            (
+                d.colors.palette[0].r,
+                d.colors.palette[0].g,
+                d.colors.palette[0].b
+            ),
+            (255, 0, 128)
+        );
         // round(600/999*255)=153 — a mid grey that the clip bug would have flattened to white (255).
-        assert_eq!((d.colors.palette[1].r, d.colors.palette[1].g, d.colors.palette[1].b), (153, 153, 153));
+        assert_eq!(
+            (
+                d.colors.palette[1].r,
+                d.colors.palette[1].g,
+                d.colors.palette[1].b
+            ),
+            (153, 153, 153)
+        );
     }
 
     const RETAIN_WIF: &str = "[WEAVING]\nShafts=2\nTreadles=2\n[WARP]\nThreads=2\n\
@@ -699,7 +787,10 @@ Threads=4
         let d = parse(RETAIN_WIF).unwrap();
         let r = d.resized(3, d.picks(), d.shafts, d.treadles); // grow ends 2 -> 3
         let names: Vec<&str> = r.retained.iter().map(|s| s.name.as_str()).collect();
-        assert!(!names.contains(&"WARP SPACING"), "stale per-thread warp section dropped");
+        assert!(
+            !names.contains(&"WARP SPACING"),
+            "stale per-thread warp section dropped"
+        );
         assert!(names.contains(&"ACME VENDOR"), "global vendor section kept");
     }
 
@@ -713,7 +804,10 @@ Threads=4
                    [WARP THICKNESS]\n1=1\n2=3\n[WEFT THICKNESS]\n1=2\n2=2\n";
         let d = parse(wif).unwrap();
         // Modeled, not retained.
-        assert!(d.retained.is_empty(), "thickness is modeled, not stuffed into retained");
+        assert!(
+            d.retained.is_empty(),
+            "thickness is modeled, not stuffed into retained"
+        );
         // End 3 is absent from [WARP THICKNESS] -> defaults to the smallest present value (1).
         assert_eq!(d.warp_thickness, vec![1.0, 3.0, 1.0]);
         assert_eq!(d.weft_thickness, vec![2.0, 2.0]);
@@ -831,7 +925,12 @@ Threads=4
             treadles: 2,
             shed: ShedType::Sinking,
             unit: Unit::Inches,
-            threading: Threading(vec![vec![ShaftId(1)], vec![ShaftId(2)], vec![ShaftId(3)], vec![ShaftId(4)]]),
+            threading: Threading(vec![
+                vec![ShaftId(1)],
+                vec![ShaftId(2)],
+                vec![ShaftId(3)],
+                vec![ShaftId(4)],
+            ]),
             drive: Drive::Treadled {
                 tieup: TieUp(vec![
                     vec![ShaftId(1), ShaftId(2), ShaftId(3), ShaftId(4)], // treadle 1: sink all
@@ -858,14 +957,31 @@ Threads=4
 
         let lp = d.to_liftplan_draft();
         // Sanity: the convert really produced empty raised sets at the three boundary positions.
-        assert!(lp.raised_shafts(0).is_empty(), "pick 0 raises nothing (start)");
-        assert!(lp.raised_shafts(2).is_empty(), "pick 2 raises nothing (middle)");
-        assert!(lp.raised_shafts(4).is_empty(), "pick 4 raises nothing (end)");
+        assert!(
+            lp.raised_shafts(0).is_empty(),
+            "pick 0 raises nothing (start)"
+        );
+        assert!(
+            lp.raised_shafts(2).is_empty(),
+            "pick 2 raises nothing (middle)"
+        );
+        assert!(
+            lp.raised_shafts(4).is_empty(),
+            "pick 4 raises nothing (end)"
+        );
 
         let rt = parse(&write(&lp)).unwrap();
-        assert_eq!(rt.picks(), lp.picks(), "pick count survives (empty rows recovered via WEFT Threads)");
+        assert_eq!(
+            rt.picks(),
+            lp.picks(),
+            "pick count survives (empty rows recovered via WEFT Threads)"
+        );
         for p in 0..lp.picks() {
-            assert_eq!(rt.raised_shafts(p), lp.raised_shafts(p), "pick {p} raised set preserved");
+            assert_eq!(
+                rt.raised_shafts(p),
+                lp.raised_shafts(p),
+                "pick {p} raised set preserved"
+            );
         }
 
         // The degenerate all-empty plan (every pick presses the sink-all treadle) must still recover
@@ -873,7 +989,11 @@ Threads=4
         let all_empty = Draft {
             drive: Drive::Treadled {
                 tieup: TieUp(vec![vec![ShaftId(1), ShaftId(2), ShaftId(3), ShaftId(4)]]),
-                treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(1)], vec![TreadleId(1)]]),
+                treadling: Treadling(vec![
+                    vec![TreadleId(1)],
+                    vec![TreadleId(1)],
+                    vec![TreadleId(1)],
+                ]),
             },
             treadles: 1,
             colors: ColorPlan {
@@ -885,7 +1005,11 @@ Threads=4
         }
         .to_liftplan_draft();
         let rt2 = parse(&write(&all_empty)).unwrap();
-        assert_eq!(rt2.picks(), 3, "an all-empty liftplan still recovers 3 picks");
+        assert_eq!(
+            rt2.picks(),
+            3,
+            "an all-empty liftplan still recovers 3 picks"
+        );
         for p in 0..rt2.picks() {
             assert!(rt2.raised_shafts(p).is_empty(), "pick {p} stays empty");
         }
@@ -897,7 +1021,10 @@ Threads=4
     #[test]
     fn malformed_huge_thread_key_does_not_abort() {
         let d = parse("[WEAVING]\nShafts=2\nTreadles=2\n[THREADING]\n4000000000=1\n").unwrap();
-        assert!(d.threading.0.len() <= MAX_THREADS, "threading length is capped, not 4e9");
+        assert!(
+            d.threading.0.len() <= MAX_THREADS,
+            "threading length is capped, not 4e9"
+        );
         // An in-cap key still maps to its position (no off-by-one from the cap logic).
         let d2 = parse("[WEAVING]\nShafts=2\n[THREADING]\n5=1\n").unwrap();
         assert_eq!(d2.threading.0.len(), 5);

@@ -40,7 +40,11 @@ pub fn render_rgba(pattern: &KnitPattern, cell_px: u32) -> RgbaImage {
     let cols = chart.width;
     let rows = chart.rows.len();
     if cols == 0 || rows == 0 {
-        return RgbaImage { width: 0, height: 0, pixels: Vec::new() };
+        return RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        };
     }
     // `cols`/`rows` are untrusted (`chart.width` need not match the backing cells, and `cell_px` is
     // caller-supplied), so the dimension multiplies themselves can overflow `usize` BEFORE the raster
@@ -51,7 +55,11 @@ pub fn render_rgba(pattern: &KnitPattern, cell_px: u32) -> RgbaImage {
         .and_then(|(w, h)| Some((w, h, w.checked_mul(h)?.checked_mul(4)?)))
         .filter(|&(_, _, t)| t <= MAX_RASTER_BYTES)
     else {
-        return RgbaImage { width: 0, height: 0, pixels: Vec::new() };
+        return RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        };
     };
     let mut px = vec![0u8; total];
 
@@ -60,7 +68,10 @@ pub fn render_rgba(pattern: &KnitPattern, cell_px: u32) -> RgbaImage {
         let y0 = h - (r + 1) * s;
         let mut col = 0usize;
         while col < cols {
-            let cell = row.cells.get(col).copied().unwrap_or(Cell { stitch: builtin::KNIT, color: None });
+            let cell = row.cells.get(col).copied().unwrap_or(Cell {
+                stitch: builtin::KNIT,
+                color: None,
+            });
             let x0 = col * s;
             // A cable spans several columns; draw it once across its (bounds-clamped) span and skip
             // the no-stitch fillers it covers.
@@ -71,7 +82,11 @@ pub fn render_rgba(pattern: &KnitPattern, cell_px: u32) -> RgbaImage {
     }
 
     draw_gridlines(&mut px, w, h, s, cols, rows);
-    RgbaImage { width: w as u32, height: h as u32, pixels: px }
+    RgbaImage {
+        width: w as u32,
+        height: h as u32,
+        pixels: px,
+    }
 }
 
 /// The column span of a cell: a cable's `span`, else 1.
@@ -115,7 +130,11 @@ fn draw_cell(
     }
 
     // Symbol colour contrasts the background so it reads on a dark colorwork cell too.
-    let sym = if luminance(bg) > 140 { SYMBOL_DARK } else { SYMBOL_LIGHT };
+    let sym = if luminance(bg) > 140 {
+        SYMBOL_DARK
+    } else {
+        SYMBOL_LIGHT
+    };
     // Inset margin, capped so it never exceeds a tiny (even 1px) cell; the far edges use SATURATING
     // subtraction so a small cell_px can't underflow usize and panic.
     let m = (s / 5).max(1).min(s.saturating_sub(1).max(1));
@@ -201,7 +220,16 @@ fn set_px(px: &mut [u8], w: usize, h: usize, x: usize, y: usize, c: Color) {
     px[o + 3] = 255;
 }
 
-fn fill_rect(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, rw: usize, rh: usize, c: Color) {
+fn fill_rect(
+    px: &mut [u8],
+    w: usize,
+    h: usize,
+    x0: usize,
+    y0: usize,
+    rw: usize,
+    rh: usize,
+    c: Color,
+) {
     for y in y0..(y0 + rh).min(h) {
         for x in x0..(x0 + rw).min(w) {
             set_px(px, w, h, x, y, c);
@@ -209,7 +237,16 @@ fn fill_rect(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, rw: usize,
     }
 }
 
-fn draw_rect_outline(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, x1: usize, y1: usize, c: Color) {
+fn draw_rect_outline(
+    px: &mut [u8],
+    w: usize,
+    h: usize,
+    x0: usize,
+    y0: usize,
+    x1: usize,
+    y1: usize,
+    c: Color,
+) {
     draw_line(px, w, h, x0, y0, x1, y0, c);
     draw_line(px, w, h, x0, y1, x1, y1, c);
     draw_line(px, w, h, x0, y0, x0, y1, c);
@@ -217,7 +254,16 @@ fn draw_rect_outline(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, x1
 }
 
 /// Integer Bresenham line.
-fn draw_line(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, x1: usize, y1: usize, c: Color) {
+fn draw_line(
+    px: &mut [u8],
+    w: usize,
+    h: usize,
+    x0: usize,
+    y0: usize,
+    x1: usize,
+    y1: usize,
+    c: Color,
+) {
     let (mut x0, mut y0) = (x0 as i64, y0 as i64);
     let (x1, y1) = (x1 as i64, y1 as i64);
     let dx = (x1 - x0).abs();
@@ -246,7 +292,16 @@ fn draw_line(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, x1: usize,
 
 /// A diagonal drawn with a gap across its middle (~22% of the span): the two end stubs only, so a
 /// crossing strand reads as passing *behind* the continuous (over) strand of a cable.
-fn draw_broken_line(px: &mut [u8], w: usize, h: usize, x0: usize, y0: usize, x1: usize, y1: usize, c: Color) {
+fn draw_broken_line(
+    px: &mut [u8],
+    w: usize,
+    h: usize,
+    x0: usize,
+    y0: usize,
+    x1: usize,
+    y1: usize,
+    c: Color,
+) {
     let (x0i, y0i, x1i, y1i) = (x0 as i64, y0 as i64, x1 as i64, y1 as i64);
     // Linear interpolate along the segment with integer math (num/den of the way from p0 to p1).
     let lerp = |a: i64, b: i64, num: i64, den: i64| (a + (b - a) * num / den) as usize;
@@ -322,7 +377,11 @@ mod tests {
             name: "t".into(),
             construction: Construction::Flat,
             first_row_side: Side::Rs,
-            gauge: Gauge { sts: 20.0, rows: 28.0, unit: Unit::Inches },
+            gauge: Gauge {
+                sts: 20.0,
+                rows: 28.0,
+                unit: Unit::Inches,
+            },
             palette,
             legend: StitchLegend::builtin(),
             chart: Chart { width, rows },
@@ -334,7 +393,6 @@ mod tests {
         let o = (y * img.width as usize + x) * 4;
         [img.pixels[o], img.pixels[o + 1], img.pixels[o + 2]]
     }
-
 
     #[test]
     fn huge_width_times_cellpx_yields_empty_not_panic() {
@@ -357,7 +415,11 @@ mod tests {
     #[test]
     fn dimensions_are_cols_x_rows_times_cell() {
         let k = Cell::of(builtin::KNIT);
-        let p = pat(3, vec![Row::plain(vec![k, k, k]), Row::plain(vec![k, k, k])], vec![Color::WHITE]);
+        let p = pat(
+            3,
+            vec![Row::plain(vec![k, k, k]), Row::plain(vec![k, k, k])],
+            vec![Color::WHITE],
+        );
         let img = render_rgba(&p, 10);
         assert_eq!((img.width, img.height), (30, 20));
         assert_eq!(img.pixels.len(), 30 * 20 * 4);
@@ -375,7 +437,11 @@ mod tests {
 
     #[test]
     fn no_stitch_cell_is_grey() {
-        let p = pat(1, vec![Row::plain(vec![Cell::of(builtin::NO_STITCH)])], vec![Color::WHITE]);
+        let p = pat(
+            1,
+            vec![Row::plain(vec![Cell::of(builtin::NO_STITCH)])],
+            vec![Color::WHITE],
+        );
         let img = render_rgba(&p, 12);
         assert_eq!(px_at(&img, 6, 6), [NO_STITCH.r, NO_STITCH.g, NO_STITCH.b]);
     }
@@ -387,40 +453,84 @@ mod tests {
         let r1 = Row::plain(vec![Cell::of(builtin::KNIT)]);
         let p = pat(1, vec![r0, r1], vec![Color::WHITE, Color::rgb(200, 0, 0)]);
         let img = render_rgba(&p, 10); // 10x20
-        assert_eq!(px_at(&img, 5, 15), [200, 0, 0], "row 0 (red) is the bottom cell");
-        assert_eq!(px_at(&img, 5, 5), [CHART_BG.r, CHART_BG.g, CHART_BG.b], "row 1 (knit) is on top");
+        assert_eq!(
+            px_at(&img, 5, 15),
+            [200, 0, 0],
+            "row 0 (red) is the bottom cell"
+        );
+        assert_eq!(
+            px_at(&img, 5, 5),
+            [CHART_BG.r, CHART_BG.g, CHART_BG.b],
+            "row 1 (knit) is on top"
+        );
     }
 
     #[test]
     fn a_symbol_marks_a_non_knit_cell() {
         // A purl cell draws a dark dot at center over the cream ground (so the center isn't cream).
-        let p = pat(1, vec![Row::plain(vec![Cell::of(builtin::PURL)])], vec![Color::WHITE]);
+        let p = pat(
+            1,
+            vec![Row::plain(vec![Cell::of(builtin::PURL)])],
+            vec![Color::WHITE],
+        );
         let img = render_rgba(&p, 16);
-        assert_eq!(px_at(&img, 8, 8), [SYMBOL_DARK.r, SYMBOL_DARK.g, SYMBOL_DARK.b], "purl dot");
+        assert_eq!(
+            px_at(&img, 8, 8),
+            [SYMBOL_DARK.r, SYMBOL_DARK.g, SYMBOL_DARK.b],
+            "purl dot"
+        );
     }
 
     #[test]
     fn ktbl_draws_a_twisted_knit_symbol() {
         // ktbl draws a vertical bar (the knit column) crossing the cell center, so (cx, cy) is the dark
         // symbol over the cream ground — distinct from a plain knit, which leaves the center cream.
-        let p = pat(1, vec![Row::plain(vec![Cell::of(builtin::KTBL)])], vec![Color::WHITE]);
+        let p = pat(
+            1,
+            vec![Row::plain(vec![Cell::of(builtin::KTBL)])],
+            vec![Color::WHITE],
+        );
         let img = render_rgba(&p, 16);
-        assert_eq!(px_at(&img, 8, 8), [SYMBOL_DARK.r, SYMBOL_DARK.g, SYMBOL_DARK.b], "ktbl twist bar");
+        assert_eq!(
+            px_at(&img, 8, 8),
+            [SYMBOL_DARK.r, SYMBOL_DARK.g, SYMBOL_DARK.b],
+            "ktbl twist bar"
+        );
     }
 
     #[test]
     fn tiny_cell_px_does_not_panic() {
         // cell_px 1/2 must not underflow the inset math (a glyph cell with margins).
-        let p = pat(2, vec![Row::plain(vec![Cell::of(builtin::KNIT), Cell::of(builtin::YO)])], vec![Color::WHITE]);
+        let p = pat(
+            2,
+            vec![Row::plain(vec![
+                Cell::of(builtin::KNIT),
+                Cell::of(builtin::YO),
+            ])],
+            vec![Color::WHITE],
+        );
         let _ = render_rgba(&p, 1);
         let _ = render_rgba(&p, 2);
     }
 
     #[test]
     fn cable_spans_its_columns_without_panic() {
-        let cable = CableDef { front: 2, back: 2, direction: Cross::Right, front_purl: false, back_purl: false };
+        let cable = CableDef {
+            front: 2,
+            back: 2,
+            direction: Cross::Right,
+            front_purl: false,
+            back_purl: false,
+        };
         let mut legend = StitchLegend::builtin();
-        legend.stitches.push(StitchDef { symbol: "2/2RC".into(), consumes: 4, produces: 4, ws_variant: None, cable: Some(cable), macro_rows: 1 });
+        legend.stitches.push(StitchDef {
+            symbol: "2/2RC".into(),
+            consumes: 4,
+            produces: 4,
+            ws_variant: None,
+            cable: Some(cable),
+            macro_rows: 1,
+        });
         let cable_id = legend.stitches.len() - 1;
         let ns = Cell::of(builtin::NO_STITCH);
         let row = Row::plain(vec![Cell::of(cable_id), ns, ns, ns]);
@@ -435,7 +545,11 @@ mod tests {
             if px_at(&img, x, 5) == [SYMBOL_DARK.r, SYMBOL_DARK.g, SYMBOL_DARK.b] {
                 saw_symbol = true;
             }
-            assert_ne!(px_at(&img, x, 5), [NO_STITCH.r, NO_STITCH.g, NO_STITCH.b], "no grey under a cable");
+            assert_ne!(
+                px_at(&img, x, 5),
+                [NO_STITCH.r, NO_STITCH.g, NO_STITCH.b],
+                "no grey under a cable"
+            );
         }
         assert!(saw_symbol, "the cable crossing is drawn");
     }
@@ -445,11 +559,21 @@ mod tests {
         // Same geometry, opposite cross direction -> the rasters must differ (the over strand leans
         // the other way and the broken under strand mirrors it).
         fn cable_img(dir: Cross) -> RgbaImage {
-            let cable = CableDef { front: 2, back: 2, direction: dir, front_purl: false, back_purl: false };
+            let cable = CableDef {
+                front: 2,
+                back: 2,
+                direction: dir,
+                front_purl: false,
+                back_purl: false,
+            };
             let mut legend = StitchLegend::builtin();
             legend.stitches.push(StitchDef {
-                symbol: "2/2".into(), consumes: 4, produces: 4, ws_variant: None,
-                cable: Some(cable), macro_rows: 1,
+                symbol: "2/2".into(),
+                consumes: 4,
+                produces: 4,
+                ws_variant: None,
+                cable: Some(cable),
+                macro_rows: 1,
             });
             let cable_id = legend.stitches.len() - 1;
             let ns = Cell::of(builtin::NO_STITCH);
@@ -461,6 +585,9 @@ mod tests {
         let rc = cable_img(Cross::Right);
         let lc = cable_img(Cross::Left);
         assert_eq!((rc.width, rc.height), (lc.width, lc.height));
-        assert_ne!(rc.pixels, lc.pixels, "a right cross must not look identical to a left cross");
+        assert_ne!(
+            rc.pixels, lc.pixels,
+            "a right cross must not look identical to a left cross"
+        );
     }
 }

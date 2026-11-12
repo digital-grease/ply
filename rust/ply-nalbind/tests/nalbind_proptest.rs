@@ -22,7 +22,11 @@ fn arb_step() -> impl Strategy<Value = Step> {
 }
 
 fn arb_side() -> impl Strategy<Value = ConnSide> {
-    prop_oneof![Just(ConnSide::Front), Just(ConnSide::Back), Just(ConnSide::Middle)]
+    prop_oneof![
+        Just(ConnSide::Front),
+        Just(ConnSide::Back),
+        Just(ConnSide::Middle)
+    ]
 }
 
 fn arb_twist() -> impl Strategy<Value = Twist> {
@@ -32,7 +36,10 @@ fn arb_twist() -> impl Strategy<Value = Twist> {
 /// Passes for the NOTATION round-trip: each pass has >= 1 step (an empty trailing pass is dropped by
 /// `parse`, which would break `parse(print(x)) == x` — real stitches have no empty passes anyway).
 fn arb_passes_nonempty() -> impl Strategy<Value = Vec<Pass>> {
-    prop::collection::vec(prop::collection::vec(arb_step(), 1..6).prop_map(Pass::new), 1..4)
+    prop::collection::vec(
+        prop::collection::vec(arb_step(), 1..6).prop_map(Pass::new),
+        1..4,
+    )
 }
 
 /// Connections the notation can round-trip: `side + count`, no `extra` (the parser never emits one).
@@ -48,7 +55,10 @@ fn arb_conns_simple() -> impl Strategy<Value = Vec<Connection>> {
 fn arb_stitch() -> impl Strategy<Value = StitchType> {
     (
         "[A-Za-z ]{0,10}",
-        prop::collection::vec(prop::collection::vec(arb_step(), 0..6).prop_map(Pass::new), 0..4),
+        prop::collection::vec(
+            prop::collection::vec(arb_step(), 0..6).prop_map(Pass::new),
+            0..4,
+        ),
         prop::collection::vec(
             (arb_side(), 0u8..30, prop::option::of("[a-z ]{0,8}"))
                 .prop_map(|(side, count, extra)| Connection { side, count, extra }),

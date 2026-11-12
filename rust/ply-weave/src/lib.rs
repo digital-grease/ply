@@ -16,7 +16,9 @@ pub mod structure;
 pub mod validate;
 pub mod wif;
 
-pub use draft::{Draft, Drive, Liftplan, ShaftId, ShedType, Threading, TieUp, Treadling, TreadleId};
+pub use draft::{
+    Draft, Drive, Liftplan, ShaftId, ShedType, Threading, TieUp, TreadleId, Treadling,
+};
 pub use drawdown::{
     compute, render_rgba, render_rgba_with, Cell, Drawdown, RenderOptions, RgbaImage,
 };

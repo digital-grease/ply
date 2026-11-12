@@ -5,8 +5,8 @@
 //! normal drafts), which is what makes live preview feel instant.
 
 use crate::draft::{ColorIndex, Draft};
-use serde::{Deserialize, Serialize};
 use ply_common::Color;
+use serde::{Deserialize, Serialize};
 
 /// What shows on the face of the cloth at one warp/weft intersection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,7 +118,11 @@ pub struct RenderOptions {
 
 impl Default for RenderOptions {
     fn default() -> Self {
-        RenderOptions { gridlines: false, float_threshold: 0, thread_texture: false }
+        RenderOptions {
+            gridlines: false,
+            float_threshold: 0,
+            thread_texture: false,
+        }
     }
 }
 
@@ -146,7 +150,11 @@ pub fn render_rgba(draft: &Draft, cell_px: u32) -> RgbaImage {
 pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> RgbaImage {
     let dd = compute(draft);
     if dd.ends == 0 || dd.picks == 0 {
-        return RgbaImage { width: 0, height: 0, pixels: Vec::new() };
+        return RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        };
     }
     let base = cell_px.max(1) as usize;
     let col_w = thread_extents(&draft.warp_thickness, dd.ends, base);
@@ -174,7 +182,11 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
         .and_then(|wh| wh.checked_mul(4))
         .filter(|&t| t <= MAX_RASTER_BYTES)
     else {
-        return RgbaImage { width: 0, height: 0, pixels: Vec::new() };
+        return RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        };
     };
 
     let mut row_top = vec![0usize; dd.picks];
@@ -248,7 +260,11 @@ pub fn render_rgba_with(draft: &Draft, cell_px: u32, opts: &RenderOptions) -> Rg
         }
     }
 
-    RgbaImage { width: w as u32, height: h as u32, pixels: px }
+    RgbaImage {
+        width: w as u32,
+        height: h as u32,
+        pixels: px,
+    }
 }
 
 /// The grid-seam color: a neutral mid-gray that reads on most cloth colors (it can vanish on a
@@ -262,7 +278,11 @@ const FLOAT_HIGHLIGHT: [u8; 3] = [255, 120, 0];
 /// Alpha-blend `over` onto `base` (`a` in 0..=1). Used for the float-highlight tint.
 fn blend(base: Color, over: [u8; 3], a: f32) -> Color {
     let mix = |b: u8, o: u8| ((b as f32) * (1.0 - a) + (o as f32) * a).round() as u8;
-    Color::rgb(mix(base.r, over[0]), mix(base.g, over[1]), mix(base.b, over[2]))
+    Color::rgb(
+        mix(base.r, over[0]),
+        mix(base.g, over[1]),
+        mix(base.b, over[2]),
+    )
 }
 
 /// Shade one pixel of a thread cell so the cloth reads as woven strands rather than flat squares
@@ -287,7 +307,11 @@ fn thread_shade(c: Color, perp: f32, along: f32) -> Color {
     let mul = cross * ends;
     let r = 1.0 - pd * pd;
     let ridge = RIDGE * r * r * r; // peaks on the centre line, vanishes at the side edges
-    let f = |ch: u8| ((ch as f32) * mul + ridge * 255.0).round().clamp(0.0, 255.0) as u8;
+    let f = |ch: u8| {
+        ((ch as f32) * mul + ridge * 255.0)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
     Color::rgb(f(c.r), f(c.g), f(c.b))
 }
 
@@ -454,8 +478,14 @@ mod tests {
         all_two.weft_thickness = vec![2.0; all_two.picks()];
         let scaled = render_rgba(&all_two, 5);
 
-        assert_eq!((scaled.width, scaled.height), (uniform.width, uniform.height));
-        assert_eq!(scaled.pixels, uniform.pixels, "uniform thickness == plain grid");
+        assert_eq!(
+            (scaled.width, scaled.height),
+            (uniform.width, uniform.height)
+        );
+        assert_eq!(
+            scaled.pixels, uniform.pixels,
+            "uniform thickness == plain grid"
+        );
     }
 
     /// A fatter warp end draws a proportionally wider column; the thinnest thread stays `base` px.
@@ -506,7 +536,11 @@ mod tests {
     #[test]
     fn gridlines_paint_interior_seams_only() {
         let d = plain_2x2(); // 8x8 at cell 4: one interior vertical seam (x=4), one horizontal (y=4)
-        let opts = RenderOptions { gridlines: true, float_threshold: 0, thread_texture: false };
+        let opts = RenderOptions {
+            gridlines: true,
+            float_threshold: 0,
+            thread_texture: false,
+        };
         let img = render_rgba_with(&d, 4, &opts);
         let at = |x: usize, y: usize| -> [u8; 3] {
             let o = (y * 8 + x) * 4;
@@ -556,15 +590,27 @@ mod tests {
         let high = render_rgba_with(
             &d,
             4,
-            &RenderOptions { gridlines: false, float_threshold: 7, thread_texture: false },
+            &RenderOptions {
+                gridlines: false,
+                float_threshold: 7,
+                thread_texture: false,
+            },
         );
-        assert_eq!(center(&high), [0, 0, 0], "float shorter than threshold is untouched");
+        assert_eq!(
+            center(&high),
+            [0, 0, 0],
+            "float shorter than threshold is untouched"
+        );
 
         // At threshold (5 <= 6): tinted toward the warm highlight (no longer pure black).
         let on = render_rgba_with(
             &d,
             4,
-            &RenderOptions { gridlines: false, float_threshold: 5, thread_texture: false },
+            &RenderOptions {
+                gridlines: false,
+                float_threshold: 5,
+                thread_texture: false,
+            },
         );
         let c = center(&on);
         assert_ne!(c, [0, 0, 0], "a long float is tinted");
@@ -582,7 +628,11 @@ mod tests {
             unit: Unit::Inches,
             threading: Threading(vec![vec![ShaftId(1)]]),
             drive: Drive::Liftplan(Liftplan(vec![vec![ShaftId(1)]])),
-            colors: ColorPlan { palette: vec![Color::WHITE], warp: vec![0], weft: vec![0] },
+            colors: ColorPlan {
+                palette: vec![Color::WHITE],
+                warp: vec![0],
+                weft: vec![0],
+            },
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             notes: String::new(),
@@ -603,7 +653,11 @@ mod tests {
     /// Off, the cell stays a flat solid fill.
     #[test]
     fn thread_texture_shades_along_the_thread_direction() {
-        let opts = RenderOptions { gridlines: false, float_threshold: 0, thread_texture: true };
+        let opts = RenderOptions {
+            gridlines: false,
+            float_threshold: 0,
+            thread_texture: true,
+        };
         let at = |img: &RgbaImage, x: usize, y: usize| -> i32 {
             let o = (y * img.width as usize + x) * 4;
             img.pixels[o] as i32

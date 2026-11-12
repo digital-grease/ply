@@ -15,20 +15,20 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
     (1u16..=6, 1u16..=6, 0usize..=10, 0usize..=10, 1usize..=4).prop_flat_map(
         |(shafts, treadles, ends, picks, ncol)| {
             (
-                "[a-zA-Z0-9]{1,8}",                                              // name
-                "[a-zA-Z0-9\n]{0,12}",                                          // notes
-                (any::<bool>(), any::<bool>()),                                 // (rising, inches)
+                "[a-zA-Z0-9]{1,8}",             // name
+                "[a-zA-Z0-9\n]{0,12}",          // notes
+                (any::<bool>(), any::<bool>()), // (rising, inches)
                 // 0..=2 shafts per end exercises the skip-empty write + Threads-count recovery path
                 // AND multi-shaft ends.
                 prop::collection::vec(prop::collection::vec(1u16..=shafts, 0..=2), ends), // threading
                 prop::collection::vec(
                     prop::collection::vec(1u16..=shafts, 0..=shafts as usize),
                     treadles as usize,
-                ),                                                              // tie-up rows
-                prop::collection::vec(1u16..=treadles, picks),                  // treadling
+                ), // tie-up rows
+                prop::collection::vec(1u16..=treadles, picks), // treadling
                 prop::collection::vec((any::<u8>(), any::<u8>(), any::<u8>()), ncol), // palette
-                prop::collection::vec(0usize..ncol, ends),                      // warp colors
-                prop::collection::vec(0usize..ncol, picks),                     // weft colors
+                prop::collection::vec(0usize..ncol, ends),     // warp colors
+                prop::collection::vec(0usize..ncol, picks),    // weft colors
                 // Retained unmodeled sections: VENDOR-prefixed names (never a modeled section),
                 // whitespace-free keys/values (so trim/line-trim leave them untouched).
                 prop::collection::vec(
@@ -37,7 +37,7 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                         prop::collection::vec(("[A-Z0-9]{1,4}", "[a-zA-Z0-9]{0,6}"), 0..=3),
                     ),
                     0..=2,
-                ),                                                              // retained
+                ), // retained
             )
                 .prop_map(
                     move |(
@@ -55,8 +55,16 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                         name,
                         shafts,
                         treadles,
-                        shed: if rising { ShedType::Rising } else { ShedType::Sinking },
-                        unit: if inches { Unit::Inches } else { Unit::Centimeters },
+                        shed: if rising {
+                            ShedType::Rising
+                        } else {
+                            ShedType::Sinking
+                        },
+                        unit: if inches {
+                            Unit::Inches
+                        } else {
+                            Unit::Centimeters
+                        },
                         threading: Threading(
                             threading
                                 .into_iter()
@@ -90,7 +98,10 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                         notes,
                         retained: retained
                             .into_iter()
-                            .map(|(rname, entries)| RetainedSection { name: rname, entries })
+                            .map(|(rname, entries)| RetainedSection {
+                                name: rname,
+                                entries,
+                            })
                             .collect(),
                     },
                 )
@@ -133,12 +144,12 @@ fn parser_corpus_never_panics() {
         "[COLOR PALETTE]\nRange=0\n[COLOR TABLE]\n1=1,2,3", // Range 0 (division guard)
         "[TIEUP]\nx=y",                           // non-numeric key/value
         "]]][[[==",                               // malformed brackets/equals
-        "[NOTES]\n1=a\n2=b\n",                     // trailing newline
-        ";[WEAVING]\nShafts=4",                    // comment line
+        "[NOTES]\n1=a\n2=b\n",                    // trailing newline
+        ";[WEAVING]\nShafts=4",                   // comment line
         // Unbounded-allocation guards: a sparse high numeric key or a huge `Threads=` count would,
         // uncapped, request a multi-GB Vec and ABORT (uncatchable). These must parse-or-error instead.
-        "[WEAVING]\nShafts=2\n[THREADING]\n4000000000=1",        // 4-billion sparse key (dropped)
-        "[COLOR TABLE]\n3000000000=1,2,3",                       // huge key via parse_color_table
+        "[WEAVING]\nShafts=2\n[THREADING]\n4000000000=1", // 4-billion sparse key (dropped)
+        "[COLOR TABLE]\n3000000000=1,2,3",                // huge key via parse_color_table
         "[WEAVING]\nShafts=2\n[WARP]\nThreads=200000000\n[THREADING]\n1=1\n2=2", // huge Threads= count
     ] {
         let _ = parse(s);

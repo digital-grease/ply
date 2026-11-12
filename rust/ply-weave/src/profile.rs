@@ -47,7 +47,9 @@ mod tests {
     use super::*;
 
     fn ids(t: &Threading) -> Vec<Vec<u16>> {
-        t.0.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
+        t.0.iter()
+            .map(|r| r.iter().map(|s| s.0).collect())
+            .collect()
     }
 
     /// An ABA profile over two units concatenates A, B, then A again, end by end.
@@ -55,10 +57,7 @@ mod tests {
     fn aba_profile_expands_to_concatenated_ends() {
         let p = ProfileDraft {
             sequence: vec![0, 1, 0],
-            units: vec![
-                vec![ShaftId(1), ShaftId(2)],
-                vec![ShaftId(3), ShaftId(4)],
-            ],
+            units: vec![vec![ShaftId(1), ShaftId(2)], vec![ShaftId(3), ShaftId(4)]],
         };
         assert_eq!(
             ids(&p.expand_threading()),

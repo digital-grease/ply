@@ -21,10 +21,16 @@ pub struct NalbindIssue {
 
 impl NalbindIssue {
     fn error(message: impl Into<String>) -> Self {
-        NalbindIssue { severity: Severity::Error, message: message.into() }
+        NalbindIssue {
+            severity: Severity::Error,
+            message: message.into(),
+        }
     }
     fn warning(message: impl Into<String>) -> Self {
-        NalbindIssue { severity: Severity::Warning, message: message.into() }
+        NalbindIssue {
+            severity: Severity::Warning,
+            message: message.into(),
+        }
     }
 }
 
@@ -34,7 +40,9 @@ pub fn validate(stitch: &StitchType) -> Vec<NalbindIssue> {
 
     let total_steps: usize = stitch.passes.iter().map(|p| p.steps.len()).sum();
     if total_steps == 0 {
-        issues.push(NalbindIssue::error("the stitch has no needle path (no U/O steps)"));
+        issues.push(NalbindIssue::error(
+            "the stitch has no needle path (no U/O steps)",
+        ));
     }
 
     for (i, c) in stitch.connections.iter().enumerate() {
@@ -59,7 +67,12 @@ mod tests {
     #[test]
     fn every_builtin_is_clean() {
         for st in builtin() {
-            assert!(validate(&st).is_empty(), "{} should be clean: {:?}", st.name, validate(&st));
+            assert!(
+                validate(&st).is_empty(),
+                "{} should be clean: {:?}",
+                st.name,
+                validate(&st)
+            );
         }
     }
 
@@ -73,6 +86,8 @@ mod tests {
     fn a_zero_count_connection_warns() {
         let (passes, _) = notation::parse("UO/UOO").unwrap();
         let st = StitchType::anonymous(passes, vec![Connection::new(ConnSide::Front, 0)]);
-        assert!(validate(&st).iter().any(|i| i.severity == Severity::Warning));
+        assert!(validate(&st)
+            .iter()
+            .any(|i| i.severity == Severity::Warning));
     }
 }

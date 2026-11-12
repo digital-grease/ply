@@ -12,8 +12,8 @@
 //!  * Shed direction is handled in exactly one place — `Draft::raised_shafts` — which
 //!    yields the canonical "set of raised shafts per pick" the drawdown consumes.
 
-use serde::{Deserialize, Serialize};
 use ply_common::{Color, Unit};
+use serde::{Deserialize, Serialize};
 
 /// 1-based shaft (harness) identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -49,7 +49,11 @@ impl Threading {
     /// (1, 2, …, N, 1, 2, …). The most common threading and the natural partner of a twill tie-up.
     pub fn straight(ends: usize, shafts: u16) -> Threading {
         let n = shafts.max(1) as usize;
-        Threading((0..ends).map(|i| vec![ShaftId((i % n) as u16 + 1)]).collect())
+        Threading(
+            (0..ends)
+                .map(|i| vec![ShaftId((i % n) as u16 + 1)])
+                .collect(),
+        )
     }
 
     /// A point (zigzag) draw over `ends`: 1, 2, …, N, N-1, …, 2, 1, 2, … (period `2N - 2`), the
@@ -104,7 +108,11 @@ impl TieUp {
         // Sum in u32 so `over + under` near the u16 ceiling cannot overflow (panic in debug).
         let n = (over as u32 + under as u32).max(1);
         let rows = (0..n)
-            .map(|i| (0..over as u32).map(|k| ShaftId(((i + k) % n + 1) as u16)).collect())
+            .map(|i| {
+                (0..over as u32)
+                    .map(|k| ShaftId(((i + k) % n + 1) as u16))
+                    .collect()
+            })
             .collect();
         TieUp(rows)
     }
@@ -386,7 +394,10 @@ impl Draft {
         }
         let treadles = lifts.len() as u16;
         Some(Draft {
-            drive: Drive::Treadled { tieup: TieUp(lifts), treadling: Treadling(treadling) },
+            drive: Drive::Treadled {
+                tieup: TieUp(lifts),
+                treadling: Treadling(treadling),
+            },
             shed: ShedType::Rising,
             treadles,
             ..self.clone()
@@ -502,12 +513,16 @@ fn resize_thickness(t: &[f32], len: usize) -> Vec<f32> {
 
 /// Keep only shafts in `1..=shafts` (drops dangling references on a shrink).
 fn prune_shafts(row: Vec<ShaftId>, shafts: u16) -> Vec<ShaftId> {
-    row.into_iter().filter(|s| s.0 >= 1 && s.0 <= shafts).collect()
+    row.into_iter()
+        .filter(|s| s.0 >= 1 && s.0 <= shafts)
+        .collect()
 }
 
 /// Keep only treadles in `1..=treadles`.
 fn prune_treadles(row: Vec<TreadleId>, treadles: u16) -> Vec<TreadleId> {
-    row.into_iter().filter(|t| t.0 >= 1 && t.0 <= treadles).collect()
+    row.into_iter()
+        .filter(|t| t.0 >= 1 && t.0 <= treadles)
+        .collect()
 }
 
 #[cfg(test)]
@@ -516,7 +531,9 @@ mod tests {
     use crate::validate::{validate, Severity};
 
     fn ids(rows: &[Vec<ShaftId>]) -> Vec<Vec<u16>> {
-        rows.iter().map(|r| r.iter().map(|s| s.0).collect()).collect()
+        rows.iter()
+            .map(|r| r.iter().map(|s| s.0).collect())
+            .collect()
     }
 
     #[test]
@@ -534,7 +551,10 @@ mod tests {
             vec![vec![1, 2], vec![2, 3], vec![3, 4], vec![4, 1]]
         );
         // A 1/3 twill: one shaft up, stepping diagonally.
-        assert_eq!(ids(&TieUp::twill(1, 3).0), vec![vec![1], vec![2], vec![3], vec![4]]);
+        assert_eq!(
+            ids(&TieUp::twill(1, 3).0),
+            vec![vec![1], vec![2], vec![3], vec![4]]
+        );
     }
 
     #[test]
@@ -555,7 +575,10 @@ mod tests {
 
     #[test]
     fn straight_and_point_threadings() {
-        assert_eq!(ids(&Threading::straight(5, 4).0), vec![vec![1], vec![2], vec![3], vec![4], vec![1]]);
+        assert_eq!(
+            ids(&Threading::straight(5, 4).0),
+            vec![vec![1], vec![2], vec![3], vec![4], vec![1]]
+        );
         // Point draw on 4 shafts over 6 ends: 1,2,3,4,3,2 (then it would repeat 1,2,…).
         assert_eq!(
             ids(&Threading::point(6, 4).0),
@@ -576,7 +599,11 @@ mod tests {
             threading: Threading::straight(8, 4),
             drive: Drive::Treadled {
                 tieup: TieUp::twill(2, 2),
-                treadling: Treadling((0..8).map(|i| vec![TreadleId((i % 4) as u16 + 1)]).collect()),
+                treadling: Treadling(
+                    (0..8)
+                        .map(|i| vec![TreadleId((i % 4) as u16 + 1)])
+                        .collect(),
+                ),
             },
             colors: ColorPlan {
                 palette: vec![Color::WHITE, Color::BLACK],
@@ -657,7 +684,11 @@ mod tests {
             threading: Threading(vec![vec![ShaftId(1)], vec![ShaftId(2)]]),
             drive: Drive::Treadled {
                 tieup: TieUp(vec![vec![ShaftId(1), ShaftId(2)], vec![ShaftId(3)]]),
-                treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(2)], vec![TreadleId(1)]]),
+                treadling: Treadling(vec![
+                    vec![TreadleId(1)],
+                    vec![TreadleId(2)],
+                    vec![TreadleId(1)],
+                ]),
             },
             colors: ColorPlan {
                 palette: vec![Color::WHITE, Color::BLACK],
@@ -676,10 +707,17 @@ mod tests {
         assert_eq!(factored.treadles, 2, "two distinct sheds -> two treadles");
         assert_eq!(factored.picks(), lp.picks());
         if let Drive::Treadled { treadling, .. } = &factored.drive {
-            assert_eq!(treadling.0[0], treadling.0[2], "the repeated shed reuses one treadle");
+            assert_eq!(
+                treadling.0[0], treadling.0[2],
+                "the repeated shed reuses one treadle"
+            );
         }
         for p in 0..lp.picks() {
-            assert_eq!(factored.raised_shafts(p), lp.raised_shafts(p), "pick {p} cloth differs");
+            assert_eq!(
+                factored.raised_shafts(p),
+                lp.raised_shafts(p),
+                "pick {p} cloth differs"
+            );
         }
     }
 
@@ -698,19 +736,33 @@ mod tests {
                 vec![ShaftId(2)],
                 vec![ShaftId(3)],
             ])),
-            colors: ColorPlan { palette: vec![Color::WHITE], warp: vec![0, 0, 0], weft: vec![0, 0, 0] },
+            colors: ColorPlan {
+                palette: vec![Color::WHITE],
+                warp: vec![0, 0, 0],
+                weft: vec![0, 0, 0],
+            },
             notes: String::new(),
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
         };
-        assert!(lp.factor_liftplan(2).is_none(), "3 distinct lifts exceed a cap of 2");
-        assert!(lp.factor_liftplan(40).is_some(), "but they fit a generous cap");
+        assert!(
+            lp.factor_liftplan(2).is_none(),
+            "3 distinct lifts exceed a cap of 2"
+        );
+        assert!(
+            lp.factor_liftplan(40).is_some(),
+            "but they fit a generous cap"
+        );
         // A treadled drive is never factored (it already has a tie-up).
         let treadled = Draft {
             drive: Drive::Treadled {
                 tieup: TieUp(vec![vec![ShaftId(1)]]),
-                treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(1)], vec![TreadleId(1)]]),
+                treadling: Treadling(vec![
+                    vec![TreadleId(1)],
+                    vec![TreadleId(1)],
+                    vec![TreadleId(1)],
+                ]),
             },
             ..lp.clone()
         };
@@ -805,8 +857,16 @@ mod tests {
             weft: vec![2],
         };
         let out = cp.with_color_removed(0).unwrap(); // palette -> len 2
-        assert!(out.warp.iter().all(|&e| e < out.palette.len()), "no warp dangle: {:?}", out.warp);
-        assert!(out.weft.iter().all(|&e| e < out.palette.len()), "no weft dangle: {:?}", out.weft);
+        assert!(
+            out.warp.iter().all(|&e| e < out.palette.len()),
+            "no warp dangle: {:?}",
+            out.warp
+        );
+        assert!(
+            out.weft.iter().all(|&e| e < out.palette.len()),
+            "no weft dangle: {:?}",
+            out.weft
+        );
     }
 
     #[test]
@@ -816,13 +876,19 @@ mod tests {
             warp: vec![0, 1],
             weft: vec![],
         };
-        assert!(cp.with_color_removed(2).is_err(), "out-of-range index rejected");
+        assert!(
+            cp.with_color_removed(2).is_err(),
+            "out-of-range index rejected"
+        );
         let one = ColorPlan {
             palette: vec![Color::WHITE],
             warp: vec![0],
             weft: vec![0],
         };
-        assert!(one.with_color_removed(0).is_err(), "removing the last color rejected");
+        assert!(
+            one.with_color_removed(0).is_err(),
+            "removing the last color rejected"
+        );
     }
 
     /// A 4-shaft, 4-treadle straight-draw treadled draft for resize tests.
@@ -876,7 +942,11 @@ mod tests {
         let d = resize_fixture().resized(6, 5, 4, 4);
         assert_eq!(d.ends(), 6);
         assert_eq!(d.picks(), 5);
-        assert_eq!(d.threading.0[5], Vec::<ShaftId>::new(), "new end is unthreaded");
+        assert_eq!(
+            d.threading.0[5],
+            Vec::<ShaftId>::new(),
+            "new end is unthreaded"
+        );
         assert_eq!(d.colors.warp.len(), 6);
         assert_eq!(d.colors.warp[5], 0, "new warp color padded with index 0");
         assert_eq!(d.colors.weft.len(), 5);
@@ -897,7 +967,11 @@ mod tests {
         } else {
             panic!("expected treadled");
         }
-        assert!(no_errors(&d), "a shrink must never leave a dangling-shaft Error: {:?}", validate(&d));
+        assert!(
+            no_errors(&d),
+            "a shrink must never leave a dangling-shaft Error: {:?}",
+            validate(&d)
+        );
     }
 
     #[test]
@@ -906,7 +980,10 @@ mod tests {
         assert_eq!(d.treadles, 2);
         if let Drive::Treadled { tieup, treadling } = &d.drive {
             assert_eq!(tieup.0.len(), 2, "tie-up truncated to the treadle count");
-            assert!(treadling.0[2].is_empty(), "pick 3's press of treadle 3 pruned");
+            assert!(
+                treadling.0[2].is_empty(),
+                "pick 3's press of treadle 3 pruned"
+            );
             assert!(treadling.0[3].is_empty());
         } else {
             panic!("expected treadled");
@@ -926,7 +1003,10 @@ mod tests {
         let d = Draft::blank(4, 4).resized(3, 3, 4, 4);
         assert_eq!(d.ends(), 3);
         assert_eq!(d.picks(), 3);
-        assert!(no_errors(&d), "a grown blank draft is clean to start editing");
+        assert!(
+            no_errors(&d),
+            "a grown blank draft is clean to start editing"
+        );
     }
 
     #[test]
@@ -997,7 +1077,10 @@ mod tests {
         assert_eq!(t.treadles, 0);
         if let Drive::Treadled { tieup, treadling } = &t.drive {
             assert!(tieup.0.is_empty());
-            assert!(treadling.0.iter().all(|row| row.is_empty()), "all presses pruned");
+            assert!(
+                treadling.0.iter().all(|row| row.is_empty()),
+                "all presses pruned"
+            );
         } else {
             panic!("expected treadled");
         }

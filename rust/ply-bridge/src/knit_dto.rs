@@ -226,12 +226,20 @@ fn unit_from_dto(u: UnitKind) -> Unit {
 
 impl From<Gauge> for GaugeDto {
     fn from(g: Gauge) -> Self {
-        GaugeDto { sts: g.sts, rows: g.rows, unit: unit_to_dto(g.unit) }
+        GaugeDto {
+            sts: g.sts,
+            rows: g.rows,
+            unit: unit_to_dto(g.unit),
+        }
     }
 }
 impl From<GaugeDto> for Gauge {
     fn from(g: GaugeDto) -> Self {
-        Gauge { sts: g.sts, rows: g.rows, unit: unit_from_dto(g.unit) }
+        Gauge {
+            sts: g.sts,
+            rows: g.rows,
+            unit: unit_from_dto(g.unit),
+        }
     }
 }
 
@@ -285,34 +293,52 @@ impl From<StitchDefDto> for StitchDef {
 
 impl From<&StitchLegend> for StitchLegendDto {
     fn from(l: &StitchLegend) -> Self {
-        StitchLegendDto { stitches: l.stitches.iter().map(StitchDefDto::from).collect() }
+        StitchLegendDto {
+            stitches: l.stitches.iter().map(StitchDefDto::from).collect(),
+        }
     }
 }
 impl From<StitchLegendDto> for StitchLegend {
     fn from(l: StitchLegendDto) -> Self {
-        StitchLegend { stitches: l.stitches.into_iter().map(StitchDef::from).collect() }
+        StitchLegend {
+            stitches: l.stitches.into_iter().map(StitchDef::from).collect(),
+        }
     }
 }
 
 impl From<Cell> for CellDto {
     fn from(c: Cell) -> Self {
-        CellDto { stitch: c.stitch as u32, color: c.color.map(|i| i as u32) }
+        CellDto {
+            stitch: c.stitch as u32,
+            color: c.color.map(|i| i as u32),
+        }
     }
 }
 impl From<CellDto> for Cell {
     fn from(c: CellDto) -> Self {
-        Cell { stitch: c.stitch as usize, color: c.color.map(|i| i as usize) }
+        Cell {
+            stitch: c.stitch as usize,
+            color: c.color.map(|i| i as usize),
+        }
     }
 }
 
 impl From<RepeatSpan> for RepeatSpanDto {
     fn from(r: RepeatSpan) -> Self {
-        RepeatSpanDto { start: r.start as u32, end: r.end as u32, count: r.count.into() }
+        RepeatSpanDto {
+            start: r.start as u32,
+            end: r.end as u32,
+            count: r.count.into(),
+        }
     }
 }
 impl From<RepeatSpanDto> for RepeatSpan {
     fn from(r: RepeatSpanDto) -> Self {
-        RepeatSpan { start: r.start as usize, end: r.end as usize, count: r.count.into() }
+        RepeatSpan {
+            start: r.start as usize,
+            end: r.end as usize,
+            count: r.count.into(),
+        }
     }
 }
 
@@ -335,17 +361,27 @@ impl From<RowDto> for Row {
 
 impl From<&Chart> for ChartDto {
     fn from(c: &Chart) -> Self {
-        ChartDto { width: c.width as u32, rows: c.rows.iter().map(RowDto::from).collect() }
+        ChartDto {
+            width: c.width as u32,
+            rows: c.rows.iter().map(RowDto::from).collect(),
+        }
     }
 }
 impl From<ChartDto> for Chart {
     fn from(c: ChartDto) -> Self {
-        Chart { width: c.width as usize, rows: c.rows.into_iter().map(Row::from).collect() }
+        Chart {
+            width: c.width as usize,
+            rows: c.rows.into_iter().map(Row::from).collect(),
+        }
     }
 }
 
 fn color_to_dto(c: Color) -> ColorDto {
-    ColorDto { r: c.r, g: c.g, b: c.b }
+    ColorDto {
+        r: c.r,
+        g: c.g,
+        b: c.b,
+    }
 }
 fn color_from_dto(c: &ColorDto) -> Color {
     Color::rgb(c.r, c.g, c.b)
@@ -401,7 +437,13 @@ mod tests {
     /// must survive engine -> DTO -> engine unchanged, so no field is dropped at the boundary.
     #[test]
     fn pattern_dto_round_trips() {
-        let cable = CableDef { front: 2, back: 1, direction: Cross::Left, front_purl: false, back_purl: true };
+        let cable = CableDef {
+            front: 2,
+            back: 1,
+            direction: Cross::Left,
+            front_purl: false,
+            back_purl: true,
+        };
         let mut legend = StitchLegend::builtin();
         legend.stitches.push(StitchDef {
             symbol: "2/1LPC".into(),
@@ -415,7 +457,11 @@ mod tests {
             name: "swatch".into(),
             construction: Construction::InTheRound,
             first_row_side: Side::Ws,
-            gauge: Gauge { sts: 22.5, rows: 30.0, unit: Unit::Centimeters },
+            gauge: Gauge {
+                sts: 22.5,
+                rows: 30.0,
+                unit: Unit::Centimeters,
+            },
             palette: vec![Color::WHITE, Color::rgb(10, 20, 30)],
             legend,
             chart: Chart {
@@ -423,11 +469,18 @@ mod tests {
                 rows: vec![
                     Row {
                         cells: vec![
-                            Cell { stitch: builtin::KNIT, color: Some(1) },
+                            Cell {
+                                stitch: builtin::KNIT,
+                                color: Some(1),
+                            },
                             Cell::of(builtin::YO),
                             Cell::of(builtin::K2TOG),
                         ],
-                        repeats: vec![RepeatSpan { start: 0, end: 2, count: Repeat::Times(4) }],
+                        repeats: vec![RepeatSpan {
+                            start: 0,
+                            end: 2,
+                            count: Repeat::Times(4),
+                        }],
                     },
                     Row::plain(vec![
                         Cell::of(builtin::PURL),

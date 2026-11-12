@@ -90,14 +90,25 @@ pub fn diagram(stitch: &StitchType) -> Diagram {
         .connections
         .iter()
         .map(|c| {
-            let arrow = ConnArrow { x: cx, side: c.side, count: c.count };
+            let arrow = ConnArrow {
+                x: cx,
+                side: c.side,
+                count: c.count,
+            };
             cx += SLOT;
             arrow
         })
         .collect();
 
     let width = if connections.is_empty() { x } else { cx };
-    Diagram { width: width.max(SLOT), height: HEIGHT, baseline: BASELINE, loops, turns, connections }
+    Diagram {
+        width: width.max(SLOT),
+        height: HEIGHT,
+        baseline: BASELINE,
+        loops,
+        turns,
+        connections,
+    }
 }
 
 #[cfg(test)]

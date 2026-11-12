@@ -28,7 +28,10 @@ fn s(
         also_known_as: aka.iter().map(|a| a.to_string()).collect(),
         codes: codes
             .iter()
-            .map(|(c, src)| PublishedCode { code: c.to_string(), source: src.to_string() })
+            .map(|(c, src)| PublishedCode {
+                code: c.to_string(),
+                source: src.to_string(),
+            })
             .collect(),
         note: note.to_string(),
     }
@@ -162,9 +165,18 @@ mod tests {
         let mammen = dict.iter().find(|s| s.name == "Mammen").unwrap();
         let korgen = dict.iter().find(|s| s.name == "Korgen").unwrap();
         assert_eq!(mammen.passes, korgen.passes, "same loop skeleton");
-        assert_eq!(mammen.connections, vec![Connection::new(ConnSide::Front, 2)]);
-        assert_eq!(korgen.connections, vec![Connection::new(ConnSide::Front, 1)]);
-        assert_ne!(mammen.connections, korgen.connections, "identity is (skeleton, connection)");
+        assert_eq!(
+            mammen.connections,
+            vec![Connection::new(ConnSide::Front, 2)]
+        );
+        assert_eq!(
+            korgen.connections,
+            vec![Connection::new(ConnSide::Front, 1)]
+        );
+        assert_ne!(
+            mammen.connections, korgen.connections,
+            "identity is (skeleton, connection)"
+        );
     }
 
     #[test]

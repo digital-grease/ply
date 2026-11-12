@@ -62,7 +62,11 @@ pub struct Connection {
 
 impl Connection {
     pub fn new(side: ConnSide, count: u8) -> Self {
-        Connection { side, count, extra: None }
+        Connection {
+            side,
+            count,
+            extra: None,
+        }
     }
 }
 

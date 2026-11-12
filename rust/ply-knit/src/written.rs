@@ -90,7 +90,14 @@ fn color_labels(pattern: &KnitPattern) -> Option<HashMap<usize, String>> {
             map.insert(0, "MC".to_string());
         } else {
             n += 1;
-            map.insert(idx, if multi_contrast { format!("CC{n}") } else { "CC".to_string() });
+            map.insert(
+                idx,
+                if multi_contrast {
+                    format!("CC{n}")
+                } else {
+                    "CC".to_string()
+                },
+            );
         }
     }
     Some(map)
@@ -113,7 +120,11 @@ fn collapse(cells: &[(&str, usize)], labels: Option<&HashMap<usize, String>>) ->
         {
             n += 1;
         }
-        let stitch = if n > 1 { format!("{sym}{n}") } else { sym.to_string() };
+        let stitch = if n > 1 {
+            format!("{sym}{n}")
+        } else {
+            sym.to_string()
+        };
         match labels {
             Some(map) if prev_color != Some(color) => {
                 let lbl = map.get(&color).map(String::as_str).unwrap_or("MC");
@@ -139,7 +150,11 @@ mod tests {
             name: "t".into(),
             construction,
             first_row_side: first,
-            gauge: Gauge { sts: 20.0, rows: 28.0, unit: Unit::Inches },
+            gauge: Gauge {
+                sts: 20.0,
+                rows: 28.0,
+                unit: Unit::Inches,
+            },
             palette: vec![Color::WHITE],
             legend: StitchLegend::builtin(),
             chart: Chart { width, rows },
@@ -154,21 +169,32 @@ mod tests {
     #[test]
     fn rs_reads_right_to_left_with_run_length() {
         // row 0 (RS) stored [k, p, p]; read right-to-left -> p, p, k -> "p2, k".
-        let p = pat(vec![cells(&[builtin::KNIT, builtin::PURL, builtin::PURL])], Construction::Flat, Side::Rs);
+        let p = pat(
+            vec![cells(&[builtin::KNIT, builtin::PURL, builtin::PURL])],
+            Construction::Flat,
+            Side::Rs,
+        );
         assert_eq!(to_written(&p), vec!["Row 1 (RS): p2, k"]);
     }
 
     #[test]
     fn ws_reads_left_to_right_and_resolves_knit_to_purl() {
         // row 0 (WS) stored [k, p, p]; read left-to-right, WS-resolved (k->p, p->k) -> p, k, k -> "p, k2".
-        let p = pat(vec![cells(&[builtin::KNIT, builtin::PURL, builtin::PURL])], Construction::Flat, Side::Ws);
+        let p = pat(
+            vec![cells(&[builtin::KNIT, builtin::PURL, builtin::PURL])],
+            Construction::Flat,
+            Side::Ws,
+        );
         assert_eq!(to_written(&p), vec!["Row 1 (WS): p, k2"]);
     }
 
     #[test]
     fn flat_alternates_rs_ws_across_rows() {
         let p = pat(
-            vec![cells(&[builtin::KNIT, builtin::KNIT]), cells(&[builtin::KNIT, builtin::KNIT])],
+            vec![
+                cells(&[builtin::KNIT, builtin::KNIT]),
+                cells(&[builtin::KNIT, builtin::KNIT]),
+            ],
             Construction::Flat,
             Side::Rs,
         );
@@ -179,14 +205,22 @@ mod tests {
 
     #[test]
     fn in_the_round_is_all_rounds_no_ws() {
-        let p = pat(vec![cells(&[builtin::KNIT, builtin::PURL])], Construction::InTheRound, Side::Rs);
+        let p = pat(
+            vec![cells(&[builtin::KNIT, builtin::PURL])],
+            Construction::InTheRound,
+            Side::Rs,
+        );
         // a round reads right-to-left; [k, p] -> p, k.
         assert_eq!(to_written(&p), vec!["Round 1: p, k"]);
     }
 
     #[test]
     fn no_stitch_emits_nothing_and_an_empty_run_is_labeled() {
-        let p = pat(vec![cells(&[builtin::NO_STITCH, builtin::NO_STITCH])], Construction::Flat, Side::Rs);
+        let p = pat(
+            vec![cells(&[builtin::NO_STITCH, builtin::NO_STITCH])],
+            Construction::Flat,
+            Side::Rs,
+        );
         assert_eq!(to_written(&p), vec!["Row 1 (RS): (no stitches)"]);
     }
 
@@ -208,7 +242,11 @@ mod tests {
     #[test]
     fn single_colour_chart_has_no_colour_labels() {
         // Every cell is colour 0 -> not colorwork -> plain stitch line (no "MC").
-        let p = pat(vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 0)])], Construction::Flat, Side::Rs);
+        let p = pat(
+            vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 0)])],
+            Construction::Flat,
+            Side::Rs,
+        );
         assert_eq!(to_written(&p), vec!["Row 1 (RS): k2"]);
     }
 
@@ -216,7 +254,11 @@ mod tests {
     fn two_colour_chart_labels_mc_and_a_lone_cc() {
         // Stored L->R: k(MC), k(MC), k(CC). RS reads R->L: CC k, then MC k2. One contrast -> "CC".
         let p = pat(
-            vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 0), (builtin::KNIT, 1)])],
+            vec![colored_row(&[
+                (builtin::KNIT, 0),
+                (builtin::KNIT, 0),
+                (builtin::KNIT, 1),
+            ])],
             Construction::Flat,
             Side::Rs,
         );
@@ -227,7 +269,11 @@ mod tests {
     fn three_colours_number_the_contrasts() {
         // Stored L->R: k(MC), k(CC1), k(CC2). RS reads R->L: CC2, CC1, MC. Two contrasts -> numbered.
         let p = pat(
-            vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 1), (builtin::KNIT, 2)])],
+            vec![colored_row(&[
+                (builtin::KNIT, 0),
+                (builtin::KNIT, 1),
+                (builtin::KNIT, 2),
+            ])],
             Construction::Flat,
             Side::Rs,
         );
@@ -239,7 +285,11 @@ mod tests {
         // Stored L->R all colour 1, mixed stitches. RS reads R->L: p, k, k. Lone contrast -> "CC",
         // labelled once at the start (colour never changes).
         let p = pat(
-            vec![colored_row(&[(builtin::KNIT, 0), (builtin::KNIT, 1), (builtin::PURL, 1)])],
+            vec![colored_row(&[
+                (builtin::KNIT, 0),
+                (builtin::KNIT, 1),
+                (builtin::PURL, 1),
+            ])],
             Construction::Flat,
             Side::Rs,
         );

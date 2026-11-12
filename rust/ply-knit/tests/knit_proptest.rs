@@ -25,8 +25,11 @@ fn arb_unit() -> impl Strategy<Value = Unit> {
 
 /// A FINITE gauge (the only thing `to_json` requires), so the round-trip stays serializable.
 fn arb_finite_gauge() -> impl Strategy<Value = Gauge> {
-    (0.0f32..1000.0, 0.0f32..1000.0, arb_unit())
-        .prop_map(|(sts, rows, unit)| Gauge { sts, rows, unit })
+    (0.0f32..1000.0, 0.0f32..1000.0, arb_unit()).prop_map(|(sts, rows, unit)| Gauge {
+        sts,
+        rows,
+        unit,
+    })
 }
 
 fn arb_color() -> impl Strategy<Value = Color> {
@@ -102,16 +105,18 @@ fn arb_pattern() -> impl Strategy<Value = KnitPattern> {
             prop_oneof![Just(Construction::Flat), Just(Construction::InTheRound)],
             prop_oneof![Just(Side::Rs), Just(Side::Ws)],
         )
-            .prop_map(move |(rows, palette, gauge, construction, first_row_side)| KnitPattern {
-                name: "p".into(),
-                construction,
-                first_row_side,
-                gauge,
-                palette,
-                legend: legend.clone(),
-                chart: Chart { width, rows },
-                notes: String::new(),
-            })
+            .prop_map(
+                move |(rows, palette, gauge, construction, first_row_side)| KnitPattern {
+                    name: "p".into(),
+                    construction,
+                    first_row_side,
+                    gauge,
+                    palette,
+                    legend: legend.clone(),
+                    chart: Chart { width, rows },
+                    notes: String::new(),
+                },
+            )
     })
 }
 
@@ -234,26 +239,50 @@ fn adversarial_corpus_never_panics() {
         macro_rows: 1,
     });
     let cable_id = legend.stitches.len() - 1;
-    let g = Gauge { sts: 20.0, rows: 28.0, unit: Unit::Inches };
+    let g = Gauge {
+        sts: 20.0,
+        rows: 28.0,
+        unit: Unit::Inches,
+    };
 
     let cases: Vec<KnitPattern> = vec![
         // a lone span-4 cable on a width-6 chart with a 1-cell (ragged) row.
-        mk(6, vec![Row::plain(vec![Cell::of(cable_id)])], legend.clone(), g),
+        mk(
+            6,
+            vec![Row::plain(vec![Cell::of(cable_id)])],
+            legend.clone(),
+            g,
+        ),
         // a cell referencing a stitch id well past the legend, plus an out-of-range color.
         mk(
             2,
-            vec![Row::plain(vec![Cell { stitch: 999, color: Some(99) }, Cell::of(1)])],
+            vec![Row::plain(vec![
+                Cell {
+                    stitch: 999,
+                    color: Some(99),
+                },
+                Cell::of(1),
+            ])],
             legend.clone(),
             g,
         ),
         // a row far longer than the chart width.
-        mk(1, vec![Row::plain(vec![Cell::of(1); 20])], legend.clone(), g),
+        mk(
+            1,
+            vec![Row::plain(vec![Cell::of(1); 20])],
+            legend.clone(),
+            g,
+        ),
         // an out-of-range repeat span.
         mk(
             3,
             vec![Row {
                 cells: vec![Cell::of(1); 3],
-                repeats: vec![RepeatSpan { start: 5, end: 99, count: Repeat::ToEnd }],
+                repeats: vec![RepeatSpan {
+                    start: 5,
+                    end: 99,
+                    count: Repeat::ToEnd,
+                }],
             }],
             legend.clone(),
             g,
