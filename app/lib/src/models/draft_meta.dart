@@ -63,9 +63,13 @@ class DraftMeta {
   /// unknown field. Defaults to [LoomType.jack] when absent (older sidecar).
   final LoomType loomType;
 
-  /// Whether this draft uses the OVERSHOT "book" treadling (collapsed numbered runs) rather than the
-  /// normal per-pick treadling. App-only view+edit mode; serde tolerates it as an unknown field.
-  /// Defaults to false (an older sidecar, or any non-overshot draft).
+  /// Whether this draft pins a "Book view" button to the editor's tools. App-only; serde tolerates it
+  /// as an unknown field. Defaults to false (an older sidecar, or any non-overshot draft).
+  ///
+  /// The key predates the separate Book view: it once switched the editor to an inline collapsed
+  /// "overshot treadling" layout. That layout is gone (the editor grid is always one row per pick),
+  /// so an older sidecar that set it now just pins the button. The key name is kept so those
+  /// sidecars load unchanged and keep the value across a save.
   final bool overshotTreadling;
 
   /// When the draft was first saved.

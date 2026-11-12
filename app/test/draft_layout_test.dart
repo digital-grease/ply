@@ -42,7 +42,7 @@ void main() {
       expect(l.warpColorRect, const Rect.fromLTWH(10, 0, 40, 10));
       // Weft colors: left strip, picks tall, sharing the drawdown's Y+height (shifts with it).
       expect(l.weftColorRect, const Rect.fromLTWH(0, 34, 10, 30));
-      // Weft markers: a per-run mirror flush to the RIGHT of the right band (x = rightRect.right).
+      // Weft markers: a per-pick mirror flush to the RIGHT of the right band (x = rightRect.right).
       expect(l.weftMarkerRect, const Rect.fromLTWH(104, 34, 10, 30));
       expect(l.totalSize, const Size(114, 64)); // +4 gutter each axis, +10 weft-marker column
     });
@@ -54,27 +54,12 @@ void main() {
       expect(l.weftMarkerRect.left, l.rightRect.right, reason: 'flush to the right of the treadling');
     });
 
-    test('entries defaults to picks (uncompressed) when omitted', () {
+    test('the treadling band is one row per PICK: same height and rows as the drawdown', () {
       final l = treadled();
-      expect(l.entries, l.picks);
       expect(l.right.rows, l.picks);
+      expect(l.weftMarker.rows, l.picks);
       expect(l.rightRect.height, l.drawdownRect.height);
-    });
-
-    test('a COMPRESSED treadling shrinks the right band; the drawdown + totalSize are unchanged', () {
-      // 3 picks collapse to 2 entry rows.
-      final l = DraftLayout(
-          ends: 4, picks: 3, shafts: 2, treadles: 5, hasTieup: true, cell: 10, entries: 2);
-      expect(l.entries, 2);
-      // Right band + its weft marker are ENTRY-tall (2 rows = 20px), shorter than the drawdown.
-      expect(l.rightRect.height, 20);
-      expect(l.right.rows, 2);
-      expect(l.weftMarkerRect.height, 20);
-      expect(l.weftMarker.rows, 2);
-      // The drawdown + left weft band stay PICK-tall; totalSize is drawdown-driven, so unchanged.
-      expect(l.drawdownRect.height, 30);
-      expect(l.weftColorRect.height, 30);
-      expect(l.totalSize, const Size(114, 64));
+      expect(l.weftMarkerRect.height, l.drawdownRect.height);
     });
 
     test('color bands are column/row aligned with the cloth', () {
@@ -157,7 +142,7 @@ void main() {
       expect(l.hitTest(const Offset(15, 25))?.region, DraftRegion.threading);
       expect(l.hitTest(const Offset(55, 15))?.region, DraftRegion.tieup);
       expect(l.hitTest(const Offset(55, 35))?.region, DraftRegion.right);
-      // The color bands: warp (top), the per-pick weft (left), and the per-run weft marker (right).
+      // The color bands: warp (top), the per-pick weft (left), and the per-pick weft marker (right).
       expect(l.hitTest(const Offset(15, 5))?.region, DraftRegion.warpColor); // top strip
       expect(l.hitTest(const Offset(5, 35))?.region, DraftRegion.weftColor); // left strip
       expect(l.hitTest(const Offset(108, 35))?.region, DraftRegion.weftMarker); // right strip
@@ -194,7 +179,7 @@ void main() {
       expect(weft.col, 1, reason: 'weft band is a single column (col 1)');
       expect((weft.col, weft.row), l.weftColor.cellAt(const Offset(5, 35) - l.weftColorRect.topLeft));
 
-      // The per-run weft marker carries the ENTRY (run) index as its row, matching its geom.
+      // The per-pick weft marker carries the PICK index as its row, matching its geom.
       final marker = l.hitTest(const Offset(108, 35))!;
       expect(marker.region, DraftRegion.weftMarker);
       expect(marker.col, 1, reason: 'weft marker is a single column (col 1)');
@@ -234,6 +219,60 @@ void main() {
         expect(f.cellAt(f.rectFor(1, pick).center), (1, pick));
       }
     });
+  });
+
+  group('structural draft geometry (M7-09): shared cell edges at every zoom and pixel ratio', () {
+    // For every pitch the editor can show (pinch bounds and the snap levels, plus odd pitches a pinch
+    // can leave), cell k of the drawdown must share its pixel edges with threading column k (X) and
+    // treadling row k (Y), and every edge must land on a whole device pixel at 1x/2x/3x. The layout
+    // takes no thickness input at all, so per-thread yarn sizes cannot move a cell edge.
+    const pitches = [1, 6, 7, 8, 12, 13, 16, 24, 32, 48, 64];
+    const ratios = [1.0, 2.0, 3.0];
+
+    bool wholeDevicePx(double logical, double dpr) {
+      final px = logical * dpr;
+      return (px - px.roundToDouble()).abs() < 1e-9;
+    }
+
+    for (final cell in pitches) {
+      test('pitch $cell: end k and pick k share edges across threading, drawdown, treadling', () {
+        // 4 ends, 4 picks; a treadling with a run of identical picks is irrelevant to the layout,
+        // which by construction has one right-band row per pick.
+        final l = DraftLayout(
+            ends: 4, picks: 4, shafts: 2, treadles: 2, hasTieup: true, cell: cell.toDouble());
+        final s = cell.toDouble();
+        for (var end = 1; end <= 4; end++) {
+          final th = l.threading.rectFor(end, 1).shift(l.threadingRect.topLeft);
+          final warp = l.warpColor.rectFor(end, 0).shift(l.warpColorRect.topLeft);
+          // Drawdown column for end k (end 1 at the RIGHT, the engine bitmap's orientation).
+          final ddLeft = l.drawdownRect.left + (4 - end) * s;
+          expect(th.left, ddLeft, reason: 'end $end threading left edge == drawdown column edge');
+          expect(th.right, ddLeft + s, reason: 'end $end right edge');
+          expect(warp.left, th.left, reason: 'warp-color band end $end');
+          for (final dpr in ratios) {
+            expect(wholeDevicePx(th.left, dpr) && wholeDevicePx(th.right, dpr), isTrue,
+                reason: 'end $end edges on whole device pixels at ${dpr}x');
+          }
+        }
+        for (var pick = 0; pick < 4; pick++) {
+          final tr = l.right.rectFor(1, pick).shift(l.rightRect.topLeft);
+          final weft = l.weftColor.rectFor(1, pick).shift(l.weftColorRect.topLeft);
+          final marker = l.weftMarker.rectFor(1, pick).shift(l.weftMarkerRect.topLeft);
+          final ddTop = l.drawdownRect.top + pick * s; // pick 0 at the TOP
+          expect(tr.top, ddTop, reason: 'treadling row $pick top == drawdown row top');
+          expect(tr.bottom, ddTop + s, reason: 'treadling row $pick bottom');
+          expect(weft.top, ddTop, reason: 'weft band pick $pick');
+          expect(marker.top, ddTop, reason: 'weft marker pick $pick');
+          for (final dpr in ratios) {
+            expect(wholeDevicePx(tr.top, dpr) && wholeDevicePx(tr.bottom, dpr), isTrue,
+                reason: 'pick $pick edges on whole device pixels at ${dpr}x');
+          }
+        }
+        // The drawdown is exactly ends x picks cells, so a uniform ends*N x picks*N bitmap scales
+        // onto it cell for cell.
+        expect(l.drawdownRect.size, Size(4 * s, 4 * s));
+      });
+    }
   });
 
   group('DraftLayout.fitCellLevel (auto-fit the open pitch to the viewport)', () {

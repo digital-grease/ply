@@ -22,9 +22,9 @@ enum DraftRegion {
   /// A left strip beside the drawdown: per pick, its palette color (painted with the active brush).
   weftColor,
 
-  /// A strip beside the COMPRESSED treadling: per run (entry), the weft color of that whole run.
-  /// Painting it sets the active brush on every pick in the run — the run-level twin of [weftColor],
-  /// placed right next to the treadles you follow while weaving.
+  /// A strip beside the treadling: per pick, that pick's weft color (one row per pick, like the
+  /// treadling). Painting it sets the active brush on that pick, the twin of [weftColor] placed right
+  /// next to the treadles you follow while weaving.
   weftMarker,
 
   /// The main cloth area. Display-only (rendered by the engine); never edited directly.
@@ -38,7 +38,7 @@ enum DraftRegion {
 ///   * right     -> treadled: (treadle 1-based, pick 0-based); liftplan: (shaft 1-based, pick 0-based)
 ///   * warpColor -> (end 1-based, 0)
 ///   * weftColor -> (1, pick 0-based)
-///   * weftMarker -> (1, entry 0-based)  // entry = a run of identical treadling picks
+///   * weftMarker -> (1, pick 0-based)
 class DraftHit {
   const DraftHit(this.region, this.col, this.row);
 

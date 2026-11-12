@@ -1,12 +1,16 @@
-// The COMPRESSED ("book") treadling view: a derived, collapsed reading of the per-pick treadling.
+// The BOOK VIEW's grouping: a derived reading of the per-pick treadling as runs of identical picks.
 //
-// The per-pick treadling (one row per pick, in DraftDoc) stays the CANONICAL form — the engine
-// drawdown, WIF I/O, and the DTO all consume it unchanged. This file derives the overshot/book
-// shorthand from it: a run of consecutive picks that press the SAME shed collapses to ONE entry that
-// reads "press this shed, N times". The editor renders + edits the entries; the edits map back to
-// per-pick mutations (see EditorState's entry reducers), so nothing downstream of the editor changes.
+// The per-pick treadling (one row per pick, in DraftDoc) is the CANONICAL form: the engine drawdown,
+// WIF I/O, the DTO, and the editor's structural draft grid all consume it unchanged, one row per
+// pick. This file only DERIVES a presentation from it: a run of consecutive picks that press the
+// SAME shed groups into ONE entry that reads "this shed, N times". The Book view lists the entries;
+// its edits map back to explicit per-pick mutations (see EditorState's entry reducers), and the
+// entries are re-derived after every edit, so the grouping can never drift from the picks.
+//
+// This is NOT "Use Tabby" shorthand. Tabby picks interleave the pattern picks, so consecutive-run
+// grouping cannot recover them; that needs explicit pattern/tabby pick roles (planned later).
 
-/// One compressed treadling entry: a maximal run of consecutive picks pressing the same shed.
+/// One Book view entry: a maximal run of consecutive picks pressing the same shed.
 class TreadlingEntry {
   const TreadlingEntry({required this.shed, required this.count, required this.startPick});
 
@@ -25,32 +29,23 @@ class TreadlingEntry {
 }
 
 /// True when two sheds press the same set of ids, independent of order/duplicates (the model keeps
-/// them canonical, but comparing as sets makes the collapse robust to either).
+/// them canonical, but comparing as sets makes the grouping robust to either).
 bool sameShed(List<int> a, List<int> b) {
   if (a.length != b.length) return false;
   final sa = a.toSet();
   return b.every(sa.contains);
 }
 
-/// Collapse a per-pick [rows] list (treadling or liftplan) into maximal runs of identical sheds, in
+/// Group a per-pick [rows] list (treadling or liftplan) into maximal runs of identical sheds, in
 /// pick order. The entries' counts sum to `rows.length`; an empty input yields an empty list.
-///
-/// [collapse] gates the run-collapsing that is the overshot "book" shorthand: with it FALSE (the
-/// normal per-pick treadling for non-overshot drafts) every pick stays its own entry (count 1), so
-/// the treadling band reads one row per pick — aligned with the drawdown, no repeat counts. Only an
-/// overshot draft passes `collapse: true`, where a run of identical picks reads "throw this shed N
-/// times". Default true keeps the historical (always-collapsed) behaviour for callers that do not opt
-/// out (e.g. the engine-free reducers' default and existing tests).
-List<TreadlingEntry> treadlingEntries(List<List<int>> rows, {bool collapse = true}) {
+List<TreadlingEntry> treadlingEntries(List<List<int>> rows) {
   final entries = <TreadlingEntry>[];
   var i = 0;
   while (i < rows.length) {
     final shed = rows[i];
     var n = 1;
-    if (collapse) {
-      while (i + n < rows.length && sameShed(rows[i + n], shed)) {
-        n++;
-      }
+    while (i + n < rows.length && sameShed(rows[i + n], shed)) {
+      n++;
     }
     entries.add(TreadlingEntry(shed: List<int>.unmodifiable(shed), count: n, startPick: i));
     i += n;
@@ -59,10 +54,44 @@ List<TreadlingEntry> treadlingEntries(List<List<int>> rows, {bool collapse = tru
 }
 
 /// The entry index that the 0-based [pick] falls in, or null if [pick] is out of range. Used to keep
-/// a selection stable across edits that reshape the runs.
+/// a selection anchored to its pick across edits that reshape the runs.
 int? entryIndexForPick(List<TreadlingEntry> entries, int pick) {
   for (var e = 0; e < entries.length; e++) {
     if (pick >= entries[e].startPick && pick < entries[e].endPick) return e;
   }
   return null;
+}
+
+/// One stretch of consecutive picks inside an entry that share a weft color.
+class WeftColorRun {
+  const WeftColorRun({required this.color, required this.startPick, required this.count});
+
+  /// The 0-based palette index of the weft color.
+  final int color;
+
+  /// The 0-based index of the stretch's first pick.
+  final int startPick;
+
+  /// How many consecutive picks carry [color] (always >= 1).
+  final int count;
+}
+
+/// Every weft color in [entry], in pick order, as maximal stretches of one color. A run whose picks
+/// alternate two yarns (a two-color double shot, say) yields one stretch per change, so no color is
+/// hidden behind the run's first pick. A [weftColors] list shorter than the draft reads as palette
+/// index 0 past its end, the same pad the engine and the editor's weft band use.
+List<WeftColorRun> weftColorRuns(TreadlingEntry entry, List<int> weftColors) {
+  int colorAt(int pick) => pick < weftColors.length ? weftColors[pick] : 0;
+  final runs = <WeftColorRun>[];
+  var p = entry.startPick;
+  while (p < entry.endPick) {
+    final color = colorAt(p);
+    var n = 1;
+    while (p + n < entry.endPick && colorAt(p + n) == color) {
+      n++;
+    }
+    runs.add(WeftColorRun(color: color, startPick: p, count: n));
+    p += n;
+  }
+  return runs;
 }

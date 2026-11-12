@@ -77,7 +77,7 @@ DraftDoc fixture() => DraftDoc(
     );
 
 Future<(ProviderContainer, FakeResizeRepo)> pumpBar(WidgetTester tester,
-    {bool overshot = false}) async {
+    {bool bookPinned = false}) async {
   // The bar's action chips + 4 steppers scroll horizontally in production; widen the test surface
   // so every stepper is on-screen and tappable at a fixed offset (the row gained a Structure chip).
   tester.view.physicalSize = const Size(1600, 600);
@@ -88,8 +88,8 @@ Future<(ProviderContainer, FakeResizeRepo)> pumpBar(WidgetTester tester,
   final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(fake)]);
   addTearDown(c.dispose);
   c.read(draftEditorProvider.notifier).load(fixture());
-  // The per-row treadle/count/add/delete controls are overshot-only; opt in where a test exercises them.
-  c.read(overshotTreadlingProvider.notifier).state = overshot;
+  // The Book view button is shown only for a draft that pins it (the persisted overshotTreadling flag).
+  c.read(overshotTreadlingProvider.notifier).state = bookPinned;
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: c,
@@ -116,71 +116,37 @@ void main() {
     expect(find.text('Planning calculator'), findsOneWidget);
   });
 
-  testWidgets('selecting a treadling row reveals its count stepper, which grows the run', (tester) async {
-    final (c, _) = await pumpBar(tester, overshot: true); // treadling [1],[2],[3],[4] -> 4 single-pick rows
-    expect(find.byTooltip('More Row ×'), findsNothing, reason: 'no per-row controls until selected');
-    // Select entry 0 (treadle 1, x1).
-    c.read(selectedTreadlingEntryProvider.notifier).state = 0;
-    await tester.pump();
-    expect(find.text('Row × 1'), findsOneWidget);
-    // Grow it to x2: inserts a pick via the pure reducer (no engine resize).
-    await tester.tap(find.byTooltip('More Row ×'));
-    await tester.pump();
-    final t = c.read(draftEditorProvider).draft.drive as DraftTreadled;
-    expect(t.treadling, [
-      [1],
-      [1],
-      [2],
-      [3],
-      [4],
-    ]);
-    expect(c.read(draftEditorProvider).draft.picks, 5);
-    expect(find.text('Row × 2'), findsOneWidget);
+  testWidgets('no per-row treadling controls in the bar: the grid is one row per pick', (tester) async {
+    // The old inline overshot mode put Treadle / Row x / Row / Delete row controls here. They moved
+    // into the separate Book view, so the bar never shows them, pinned or not.
+    final (c, _) = await pumpBar(tester);
+    for (final pinned in [false, true]) {
+      c.read(overshotTreadlingProvider.notifier).state = pinned;
+      await tester.pump();
+      expect(find.byTooltip('More Row ×'), findsNothing, reason: 'pinned=$pinned');
+      expect(find.byTooltip('More Treadle'), findsNothing);
+      expect(find.widgetWithText(ActionChip, 'Row'), findsNothing);
+      expect(find.byTooltip('Delete row'), findsNothing);
+    }
   });
 
-  testWidgets('the per-row treadling controls stay HIDDEN when overshot is OFF', (tester) async {
-    final (c, _) = await pumpBar(tester); // overshot defaults OFF
-    c.read(selectedTreadlingEntryProvider.notifier).state = 0; // select a row anyway
+  testWidgets('the Book view button shows only for a draft that pins it', (tester) async {
+    final (c, _) = await pumpBar(tester); // not pinned
+    expect(find.widgetWithText(ActionChip, 'Book view'), findsNothing);
+    c.read(overshotTreadlingProvider.notifier).state = true;
     await tester.pump();
-    expect(find.byTooltip('More Row ×'), findsNothing, reason: 'no overshot count stepper');
-    expect(find.byTooltip('More Treadle'), findsNothing, reason: 'no overshot treadle stepper');
-    expect(find.widgetWithText(ActionChip, 'Row'), findsNothing, reason: 'no Add Row chip');
+    expect(find.widgetWithText(ActionChip, 'Book view'), findsOneWidget);
   });
 
-  testWidgets('Add row appends a blank treadling row and selects it', (tester) async {
-    final (c, _) = await pumpBar(tester, overshot: true);
-    c.read(selectedTreadlingEntryProvider.notifier).state = 0;
-    await tester.pump();
-    await tester.tap(find.widgetWithText(ActionChip, 'Row'));
-    await tester.pump();
-    final t = c.read(draftEditorProvider).draft.drive as DraftTreadled;
-    expect(t.treadling.last, isEmpty, reason: 'a blank pick is appended');
-    expect(c.read(selectedTreadlingEntryProvider), 4, reason: 'the new last row is selected');
-  });
-
-  testWidgets('the per-row Treadle stepper sets the selected run\'s treadle (overshot)',
-      (tester) async {
-    final (c, _) = await pumpBar(tester, overshot: true); // treadling [1],[2],[3],[4]
-    c.read(selectedTreadlingEntryProvider.notifier).state = 0; // entry 0 = treadle 1
-    await tester.pump();
-    expect(find.text('Treadle 1'), findsOneWidget, reason: 'the selected run shows its treadle');
-    // Step it up to treadle 2 (which, here, merges run 0 into its identical neighbour).
-    await tester.tap(find.byTooltip('More Treadle'));
-    await tester.pump();
-    final t = c.read(draftEditorProvider).draft.drive as DraftTreadled;
-    expect(t.treadling[0], [2], reason: 'run 0 now presses treadle 2');
-    expect(c.read(selectedTreadlingEntryProvider), 0,
-        reason: 'selection re-anchors to the run holding the edited run\'s first pick');
-  });
-
-  testWidgets('the per-row Treadle stepper down to 0 clears the run shed', (tester) async {
-    final (c, _) = await pumpBar(tester, overshot: true); // treadling [1],[2],[3],[4]
-    c.read(selectedTreadlingEntryProvider.notifier).state = 0; // treadle 1
-    await tester.pump();
-    await tester.tap(find.byTooltip('Fewer Treadle')); // 1 -> 0 = a blank shed
-    await tester.pump();
-    final t = c.read(draftEditorProvider).draft.drive as DraftTreadled;
-    expect(t.treadling[0], isEmpty, reason: 'treadle 0 clears the run to a blank pick');
+  testWidgets('the pinned Book view button opens the separate Book view', (tester) async {
+    final (c, _) = await pumpBar(tester, bookPinned: true);
+    final before = c.read(draftEditorProvider).draft;
+    await tester.tap(find.widgetWithText(ActionChip, 'Book view'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('not "Use Tabby" shorthand'), findsOneWidget);
+    expect(find.text('4 picks in 4 rows'), findsOneWidget);
+    expect(identical(c.read(draftEditorProvider).draft, before), isTrue,
+        reason: 'opening the Book view changes nothing in the draft');
   });
 
   testWidgets('the Colors chip dot shows the active brush color', (tester) async {

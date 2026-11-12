@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/models/treadling_entries.dart';
 
-// The pure run-collapse behind the compressed ("book") treadling view.
+// The pure run grouping behind the separate Book view (the editor grid itself is one row per pick).
 
 void main() {
   group('treadlingEntries', () {
@@ -29,22 +29,6 @@ void main() {
 
     test('an empty treadling yields no entries', () {
       expect(treadlingEntries(const []), isEmpty);
-    });
-
-    test('collapse:false keeps one entry per pick (the non-overshot per-pick treadling)', () {
-      // The SAME repeating treadling, but NOT collapsed: every pick is its own count-1 entry, so the
-      // band reads one row per pick (aligned with the drawdown) instead of the overshot run shorthand.
-      final e = treadlingEntries(const [
-        [1],
-        [1],
-        [1],
-        [2],
-        [1],
-        [1],
-      ], collapse: false);
-      expect(e.length, 6, reason: 'one entry per pick, no run-collapsing');
-      expect(e.every((x) => x.count == 1), isTrue);
-      expect(e.map((x) => x.startPick).toList(), [0, 1, 2, 3, 4, 5]);
     });
 
     test('a non-repeating treadling is one entry per pick (count 1)', () {
@@ -90,6 +74,71 @@ void main() {
       expect(entryIndexForPick(e, 1), 0);
       expect(entryIndexForPick(e, 2), 1);
       expect(entryIndexForPick(e, 5), isNull);
+    });
+
+    test('expanding the entries reproduces the picks exactly (the Book view round-trip)', () {
+      // A mix of runs, blanks, multi-treadle sheds, and an order-swapped shed: concatenating each
+      // entry's shed `count` times must give back every pick, in order, with nothing merged away.
+      final rows = <List<int>>[
+        [1],
+        [1],
+        [3],
+        [],
+        [],
+        [1, 2],
+        [2, 1],
+        [4],
+        [1],
+      ];
+      final e = treadlingEntries(rows);
+      final expanded = [
+        for (final x in e)
+          for (var k = 0; k < x.count; k++) x.shed.toSet(),
+      ];
+      expect(expanded, [for (final r in rows) r.toSet()]);
+      // Each entry starts where the previous one ended (no gaps, no overlap).
+      for (var i = 1; i < e.length; i++) {
+        expect(e[i].startPick, e[i - 1].endPick);
+      }
+    });
+  });
+
+  group('weftColorRuns (every weft color in a Book view row)', () {
+    test('a run of two contrasting yarns keeps BOTH colors, in pick order', () {
+      // One shed thrown 4x (a single entry), but its picks alternate color 2 and color 5: the row
+      // must not read as one color (the old marker showed only the first pick's color).
+      final entry = treadlingEntries([
+        [1],
+        [1],
+        [1],
+        [1],
+      ]).single;
+      final runs = weftColorRuns(entry, const [2, 5, 2, 5]);
+      expect(runs.map((r) => r.color).toList(), [2, 5, 2, 5]);
+      expect(runs.map((r) => r.count).toList(), [1, 1, 1, 1]);
+      expect(runs.map((r) => r.startPick).toList(), [0, 1, 2, 3]);
+    });
+
+    test('consecutive picks of one color group, and only the entry\'s own picks count', () {
+      final entries = treadlingEntries([
+        [2],
+        [1],
+        [1],
+        [1],
+        [3],
+      ]);
+      final runs = weftColorRuns(entries[1], const [9, 0, 0, 4, 9]); // picks 1..3
+      expect(runs.map((r) => (r.color, r.startPick, r.count)).toList(), [(0, 1, 2), (4, 3, 1)]);
+    });
+
+    test('a short weftColors list reads as palette index 0 past its end', () {
+      final entry = treadlingEntries([
+        [1],
+        [1],
+        [1],
+      ]).single;
+      final runs = weftColorRuns(entry, const [3]);
+      expect(runs.map((r) => (r.color, r.startPick, r.count)).toList(), [(3, 0, 1), (0, 1, 2)]);
     });
   });
 }

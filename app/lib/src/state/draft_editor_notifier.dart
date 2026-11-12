@@ -31,24 +31,19 @@ class DraftEditorNotifier extends Notifier<EditorState> {
     // Reset the brush so a previous draft's selection can't dangle past this (possibly smaller)
     // palette. (Clamp-on-read defends the rest; this is the tidy default.)
     ref.read(activePaletteColorProvider.notifier).state = 0;
-    // Clear any treadling-row selection from the prior draft (its run count is gone).
-    ref.read(selectedTreadlingEntryProvider.notifier).state = null;
   }
 
-  /// Set the SELECTED compressed-treadling row's pick count (>= 1), committed as one undo entry.
-  /// See [EditorState.setEntryCount]. Pure mutation behind the engine-free path.
+  /// Book view: set row [index]'s pick count (>= 1) by adding or removing picks at the end of its
+  /// run, committed as one undo entry. See [EditorState.setEntryCount].
   void setEntryCount(int index, int count) => commitEdit(state.setEntryCount(index, count).draft);
 
-  /// Set compressed-treadling row [index]'s whole run to press [ids] (treadle ids treadled, shaft ids
-  /// liftplan), committed as one undo entry — the discrete twin of the paint path's shed edit, used by
-  /// the dimensions bar's per-row treadle stepper. See [EditorState.withShedForEntry].
+  /// Book view: set every pick in row [index]'s run to press [ids] (treadle ids treadled, shaft ids
+  /// liftplan), committed as one undo entry. See [EditorState.withShedForEntry].
   void setEntryShed(int index, List<int> ids) =>
       commitEdit(state.withShedForEntry(index, ids).draft);
 
-  /// Append a new blank treadling row (one pick, no shed) as one undo entry; see [EditorState.addEntry].
-  void addEntry() => commitEdit(state.addEntry().draft);
-
-  /// Remove the treadling row [index] (its whole run) as one undo entry; see [EditorState.removeEntry].
+  /// Book view: remove row [index]'s picks (its whole run) as one undo entry. See
+  /// [EditorState.removeEntry].
   void removeEntry(int index) => commitEdit(state.removeEntry(index).draft);
 
   /// Toggle one tie-up cell (1-based treadle/shaft). See [EditorState.toggleTieupCell].
@@ -121,11 +116,6 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   /// must NOT ref.read its own provider). Defends a dangling brush after a palette shrink.
   int _brush() => clampBrush(ref.read(activePaletteColorProvider), state.draft.palette.length);
 
-  /// Whether the open draft collapses its treadling into the overshot "book" view. Drives how a
-  /// right-band / weft-marker tap maps to the per-pick model: collapsed = a whole run, otherwise the
-  /// single pick the row IS. Read live off the provider (editor chrome, like the brush index).
-  bool _collapse() => ref.read(overshotTreadlingProvider);
-
   /// Begin a drag-paint stroke at [hit]. For an ON/OFF region the value is the INVERSE of the first
   /// cell (drag from a filled cell erases). For a COLOR region the value is the active brush index,
   /// captured (clamped) ONCE so the whole drag paints one color.
@@ -138,11 +128,10 @@ class DraftEditorNotifier extends Notifier<EditorState> {
       _paintValue = null;
       state = _paintColorCell(hit, _brushIndex!);
     } else {
-      final collapse = _collapse();
-      final on = !state.isCellOn(hit, collapse: collapse);
+      final on = !state.isCellOn(hit);
       _paintValue = on ? 1 : 0;
       _brushIndex = null;
-      state = state.paintCell(hit, on: on, collapse: collapse);
+      state = state.paintCell(hit, on: on);
     }
   }
 
@@ -153,7 +142,7 @@ class DraftEditorNotifier extends Notifier<EditorState> {
     _lastCell = hit;
     state = _isColorRegion(hit.region)
         ? _paintColorCell(hit, _brushIndex!)
-        : state.paintCell(hit, on: _paintValue == 1, collapse: _collapse());
+        : state.paintCell(hit, on: _paintValue == 1);
   }
 
   /// Apply the brush [idx] to a color cell, routing by region to the color value-setters. A no-op
@@ -164,9 +153,8 @@ class DraftEditorNotifier extends Notifier<EditorState> {
     return switch (hit.region) {
       DraftRegion.warpColor => state.withWarpColorForEnd(hit.col, idx),
       DraftRegion.weftColor => state.withWeftColorForPick(hit.row, idx),
-      // hit.row is the entry index; paint that entry's weft in one tap (a whole run in overshot
-      // mode, or the single pick the marker row IS otherwise).
-      DraftRegion.weftMarker => state.withWeftColorForEntry(hit.row, idx, collapse: _collapse()),
+      // The marker beside the treadling is one row per pick too, so it paints that pick's weft.
+      DraftRegion.weftMarker => state.withWeftColorForPick(hit.row, idx),
       _ => state,
     };
   }

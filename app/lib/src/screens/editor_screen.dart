@@ -9,6 +9,7 @@ import '../models/loom_type.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../util/responsive.dart';
+import '../widgets/book_view_sheet.dart';
 import '../widgets/dimensions_bar.dart';
 import '../widgets/draft_layout.dart';
 import '../widgets/integrated_draft_view.dart';
@@ -19,16 +20,17 @@ import '../widgets/validation_panel.dart';
 import '../widgets/woven_preview.dart';
 import 'layer_inspector_screen.dart';
 
-/// The less-frequent AppBar actions tucked into the overflow (⋮) menu. The two `toggle*` entries
-/// are view-chrome switches (gridlines / long-float highlight) rather than one-shot actions.
+/// The less-frequent AppBar actions tucked into the overflow (⋮) menu. The `toggle*` entries are
+/// switches (shed direction, and the gridline / long-float / texture view chrome) rather than
+/// one-shot actions.
 enum _OverflowAction {
   zoomIn,
   zoomOut,
   loomType,
   convert,
   viewLayers,
+  bookView,
   toggleShed,
-  toggleOvershot,
   toggleGridlines,
   toggleFloats,
   toggleThreadTexture
@@ -142,8 +144,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // the new-draft choice (or jack). Persisted back into the sidecar on save.
       ref.read(loomTypeProvider.notifier).state =
           widget.meta?.loomType ?? widget.initialLoomType ?? LoomType.jack;
-      // Seed the overshot-treadling mode from the sidecar (false for a from-scratch/imported draft);
-      // it is auto-set when an Overshot structure is generated and persisted back on save.
+      // Seed the Book view pin from the sidecar's `overshotTreadling` (false for a from-scratch or
+      // imported draft); it is auto-set when an Overshot structure is generated and persisted back
+      // on save. It only pins a Book view button; the editor grid is one row per pick regardless.
       ref.read(overshotTreadlingProvider.notifier).state =
           widget.meta?.overshotTreadling ?? false;
       setState(() => _loading = false);
@@ -586,13 +589,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _convertToLiftplan();
                       case _OverflowAction.viewLayers:
                         _openLayers();
+                      case _OverflowAction.bookView:
+                        showBookViewSheet(context);
                       case _OverflowAction.toggleShed:
                         final cur = ref.read(draftEditorProvider).draft.shed;
                         notifier.setShed(
                             cur == Shed.sinking ? Shed.rising : Shed.sinking);
-                      case _OverflowAction.toggleOvershot:
-                        final p = ref.read(overshotTreadlingProvider.notifier);
-                        p.state = !p.state;
                       case _OverflowAction.toggleGridlines:
                         final p = ref.read(showGridlinesProvider.notifier);
                         p.state = !p.state;
@@ -639,6 +641,16 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             leading: Icon(Icons.layers_outlined),
                             title: Text('View layers')),
                       ),
+                    // The separate Book view: the treadling grouped into runs of identical picks,
+                    // with counts, pick ranges, and every weft color. Offered for every draft; it
+                    // never reshapes the editor grid (one row per pick).
+                    const PopupMenuItem(
+                      value: _OverflowAction.bookView,
+                      child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.format_list_numbered),
+                          title: Text(kBookViewTitle)),
+                    ),
                     // Shed direction: rising (jack/table/dobby) raises the tied shafts; sinking
                     // (counterbalance/countermarch) lowers them, so the engine raises the complement
                     // and the cloth inverts. Fully modeled + round-trips through WIF; this is its
@@ -647,14 +659,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       value: _OverflowAction.toggleShed,
                       checked: ref.read(draftEditorProvider).draft.shed == Shed.sinking,
                       child: const Text('Sinking shed'),
-                    ),
-                    // Overshot treadling: collapse runs of identical picks into one numbered "throw N
-                    // times" row (auto-set when an Overshot structure is generated). Off = the normal
-                    // per-pick treadling, so the overshot shorthand never shows on a plain/twill draft.
-                    CheckedPopupMenuItem(
-                      value: _OverflowAction.toggleOvershot,
-                      checked: ref.read(overshotTreadlingProvider),
-                      child: const Text('Overshot treadling'),
                     ),
                     const PopupMenuDivider(),
                     // View overlays (checkable): reflect the current toggle state at open time.
@@ -732,9 +736,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     }
     // The draft is FLEXIBLE (loose), not Expanded, so when it fits with room to spare the cloth
     // shrinks to its content and the dimensions bar rises into the freed whitespace under it. When the
-    // cloth is short enough to leave real space below the controls, a tiled WOVEN PREVIEW fills it (the
-    // same drawdown bitmap repeated, so you see the fabric as yardage). A tall draft fills the viewport
-    // and scrolls, so the preview is omitted rather than crushing the editable cloth.
+    // cloth is short enough to leave real space below the controls, a tiled YARN PREVIEW fills it (its
+    // own thickness-aware render, labeled as an approximate look). A tall draft fills the viewport and
+    // scrolls, so the preview is omitted rather than crushing the editable cloth.
     final dims = ref.watch(draftEditorProvider.select((s) => (
           s.draft.ends,
           s.draft.picks,

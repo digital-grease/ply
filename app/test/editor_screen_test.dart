@@ -664,6 +664,46 @@ void main() {
         reason: 'layer switching is discoverable without opening the overflow menu');
   });
 
+  // --- M7-09: the Book view is a separate presentation; the old flag now only pins its button ---
+
+  testWidgets('the overflow opens the separate Book view; the editor grid is not reshaped',
+      (tester) async {
+    final container = await pumpEditor(tester, FakeRepo());
+    await openOverflow(tester);
+    expect(find.text('Overshot treadling'), findsNothing, reason: 'the inline collapse mode is gone');
+    await tester.tap(find.text('Book view'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('not "Use Tabby" shorthand'), findsOneWidget);
+    expect(find.text('4 picks in 4 rows'), findsOneWidget);
+    expect(container.read(draftEditorProvider).undo, isEmpty, reason: 'opening it edits nothing');
+  });
+
+  testWidgets('an older sidecar with overshotTreadling: true loads (pins the Book view button) and '
+      'keeps the flag across a save', (tester) async {
+    final fake = FakeRepo();
+    final existing = DraftMeta.fromJson({
+      'name': 'Overshot star',
+      'overshotTreadling': true, // written by the old inline "overshot treadling" mode
+      'savedAt': '2026-06-26T12:00:00.000Z',
+    });
+    final container = await pumpEditor(tester, fake, id: 'abc', meta: existing);
+    expect(container.read(overshotTreadlingProvider), isTrue);
+    expect(find.widgetWithText(ActionChip, 'Book view'), findsOneWidget,
+        reason: 'the flag now pins the Book view button');
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(fake.capturedMeta!.overshotTreadling, isTrue);
+    expect(fake.capturedMeta!.toJson()['overshotTreadling'], isTrue);
+  });
+
+  testWidgets('a sidecar without the flag shows no Book view button (still in the overflow)',
+      (tester) async {
+    await pumpEditor(tester, FakeRepo());
+    expect(find.widgetWithText(ActionChip, 'Book view'), findsNothing);
+    await openOverflow(tester);
+    expect(find.text('Book view'), findsOneWidget);
+  });
+
   // --- Phase 3.4: Save error-gating ------------------------------------------
 
   testWidgets('saving a draft with an Error warns, then Save anyway proceeds', (tester) async {

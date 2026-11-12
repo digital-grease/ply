@@ -7,9 +7,15 @@ import '../models/draft_meta.dart';
 import '../rust/dto.dart' show RenderFailure;
 import '../widgets/drawdown_view.dart';
 import '../widgets/save_draft_dialog.dart';
+import '../widgets/woven_preview.dart' show kYarnPreviewNote, kYarnPreviewTitle;
 import 'editor_screen.dart';
 
 /// Full-resolution drawdown of a single draft.
+///
+/// The image is the engine render of the pattern AS SAVED, including any per-thread yarn thickness
+/// (a fatter yarn draws a wider column or taller row), so it is captioned as a yarn preview: an
+/// approximate look, not a fabric model. (The editor's own grid is the structural draft, which
+/// ignores thickness so its cells stay aligned.)
 ///
 /// Two modes:
 ///   - `PreviewScreen.saved(id)`   — an existing library draft (read its WIF, bump
@@ -220,7 +226,21 @@ class _PreviewScreenState extends State<PreviewScreen> {
     if (image == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.all(24),
-      child: DrawdownView(image),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(child: DrawdownView(image)),
+          const SizedBox(height: 12),
+          Text(
+            "$kYarnPreviewTitle: thread widths follow the pattern's yarn sizes. $kYarnPreviewNote",
+            textAlign: TextAlign.center,
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
     );
   }
 }

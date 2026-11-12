@@ -1,7 +1,8 @@
 // Release smoke proof through the REAL engine (RustLib) on a device — the host `flutter test` suite
 // fakes the FFI, so this exercises the actual Rust paths added this release:
-//   1. a [LIFTPLAN]-only WIF factors into a tie-up + treadling on import (and reads compressed);
-//   2. (pure-Dart, host-tested) the compressed treadling view over the real parsed treadling;
+//   1. a [LIFTPLAN]-only WIF factors into a tie-up + treadling on import;
+//   2. (pure-Dart, host-tested) the Book view's run grouping over the real parsed treadling (the
+//      editor grid itself stays one row per pick; only the separate Book view groups runs);
 //   3. a left cable vs a right cable render to DIFFERENT chart bitmaps;
 //   4. written instructions include colorwork (MC / CC).
 //
@@ -59,18 +60,19 @@ void main() {
     await RustLib.init();
   });
 
-  testWidgets('1+2: a liftplan-only WIF imports as a TIE-UP + compressed treadling (not pattern-in-treadling)',
+  testWidgets('1+2: a liftplan-only WIF imports as a TIE-UP + treadling the Book view groups into runs',
       (tester) async {
     final doc = await DraftRepository().parseDoc(kLiftplanWif);
     expect(doc.drive, isA<DraftTreadled>(),
         reason: 'a simple liftplan must factor to a treadled draft, not stay a liftplan');
     final t = doc.drive as DraftTreadled;
     expect(t.tieup.where((r) => r.isNotEmpty), isNotEmpty, reason: 'it gained a real tie-up');
-    // The treadling reads COMPRESSED: lift {1,2} x3 then {3,4} x1 -> two runs.
+    // The Book view groups the treadling: lift {1,2} x3 then {3,4} x1 -> two rows.
     final entries = treadlingEntries(t.treadling);
     debugPrint('SMOKE[1+2] drive=DraftTreadled tieup=${t.tieup} treadling=${t.treadling} '
         'entries=${entries.map((e) => '${e.shed}x${e.count}').toList()}');
-    expect(entries.length, 2, reason: '4 picks collapse to 2 numbered rows');
+    expect(entries.length, 2, reason: '4 picks group into 2 Book view rows');
+    expect(t.treadling.length, 4, reason: 'the draft itself keeps one treadling row per pick');
     expect(entries.first.count, 3);
   });
 

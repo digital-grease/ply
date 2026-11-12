@@ -162,11 +162,82 @@ void main() {
     await pumpEventQueue();
     expect(fake.lastThreadTexture, isTrue, reason: 'texture cue on => render carries it');
   });
+
+  test('the editor drawdown renders the STRUCTURAL draft: thickness dropped, document kept', () async {
+    final fake = _CapturingRepo();
+    final container = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(fake)]);
+    addTearDown(container.dispose);
+    final sub = container.listen(previewProvider, (_, __) {});
+    addTearDown(sub.close);
+    container.read(draftEditorProvider.notifier).load(_thickDoc());
+    await pumpEventQueue();
+
+    final rendered = fake.lastDoc!;
+    expect(rendered.warpThickness, isEmpty, reason: 'uniform end columns in the editor');
+    expect(rendered.weftThickness, isEmpty, reason: 'uniform pick rows in the editor');
+    expect(rendered, structuralDraft(_thickDoc()));
+    expect(rendered.threading, _thickDoc().threading, reason: 'only thickness is dropped');
+    expect(rendered.weftColors, _thickDoc().weftColors);
+    final kept = container.read(draftEditorProvider).draft;
+    expect(kept.warpThickness, [1.0, 3.0], reason: 'the document keeps its thickness');
+    expect(kept.weftThickness, [2.0, 1.0]);
+  });
+
+  test('structuralDraft returns a thickness-free doc unchanged (same instance)', () {
+    final plain = DraftDoc.blank(shafts: 2, treadles: 2);
+    expect(identical(structuralDraft(plain), plain), isTrue);
+  });
+
+  test('the yarn preview renders WITH thickness, texture on, gridlines and float tints off', () async {
+    final fake = _CapturingRepo();
+    final container = ProviderContainer(
+      overrides: [
+        repositoryProvider.overrideWithValue(fake),
+        // The editor's view toggles must not leak into the yarn preview's own render.
+        showGridlinesProvider.overrideWith((ref) => true),
+        highlightFloatsProvider.overrideWith((ref) => true),
+        showThreadTextureProvider.overrideWith((ref) => false),
+      ],
+    );
+    addTearDown(container.dispose);
+    final sub = container.listen(wovenPreviewProvider, (_, __) {});
+    addTearDown(sub.close);
+    container.read(draftEditorProvider.notifier).load(_thickDoc());
+    await pumpEventQueue();
+
+    expect(fake.lastDoc!.warpThickness, [1.0, 3.0], reason: 'yarn sizes reach the yarn preview');
+    expect(fake.lastDoc!.weftThickness, [2.0, 1.0]);
+    expect(fake.lastThreadTexture, isTrue);
+    expect(fake.lastGridlines, isFalse);
+    expect(fake.lastFloatThreshold, 0);
+    expect(container.read(wovenPreviewProvider).hasValue, isTrue);
+  });
+
+  test('the yarn preview is latest-wins too (a stale frame is freed, never shown)', () async {
+    final fake = FakeRepo();
+    final container = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(fake)]);
+    addTearDown(container.dispose);
+    final sub = container.listen(wovenPreviewProvider, (_, __) {});
+    addTearDown(sub.close);
+    await pumpEventQueue();
+    container.read(draftEditorProvider.notifier).load(_thickDoc());
+    await pumpEventQueue();
+    expect(fake.pending.length, 2);
+    final stale = await makeImage();
+    final newest = await makeImage();
+    fake.pending[1].complete(newest);
+    await pumpEventQueue();
+    fake.pending[0].complete(stale);
+    await pumpEventQueue();
+    expect(stale.debugDisposed, isTrue);
+    expect(identical(container.read(wovenPreviewProvider).value, newest), isTrue);
+  });
 }
 
-/// A repository that records the overlay args of the most recent [renderDto] and returns a real
-/// 1x1 image, so a test can assert the preview provider forwards the view toggles.
+/// A repository that records the doc and overlay args of the most recent [renderDto] and returns a
+/// real 1x1 image, so a test can assert what each preview provider asks the engine to draw.
 class _CapturingRepo extends DraftRepository {
+  DraftDoc? lastDoc;
   bool lastGridlines = false;
   int lastFloatThreshold = 0;
   bool lastThreadTexture = false;
@@ -179,9 +250,29 @@ class _CapturingRepo extends DraftRepository {
     int floatThreshold = 0,
     bool threadTexture = false,
   }) {
+    lastDoc = doc;
     lastGridlines = gridlines;
     lastFloatThreshold = floatThreshold;
     lastThreadTexture = threadTexture;
     return makeImage();
   }
 }
+
+/// A 2x2 draft carrying per-thread yarn thickness.
+DraftDoc _thickDoc() => DraftDoc.blank(shafts: 2, treadles: 2).copyWith(
+      threading: const [
+        [1],
+        [2],
+      ],
+      drive: DraftTreadled(tieup: const [
+        [1],
+        [2],
+      ], treadling: const [
+        [1],
+        [2],
+      ]),
+      warpColors: const [0, 1],
+      weftColors: const [1, 0],
+      warpThickness: const [1.0, 3.0],
+      weftThickness: const [2.0, 1.0],
+    );

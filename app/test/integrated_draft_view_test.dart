@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/draft_repository.dart';
@@ -97,6 +98,23 @@ DraftDoc fixture() => DraftDoc(
       warpColors: const [0, 0, 0, 0],
       weftColors: const [1, 1, 1, 1],
       notes: '',
+    );
+
+/// The same 4x4 shape as [fixture], but treadle 1 thrown 3x then treadle 2 (a run of identical
+/// picks the structural grid must keep one row per pick).
+DraftDoc runsFixture() => fixture().copyWith(
+      drive: DraftTreadled(
+        tieup: const [
+          [1],
+          [2],
+        ],
+        treadling: const [
+          [1],
+          [1],
+          [1],
+          [2],
+        ],
+      ),
     );
 
 const int kCell = 16;
@@ -202,17 +220,33 @@ void main() {
     expect(c.read(draftEditorProvider).draft.weftColors[0], 0, reason: 'pick 0 painted brush 0');
   });
 
-  testWidgets('tapping a weft-MARKER cell paints the run weft and selects that treadling row',
+  testWidgets('tapping a weft-MARKER cell paints THAT pick, even inside a run of identical picks',
       (tester) async {
-    // fixture treadling [1],[2],[1],[2] -> four single-pick runs; weftColors [1,1,1,1].
     final c = await pumpView(tester);
+    // Treadle 1 thrown 3x, then treadle 2: the marker beside the treadling is one row per pick, so a
+    // tap on row 1 colors pick 1 only (not the whole run).
+    c.read(draftEditorProvider.notifier).load(runsFixture());
+    await tester.pump();
     c.read(activePaletteColorProvider.notifier).state = 0; // brush = white (index 0)
     await tester.pump();
-    await tester.tapAt(weftMarkerC(tester, 2)); // run 2 (== pick 2 here)
+    await tester.tapAt(weftMarkerC(tester, 1));
     await tester.pump();
-    expect(c.read(draftEditorProvider).draft.weftColors[2], 0, reason: 'run 2 painted brush 0');
-    expect(c.read(selectedTreadlingEntryProvider), 2, reason: 'tapping the marker selects that row');
+    expect(c.read(draftEditorProvider).draft.weftColors, [1, 0, 1, 1], reason: 'only pick 1 painted');
     expect(c.read(draftEditorProvider).undo.length, 1, reason: 'one undo entry');
+  });
+
+  testWidgets('tapping a treadling cell inside a run sets THAT pick only', (tester) async {
+    final c = await pumpView(tester);
+    c.read(draftEditorProvider.notifier).load(runsFixture());
+    await tester.pump();
+    await tester.tapAt(rightC(tester, 2, 1)); // pick 1 -> treadle 2
+    await tester.pump();
+    expect((c.read(draftEditorProvider).draft.drive as DraftTreadled).treadling, [
+      [1],
+      [2],
+      [1],
+      [2],
+    ]);
   });
 
   testWidgets('tapping a threading cell sets that end\'s shaft', (tester) async {
@@ -392,7 +426,7 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('Threading:')), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('Tie-up:')), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('Treadling:|Liftplan:')), findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp('Woven cloth preview')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('Drawdown, ')), findsOneWidget);
     handle.dispose();
   });
 
@@ -553,4 +587,190 @@ void main() {
       await tester.pump();
     });
   });
+
+  // --- M7-09: the structural draft. Pixel-level proof that drawdown cell k sits exactly under
+  // threading column k and beside treadling row k, for a draft with NONUNIFORM yarn thickness and a
+  // run of identical picks, at several zooms and device pixel ratios. ---
+  group('structural alignment (thickness ignored, one treadling row per pick)', () {
+    // Warp thickness [1,2,3,1] is the audit's R-12 case (stretched, its column edges fell at 0.57,
+    // 1.71, 3.43 cells); weft [2,1,1,3] does the same to the rows. Treadle 1 x3 then treadle 2.
+    DraftDoc thickRuns() => runsFixture().copyWith(
+          warpThickness: const [1.0, 2.0, 3.0, 1.0],
+          weftThickness: const [2.0, 1.0, 1.0, 3.0],
+        );
+
+    for (final cell in [8, 13, 16]) {
+      for (final dpr in [1.0, 2.0, 3.0]) {
+        testWidgets('pitch $cell at ${dpr}x: drawdown (end, pick) lies under threading end and '
+            'beside treadling pick', (tester) async {
+          // Pre-decode (outside the fake-async zone) the bitmap the engine would return for the
+          // structural draft AND for the thickness-bearing draft, so the fake below can answer like
+          // the engine for whichever doc the editor asks it to render.
+          final doc = thickRuns();
+          final images = await tester.runAsync(() async => {
+                _thicknessKey(structuralDraft(doc)): await encodeCells(structuralDraft(doc), previewCellPx),
+                _thicknessKey(doc): await encodeCells(doc, previewCellPx),
+              });
+          final thick = images![_thicknessKey(doc)]!;
+          expect(thick.width, isNot(4 * previewCellPx),
+              reason: 'fixture sanity: a thickness-aware bitmap really has nonuniform columns');
+          final repo = GeometryRepo(images);
+
+          tester.view.physicalSize = Size(500 * dpr, 500 * dpr);
+          tester.view.devicePixelRatio = dpr;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(repo)]);
+          addTearDown(c.dispose);
+          c.read(zoomCellProvider.notifier).state = cell;
+          c.read(zoomUserSetProvider.notifier).state = true; // keep this exact pitch
+          c.read(draftEditorProvider.notifier).load(doc);
+          const boundaryKey = Key('canvas');
+          await tester.pumpWidget(UncontrolledProviderScope(
+            container: c,
+            child: const MaterialApp(
+              home: Scaffold(
+                body: Align(
+                  alignment: Alignment.topLeft,
+                  child: RepaintBoundary(key: boundaryKey, child: IntegratedDraftView()),
+                ),
+              ),
+            ),
+          ));
+          await tester.pump();
+          await tester.pump();
+
+          // The editor rendered the STRUCTURAL draft only, and kept the thickness in the document.
+          expect(repo.rendered, isNotEmpty);
+          for (final d in repo.rendered) {
+            expect(d.warpThickness, isEmpty, reason: 'editor render ignores warp thickness');
+            expect(d.weftThickness, isEmpty, reason: 'editor render ignores weft thickness');
+          }
+          expect(c.read(draftEditorProvider).draft.warpThickness, [1.0, 2.0, 3.0, 1.0]);
+          expect(c.read(draftEditorProvider).draft.weftThickness, [2.0, 1.0, 1.0, 3.0]);
+
+          final origin = tester.getTopLeft(find.byKey(boundaryKey));
+          final threadingGeom = tester.widget<ThreadingGrid>(find.byType(ThreadingGrid)).geom;
+          final rightGeom = tester.widget<RightGrid>(find.byType(RightGrid)).geom;
+          final threadingAt = tester.getTopLeft(find.byType(ThreadingGrid));
+          final rightAt = tester.getTopLeft(find.byType(RightGrid));
+          expect(rightGeom.rows, 4, reason: 'one treadling row per pick, the run is not grouped');
+          expect(tester.getSize(find.byType(RightGrid)).height,
+              tester.getSize(find.byType(RawImage)).height,
+              reason: 'treadling band and drawdown are the same height');
+
+          final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(boundaryKey));
+          final pixels = await tester.runAsync(() async {
+            final shot = await boundary.toImage(pixelRatio: dpr);
+            final data = await shot.toByteData(format: ui.ImageByteFormat.rawRgba);
+            final out = (shot.width, data!.buffer.asUint8List());
+            shot.dispose();
+            return out;
+          });
+          final (shotWidth, bytes) = pixels!;
+          Color sample(Offset global) {
+            final local = (global - origin) * dpr;
+            final i = (local.dy.floor() * shotWidth + local.dx.floor()) * 4;
+            return Color.fromARGB(bytes[i + 3], bytes[i], bytes[i + 1], bytes[i + 2]);
+          }
+
+          final primary = Theme.of(tester.element(find.byType(RightGrid))).colorScheme.primary;
+          const treadleOf = [1, 1, 1, 2];
+          for (var pick = 0; pick < 4; pick++) {
+            final y = rightAt.dy + rightGeom.rectFor(1, pick).center.dy;
+            for (var end = 1; end <= 4; end++) {
+              final x = threadingAt.dx + threadingGeom.rectFor(end, 1).center.dx;
+              expect(sample(Offset(x, y)), cellColor(end, pick),
+                  reason: 'drawdown under threading end $end, beside treadling pick $pick');
+            }
+            // Treadling row `pick` is that pick's own row: its treadle cell is filled, the other
+            // treadle's cell is not.
+            final pressed = treadleOf[pick];
+            final other = pressed == 1 ? 2 : 1;
+            expect(sample(rightAt + rightGeom.rectFor(pressed, pick).center), primary,
+                reason: 'pick $pick presses treadle $pressed on ITS row');
+            expect(sample(rightAt + rightGeom.rectFor(other, pick).center), isNot(primary),
+                reason: 'pick $pick does not press treadle $other');
+          }
+        });
+      }
+    }
+  });
+}
+
+/// The doc's thickness as a lookup key (the only field the fake engine sizes the bitmap by).
+String _thicknessKey(DraftDoc d) => '${d.warpThickness}|${d.weftThickness}';
+
+/// The color [GeometryRepo] paints cell (end 1-based, pick 0-based), unique per cell.
+Color cellColor(int end, int pick) => Color.fromARGB(255, end * 40, pick * 40 + 20, 90);
+
+/// The engine's per-thread pixel extents (mirrors ply-weave `thread_extents`): the thinnest positive
+/// thread is [base] px, thicker ones scale up (ratio clamped to 6), and no thickness is uniform.
+List<int> engineExtents(List<double> thickness, int n, int base) {
+  final positive = thickness.take(n).where((t) => t.isFinite && t > 0);
+  if (positive.isEmpty) return List.filled(n, base);
+  final min = positive.reduce((a, b) => a < b ? a : b);
+  return [
+    for (var i = 0; i < n; i++)
+      (() {
+        final t = i < thickness.length && thickness[i].isFinite && thickness[i] > 0 ? thickness[i] : min;
+        final r = (base * (t / min).clamp(1.0, 6.0)).round();
+        return r < 1 ? 1 : r;
+      })(),
+  ];
+}
+
+/// Rasterize [doc] the way the engine LAYS OUT its drawdown (variable extents from thickness, end 1
+/// at the RIGHT, pick 0 at the TOP), filling each (end, pick) cell with [cellColor]. Must run in real
+/// async (decodeImageFromPixels).
+Future<ui.Image> encodeCells(DraftDoc doc, int cellPx) {
+  final colW = engineExtents(doc.warpThickness, doc.ends, cellPx);
+  final rowH = engineExtents(doc.weftThickness, doc.picks, cellPx);
+  final width = colW.fold(0, (a, b) => a + b);
+  final height = rowH.fold(0, (a, b) => a + b);
+  final rgba = Uint8List(width * height * 4);
+  var y = 0;
+  for (var pick = 0; pick < doc.picks; pick++) {
+    for (var dy = 0; dy < rowH[pick]; dy++, y++) {
+      var x = 0;
+      // Left to right on screen is end N down to end 1 (end 1 at the right).
+      for (var end = doc.ends; end >= 1; end--) {
+        final color = cellColor(end, pick);
+        for (var dx = 0; dx < colW[end - 1]; dx++, x++) {
+          final i = (y * width + x) * 4;
+          rgba[i] = (color.r * 255).round();
+          rgba[i + 1] = (color.g * 255).round();
+          rgba[i + 2] = (color.b * 255).round();
+          rgba[i + 3] = 255;
+        }
+      }
+    }
+  }
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(rgba, width, height, ui.PixelFormat.rgba8888, completer.complete);
+  return completer.future;
+}
+
+/// A repository that answers renderDto with the pre-decoded bitmap matching the requested doc's
+/// thickness, and records every doc it was asked to render.
+class GeometryRepo extends DraftRepository {
+  GeometryRepo(this.images);
+
+  final Map<String, ui.Image> images;
+  final List<DraftDoc> rendered = [];
+
+  @override
+  Future<ui.Image> renderDto(
+    DraftDoc doc, {
+    required int cellPx,
+    bool gridlines = false,
+    int floatThreshold = 0,
+    bool threadTexture = false,
+  }) {
+    rendered.add(doc);
+    final img = images[_thicknessKey(doc)];
+    if (img == null) return Future<ui.Image>.error(StateError('no bitmap for ${_thicknessKey(doc)}'));
+    // A fresh handle each call: the preview provider may dispose a superseded frame.
+    return Future<ui.Image>.value(img.clone());
+  }
 }

@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/draft_repository.dart';
+import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
 import '../models/loom_type.dart';
 import 'draft_editor_notifier.dart';
@@ -24,7 +25,8 @@ final repositoryProvider = Provider<DraftRepository>((ref) {
 
 /// Pixels-per-intersection the ENGINE renders the drawdown at (internal raster pitch). The
 /// integrated view scales this bitmap to the on-screen pitch via RawImage; the engine never
-/// re-renders on zoom. Crispness only.
+/// re-renders on zoom. Crispness only. (The editor's render is the [structuralDraft], so every
+/// cell of that bitmap is exactly this many pixels square and the scale is uniform.)
 const int previewCellPx = 12;
 
 /// The editor's interaction mode. PENCIL paints cells (scroll is disabled so a drag never scrolls
@@ -93,21 +95,18 @@ final zoomCellProvider = StateProvider<int>((ref) => 16);
 /// Ephemeral view chrome, off EditorState like [zoomCellProvider].
 final zoomUserSetProvider = StateProvider<bool>((ref) => false);
 
-/// The SELECTED compressed-treadling entry (run) index, or null when nothing is selected. Tapping a
-/// treadling row selects it; the dimensions bar's per-row count stepper edits this entry. Ephemeral
-/// view chrome (like the zoom) — reset on load. A consumer treats an index past the live entry count
-/// (a run that merged away) as "no selection".
-final selectedTreadlingEntryProvider = StateProvider<int?>((ref) => null);
-
-/// Whether the open draft uses the OVERSHOT "book" treadling: the treadling collapses runs of
-/// identical consecutive picks into one numbered row ("throw this shed N times"), and the dimensions
-/// bar shows the per-row treadle / count / add / delete controls. OFF (the default) shows the normal
-/// per-pick treadling — one row per pick, aligned with the drawdown, no repeat counts — so the
-/// overshot shorthand never leaks onto plain/twill/satin drafts. Auto-set true when an Overshot
-/// structure is generated, toggleable from the editor overflow menu, and persisted per draft in the
-/// sidecar [DraftMeta] (seeded on load, written on save). Ephemeral editor chrome like
-/// [loomTypeProvider]: it is a VIEW+EDIT mode, not part of the rendered cloth, so it lives off
-/// EditorState and never touches undo/dedup.
+/// Whether the open draft PINS a "Book view" button to the editor's tools (the dimensions bar). The
+/// Book view (see book_view_sheet.dart) is a separate presentation that lists the treadling grouped
+/// into runs of identical picks; it is always reachable from the editor's overflow menu, and this
+/// flag only decides whether a one-tap button sits with the other tools. It never changes the
+/// editor's structural grid, which is one treadling row per pick, always.
+///
+/// The name and the persisted sidecar key ([DraftMeta.overshotTreadling]) are kept from the earlier
+/// inline "overshot treadling" mode, so an older sidecar that set it now simply pins the button.
+/// Auto-set true when an Overshot structure is generated (false for the other whole-draft
+/// structures), toggleable from the Book view itself, and persisted per draft (seeded on load,
+/// written on save). Ephemeral editor chrome like [loomTypeProvider]: it is not part of the cloth, so
+/// it lives off EditorState and never touches undo/dedup.
 final overshotTreadlingProvider = StateProvider<bool>((ref) => false);
 
 /// The loom type of the open draft. Seeded on [DraftEditorNotifier.load] from the sidecar
@@ -136,46 +135,43 @@ final showThreadTextureProvider = StateProvider<bool>((ref) => true);
 /// default for "long enough to snag"; not user-tunable in this milestone.
 const int kLongFloatThreshold = 5;
 
-/// The live drawdown image for the draft currently held by [draftEditorProvider]. Re-renders on
-/// every edit (the engine recompute is microseconds) and decodes the RGBA buffer to a [ui.Image].
-///
-/// LATEST-WINS. A render is asynchronous (the FFI hop plus image decode), so a fast edit can
-/// dispatch a newer render before an older one resolves, and Dart Futures carry no ordering
-/// guarantee. A monotonic [_seq] guard tags each render; when a render finishes it checks whether
-/// a newer one has since started, and if so DROPS its frame (frees the image, never resolves into
+/// The STRUCTURAL draft the editor's drawdown is rendered from: [doc] with its per-thread warp and
+/// weft thickness dropped, so the engine rasterizes exactly one uniform cell per end and pick. The
+/// integrated view stretches that bitmap over its fixed grid, and only a uniform bitmap keeps
+/// drawdown cell k on the same pixel edges as threading column k and treadling row k at every zoom
+/// and pixel ratio. The thickness stays in the document (saved, exported, and shown by the yarn
+/// preview); only this editor render ignores it. Returns [doc] itself when it has no thickness.
+DraftDoc structuralDraft(DraftDoc doc) =>
+    doc.warpThickness.isEmpty && doc.weftThickness.isEmpty
+        ? doc
+        : doc.copyWith(warpThickness: const <double>[], weftThickness: const <double>[]);
+
+/// LATEST-WINS rendering shared by the editor's two drawdown images ([previewProvider] and
+/// [wovenPreviewProvider]). A render is asynchronous (the FFI hop plus image decode), so a fast edit
+/// can dispatch a newer render before an older one resolves, and Dart Futures carry no ordering
+/// guarantee. A monotonic [_seq] guard tags each render; when a render finishes it checks whether a
+/// newer one has since started, and if so DROPS its frame (frees the image, never resolves into
 /// state) so a slow earlier render can never paint over a newer one. The superseded image is
 /// disposed immediately because it was never shown; the image that IS shown is reclaimed by the
-/// engine's `ui.Image` finalizer once a newer frame replaces it (eagerly disposing a frame that
-/// might still be painted this turn would risk a use-after-dispose, so we don't).
-final previewProvider =
-    AutoDisposeAsyncNotifierProvider<PreviewController, ui.Image>(PreviewController.new);
-
-class PreviewController extends AutoDisposeAsyncNotifier<ui.Image> {
+/// engine's `ui.Image` finalizer once a newer frame replaces it (eagerly disposing a frame that might
+/// still be painted this turn would risk a use-after-dispose, so we don't).
+abstract class DrawdownRenderController extends AutoDisposeAsyncNotifier<ui.Image> {
   /// Monotonic across rebuilds (the notifier instance is stable; only `build` re-runs).
   int _seq = 0;
 
+  /// Start this provider's render. Called synchronously at the top of [build], so every `ref.watch`
+  /// it makes registers before the first await.
+  Future<ui.Image> startRender();
+
   @override
   Future<ui.Image> build() async {
-    final repo = ref.watch(repositoryProvider);
-    final draft = ref.watch(draftEditorProvider.select((s) => s.draft));
-    // Overlay toggles are view chrome: watching them re-renders the cloth on toggle WITHOUT touching
-    // the document (so undo/validation never fire). A no-op recompute is microseconds.
-    final gridlines = ref.watch(showGridlinesProvider);
-    final highlightFloats = ref.watch(highlightFloatsProvider);
-    final threadTexture = ref.watch(showThreadTextureProvider);
     final mySeq = ++_seq;
     // The FFI render is un-cancellable, so it can resolve after the provider is disposed
     // (navigate away mid-render). Track that so we free the orphaned image instead of leaking it.
     var disposed = false;
     ref.onDispose(() => disposed = true);
 
-    final image = await repo.renderDto(
-      draft,
-      cellPx: previewCellPx,
-      gridlines: gridlines,
-      floatThreshold: highlightFloats ? kLongFloatThreshold : 0,
-      threadTexture: threadTexture,
-    );
+    final image = await startRender();
 
     if (disposed || mySeq != _seq) {
       // Either the provider was torn down while we rendered, or a newer edit superseded us. Both
@@ -184,6 +180,51 @@ class PreviewController extends AutoDisposeAsyncNotifier<ui.Image> {
       return Completer<ui.Image>().future; // intentionally never completes
     }
     return image;
+  }
+}
+
+/// The editor's live STRUCTURAL drawdown for the draft held by [draftEditorProvider]: the
+/// [structuralDraft] (uniform cells, thickness ignored) with the editor's view overlays. Re-renders
+/// on every edit (the engine recompute is microseconds) and decodes the RGBA buffer to a [ui.Image].
+/// Latest-wins; see [DrawdownRenderController].
+final previewProvider =
+    AutoDisposeAsyncNotifierProvider<PreviewController, ui.Image>(PreviewController.new);
+
+class PreviewController extends DrawdownRenderController {
+  @override
+  Future<ui.Image> startRender() {
+    final repo = ref.watch(repositoryProvider);
+    final draft = ref.watch(draftEditorProvider.select((s) => s.draft));
+    // Overlay toggles are view chrome: watching them re-renders the cloth on toggle WITHOUT touching
+    // the document (so undo/validation never fire). A no-op recompute is microseconds.
+    final gridlines = ref.watch(showGridlinesProvider);
+    final highlightFloats = ref.watch(highlightFloatsProvider);
+    final threadTexture = ref.watch(showThreadTextureProvider);
+    return repo.renderDto(
+      structuralDraft(draft),
+      cellPx: previewCellPx,
+      gridlines: gridlines,
+      floatThreshold: highlightFloats ? kLongFloatThreshold : 0,
+      threadTexture: threadTexture,
+    );
+  }
+}
+
+/// The YARN PREVIEW image for the draft held by [draftEditorProvider]: its own render, independent
+/// of the structural editor. It keeps the per-thread thickness (a fatter yarn draws a wider column
+/// or taller row), always shades the thread texture, and never draws gridlines or float tints,
+/// whatever the editor's view toggles say. An appearance approximation only, not a fabric model.
+/// Watched only by the woven preview, so it renders only while that preview is on screen.
+/// Latest-wins; see [DrawdownRenderController].
+final wovenPreviewProvider =
+    AutoDisposeAsyncNotifierProvider<WovenPreviewController, ui.Image>(WovenPreviewController.new);
+
+class WovenPreviewController extends DrawdownRenderController {
+  @override
+  Future<ui.Image> startRender() {
+    final repo = ref.watch(repositoryProvider);
+    final draft = ref.watch(draftEditorProvider.select((s) => s.draft));
+    return repo.renderDto(draft, cellPx: previewCellPx, threadTexture: true);
   }
 }
 

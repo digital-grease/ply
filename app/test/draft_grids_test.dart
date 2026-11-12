@@ -72,12 +72,10 @@ const RegionGeom tieupGeom =
 const RegionGeom rightGeom =
     RegionGeom(cols: 2, rows: 4, cell: 10, colBase: 1, rowBase: 0, bottomOrigin: true);
 
-Future<ProviderContainer> pumpGrid(WidgetTester t, DraftDoc doc, Widget grid,
-    {bool overshot = false}) async {
+Future<ProviderContainer> pumpGrid(WidgetTester t, DraftDoc doc, Widget grid) async {
   final c = ProviderContainer();
   addTearDown(c.dispose);
   c.read(draftEditorProvider.notifier).load(doc);
-  c.read(overshotTreadlingProvider.notifier).state = overshot;
   await t.pumpWidget(
     UncontrolledProviderScope(
       container: c,
@@ -92,12 +90,6 @@ List<(int, int)> cellsOf(WidgetTester t, Finder gridFinder) {
   final cp = t.widget<CustomPaint>(
       find.descendant(of: gridFinder, matching: find.byType(CustomPaint)));
   return (cp.painter! as CellGridPainter).cells;
-}
-
-List<(int, int, int)> countsOf(WidgetTester t, Finder gridFinder) {
-  final cp = t.widget<CustomPaint>(
-      find.descendant(of: gridFinder, matching: find.byType(CustomPaint)));
-  return (cp.painter! as CountedCellGridPainter).counts;
 }
 
 void main() {
@@ -123,10 +115,11 @@ void main() {
     expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (2, 1), (1, 2), (2, 3)});
   });
 
-  testWidgets('RightGrid COMPRESSES a run of identical picks into one numbered entry row (overshot)',
+  testWidgets('a run of identical picks stays ONE ROW PER PICK, even with the Book view pinned',
       (t) async {
-    // Treadle 1 thrown 3x, then treadle 2 once: TWO entry rows (not four pick rows). The 3 collapse
-    // to one row showing its count; the lone pick is not numbered.
+    // Treadle 1 thrown 3x, then treadle 2 once. The structural grid never groups picks (that is the
+    // separate Book view's job), so row k is pick k: treadle 1 at picks 0, 1, 2 and treadle 2 at
+    // pick 3. Pinning the Book view (the old "overshot treadling" flag) must not change that.
     final doc = treadled().copyWith(
       drive: DraftTreadled(tieup: const [
         [1],
@@ -138,38 +131,16 @@ void main() {
         [2],
       ]),
     );
-    await pumpGrid(t, doc, const RightGrid(geom: rightGeom), overshot: true);
-    // Entry 0 (treadle 1) at row 0, entry 1 (treadle 2) at row 1.
-    expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (2, 1)});
-    // (col, entryRow, count) — the collapsed run shows 3 in its cell.
-    expect(countsOf(t, find.byType(RightGrid)), [(1, 0, 3)]);
-  });
-
-  testWidgets('a non-repeating treadling is one entry per pick and carries no counts', (t) async {
-    await pumpGrid(t, treadled(), const RightGrid(geom: rightGeom));
-    expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (2, 1), (1, 2), (2, 3)});
-    expect(countsOf(t, find.byType(RightGrid)), isEmpty);
-  });
-
-  testWidgets('a repeating treadling is NOT compressed when overshot is OFF (per-pick, no counts)',
-      (t) async {
-    // The SAME 3x-then-1 treadling as the overshot test, but with overshot OFF: it stays one row per
-    // pick (treadle 1 at picks 0,1,2; treadle 2 at pick 3) with no repeat counts — the overshot
-    // shorthand must not leak onto a plain treadled draft.
-    final doc = treadled().copyWith(
-      drive: DraftTreadled(tieup: const [
-        [1],
-        [2],
-      ], treadling: const [
-        [1],
-        [1],
-        [1],
-        [2],
-      ]),
-    );
-    await pumpGrid(t, doc, const RightGrid(geom: rightGeom)); // overshot defaults OFF
-    expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (1, 1), (1, 2), (2, 3)});
-    expect(countsOf(t, find.byType(RightGrid)), isEmpty);
+    final c = await pumpGrid(t, doc, const RightGrid(geom: rightGeom));
+    for (final pinned in [false, true]) {
+      c.read(overshotTreadlingProvider.notifier).state = pinned;
+      await t.pump();
+      final cp = t.widget<CustomPaint>(
+          find.descendant(of: find.byType(RightGrid), matching: find.byType(CustomPaint)));
+      expect(cp.painter.runtimeType, CellGridPainter, reason: 'plain cells, no run counts');
+      expect(cellsOf(t, find.byType(RightGrid)).toSet(), {(1, 0), (1, 1), (1, 2), (2, 3)},
+          reason: 'pinned=$pinned');
+    }
   });
 
   testWidgets('an out-of-range shaft is filtered out of the cell list', (t) async {
@@ -222,6 +193,33 @@ void main() {
     await pumpGrid(t, colored(), const WeftColorBand(geom: weftBandGeom));
     expect(colorsOf(t, find.byType(WeftColorBand)),
         const [Color(0xFF000000), Color(0xFFFF0000), Color(0xFF00FF00), Color(0xFF000000)]);
+  });
+
+  testWidgets('WeftMarkerBand shows EVERY pick\'s weft color beside the treadling (one per pick)',
+      (t) async {
+    // One shed thrown 4x in two alternating yarns (red, green): the marker beside the treadling must
+    // show both colors pick by pick, not the first pick's color for the whole run.
+    final doc = colored().copyWith(
+      drive: DraftTreadled(tieup: const [
+        [1],
+        [2],
+      ], treadling: const [
+        [1],
+        [1],
+        [1],
+        [1],
+      ]),
+      weftColors: const [1, 2, 1, 2],
+    );
+    const markerGeom =
+        RegionGeom(cols: 1, rows: 4, cell: 10, colBase: 1, rowBase: 0, bottomOrigin: false);
+    await pumpGrid(t, doc, const WeftMarkerBand(geom: markerGeom));
+    expect(colorsOf(t, find.byType(WeftMarkerBand)), const [
+      Color(0xFFFF0000),
+      Color(0xFF00FF00),
+      Color(0xFFFF0000),
+      Color(0xFF00FF00),
+    ]);
   });
 
   testWidgets('a SHORT warpColors falls back to palette[0]', (t) async {

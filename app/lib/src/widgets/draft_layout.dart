@@ -16,6 +16,12 @@
 //   picks:    pick 0 at the TOP, increasing DOWN.          Matches the engine flip (pick 0 is the top
 //             bitmap row); the map is top-origin. Shared Y axis: right band <-> drawdown.
 //
+// STRUCTURAL GRID. Every end and every pick gets exactly one cell of the shared pitch, in every
+// region: one threading column per end, one treadling row per pick (picks are never grouped here;
+// the Book view is a separate presentation), and the drawdown bitmap the editor stretches over
+// [drawdownRect] is rendered with per-thread thickness ignored (see structuralDraft), so its cell
+// edges are the grid's cell edges. Yarn thickness only appears in the separate yarn preview.
+//
 // One content coordinate space, origin top-left (Flutter native). Bottom-origin axes are honoured
 // ONLY inside the cell<->pixel maps (a row flip), never by a second coordinate space.
 //
@@ -127,15 +133,9 @@ class DraftLayout {
     required this.treadles,
     required this.hasTieup,
     required this.cell,
-    int? entries,
   })  : assert(cell > 0),
         // Right band: treadles wide for a treadled draft, shafts wide for a liftplan (picks x shafts).
-        rightCols = hasTieup ? treadles : shafts,
-        // The treadling is shown COMPRESSED (one row per run of identical picks); the right band is
-        // `entries` rows tall, NOT `picks`. Defaults to `picks` (no compression) when a caller doesn't
-        // supply the run count — fitCellLevel uses that, since the band is always <= the drawdown so
-        // totalSize is drawdown-driven and never depends on the entry count.
-        entries = entries ?? picks;
+        rightCols = hasTieup ? treadles : shafts;
 
   final int ends;
   final int picks;
@@ -143,9 +143,6 @@ class DraftLayout {
   final int treadles;
   final int rightCols;
   final bool hasTieup;
-
-  /// The number of compressed treadling rows (runs of identical picks). Always <= [picks].
-  final int entries;
 
   /// On-screen pixels per cell (the shared pitch S). Snap to an integer logical px at the call
   /// site so S*devicePixelRatio is integer (the raster bitmap's nearest-neighbor cell boundaries
@@ -155,8 +152,8 @@ class DraftLayout {
   double get _warpW => ends * cell; // threading & drawdown width
   double get _rightW => rightCols * cell; // tie-up & right-band width
   double get _shaftH => shafts * cell; // threading & tie-up height
-  double get _pickH => picks * cell; // drawdown & weft-color-band height (one row per pick)
-  double get _entryH => entries * cell; // compressed treadling height (one row per run)
+  // Drawdown, treadling/liftplan, and both weft-color strips: one row per pick, sharing this height.
+  double get _pickH => picks * cell;
 
   // The color bands reserve a 1-cell strip each: the weft band a left column (width [_leftPad]), the
   // warp band a top row (height [_topPad]). They VANISH (0) on a blank axis, so the placeholder path
@@ -188,7 +185,7 @@ class DraftLayout {
   Rect get tieupRect => Rect.fromLTWH(_leftPad + _warpW + gutter, _topPad, _rightW, _shaftH);
   Rect get drawdownRect => Rect.fromLTWH(_leftPad, _topPad + _shaftH + gutter, _warpW, _pickH);
   Rect get rightRect =>
-      Rect.fromLTWH(_leftPad + _warpW + gutter, _topPad + _shaftH + gutter, _rightW, _entryH);
+      Rect.fromLTWH(_leftPad + _warpW + gutter, _topPad + _shaftH + gutter, _rightW, _pickH);
 
   /// Warp colors: a top strip ABOVE threading, sharing the warp column's X + width with both
   /// threading and the drawdown (the alignment that matters). Stays flush with threading (no gutter).
@@ -198,12 +195,12 @@ class DraftLayout {
   /// down by the same [gutter] as the drawdown). Stays flush with the drawdown (no gutter between).
   Rect get weftColorRect => Rect.fromLTWH(0, _topPad + _shaftH + gutter, _leftPad, _pickH);
 
-  /// Weft-color MARKERS: a per-RUN mirror of [weftColorRect] flush to the RIGHT of the right band
-  /// (treadling/liftplan), sharing the right band's Y + height. Editable — a tap here paints the active
-  /// brush onto the whole run (all the picks it collapses), the run-level twin of the per-pick
-  /// [weftColorRect] beside the cloth.
+  /// Weft-color MARKERS: a per-pick mirror of [weftColorRect] flush to the RIGHT of the right band
+  /// (treadling/liftplan), sharing the right band's (and so the drawdown's) Y + height. Editable: a
+  /// tap here paints the active brush onto that pick, exactly like the [weftColorRect] beside the
+  /// cloth.
   Rect get weftMarkerRect => Rect.fromLTWH(
-      _leftPad + _warpW + gutter + _rightW, _topPad + _shaftH + gutter, _weftMarkerW, _entryH);
+      _leftPad + _warpW + gutter + _rightW, _topPad + _shaftH + gutter, _weftMarkerW, _pickH);
 
   Rect rectOf(DraftRegion r) => switch (r) {
         DraftRegion.threading => threadingRect,
@@ -341,12 +338,11 @@ class DraftLayout {
         bottomOrigin: true,
       );
 
-  /// Right band (the COMPRESSED treadling): treadled -> treadles columns x ENTRY rows (col = treadle
-  /// 1-based); liftplan -> shafts columns x entry rows. Entries (runs of identical picks) are 0-based
-  /// at the TOP. Shorter than the drawdown, top-aligned with it.
+  /// Right band: treadled -> treadles columns x picks rows (col = treadle 1-based); liftplan -> shafts
+  /// columns x picks rows. One row per pick, pick 0 at the TOP, so row k sits beside drawdown row k.
   RegionGeom get right => RegionGeom(
         cols: rightCols,
-        rows: entries,
+        rows: picks,
         cell: cell,
         colBase: 1,
         rowBase: 0,
@@ -375,12 +371,11 @@ class DraftLayout {
         bottomOrigin: false,
       );
 
-  /// Weft-color MARKER band: a single column, ENTRY rows (sharing the compressed right band's Y), so
-  /// each run's weft color reads beside its treadling row. Editable per run (a tap paints the whole
-  /// run's weft).
+  /// Weft-color MARKER band: a single column, picks rows (sharing the right band's Y), so each pick's
+  /// weft color reads beside its treadling row. Editable per pick.
   RegionGeom get weftMarker => RegionGeom(
         cols: 1,
-        rows: entries,
+        rows: picks,
         cell: cell,
         colBase: 1,
         rowBase: 0,
@@ -421,7 +416,7 @@ class DraftLayout {
       final c = weftColor.cellAt(content - weftColorRect.topLeft);
       return c == null ? null : DraftHit(DraftRegion.weftColor, c.$1, c.$2);
     }
-    // The per-run weft markers beside the compressed treadling: a tap paints the whole run's weft.
+    // The per-pick weft markers beside the treadling: a tap paints that pick's weft.
     if (picks > 0 && weftMarkerRect.contains(content)) {
       final c = weftMarker.cellAt(content - weftMarkerRect.topLeft);
       return c == null ? null : DraftHit(DraftRegion.weftMarker, c.$1, c.$2);

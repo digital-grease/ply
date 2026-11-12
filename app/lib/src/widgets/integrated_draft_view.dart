@@ -4,6 +4,12 @@
 // the axis decisions (the conventional end-1-at-RIGHT, pick-1-at-TOP, shaft-1-at-BOTTOM orientation,
 // conforming to the engine bitmap).
 //
+// STRUCTURAL DRAFT MODE, always: one cell per end and per pick in every region (one treadling row
+// per pick), and the drawdown is rendered from the structural draft (per-thread thickness ignored),
+// so drawdown cell k shares its edges with threading column k and treadling row k. Yarn thickness
+// is shown only by the separate yarn preview (woven_preview.dart); runs of identical picks are
+// grouped only by the separate Book view (book_view_sheet.dart).
+//
 // INTERACTION. One content-space [Listener] routes a pointer to the right region via
 // [DraftLayout.hitTest] and drives the editor's drag-paint stroke (begin/paint/end on the
 // notifier, which confines the stroke to its start region and coalesces it into one undo entry).
@@ -17,7 +23,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/draft_repository.dart' show previewErrorMessage;
 import '../models/draft_doc.dart';
-import '../models/treadling_entries.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import 'draft_grids.dart';
@@ -72,22 +77,16 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       }
     });
 
-    // Watch ONLY what changes the geometry; cell pitch + tool from their own providers. The 6th field
-    // is the COMPRESSED treadling's row count (runs of identical picks), which sizes the right band's
-    // height — selected so a shed edit that keeps the run count doesn't rebuild the whole canvas.
+    // Watch ONLY what changes the geometry; cell pitch + tool from their own providers.
     final dims = ref.watch(draftEditorProvider.select((s) => (
           s.draft.ends,
           s.draft.picks,
           s.draft.shafts,
           s.draft.treadles,
           s.draft.drive is DraftTreadled,
-          treadlingEntries(s.draft.drive.rows).length,
         )));
     final cell = ref.watch(zoomCellProvider);
     final pencil = ref.watch(editorToolProvider) == EditorTool.pencil;
-    // Overshot collapses the treadling into runs (band = run count); otherwise the band is one row per
-    // pick. dims.$6 is the collapsed run count, dims.$2 is the pick count.
-    final overshot = ref.watch(overshotTreadlingProvider);
 
     final layout = DraftLayout(
       ends: dims.$1,
@@ -95,7 +94,6 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       shafts: dims.$3,
       treadles: dims.$4,
       hasTieup: dims.$5,
-      entries: overshot ? dims.$6 : dims.$2,
       cell: cell.toDouble(),
     );
 
@@ -181,7 +179,7 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
                   // on resize); per-cell semantics + screen-reader editing of the cloth is future
                   // work. The bitmap itself stays a single opaque RawImage.
                   child: Semantics(
-                    label: 'Woven cloth preview, ${layout.ends} ends by ${layout.picks} picks',
+                    label: 'Drawdown, ${layout.ends} ends by ${layout.picks} picks',
                     image: true,
                     child: const RepaintBoundary(child: _DrawdownChild()),
                   ),
@@ -207,9 +205,8 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
                   rect: layout.weftColorRect,
                   child: RepaintBoundary(child: WeftColorBand(geom: layout.weftColor)),
                 ),
-                // A read-only mirror of each run's weft color flush beside the compressed treadling,
-                // so the pick's color reads right next to the treadle to press. (The editable per-pick
-                // weft band stays on the left by the cloth.)
+                // A mirror of each pick's weft color flush beside the treadling, so the pick's color
+                // reads right next to the treadle to press (the left band by the cloth is its twin).
                 Positioned.fromRect(
                   rect: layout.weftMarkerRect,
                   child: RepaintBoundary(child: WeftMarkerBand(geom: layout.weftMarker)),
@@ -242,14 +239,6 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
       if (_activePointer != null) return;
       final hit = layout.hitTest(e.localPosition);
       if (hit == null) return;
-      // Selecting a treadling ROW (its treadle cells OR its weft-color marker) arms the dimensions
-      // bar's per-row steppers for it; painting anywhere else clears that selection (so the steppers
-      // only show for the active row). The marker shares the right band's entry rows, so hit.row is
-      // the same entry index in both.
-      ref.read(selectedTreadlingEntryProvider.notifier).state =
-          (hit.region == DraftRegion.right || hit.region == DraftRegion.weftMarker)
-              ? hit.row
-              : null;
       _activePointer = e.pointer;
       notifier.beginStroke(hit);
     }
@@ -334,7 +323,7 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
   /// post-frame callback (so it never writes during build), and [zoomUserSetProvider] makes it a
   /// one-shot per load (a manual zoom or the next [_load] flips the guard). [dims] is the live
   /// (ends, picks, shafts, treadles, hasTieup).
-  void _maybeAutoFit((int, int, int, int, bool, int) dims, Size available) {
+  void _maybeAutoFit((int, int, int, int, bool) dims, Size available) {
     if (ref.read(zoomUserSetProvider) || !available.isFinite || available.isEmpty) return;
     final fit = DraftLayout.fitCellLevel(
       ends: dims.$1,
@@ -357,7 +346,7 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
   /// so a pinch (or the zoom-out button) can shrink a large imported draft until everything is visible.
   /// Unlike [_maybeAutoFit] this is NOT one-shot — it tracks every resize/zoom — but it only WRITES the
   /// provider (post-frame, never during build) when the floor actually changes, so it never churns.
-  void _updateMinPitch((int, int, int, int, bool, int) dims, Size available) {
+  void _updateMinPitch((int, int, int, int, bool) dims, Size available) {
     if (!available.isFinite || available.isEmpty) return;
     final floor = DraftLayout.fitCellPx(
       ends: dims.$1,
@@ -376,11 +365,15 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
   }
 }
 
-/// The cloth: the engine-rendered drawdown bitmap, stretched to fill its [drawdownRect] cell-for-
-/// cell. BoxFit.fill + the exact-aspect rect means a uniform N->S nearest-neighbor scale (every
-/// cloth cell lands on exactly one grid cell). No Dart re-paint of shed logic, no mirror, no
-/// letterbox. During a re-render the previous frame stays (skipLoadingOnReload), so a fast edit
-/// never flashes a spinner; the stale frame may stretch for one frame on a resize, then corrects.
+/// The cloth: the engine-rendered STRUCTURAL drawdown bitmap, stretched to fill its [drawdownRect]
+/// cell-for-cell. [previewProvider] renders the structural draft (per-thread thickness ignored), so
+/// the bitmap is a uniform grid of `ends x picks` equal cells and BoxFit.fill over the exact-aspect
+/// rect is a uniform nearest-neighbor scale: every cloth cell lands on exactly one grid cell, at
+/// every zoom and pixel ratio. (A thickness-aware bitmap here would put its variable cell edges off
+/// the fixed grid, which is why yarn sizes live only in the separate yarn preview.) No Dart re-paint
+/// of shed logic, no mirror, no letterbox. During a re-render the previous frame stays
+/// (skipLoadingOnReload), so a fast edit never flashes a spinner; the stale frame may stretch for
+/// one frame on a resize, then corrects.
 class _DrawdownChild extends ConsumerWidget {
   const _DrawdownChild();
 

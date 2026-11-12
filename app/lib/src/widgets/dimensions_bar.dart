@@ -9,10 +9,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/glossary_lookup.dart';
 import '../models/double_weave_layers.dart';
 import '../models/draft_doc.dart';
-import '../models/treadling_entries.dart';
 import '../screens/layer_inspector_screen.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import 'book_view_sheet.dart';
 import 'editor_view_controls.dart';
 import 'palette_sheet.dart';
 import 'planning_sheet.dart';
@@ -58,16 +58,6 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
     }
   }
 
-  /// Append a new blank treadling row (one pick, no shed) and select it, so its count stepper is
-  /// ready and a tap on the new row sets its shed.
-  void _addRow() {
-    final notifier = ref.read(draftEditorProvider.notifier);
-    notifier.addEntry();
-    // Add Row is overshot-only, so the rows collapse into runs; select the new (last) run.
-    final n = treadlingEntries(ref.read(draftEditorProvider).draft.drive.rows, collapse: true).length;
-    ref.read(selectedTreadlingEntryProvider.notifier).state = n - 1;
-  }
-
   @override
   Widget build(BuildContext context) {
     final (ends, picks, shafts, treadles, isTreadled) =
@@ -79,20 +69,9 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
               s.draft.drive is DraftTreadled,
             )));
     final palette = ref.watch(draftEditorProvider.select((s) => s.draft.palette));
-    // The per-row treadle / count / add / delete controls are OVERSHOT-only (the collapsed "book"
-    // treadling); a non-overshot draft edits the treadling per-pick on the grid, so they stay hidden.
-    final overshot = ref.watch(overshotTreadlingProvider);
-    // Compressed-treadling rows (runs of identical picks). The selected row's count is editable; a
-    // selection past the live row count (a run that merged away) reads as "no selection".
-    final entries =
-        treadlingEntries(ref.watch(draftEditorProvider.select((s) => s.draft.drive.rows)), collapse: overshot);
-    final selectedRaw = ref.watch(selectedTreadlingEntryProvider);
-    final selectedEntry =
-        (selectedRaw != null && selectedRaw >= 0 && selectedRaw < entries.length) ? selectedRaw : null;
-    // The selected run's single treadle for the per-row 'Treadle' stepper. 0 means a blank shed OR a
-    // multi-treadle shed (which the grid edits cell-by-cell); stepping from 0 sets a single treadle.
-    final selectedShed = selectedEntry != null ? entries[selectedEntry].shed : const <int>[];
-    final selectedTreadle = selectedShed.length == 1 ? selectedShed.single : 0;
+    // A draft that pins the Book view (generated overshot drafts do by default) gets a one-tap button
+    // here; every draft can still open it from the editor's overflow menu.
+    final bookPinned = ref.watch(overshotTreadlingProvider);
     // Whether to surface the double-weave layer view (4+ shafts used). Watched directly so the chip
     // appears/disappears as the draft changes — and it reads the threading's real shaft usage, not
     // just the header, so a generated/composed double weave reliably offers it.
@@ -155,58 +134,6 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                     max: _maxDim,
                     enabled: enabled,
                     onChange: (v) => _resize(treadles: v)),
-              // Compressed (overshot) treadling: tapping a row selects it and reveals its controls —
-              // step its pick count ("throw this shed N times"), add a new row, or delete it. Shown only
-              // for an OVERSHOT draft with a row selected, so the overshot row machinery never appears on
-              // a plain/twill/satin draft (which edits its treadling per-pick on the grid instead).
-              if (isTreadled && overshot && selectedEntry != null) ...[
-                // Set which treadle the selected run presses, by hand — step it through 1..treadles
-                // (0 clears it). The fix for overshot, where you set each block's treadle directly
-                // instead of hunting the right grid cell. Re-anchors the selection if the edit merges
-                // this run into an identical neighbour.
-                _Stepper(
-                  label: 'Treadle',
-                  value: selectedTreadle,
-                  min: 0,
-                  max: treadles,
-                  enabled: enabled,
-                  onChange: (v) {
-                    final notifier = ref.read(draftEditorProvider.notifier);
-                    final startPick = entries[selectedEntry].startPick;
-                    notifier.setEntryShed(selectedEntry, v == 0 ? const <int>[] : <int>[v]);
-                    final newEntries =
-                        treadlingEntries(ref.read(draftEditorProvider).draft.drive.rows);
-                    ref.read(selectedTreadlingEntryProvider.notifier).state =
-                        entryIndexForPick(newEntries, startPick);
-                  },
-                ),
-                _Stepper(
-                  label: 'Row ×',
-                  value: entries[selectedEntry].count,
-                  min: 1,
-                  max: _maxDim,
-                  enabled: enabled,
-                  onChange: (v) =>
-                      ref.read(draftEditorProvider.notifier).setEntryCount(selectedEntry, v),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.add, size: 18),
-                  label: const Text('Row'),
-                  onPressed: enabled ? _addRow : null,
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 20,
-                  tooltip: 'Delete row',
-                  onPressed: enabled
-                      ? () {
-                          ref.read(draftEditorProvider.notifier).removeEntry(selectedEntry);
-                          ref.read(selectedTreadlingEntryProvider.notifier).state = null;
-                        }
-                      : null,
-                  icon: const Icon(Icons.delete_outline),
-                ),
-              ],
               // Tool chips: the palette editor (the leading dot is the active brush color), the
               // planning calculator, and the structure generator.
               ActionChip(
@@ -232,6 +159,14 @@ class _DimensionsBarState extends ConsumerState<DimensionsBar> {
                 label: const Text('Structure'),
                 onPressed: () => showStructureSheet(context),
               ),
+              // The separate Book view (runs of identical picks with counts). It never changes the
+              // grid above, which stays one treadling row per pick.
+              if (bookPinned)
+                ActionChip(
+                  avatar: const Icon(Icons.format_list_numbered, size: 18),
+                  label: const Text(kBookViewTitle),
+                  onPressed: () => showBookViewSheet(context),
+                ),
               // Double-weave only: a VISIBLE entry to the layer inspector (Combined/Front/Back), so
               // switching layers doesn't require hunting the AppBar overflow.
               if (canLayers)

@@ -273,9 +273,8 @@ class EditorState {
   // ---------------------------------------------------------------------------
 
   /// Is the cell named by [hit] currently "on" (filled)? Used to decide a stroke's paint value
-  /// (a drag starting on a filled cell ERASES; on an empty cell FILLS). [collapse] governs how a
-  /// right-band row maps to the per-pick model (whole run vs single pick); see [entriesView].
-  bool isCellOn(DraftHit hit, {bool collapse = true}) {
+  /// (a drag starting on a filled cell ERASES; on an empty cell FILLS).
+  bool isCellOn(DraftHit hit) {
     final drive = draft.drive;
     switch (hit.region) {
       case DraftRegion.threading:
@@ -288,12 +287,12 @@ class EditorState {
         final t = hit.col;
         return t >= 1 && t <= drive.tieup.length && drive.tieup[t - 1].contains(hit.row);
       case DraftRegion.right:
-        // The right band: hit.row is an entry index (a whole run in overshot mode, or one pick when
-        // not collapsing), and a cell is "on" when that entry's shed presses hit.col (a treadle id,
-        // or a shaft id for a liftplan).
-        final es = entriesView(collapse);
-        final i = hit.row;
-        return i >= 0 && i < es.length && es[i].shed.contains(hit.col);
+        // The right band is one row per PICK (the structural grid never groups picks), so hit.row is
+        // the 0-based pick and a cell is "on" when that pick presses hit.col (a treadle id, or a
+        // shaft id for a liftplan).
+        final rows = drive.rows;
+        final p = hit.row;
+        return p >= 0 && p < rows.length && rows[p].contains(hit.col);
       case DraftRegion.warpColor:
       case DraftRegion.weftColor:
       case DraftRegion.weftMarker:
@@ -380,27 +379,29 @@ class EditorState {
     return next == draft ? this : copyWith(draft: next);
   }
 
-  // --- COMPRESSED ("book") treadling: edit the per-pick model through its collapsed entries. The
-  // entries are DERIVED each call (treadlingEntries), so an edit that makes a run match its neighbour
-  // simply re-collapses on the next read; the per-pick treadling stays the canonical engine form. ---
+  /// Set pick [pick] (0-based) to press [ids] (treadle ids treadled, raised shaft ids liftplan),
+  /// canonicalized ascending. The structural grid's right-band paint routes here: one row is one
+  /// pick, for both drives. Pure; returns `this` on a no-op. Throws on an out-of-range [pick].
+  EditorState withShedForPick(int pick, List<int> ids) {
+    final rows = draft.drive.rows;
+    if (pick < 0 || pick >= rows.length) throw RangeError.range(pick, 0, rows.length - 1, 'pick');
+    final next = draft.copyWith(drive: _driveFromRows(_setRow(rows, pick, ids)));
+    return next == draft ? this : copyWith(draft: next);
+  }
 
-  /// The treadling collapsed into runs of identical sheds — the compressed view the OVERSHOT editor
-  /// renders and edits. Generic over the drive (treadle ids for treadled, raised shaft ids for
-  /// liftplan). Used by the overshot-only row reducers (count / add / remove), which always collapse.
+  // --- BOOK VIEW edits: explicit per-pick mutations addressed through the derived run entries
+  // (treadlingEntries). The entries are re-derived on every read, so an edit that makes a run match
+  // its neighbour simply groups with it next time; the per-pick treadling stays the canonical form
+  // and every operation below names exactly which picks it changes. ---
+
+  /// The treadling grouped into runs of identical sheds: the rows the Book view lists. Generic over
+  /// the drive (treadle ids for treadled, raised shaft ids for liftplan).
   List<TreadlingEntry> get entries => treadlingEntries(draft.drive.rows);
 
-  /// The treadling entries with collapsing gated by [collapse]: the same as [entries] when true, or
-  /// ONE entry per pick when false (the per-pick treadling for a non-overshot draft). The paint path
-  /// and per-run weft setter take this so an editor in per-pick mode addresses entries 1:1 with picks
-  /// (the hit's row IS the pick), and in overshot mode addresses whole runs. See [treadlingEntries].
-  List<TreadlingEntry> entriesView(bool collapse) =>
-      treadlingEntries(draft.drive.rows, collapse: collapse);
-
-  /// Set every pick in entry [index]'s run to press [ids] (treadle ids treadled, shaft ids liftplan),
-  /// canonicalized ascending. Pure; returns `this` on a no-op. The paint path routes here so one tap
-  /// sets the whole run's shed.
-  EditorState withShedForEntry(int index, List<int> ids, {bool collapse = true}) {
-    final es = entriesView(collapse);
+  /// Set every pick in entry [index]'s run (picks `startPick` to `endPick - 1`) to press [ids],
+  /// canonicalized ascending. Pure; returns `this` on a no-op.
+  EditorState withShedForEntry(int index, List<int> ids) {
+    final es = entries;
     if (index < 0 || index >= es.length) throw RangeError.range(index, 0, es.length - 1, 'entry');
     final e = es[index];
     final shed = List<int>.of(ids)..sort();
@@ -413,8 +414,11 @@ class EditorState {
     return next == draft ? this : copyWith(draft: next);
   }
 
-  /// Set entry [index]'s pick COUNT (>= 1) by inserting/removing picks at the run's tail; inserted
-  /// picks copy the run's shed and its first pick's weft color/thickness. Pure; no-op when unchanged.
+  /// Set entry [index]'s pick COUNT (>= 1) by adding or removing picks at the END of its run. Each
+  /// added pick is a copy of the run's LAST pick (its shed, weft color, and weft thickness when the
+  /// draft tracks thickness); a shrink removes picks from the end. Either way the run stays one entry
+  /// (it keeps at least one pick between its neighbours) and every other pick is untouched, so the
+  /// change is exactly "append/remove N picks after pick `endPick - 1`". Pure; no-op when unchanged.
   EditorState setEntryCount(int index, int count) {
     if (count < 1) throw RangeError.range(count, 1, null, 'count');
     final es = entries;
@@ -422,15 +426,12 @@ class EditorState {
     final e = es[index];
     if (count == e.count) return this;
     if (count > e.count) {
+      final last = e.endPick - 1;
       return _insertPicks(
-          e.endPick, count - e.count, e.shed, _weftColorAt(e.startPick), _weftThicknessAt(e.startPick));
+          e.endPick, count - e.count, e.shed, _weftColorAt(last), _weftThicknessAt(last));
     }
     return _removePicks(e.endPick - (e.count - count), e.count - count);
   }
-
-  /// Append a new BLANK (no-shed) one-pick entry after the last run, ready to be given a shed + count.
-  EditorState addEntry() => _insertPicks(
-      draft.drive.rows.length, 1, const <int>[], 0, _weftThicknessAt(draft.picks - 1));
 
   /// Remove entry [index]'s whole run (all its picks). A bad index is a no-op.
   EditorState removeEntry(int index) {
@@ -551,43 +552,23 @@ class EditorState {
     return next == draft ? this : copyWith(draft: next);
   }
 
-  /// Set EVERY pick in compressed-treadling entry [index]'s run to weft color [idx] — the run-level
-  /// weft setter the per-run marker band paints through (one tap colors the whole run). Pure; pads
-  /// weftColors to the pick count; returns `this` on a no-op.
-  EditorState withWeftColorForEntry(int index, int idx, {bool collapse = true}) {
-    final es = entriesView(collapse);
-    if (index < 0 || index >= es.length) throw RangeError.range(index, 0, es.length - 1, 'entry');
-    if (idx < 0 || idx >= draft.palette.length) {
-      throw RangeError.range(idx, 0, draft.palette.length - 1, 'palette index');
-    }
-    final e = es[index];
-    final wc = _padded(draft.weftColors, draft.picks, 0);
-    for (var p = e.startPick; p < e.endPick && p < wc.length; p++) {
-      wc[p] = idx;
-    }
-    final next = draft.copyWith(weftColors: wc);
-    return next == draft ? this : copyWith(draft: next);
-  }
-
   /// Apply a paint to the cell named by [hit], forcing it [on] or off, routing to the right
-  /// region's value-setter so tap and drag share identical semantics. [collapse] governs the right
-  /// band's row-to-pick mapping (whole run in overshot mode, single pick otherwise); see [entriesView].
-  EditorState paintCell(DraftHit hit, {required bool on, bool collapse = true}) {
+  /// region's value-setter so tap and drag share identical semantics.
+  EditorState paintCell(DraftHit hit, {required bool on}) {
     switch (hit.region) {
       case DraftRegion.threading:
         return withThreadForEnd(hit.col, on ? [hit.row] : const <int>[]);
       case DraftRegion.tieup:
         return withTieupCell(hit.col, hit.row, on);
       case DraftRegion.right:
-        // hit.row is an entry index; a paint sets that entry's shed (a whole run in overshot mode, or
-        // one pick when not collapsing). Works for both drives via the shared shed-setter.
-        return withShedForEntry(hit.row, on ? [hit.col] : const <int>[], collapse: collapse);
+        // hit.row is the pick; a paint sets that one pick's shed. Works for both drives.
+        return withShedForPick(hit.row, on ? [hit.col] : const <int>[]);
       case DraftRegion.warpColor:
       case DraftRegion.weftColor:
       case DraftRegion.weftMarker:
         // Color regions set a palette INDEX, not an on/off bool: a mis-route here is a bug, so fail
         // loudly instead of writing a boolean into a color band. The driver paints them via
-        // withWarpColorForEnd / withWeftColorForPick / withWeftColorForEntry.
+        // withWarpColorForEnd / withWeftColorForPick.
         throw StateError('color regions are painted via the color value-setters, not paintCell');
       case DraftRegion.drawdown:
         return this; // display-only

@@ -430,8 +430,60 @@ void main() {
     });
   });
 
-  group('compressed treadling (entry reducers)', () {
-    // treadle 1 x3, then treadle 2 x1 -> two runs. weftColors track the picks.
+  group('structural right band (one row per pick)', () {
+    // treadle 1 x3, then treadle 2 x1: a run of identical picks that the grid must NOT group.
+    DraftDoc runs() => paintableTreadled().copyWith(
+          drive: DraftTreadled(
+            tieup: const [
+              [1],
+              [2],
+              [3],
+              [4],
+            ],
+            treadling: const [
+              [1],
+              [1],
+              [1],
+              [2],
+            ],
+          ),
+        );
+
+    test('isCellOn reads a single pick (row = pick index, never a run index)', () {
+      final s = EditorState(draft: runs());
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 1, 2)), isTrue, reason: 'pick 2 = t1');
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 2, 3)), isTrue, reason: 'pick 3 = t2');
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 1, 3)), isFalse);
+      expect(s.isCellOn(const DraftHit(DraftRegion.right, 2, 1)), isFalse,
+          reason: 'row 1 is pick 1 (treadle 1), not the second run');
+    });
+
+    test('painting a right cell sets ONE pick, leaving the rest of its run alone', () {
+      final s = EditorState(draft: runs())
+          .beginStroke()
+          .paintCell(const DraftHit(DraftRegion.right, 3, 1), on: true)
+          .endStroke();
+      expect((s.draft.drive as DraftTreadled).treadling, [
+        [1],
+        [3],
+        [1],
+        [2],
+      ]);
+      expect(s.undo.length, 1, reason: 'one undo entry for the stroke');
+    });
+
+    test('withShedForPick works for a liftplan and rejects an out-of-range pick', () {
+      final s = EditorState(draft: paintableLiftplan()).withShedForPick(2, const [4, 1]);
+      expect((s.draft.drive as DraftLiftplan).liftplan[2], [1, 4], reason: 'canonical ascending');
+      expect(() => EditorState(draft: paintableLiftplan()).withShedForPick(4, const [1]),
+          throwsRangeError);
+      final s0 = EditorState(draft: paintableLiftplan());
+      expect(identical(s0.withShedForPick(0, const [1]), s0), isTrue, reason: 'no-op');
+    });
+  });
+
+  group('Book view (entry reducers: explicit per-pick edits)', () {
+    // treadle 1 x3 (weft colors 1, 0, 2: a run that is NOT one color), then treadle 2 x1.
     DraftDoc merging() => paintableTreadled().copyWith(
           drive: DraftTreadled(
             tieup: const [
@@ -447,10 +499,17 @@ void main() {
               [2],
             ],
           ),
-          weftColors: const [1, 1, 1, 0],
+          palette: const [
+            DraftColor(r: 255, g: 255, b: 255),
+            DraftColor(r: 0, g: 0, b: 0),
+            DraftColor(r: 200, g: 0, b: 0),
+          ],
+          weftColors: const [1, 0, 2, 0],
         );
 
-    test('entries collapse maximal runs', () {
+    List<List<int>> treadling(EditorState s) => (s.draft.drive as DraftTreadled).treadling;
+
+    test('entries group maximal runs', () {
       final s = EditorState(draft: merging());
       expect(s.entries.map((e) => e.shed).toList(), [
         [1],
@@ -460,74 +519,54 @@ void main() {
       expect(s.entries.map((e) => e.startPick).toList(), [0, 3]);
     });
 
-    test('isCellOn reads the run shed (row = entry index)', () {
-      final s = EditorState(draft: merging());
-      expect(s.isCellOn(const DraftHit(DraftRegion.right, 1, 0)), isTrue);
-      expect(s.isCellOn(const DraftHit(DraftRegion.right, 2, 0)), isFalse);
-      expect(s.isCellOn(const DraftHit(DraftRegion.right, 2, 1)), isTrue);
-    });
-
-    test('painting a right cell sets the WHOLE run shed', () {
-      final s = EditorState(draft: merging())
-          .beginStroke()
-          .paintCell(const DraftHit(DraftRegion.right, 3, 0), on: true)
-          .endStroke();
-      expect((s.draft.drive as DraftTreadled).treadling, [
-        [3],
-        [3],
-        [3],
+    test('setEntryCount GROWS by appending copies of the run\'s LAST pick (shed + weft color)', () {
+      final s = EditorState(draft: merging()).setEntryCount(0, 5); // treadle 1 x3 -> x5
+      expect(treadling(s), [
+        [1],
+        [1],
+        [1],
+        [1],
+        [1],
         [2],
       ]);
-      expect(s.undo.length, 1, reason: 'one undo entry for the stroke');
-    });
-
-    test('collapse:false paints ONE pick, not the whole run (non-overshot per-pick editing)', () {
-      // The SAME merging() draft, but the right-band row is a PICK index (collapse off): painting
-      // (treadle 3, row 1) must set only pick 1, leaving picks 0 and 2 of the old run untouched.
-      final s = EditorState(draft: merging())
-          .beginStroke()
-          .paintCell(const DraftHit(DraftRegion.right, 3, 1), on: true, collapse: false)
-          .endStroke();
-      expect((s.draft.drive as DraftTreadled).treadling, [
-        [1],
-        [3],
-        [1],
-        [2],
-      ], reason: 'only pick 1 changed; the run did not collapse');
-    });
-
-    test('collapse:false isCellOn reads a single pick (row = pick index)', () {
-      final s = EditorState(draft: merging());
-      // Pick 3 presses treadle 2; with collapse off the row IS the pick (not the run index).
-      expect(s.isCellOn(const DraftHit(DraftRegion.right, 2, 3), collapse: false), isTrue);
-      expect(s.isCellOn(const DraftHit(DraftRegion.right, 1, 3), collapse: false), isFalse);
-      expect(s.isCellOn(const DraftHit(DraftRegion.right, 1, 2), collapse: false), isTrue);
-    });
-
-    test('setEntryCount GROWS by inserting picks that copy the run shed + color', () {
-      final s = EditorState(draft: merging()).setEntryCount(1, 3); // treadle 2 x1 -> x3
-      final t = s.draft.drive as DraftTreadled;
-      expect(t.treadling, [
-        [1],
-        [1],
-        [1],
-        [2],
-        [2],
-        [2],
-      ]);
-      expect(s.draft.weftColors, [1, 1, 1, 0, 0, 0], reason: 'inserted picks copy the run color');
+      // The two added picks copy pick 2 (color 2), NOT pick 0 (color 1); the first three are kept.
+      expect(s.draft.weftColors, [1, 0, 2, 2, 2, 0]);
       expect(s.draft.picks, 6);
     });
 
-    test('setEntryCount SHRINKS by removing picks, keeping weftColors coupled', () {
+    test('setEntryCount copies the last pick\'s weft THICKNESS when the draft tracks it', () {
+      final d = merging().copyWith(weftThickness: const [1.0, 1.0, 3.0, 1.0]);
+      final s = EditorState(draft: d).setEntryCount(0, 4);
+      expect(s.draft.weftThickness, [1.0, 1.0, 3.0, 3.0, 1.0]);
+    });
+
+    test('setEntryCount SHRINKS by removing picks from the END of the run', () {
       final s = EditorState(draft: merging()).setEntryCount(0, 1); // treadle 1 x3 -> x1
-      final t = s.draft.drive as DraftTreadled;
-      expect(t.treadling, [
+      expect(treadling(s), [
         [1],
         [2],
       ]);
-      expect(s.draft.weftColors, [1, 0]);
+      expect(s.draft.weftColors, [1, 0], reason: 'pick 0 (the run start) is the one kept');
       expect(s.draft.picks, 2);
+    });
+
+    test('setEntryCount round-trips: the row gets exactly that count, every other row is unchanged',
+        () {
+      final base = EditorState(draft: merging());
+      for (final (index, count) in [(0, 1), (0, 2), (0, 7), (1, 1), (1, 4)]) {
+        final s = base.setEntryCount(index, count);
+        final before = base.entries;
+        final after = s.entries;
+        expect(after.length, before.length, reason: 'a count edit never merges or splits rows');
+        for (var i = 0; i < after.length; i++) {
+          expect(after[i].shed, before[i].shed);
+          expect(after[i].count, i == index ? count : before[i].count);
+        }
+        // Picks before the edited row's end are untouched (same shed, same weft color).
+        final keep = before[index].startPick + (count < before[index].count ? count : before[index].count);
+        expect(treadling(s).sublist(0, keep), treadling(base).sublist(0, keep));
+        expect(s.draft.weftColors.sublist(0, keep), base.draft.weftColors.sublist(0, keep));
+      }
     });
 
     test('setEntryCount is a no-op when the count is unchanged', () {
@@ -535,56 +574,50 @@ void main() {
       expect(identical(s0.setEntryCount(0, 3), s0), isTrue);
     });
 
-    test('addEntry appends a blank one-pick row', () {
-      final s = EditorState(draft: merging()).addEntry();
-      final t = s.draft.drive as DraftTreadled;
-      expect(t.treadling, [
-        [1],
-        [1],
-        [1],
-        [2],
-        <int>[],
-      ]);
-      expect(s.draft.weftColors.length, 5);
-      expect(s.entries.length, 3);
-    });
-
     test('removeEntry removes a run and its weftColors', () {
       final s = EditorState(draft: merging()).removeEntry(0); // drop the treadle-1 run (3 picks)
-      final t = s.draft.drive as DraftTreadled;
-      expect(t.treadling, [
+      expect(treadling(s), [
         [2],
       ]);
       expect(s.draft.weftColors, [0]);
     });
 
-    test('withWeftColorForEntry paints EVERY pick in the run (the per-run weft marker)', () {
-      // Run 0 = picks 0,1,2 (weftColors 1,1,1); set it all to color 0. Run 1 (pick 3) stays.
-      final s = EditorState(draft: merging()).withWeftColorForEntry(0, 0);
-      expect(s.draft.weftColors, [0, 0, 0, 0]);
+    test('removeEntry between two identical runs leaves them adjacent (they now group as one)', () {
+      // [1],[2],[1]: deleting the middle row's ONE pick is exactly that pick gone; the two treadle-1
+      // picks are now neighbours, so the Book view lists them as one row of 2.
+      final d = paintableTreadled().copyWith(
+        drive: DraftTreadled(tieup: const [
+          [1],
+          [2],
+          [3],
+          [4],
+        ], treadling: const [
+          [1],
+          [2],
+          [1],
+        ]),
+        weftColors: const [1, 0, 0],
+      );
+      final s = EditorState(draft: d).removeEntry(1);
+      expect(treadling(s), [
+        [1],
+        [1],
+      ]);
+      expect(s.draft.weftColors, [1, 0], reason: 'each kept pick keeps its own color');
+      expect(s.entries.single.count, 2);
     });
 
-    test('withWeftColorForEntry is a no-op when the run is already that color', () {
-      final s0 = EditorState(draft: merging()); // run 1 (pick 3) is already color 0
-      expect(identical(s0.withWeftColorForEntry(1, 0), s0), isTrue);
-    });
-
-    test('withWeftColorForEntry rejects an out-of-range entry index', () {
-      final s0 = EditorState(draft: merging());
-      expect(() => s0.withWeftColorForEntry(5, 0), throwsRangeError);
-    });
-
-    test('withShedForEntry can MERGE a run into its neighbour (entries recollapse)', () {
-      // Set run 1 (treadle 2) to also press treadle 1 -> all four picks become treadle 1 -> one run.
-      // This is the merge the dimensions-bar treadle stepper re-anchors its selection across.
+    test('withShedForEntry sets every pick of the run, and can MERGE into a neighbour', () {
+      // Set run 1 (treadle 2) to treadle 1 -> all four picks become treadle 1 -> one run.
       final s = EditorState(draft: merging()).withShedForEntry(1, [1]);
-      expect((s.draft.drive as DraftTreadled).treadling, [
+      expect(treadling(s), [
         [1],
         [1],
         [1],
         [1],
       ]);
       expect(s.entries.length, 1, reason: 'the two runs merged into one');
+      expect(s.draft.weftColors, [1, 0, 2, 0], reason: 'a shed edit never touches weft colors');
     });
   });
 
