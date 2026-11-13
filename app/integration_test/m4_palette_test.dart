@@ -107,7 +107,9 @@ void main() {
     ]);
     final after = await repo.renderDto(edited, cellPx: px);
     final afterBytes = await rawBytes(after);
-    expect(pixelAt(after, afterBytes, px ~/ 2, after.height ~/ 2), (0, 0, 255),
+    // Warp end 1 (end0 here) is drawn at the RIGHT edge (the conventional draft orientation, end 1
+    // right and pick 1 top), so sample the middle of the rightmost cell.
+    expect(pixelAt(after, afterBytes, after.width - px ~/ 2, after.height ~/ 2), (0, 0, 255),
         reason: 'end0 (index 1) now renders blue');
     expect(afterBytes, isNot(equals(before)), reason: 'the cloth re-rendered');
     after.dispose();
