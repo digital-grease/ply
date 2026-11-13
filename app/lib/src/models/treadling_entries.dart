@@ -8,7 +8,8 @@
 // entries are re-derived after every edit, so the grouping can never drift from the picks.
 //
 // This is NOT "Use Tabby" shorthand. Tabby picks interleave the pattern picks, so consecutive-run
-// grouping cannot recover them; that needs explicit pattern/tabby pick roles (planned later).
+// grouping cannot recover them; that needs explicit pattern/tabby pick roles, and lives in
+// use_tabby.dart (shown by the Book view only when the draft's roles make it exact).
 
 /// One Book view entry: a maximal run of consecutive picks pressing the same shed.
 class TreadlingEntry {

@@ -143,7 +143,7 @@ void main() {
     final before = c.read(draftEditorProvider).draft;
     await tester.tap(find.widgetWithText(ActionChip, 'Book view'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('not "Use Tabby" shorthand'), findsOneWidget);
+    expect(find.text('Use tabby shorthand'), findsOneWidget, reason: 'the Book view is open');
     expect(find.text('4 picks in 4 rows'), findsOneWidget);
     expect(identical(c.read(draftEditorProvider).draft, before), isTrue,
         reason: 'opening the Book view changes nothing in the draft');

@@ -128,8 +128,9 @@ PickLayers classifyPicks(DraftDoc doc, Set<int> topShafts) {
 ///     still partition every end).
 ///   - WEFT: the picks that weave THIS layer per [classifyPicks]. A pick that weaves neither layer is
 ///     in neither sub-draft; the inspector lists those picks and why, so none disappears silently.
-/// The tie-up + shed and the header counts are preserved; only the threading, drive rows, and the
-/// per-thread colors AND thickness are narrowed to the layer (so the kept threads keep their widths).
+/// The tie-up + shed and the header counts are preserved; only the threading, drive rows, the
+/// per-thread colors AND thickness, and the pick roles are narrowed to the layer (so the kept threads
+/// keep their widths and roles).
 DraftDoc doubleWeaveLayerDraft(DraftDoc doc, {required Set<int> topShafts, required bool top}) {
   final n = maxLayerShaft(doc);
   final bottomShafts = {for (var s = 1; s <= n; s++) if (!topShafts.contains(s)) s};
@@ -172,5 +173,7 @@ DraftDoc doubleWeaveLayerDraft(DraftDoc doc, {required Set<int> topShafts, requi
     weftColors: weftColors,
     warpThickness: narrowThickness(doc.warpThickness, keepEnds, doc.ends),
     weftThickness: narrowThickness(doc.weftThickness, keepPicks, doc.picks),
+    // Roles are per pick, so they narrow with the picks (empty stays empty).
+    pickRoles: [for (final p in keepPicks) doc.roleAt(p)],
   );
 }

@@ -8,8 +8,8 @@ import 'package:ply/src/state/editor_providers.dart';
 import 'package:ply/src/widgets/book_view_sheet.dart';
 
 // Host coverage for the separate Book view (M7-09): the treadling grouped into runs of identical
-// picks, each row with its count, pick range, and EVERY weft color in it; an honest label (not "Use
-// Tabby" shorthand); and editing operations that are explicit per-pick changes which the re-derived
+// picks, each row with its count, pick range, and EVERY weft color in it; an honest label (Use tabby
+// only when recorded roles make it exact, see book_view_roles_test.dart); and editing operations that are explicit per-pick changes which the re-derived
 // rows show back exactly. It never reshapes the editor grid (that is covered by the grid/layout tests).
 
 const _white = DraftColor(r: 255, g: 255, b: 255);
@@ -102,12 +102,19 @@ void main() {
     }
   });
 
-  testWidgets('labels itself honestly: groups runs, not "Use Tabby" shorthand', (tester) async {
+  testWidgets('labels itself honestly: groups runs, and says why Use tabby is off', (tester) async {
     await pumpBook(tester, fixture());
     expect(find.text(kBookViewExplainer), findsOneWidget);
-    expect(find.text(kBookViewNotTabby), findsOneWidget);
     expect(find.text(kBookViewKeepsPicks), findsOneWidget);
-    expect(kBookViewNotTabby, contains('not "Use Tabby" shorthand'));
+    // No roles recorded: the Use tabby switch is off and disabled, with the reason under it.
+    expect(find.text(kBookViewUseTabby), findsOneWidget);
+    expect(
+        find.text('Use tabby shorthand needs every pick to have a role. Roles are unknown for '
+            'picks 1 to 6.'),
+        findsOneWidget);
+    final sw = tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, kBookViewUseTabby));
+    expect(sw.value, isFalse);
+    expect(sw.onChanged, isNull);
   });
 
   testWidgets('a row shows EVERY weft color in its run, in pick order (no first-pick masking)',
@@ -155,7 +162,8 @@ void main() {
     );
     await pumpBook(tester, doc);
     expect(find.text('6 picks in 6 rows'), findsOneWidget);
-    expect(find.text(kBookViewNotTabby), findsOneWidget);
+    expect(find.textContaining('Roles are unknown for picks 1 to 6.'), findsOneWidget,
+        reason: 'without recorded roles it is never presented as Use tabby');
   });
 
   testWidgets('Count adds a copy of the row\'s LAST pick and removes from the end; +1 then -1 '
@@ -319,6 +327,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
     expect(find.text('120 picks in 120 rows'), findsOneWidget);
+    // The header (Use tabby switch, Mark tabby picks, pin) scrolls with the rows on a short phone.
+    await tester.ensureVisible(find.text('Pick 1'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Pick 1'));
     await tester.pump();
     expect(find.text('Editing row 1, pick 1'), findsOneWidget);

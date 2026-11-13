@@ -2,7 +2,7 @@
 //! can surface problems live (shafts out of range, color counts that don't line up,
 //! treadles with no tie-up, etc.).
 
-use crate::draft::{Draft, Drive};
+use crate::draft::{Draft, Drive, PickRole, TabbyRule};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,6 +163,43 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
         }
     }
 
+    // Pick roles (M8-06): when recorded they are length-coupled to the picks (empty = all unknown).
+    // A length mismatch means some role names no pick, or some pick lost its role: an Error.
+    if !draft.pick_roles.is_empty() && draft.pick_roles.len() != draft.picks() {
+        push(
+            &mut issues,
+            Severity::Error,
+            format!(
+                "pick role count ({}) != picks ({})",
+                draft.pick_roles.len(),
+                draft.picks()
+            ),
+        );
+    }
+    // A pick marked tabby should weave plain weave; one that does not is legal but suspicious (a
+    // wrong role, or a threading/tie-up edit that broke the ground). One summarizing Warning.
+    let tabby = TabbyRule::new(&draft.threading);
+    let off_tabby: Vec<usize> = (0..draft.picks())
+        .filter(|&p| {
+            draft.pick_role(p) == PickRole::Tabby && tabby.phase(&draft.raised_shafts(p)).is_none()
+        })
+        .collect();
+    if !off_tabby.is_empty() {
+        let (noun, verb) = if off_tabby.len() == 1 {
+            ("pick", "its shed does")
+        } else {
+            ("picks", "their sheds do")
+        };
+        push(
+            &mut issues,
+            Severity::Warning,
+            format!(
+                "{noun} {} marked tabby but {verb} not weave plain weave",
+                pick_list(&off_tabby)
+            ),
+        );
+    }
+
     // A shaft that is THREADED but never RAISED by any pick floats the whole cloth length on the
     // back. Every such shaft is in range, so nothing above catches it, yet the cloth is structurally
     // broken — e.g. a satin whose move number shares a factor with the shaft count. `raised_shafts`
@@ -192,6 +229,24 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
     }
 
     issues
+}
+
+/// "4", "4 and 6", "4, 6 and 8", or "4, 6, 8, 10, 12 and 3 more" for 0-based picks (shown 1-based),
+/// so a message about many picks stays one short line.
+fn pick_list(picks: &[usize]) -> String {
+    const SHOWN: usize = 5;
+    let nums: Vec<String> = picks
+        .iter()
+        .take(SHOWN)
+        .map(|p| (p + 1).to_string())
+        .collect();
+    if picks.len() > SHOWN {
+        return format!("{} and {} more", nums.join(", "), picks.len() - SHOWN);
+    }
+    match nums.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => nums.join(""),
+    }
 }
 
 #[cfg(test)]
@@ -227,6 +282,7 @@ mod tests {
             weft_thickness: Vec::new(),
             notes: String::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         };
         let issues = validate(&d);
         assert!(
@@ -260,6 +316,80 @@ mod tests {
                 .all(|i| !(i.severity == Severity::Error && i.message.contains("color"))),
             "color error should be gone after clamp"
         );
+    }
+
+    /// Overshot-style 4-shaft draft with a pattern shed (treadle 1) and two tabby sheds (3 and 4).
+    fn roles_draft(treadling: &[u16], roles: Vec<PickRole>) -> Draft {
+        let mut d = Draft::blank(4, 4);
+        d.threading = Threading(
+            [1, 2, 1, 2, 3, 4, 3, 4]
+                .iter()
+                .map(|&s| vec![ShaftId(s)])
+                .collect(),
+        );
+        d.colors.warp = vec![0; 8];
+        d.drive = Drive::Treadled {
+            tieup: TieUp(vec![
+                vec![ShaftId(1), ShaftId(2)],
+                vec![ShaftId(3), ShaftId(4)],
+                vec![ShaftId(1), ShaftId(3)],
+                vec![ShaftId(2), ShaftId(4)],
+            ]),
+            treadling: Treadling(treadling.iter().map(|&t| vec![TreadleId(t)]).collect()),
+        };
+        d.colors.weft = vec![0; treadling.len()];
+        d.pick_roles = roles;
+        d
+    }
+
+    #[test]
+    fn pick_role_count_mismatch_is_an_error() {
+        use PickRole::*;
+        let d = roles_draft(&[1, 3, 1], vec![Pattern, Tabby]);
+        assert!(
+            validate(&d).iter().any(|i| i.severity == Severity::Error
+                && i.message == "pick role count (2) != picks (3)"),
+            "{:?}",
+            validate(&d)
+        );
+        // Empty (no roles recorded) is never a mismatch, and an aligned list is clean.
+        assert!(validate(&roles_draft(&[1, 3, 2], vec![])).is_empty());
+        assert!(validate(&roles_draft(&[1, 3, 2], vec![Pattern, Tabby, Pattern])).is_empty());
+    }
+
+    #[test]
+    fn a_tabby_pick_off_the_tabby_sheds_is_one_warning() {
+        use PickRole::*;
+        // Pick 3 (treadle 1, a pattern shed) is marked tabby.
+        let d = roles_draft(&[1, 3, 1, 4], vec![Pattern, Tabby, Tabby, Tabby]);
+        let issues = validate(&d);
+        assert_eq!(
+            issues,
+            vec![ValidationIssue {
+                severity: Severity::Warning,
+                message: "pick 3 marked tabby but its shed does not weave plain weave".into(),
+            }]
+        );
+        // Several are summarized in one line.
+        let many = roles_draft(&[1, 1, 1, 2, 2, 2, 1], vec![Tabby; 7]);
+        let warns: Vec<_> = validate(&many)
+            .into_iter()
+            .filter(|i| i.message.contains("marked tabby"))
+            .collect();
+        assert_eq!(warns.len(), 1);
+        assert_eq!(
+            warns[0].message,
+            "picks 1, 2, 3, 4, 5 and 2 more marked tabby but their sheds do not weave plain weave"
+        );
+        // Pattern picks on any shed are fine.
+        assert!(validate(&roles_draft(&[3, 4], vec![Pattern, Pattern])).is_empty());
+    }
+
+    #[test]
+    fn pick_list_reads_naturally() {
+        assert_eq!(pick_list(&[3]), "4");
+        assert_eq!(pick_list(&[3, 5]), "4 and 6");
+        assert_eq!(pick_list(&[3, 5, 7]), "4, 6 and 8");
     }
 
     #[test]

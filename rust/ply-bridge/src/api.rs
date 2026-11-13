@@ -27,11 +27,11 @@ use ply_weave::{self as weave, Draft};
 // M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
-    ColorDto, DraftDto, DrawdownRegionDto, DriveDto, RenderFailure, RenderFailureKind,
-    RenderOptionsDto, RetainedEntryDto, RetainedSectionDto, SeverityKind, ShadowBlockDto,
-    ShadowLayoutKind, ShadowParamsDto, ShadowSystemKind, ShedKind, StructureFamily, ThreadingKind,
-    TwillDirectionKind, UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPhaseKind,
-    WeftPlanDto, YarnEstimateDto,
+    ColorDto, DraftDto, DrawdownRegionDto, DriveDto, PickRoleKind, RenderFailure,
+    RenderFailureKind, RenderOptionsDto, RetainedEntryDto, RetainedSectionDto, SeverityKind,
+    ShadowBlockDto, ShadowLayoutKind, ShadowParamsDto, ShadowSystemKind, ShedKind, StructureFamily,
+    ThreadingKind, TwillDirectionKind, UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto,
+    WeftPhaseKind, WeftPlanDto, YarnEstimateDto,
 };
 
 /// Most shafts a structure generator will build a tie-up for. Real looms stop far below this (the
@@ -809,6 +809,12 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(sinking.shed, ShedKind::Sinking));
+        // The pattern/tabby roles the generator recorded cross the bridge and survive the shed
+        // conversion the app applies to every generated draft.
+        assert_eq!(rising.pick_roles.len(), 16);
+        assert_eq!(rising.pick_roles[0], PickRoleKind::Pattern);
+        assert_eq!(rising.pick_roles[1], PickRoleKind::Tabby);
+        assert_eq!(sinking.pick_roles, rising.pick_roles);
         let a = render_preview_dto(rising, 4, None).ok().unwrap();
         let b = render_preview_dto(sinking, 4, None).ok().unwrap();
         assert_eq!(a.rgba, b.rgba);
@@ -821,6 +827,42 @@ mod tests {
             tieup_for_shed_dto(vec![vec![1, 2]], 4, ShedKind::Rising),
             vec![vec![1, 2]]
         );
+    }
+
+    /// Roles survive the editor's FFI round trips: WIF write and parse, resize, and the liftplan
+    /// convert; a resize that adds picks pads Unknown, and validation sees the roles.
+    #[test]
+    fn pick_roles_cross_every_bridge_round_trip() {
+        let dto = generate_structure_dto(StructureFamily::DoubleWeave, 8, 4, 2).unwrap();
+        let roles = dto.pick_roles.clone();
+        assert_eq!(
+            roles,
+            vec![
+                PickRoleKind::TopLayer,
+                PickRoleKind::BottomLayer,
+                PickRoleKind::TopLayer,
+                PickRoleKind::BottomLayer
+            ]
+        );
+        let wif = write_wif(generate_structure_dto(StructureFamily::DoubleWeave, 8, 4, 2).unwrap())
+            .unwrap();
+        assert_eq!(parse_wif_dto(wif).unwrap().pick_roles, roles);
+        let lp =
+            to_liftplan_dto(generate_structure_dto(StructureFamily::DoubleWeave, 8, 4, 2).unwrap())
+                .unwrap();
+        assert_eq!(lp.pick_roles, roles);
+        let grown = resize_dto(lp, 8, 6, 4, 0).unwrap();
+        assert_eq!(&grown.pick_roles[..4], &roles[..]);
+        assert_eq!(
+            &grown.pick_roles[4..],
+            &[PickRoleKind::Unknown, PickRoleKind::Unknown]
+        );
+        let mut bad = generate_structure_dto(StructureFamily::DoubleWeave, 8, 4, 2).unwrap();
+        bad.pick_roles.pop();
+        let issues = validate_draft(bad).unwrap();
+        assert!(issues
+            .iter()
+            .any(|i| matches!(i.severity, SeverityKind::Error) && i.message.contains("pick role")));
     }
 
     /// A family sent to the wrong generator is an error, not a silently different structure.

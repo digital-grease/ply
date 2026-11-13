@@ -64,6 +64,12 @@ enum Shed { rising, sinking }
 /// `Unit`/`void`-ish placeholder and to read clearly at call sites (`MeasureUnit.inches`).
 enum MeasureUnit { inches, centimeters }
 
+/// What a weft pick is FOR in the weaver's working sequence (M8-06): an overshot pattern pick or the
+/// tabby that binds it, a pick of a double weave's top or bottom layer. A domain twin of the wire
+/// `PickRoleKind`. Roles are optional and never inferred from color or shafts: a pick nobody marked
+/// is [unknown], which is also every pick of a third-party WIF.
+enum PickRole { unknown, pattern, tabby, topLayer, bottomLayer }
+
 /// An sRGB color in the draft's palette: three 0..255 channels, no alpha (the engine and WIF
 /// `Color` are RGB only, so an alpha channel here would be a value the wire type cannot
 /// carry). A tiny value type so `DeepCollectionEquality` over `List<DraftColor>` compares and
@@ -323,13 +329,15 @@ class DraftDoc {
     List<double> warpThickness = const <double>[],
     List<double> weftThickness = const <double>[],
     List<RetainedSection> retained = const <RetainedSection>[],
+    List<PickRole> pickRoles = const <PickRole>[],
   })  : threading = _sealRows(threading),
         palette = _sealList(palette),
         warpColors = _sealList(warpColors),
         weftColors = _sealList(weftColors),
         warpThickness = _sealList(warpThickness),
         weftThickness = _sealList(weftThickness),
-        retained = _sealList(retained);
+        retained = _sealList(retained),
+        pickRoles = _sealRoles(pickRoles);
 
   /// Internal constructor for lists that are ALREADY sealed, so [copyWith] can reuse the
   /// unchanged fields of `this` by reference (keeping the `identical()` short-circuit alive on
@@ -351,6 +359,7 @@ class DraftDoc {
     this.warpThickness = const <double>[],
     this.weftThickness = const <double>[],
     this.retained = const <RetainedSection>[],
+    this.pickRoles = const <PickRole>[],
   });
 
   /// A blank, structurally-valid document to start editing from scratch, mirroring the
@@ -451,6 +460,17 @@ class DraftDoc {
   /// IMMUTABLE; never mutate in place.
   final List<RetainedSection> retained;
 
+  /// Per pick, its [PickRole]. EMPTY means every role is unknown (the common case); otherwise
+  /// length-coupled to [picks] like [weftColors], and every reducer that inserts, removes, or reorders
+  /// picks keeps it aligned. A list with no known role is normalized to empty at construction, so
+  /// "nothing recorded" has ONE representation and setting the last role back to unknown is not a
+  /// spurious undo entry. Stored in Ply's WIF private section (ADR 0008). DEEPLY IMMUTABLE.
+  final List<PickRole> pickRoles;
+
+  /// The role of the 0-based [pick]: unknown when nothing is recorded or [pick] is past the list.
+  PickRole roleAt(int pick) =>
+      pick >= 0 && pick < pickRoles.length ? pickRoles[pick] : PickRole.unknown;
+
   /// Number of warp ends (= columns in the drawdown), defined by the threading length (the
   /// authoritative warp axis). Mirrors the engine's `ends()` so UI, reducers, and validation
   /// read one obvious source instead of recomputing `threading.length` ad hoc. Excluded from
@@ -490,6 +510,7 @@ class DraftDoc {
     List<double>? weftThickness,
     String? notes,
     List<RetainedSection>? retained,
+    List<PickRole>? pickRoles,
   }) {
     return DraftDoc._sealed(
       name: name ?? this.name,
@@ -506,6 +527,7 @@ class DraftDoc {
       weftThickness: weftThickness == null ? this.weftThickness : _sealList(weftThickness),
       notes: notes ?? this.notes,
       retained: retained == null ? this.retained : _sealList(retained),
+      pickRoles: pickRoles == null ? this.pickRoles : _sealRoles(pickRoles),
     );
   }
 
@@ -531,7 +553,8 @@ class DraftDoc {
           _deepEq.equals(weftColors, other.weftColors) &&
           _deepEq.equals(warpThickness, other.warpThickness) &&
           _deepEq.equals(weftThickness, other.weftThickness) &&
-          _deepEq.equals(retained, other.retained);
+          _deepEq.equals(retained, other.retained) &&
+          _deepEq.equals(pickRoles, other.pickRoles);
 
   /// `hashCode` consistent with `==`: scalars and enums by value, `drive` by its own deep hash,
   /// and every nested list by the SAME deep hash that backs `==`. This hashes the full deep
@@ -555,12 +578,25 @@ class DraftDoc {
         _deepEq.hash(warpThickness),
         _deepEq.hash(weftThickness),
         _deepEq.hash(retained),
+        _deepEq.hash(pickRoles),
       );
 
   @override
   String toString() =>
       'DraftDoc(name: $name, ${ends}x$picks, shafts: $shafts, treadles: $treadles, '
       'shed: $shed)';
+}
+
+/// The retained WIF sections to keep after an edit changes [doc]'s pick count to [picks]: a per-pick
+/// `WEFT ...` section (spacing, say) is dropped because its one-row-per-pick data would no longer
+/// line up, and everything else is kept. The same rule the engine's resize applies. Null (leave
+/// unchanged) when the pick count does not change.
+List<RetainedSection>? retainedForPickCount(DraftDoc doc, int picks) {
+  if (picks == doc.picks) return null;
+  return [
+    for (final s in doc.retained)
+      if (!s.name.toUpperCase().startsWith('WEFT ')) s,
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +612,10 @@ class DraftDoc {
 /// [DraftColor]) are themselves immutable, so a shallow copy at this level is enough.
 List<T> _sealList<T>(List<T> source) =>
     UnmodifiableListView<T>(List<T>.of(source));
+
+/// Seal per-pick roles, normalizing a list with no known role to the empty "nothing recorded" form.
+List<PickRole> _sealRoles(List<PickRole> roles) =>
+    roles.every((r) => r == PickRole.unknown) ? const <PickRole>[] : _sealList(roles);
 
 /// Wrap a list-of-lists so BOTH the outer and every inner list are unmodifiable. Each inner
 /// row is independently sealed (copied + view-wrapped) so no row can be mutated through a

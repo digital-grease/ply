@@ -16,8 +16,8 @@
 use ply_common::{Color, Unit};
 use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
 use ply_weave::draft::{
-    ColorPlan, Draft, Drive, Liftplan, RetainedSection, ShaftId, ShedType, Threading, TieUp,
-    TreadleId, Treadling,
+    ColorPlan, Draft, Drive, Liftplan, PickRole, RetainedSection, ShaftId, ShedType, Threading,
+    TieUp, TreadleId, Treadling,
 };
 use ply_weave::shadow::{
     ShadowBlock, ShadowError, ShadowLayout, ShadowParams, ShadowShafts, ShadowSystem,
@@ -37,6 +37,42 @@ pub struct ColorDto {
 pub enum ShedKind {
     Rising,
     Sinking,
+}
+
+/// What a weft pick is for in the working sequence, mirroring `draft::PickRole`. Flat C-like enum,
+/// so frb mirrors it as a plain Dart enum (no freezed union). `Unknown` is the default: roles are
+/// never inferred.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickRoleKind {
+    Unknown,
+    Pattern,
+    Tabby,
+    TopLayer,
+    BottomLayer,
+}
+
+impl From<PickRole> for PickRoleKind {
+    fn from(r: PickRole) -> Self {
+        match r {
+            PickRole::Unknown => PickRoleKind::Unknown,
+            PickRole::Pattern => PickRoleKind::Pattern,
+            PickRole::Tabby => PickRoleKind::Tabby,
+            PickRole::TopLayer => PickRoleKind::TopLayer,
+            PickRole::BottomLayer => PickRoleKind::BottomLayer,
+        }
+    }
+}
+
+impl From<PickRoleKind> for PickRole {
+    fn from(r: PickRoleKind) -> Self {
+        match r {
+            PickRoleKind::Unknown => PickRole::Unknown,
+            PickRoleKind::Pattern => PickRole::Pattern,
+            PickRoleKind::Tabby => PickRole::Tabby,
+            PickRoleKind::TopLayer => PickRole::TopLayer,
+            PickRoleKind::BottomLayer => PickRole::BottomLayer,
+        }
+    }
 }
 
 /// Measurement unit for the draft's lengths.
@@ -401,6 +437,8 @@ pub struct DraftDto {
     pub notes: String,
     /// Unmodeled WIF sections kept verbatim (see [`RetainedSectionDto`]).
     pub retained: Vec<RetainedSectionDto>,
+    /// Per pick, its role. EMPTY means every role is unknown; otherwise length-coupled to the picks.
+    pub pick_roles: Vec<PickRoleKind>,
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +532,7 @@ impl From<&Draft> for DraftDto {
                         .collect(),
                 })
                 .collect(),
+            pick_roles: d.pick_roles.iter().map(|&r| r.into()).collect(),
         }
     }
 }
@@ -544,6 +583,7 @@ impl TryFrom<DraftDto> for Draft {
                     entries: s.entries.into_iter().map(|e| (e.key, e.value)).collect(),
                 })
                 .collect(),
+            pick_roles: dto.pick_roles.into_iter().map(PickRole::from).collect(),
         })
     }
 }
@@ -596,7 +636,24 @@ mod tests {
                 name: "ACME VENDOR".into(),
                 entries: vec![("Foo".into(), "Bar".into())],
             }],
+            // Every role kind must cross the DTO and come back (Draft's PartialEq includes them).
+            pick_roles: vec![PickRole::TopLayer, PickRole::BottomLayer],
         };
         assert_roundtrip(&d);
+    }
+
+    #[test]
+    fn roundtrip_every_pick_role() {
+        let mut d = ply_weave::structure::overshot(8, 5, 2);
+        d.pick_roles = vec![
+            PickRole::Unknown,
+            PickRole::Pattern,
+            PickRole::Tabby,
+            PickRole::TopLayer,
+            PickRole::BottomLayer,
+        ];
+        assert_roundtrip(&d);
+        // And the generator's own roles survive the DTO.
+        assert_roundtrip(&ply_weave::structure::overshot(16, 8, 4));
     }
 }

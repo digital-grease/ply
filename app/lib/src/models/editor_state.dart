@@ -363,7 +363,9 @@ class EditorState {
     }
     if (pick < 0) throw RangeError.range(pick, 0, null, 'pick');
     final newTreadling = _setRow(drive.treadling, pick, treadles);
-    final next = draft.copyWith(drive: drive.copyWith(treadling: newTreadling));
+    final next = draft.copyWith(
+        drive: drive.copyWith(treadling: newTreadling),
+        pickRoles: _rolesForPickCount(newTreadling.length));
     return next == draft ? this : copyWith(draft: next);
   }
 
@@ -375,7 +377,8 @@ class EditorState {
     }
     if (pick < 0) throw RangeError.range(pick, 0, null, 'pick');
     final newLift = _setRow(drive.liftplan, pick, shafts);
-    final next = draft.copyWith(drive: DraftLiftplan(liftplan: newLift));
+    final next = draft.copyWith(
+        drive: DraftLiftplan(liftplan: newLift), pickRoles: _rolesForPickCount(newLift.length));
     return next == draft ? this : copyWith(draft: next);
   }
 
@@ -415,8 +418,8 @@ class EditorState {
   }
 
   /// Set entry [index]'s pick COUNT (>= 1) by adding or removing picks at the END of its run. Each
-  /// added pick is a copy of the run's LAST pick (its shed, weft color, and weft thickness when the
-  /// draft tracks thickness); a shrink removes picks from the end. Either way the run stays one entry
+  /// added pick is a copy of the run's LAST pick (its shed, weft color, role, and weft thickness when
+  /// the draft tracks thickness); a shrink removes picks from the end. Either way the run stays one entry
   /// (it keeps at least one pick between its neighbours) and every other pick is untouched, so the
   /// change is exactly "append/remove N picks after pick `endPick - 1`". Pure; no-op when unchanged.
   EditorState setEntryCount(int index, int count) {
@@ -427,8 +430,8 @@ class EditorState {
     if (count == e.count) return this;
     if (count > e.count) {
       final last = e.endPick - 1;
-      return _insertPicks(
-          e.endPick, count - e.count, e.shed, _weftColorAt(last), _weftThicknessAt(last));
+      return _insertPicks(e.endPick, count - e.count, e.shed, _weftColorAt(last),
+          _weftThicknessAt(last), draft.roleAt(last));
     }
     return _removePicks(e.endPick - (e.count - count), e.count - count);
   }
@@ -440,6 +443,40 @@ class EditorState {
     final e = es[index];
     return _removePicks(e.startPick, e.count);
   }
+
+  // --- PICK ROLES (M8-06). Roles are per pick and length-coupled to the picks (see DraftDoc). These
+  // reducers only relabel picks; they never change a shed, a color, or the pick count. ---
+
+  /// Set the role of picks [start] to [end] - 1 (0-based, half-open) to [role]: one pick or a whole
+  /// Book view row. Pure; returns `this` on a no-op. Throws on a range outside the picks.
+  EditorState withPickRoles(int start, int end, PickRole role) {
+    final n = draft.picks;
+    if (start < 0 || end > n || start >= end) {
+      throw RangeError('pick range $start..$end is not inside 0..$n');
+    }
+    final roles = [
+      for (var p = 0; p < n; p++) (p >= start && p < end) ? role : draft.roleAt(p),
+    ];
+    final next = draft.copyWith(pickRoles: roles);
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// Apply a set of per-pick roles at once (e.g. a confirmed "Mark tabby picks" proposal): pick ->
+  /// role, 0-based. Picks not named keep their role. Pure; throws on a pick outside the draft.
+  EditorState withPickRoleMap(Map<int, PickRole> roles) {
+    final n = draft.picks;
+    for (final p in roles.keys) {
+      if (p < 0 || p >= n) throw RangeError.range(p, 0, n - 1, 'pick');
+    }
+    final next = draft.copyWith(
+        pickRoles: [for (var p = 0; p < n; p++) roles[p] ?? draft.roleAt(p)]);
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// The roles re-coupled to [picks] after the drive grew or shrank: kept, padded with unknown, or
+  /// truncated. Null (leave unchanged) when the draft records no roles.
+  List<PickRole>? _rolesForPickCount(int picks) =>
+      draft.pickRoles.isEmpty ? null : _padded(draft.pickRoles, picks, PickRole.unknown);
 
   int _weftColorAt(int pick) =>
       (pick >= 0 && pick < draft.weftColors.length) ? draft.weftColors[pick] : 0;
@@ -461,10 +498,12 @@ class EditorState {
   static List<T> _padded<T>(List<T> xs, int len, T fill) =>
       [for (var i = 0; i < len; i++) i < xs.length ? xs[i] : fill];
 
-  /// Insert [n] picks at 0-based [at], each pressing [shed] with weft color [color] (and [thickness]
-  /// when the draft tracks per-pick thickness). Keeps treadling/liftplan, weftColors, weftThickness
-  /// coupled to the new pick count.
-  EditorState _insertPicks(int at, int n, List<int> shed, int color, double? thickness) {
+  /// Insert [n] picks at 0-based [at], each pressing [shed] with weft color [color], role [role] (and
+  /// [thickness] when the draft tracks per-pick thickness). Keeps treadling/liftplan, weftColors,
+  /// weftThickness, and pickRoles coupled to the new pick count, and drops the per-pick retained WIF
+  /// sections whose rows would now desync (the engine resize rule).
+  EditorState _insertPicks(int at, int n, List<int> shed, int color, double? thickness,
+      [PickRole role = PickRole.unknown]) {
     if (n <= 0) return this;
     final rows = draft.drive.rows;
     final cut = at.clamp(0, rows.length);
@@ -482,8 +521,20 @@ class EditorState {
             final p = _padded(wt, rows.length, 1.0);
             return [...p.sublist(0, cut), for (var k = 0; k < n; k++) thickness ?? 1.0, ...p.sublist(cut)];
           })();
+    final pr = draft.pickRoles;
+    final newPr = pr.isEmpty && role == PickRole.unknown
+        ? pr
+        : (() {
+            final p = _padded(pr, rows.length, PickRole.unknown);
+            return [...p.sublist(0, cut), for (var k = 0; k < n; k++) role, ...p.sublist(cut)];
+          })();
     return copyWith(
-        draft: draft.copyWith(drive: _driveFromRows(newRows), weftColors: newWc, weftThickness: newWt));
+        draft: draft.copyWith(
+            drive: _driveFromRows(newRows),
+            weftColors: newWc,
+            weftThickness: newWt,
+            pickRoles: newPr,
+            retained: retainedForPickCount(draft, newRows.length)));
   }
 
   /// Remove [n] picks starting at 0-based [at], keeping the per-pick bands coupled. A bad range is a
@@ -503,8 +554,20 @@ class EditorState {
             final p = _padded(wt, rows.length, 1.0);
             return [for (var i = 0; i < p.length; i++) if (keep(i)) p[i]];
           })();
+    final pr = draft.pickRoles;
+    final newPr = pr.isEmpty
+        ? pr
+        : (() {
+            final p = _padded(pr, rows.length, PickRole.unknown);
+            return [for (var i = 0; i < p.length; i++) if (keep(i)) p[i]];
+          })();
     return copyWith(
-        draft: draft.copyWith(drive: _driveFromRows(newRows), weftColors: newWc, weftThickness: newWt));
+        draft: draft.copyWith(
+            drive: _driveFromRows(newRows),
+            weftColors: newWc,
+            weftThickness: newWt,
+            pickRoles: newPr,
+            retained: retainedForPickCount(draft, newRows.length)));
   }
 
   /// A fresh copy of [rows] with row [index] set to a canonical (ascending) copy of [value],

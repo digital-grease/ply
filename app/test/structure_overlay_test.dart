@@ -165,4 +165,87 @@ void main() {
     ]);
     expect(out.picks, 4);
   });
+
+  group('a liftplan base never silently loses picks', () {
+    DraftDoc lift() => DraftDoc(
+          name: 'L',
+          shafts: 4,
+          treadles: 0,
+          shed: Shed.rising,
+          unit: MeasureUnit.inches,
+          threading: [for (var i = 0; i < 4; i++) [(i % 4) + 1]],
+          drive: DraftLiftplan(liftplan: const [
+            [1, 3],
+            [2, 4],
+            [1, 3],
+            [2, 4],
+            [1, 2],
+            [3, 4]
+          ]),
+          palette: const [DraftColor(r: 0, g: 0, b: 0), DraftColor(r: 255, g: 255, b: 255)],
+          warpColors: const [0, 0, 0, 0],
+          weftColors: const [0, 1, 0, 1, 0, 1],
+          notes: '',
+        );
+    const tieup = [
+      [1, 3],
+      [2, 4]
+    ];
+    final refused = throwsA(isA<StructureApplyRefused>()
+        .having((e) => e.toString(), 'message', contains('covering all 6 picks')));
+
+    test('a tie-up alone is refused (it used to leave a draft with no picks)', () {
+      expect(
+          () => DraftRepository.applyBasicStructure(
+              base: lift(), effShafts: 4, genTieup: tieup, effTreadles: 2),
+          refused);
+    });
+    test('a treadling shorter than the draft is refused (it used to drop the rest)', () {
+      expect(
+          () => DraftRepository.applyBasicStructure(
+              base: lift(),
+              effShafts: 4,
+              genTieup: tieup,
+              applyTreadling: true,
+              effTreadles: 2,
+              picks: 4),
+          refused);
+    });
+    test('a treadling without the tie-up is refused (its treadles would tie nothing)', () {
+      expect(
+          () => DraftRepository.applyBasicStructure(
+              base: lift(), effShafts: 4, applyTreadling: true, effTreadles: 2, picks: 6),
+          refused);
+    });
+    test('a treadling that starts after pick 1 is refused', () {
+      expect(
+          () => DraftRepository.applyBasicStructure(
+              base: lift(),
+              effShafts: 4,
+              genTieup: tieup,
+              applyTreadling: true,
+              effTreadles: 2,
+              picks: 6,
+              pickStart: 1),
+          refused);
+    });
+    test('threading only leaves the liftplan untouched', () {
+      final out = DraftRepository.applyBasicStructure(
+          base: lift(), effShafts: 4, genThreading: const [[1], [2], [3], [4]]);
+      expect(out.drive, isA<DraftLiftplan>());
+      expect(out.picks, 6);
+    });
+    test('tie-up plus a treadling covering every pick converts it', () {
+      final out = DraftRepository.applyBasicStructure(
+          base: lift(),
+          effShafts: 4,
+          genTieup: tieup,
+          applyTreadling: true,
+          effTreadles: 2,
+          picks: 6);
+      expect(out.drive, isA<DraftTreadled>());
+      expect(out.picks, 6);
+      expect(out.weftColors, const [0, 1, 0, 1, 0, 1], reason: 'weft colors kept');
+    });
+  });
 }

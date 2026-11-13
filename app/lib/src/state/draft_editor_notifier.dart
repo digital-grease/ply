@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/draft_doc.dart';
 import '../models/draft_region.dart';
 import '../models/editor_state.dart';
+import '../models/use_tabby.dart';
 import 'editor_providers.dart';
 
 /// The single source of truth for the open draft and its undo history.
@@ -45,6 +46,27 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   /// Book view: remove row [index]'s picks (its whole run) as one undo entry. See
   /// [EditorState.removeEntry].
   void removeEntry(int index) => commitEdit(state.removeEntry(index).draft);
+
+  /// Set the role of picks [start] to [end] - 1 (one pick or a Book view row) as one undo entry. See
+  /// [EditorState.withPickRoles].
+  void setPickRoles(int start, int end, PickRole role) =>
+      commitEdit(state.withPickRoles(start, end, role).draft);
+
+  /// Apply confirmed per-pick roles (the "Mark tabby picks" proposal) as one undo entry. See
+  /// [EditorState.withPickRoleMap].
+  void applyPickRoles(Map<int, PickRole> roles) => commitEdit(state.withPickRoleMap(roles).draft);
+
+  /// Run a Use tabby edit (see use_tabby.dart) on the live draft and commit the result as one undo
+  /// entry. Returns null when it was committed, or the reason it was refused (nothing changes).
+  String? applyUseTabbyEdit(UseTabbyEditResult Function(DraftDoc doc) edit) {
+    switch (edit(state.draft)) {
+      case UseTabbyEdited(:final doc):
+        commitEdit(doc);
+        return null;
+      case UseTabbyRefused(:final reason):
+        return reason;
+    }
+  }
 
   /// Toggle one tie-up cell (1-based treadle/shaft). See [EditorState.toggleTieupCell].
   void toggleTieupCell(int treadle, int shaft) {

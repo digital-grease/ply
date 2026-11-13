@@ -673,7 +673,7 @@ void main() {
     expect(find.text('Overshot treadling'), findsNothing, reason: 'the inline collapse mode is gone');
     await tester.tap(find.text('Book view'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('not "Use Tabby" shorthand'), findsOneWidget);
+    expect(find.text('Use tabby shorthand'), findsOneWidget, reason: 'the Book view is open');
     expect(find.text('4 picks in 4 rows'), findsOneWidget);
     expect(container.read(draftEditorProvider).undo, isEmpty, reason: 'opening it edits nothing');
   });

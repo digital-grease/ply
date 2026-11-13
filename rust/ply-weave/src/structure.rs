@@ -17,7 +17,8 @@
 use ply_common::{Color, Unit};
 
 use crate::draft::{
-    ColorIndex, ColorPlan, Draft, Drive, ShaftId, ShedType, Threading, TieUp, TreadleId, Treadling,
+    ColorIndex, ColorPlan, Draft, Drive, PickRole, ShaftId, ShedType, Threading, TieUp, TreadleId,
+    Treadling,
 };
 
 /// Two mid-contrast greys for color-and-weave; softer than pure black/white (which reads harsh),
@@ -61,6 +62,7 @@ fn base_draft(
         weft_thickness: Vec::new(),
         notes: String::new(),
         retained: Vec::new(),
+        pick_roles: Vec::new(),
     }
 }
 
@@ -119,7 +121,7 @@ pub fn overshot(ends: usize, picks: usize, block: usize) -> Draft {
     );
     let warp = vec![0; ends];
     let weft = (0..picks).map(|p| if p % 2 == 0 { 1 } else { 0 }).collect();
-    base_draft(
+    let mut draft = base_draft(
         "Overshot",
         4,
         4,
@@ -129,7 +131,19 @@ pub fn overshot(ends: usize, picks: usize, block: usize) -> Draft {
         vec![Color::WHITE, DARK],
         warp,
         weft,
-    )
+    );
+    // The generator KNOWS which picks are which, so it records it: pattern picks on the even (0-based)
+    // picks, tabby between them. That is what lets the Book view write "Use tabby".
+    draft.pick_roles = (0..picks)
+        .map(|p| {
+            if p % 2 == 0 {
+                PickRole::Pattern
+            } else {
+                PickRole::Tabby
+            }
+        })
+        .collect();
+    draft
 }
 
 /// DOUBLE WEAVE — two INDEPENDENT plain-weave layers woven at once on 4 shafts: the top layer on
@@ -160,7 +174,7 @@ pub fn double_weave(ends: usize, picks: usize) -> Draft {
     // parity (top picks 0,2 = color 0; bottom picks 1,3 = color 1).
     let warp = (0..ends).map(|i| i % 2).collect();
     let weft = (0..picks).map(|p| p % 2).collect();
-    base_draft(
+    let mut draft = base_draft(
         "Double weave",
         4,
         4,
@@ -181,7 +195,19 @@ pub fn double_weave(ends: usize, picks: usize) -> Draft {
         ],
         warp,
         weft,
-    )
+    );
+    // Top picks (treadles 1 and 3, the even 0-based picks) weave the top layer; bottom picks the
+    // bottom layer. Recorded, not inferred: the generator built them that way.
+    draft.pick_roles = (0..picks)
+        .map(|p| {
+            if p % 2 == 0 {
+                PickRole::TopLayer
+            } else {
+                PickRole::BottomLayer
+            }
+        })
+        .collect();
+    draft
 }
 
 /// Plain weave (tabby) as a whole draft — a straight draw on 2 shafts with the canonical plain
@@ -390,6 +416,83 @@ mod tests {
                 "{} must validate clean: {:?}",
                 d.name,
                 validate(&d)
+            );
+        }
+    }
+
+    /// Overshot RECORDS its working semantics: pattern on every other pick from pick 1, tabby between
+    /// (alternating tabby a = treadle 3 and tabby b = treadle 4), and every tabby pick really is a
+    /// plain-weave shed while no pattern pick is.
+    #[test]
+    fn overshot_assigns_pattern_and_tabby_roles() {
+        let d = overshot(16, 9, 4);
+        assert_eq!(d.pick_roles.len(), d.picks());
+        for p in 0..d.picks() {
+            let want = if p % 2 == 0 {
+                PickRole::Pattern
+            } else {
+                PickRole::Tabby
+            };
+            assert_eq!(d.pick_role(p), want, "pick {}", p + 1);
+            assert_eq!(
+                d.is_tabby_shed(p),
+                want == PickRole::Tabby,
+                "pick {}: role and shed disagree",
+                p + 1
+            );
+        }
+        // Tabby a (lifts end 1) comes first.
+        assert_eq!(d.plain_weave_phase(&d.raised_shafts(1)), Some(true));
+        assert_eq!(d.plain_weave_phase(&d.raised_shafts(3)), Some(false));
+    }
+
+    #[test]
+    fn double_weave_assigns_layer_roles_and_others_stay_unknown() {
+        let d = double_weave(8, 6);
+        let want = [
+            PickRole::TopLayer,
+            PickRole::BottomLayer,
+            PickRole::TopLayer,
+            PickRole::BottomLayer,
+            PickRole::TopLayer,
+            PickRole::BottomLayer,
+        ];
+        assert_eq!(d.pick_roles, want);
+        // Top picks raise no bottom-layer shaft (2 or 4); bottom picks lift the whole top layer.
+        for (p, role) in want.iter().enumerate() {
+            let raised = raised(&d, p);
+            match role {
+                PickRole::TopLayer => assert!(!raised.contains(&2) && !raised.contains(&4)),
+                _ => assert!(raised.contains(&1) && raised.contains(&3)),
+            }
+        }
+        assert!(
+            plain_weave(4, 4).pick_roles.is_empty(),
+            "plain weave records no roles"
+        );
+    }
+
+    /// The sinking-shed conversion the app applies to every generated draft keeps the roles.
+    #[test]
+    fn generated_roles_survive_the_sinking_shed_conversion() {
+        use crate::draft::ShedType;
+        for d in [overshot(16, 16, 4), double_weave(8, 8)] {
+            let sinking = d.with_shed(ShedType::Sinking);
+            assert_eq!(sinking.pick_roles, d.pick_roles, "{}", d.name);
+            // And the tabby picks are still plain-weave sheds there (the check reads raised shafts).
+            for p in 0..d.picks() {
+                assert_eq!(
+                    sinking.is_tabby_shed(p),
+                    d.is_tabby_shed(p),
+                    "{} pick {p}",
+                    d.name
+                );
+            }
+            assert!(
+                validate(&sinking).is_empty(),
+                "{}: {:?}",
+                d.name,
+                validate(&sinking)
             );
         }
     }

@@ -14,6 +14,7 @@
 
 use ply_common::{Color, Unit};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 /// 1-based shaft (harness) identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -253,6 +254,127 @@ impl ColorPlan {
     }
 }
 
+/// What a weft pick is FOR in the weaver's working sequence (roadmap M8-06): the semantic layer on
+/// top of the shed. A shed says which shafts rise; a role says why the pick is woven (an overshot
+/// pattern pick or the tabby that binds it, a pick of a double weave's top or bottom layer).
+///
+/// Roles are OPTIONAL and never inferred. A pick nobody marked is [`PickRole::Unknown`], including
+/// every pick of a third-party WIF: color and shaft combinations are suggestive, not proof, so the
+/// engine does not guess. (The app's "Mark tabby picks" helper only PROPOSES tabby roles from the
+/// sheds and writes them after the weaver confirms.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum PickRole {
+    /// Not recorded. The default, and what every pick of a draft without role data reads as.
+    #[default]
+    Unknown,
+    /// A pattern (figure) pick, e.g. the heavier weft of overshot.
+    Pattern,
+    /// A tabby (plain-weave ground) pick between pattern picks.
+    Tabby,
+    /// A pick that weaves the top layer of a double weave.
+    TopLayer,
+    /// A pick that weaves the bottom layer of a double weave.
+    BottomLayer,
+}
+
+/// The draft's two plain-weave (tabby) sheds, precomputed from the threading. A raised-shaft set is
+/// a tabby shed when, over the THREADED warp ends in warp order (unthreaded ends are skipped), it
+/// lifts exactly every other end; "tabby a" lifts the first threaded end, "tabby b" the second. An end
+/// threaded on several shafts is up when any of them is raised, exactly as the drawdown reads it, and
+/// at least two threaded ends are needed to tell.
+///
+/// This is a property of the cloth, not of treadle numbers, so it holds on either shed direction and
+/// for a treadled or liftplan drive (pass [`Draft::raised_shafts`]). Building the rule costs one pass
+/// over the threading; checking a pick then costs its raised shafts, not the width of the warp, so
+/// validation stays linear on a large (or hostile) draft. The app's Book view mirrors this rule in
+/// Dart (`use_tabby.dart`); both suites test the same cases.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabbyRule {
+    /// Index 0: the shed lifting the first threaded end (a); index 1: the other (b). `None` when that
+    /// shed cannot exist on this threading.
+    phases: [Option<PhaseRule>; 2],
+}
+
+/// One tabby shed as constraints: lift no `down` shaft, every `must` shaft, and one of each `choice`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PhaseRule {
+    /// Shafts threaded by an end that must stay down: raising any of them lifts that end.
+    down: BTreeSet<u16>,
+    /// Shafts that are the only way to lift an end that must rise.
+    must: BTreeSet<u16>,
+    /// For a must-rise end on several shafts: the shafts that can lift it (one is enough).
+    choices: Vec<Vec<u16>>,
+}
+
+impl TabbyRule {
+    pub fn new(threading: &Threading) -> TabbyRule {
+        let ends: Vec<&Vec<ShaftId>> = threading.0.iter().filter(|e| !e.is_empty()).collect();
+        if ends.len() < 2 {
+            return TabbyRule {
+                phases: [None, None],
+            };
+        }
+        let build = |first_up: bool| -> Option<PhaseRule> {
+            let up = |k: usize| k.is_multiple_of(2) == first_up;
+            let down: BTreeSet<u16> = ends
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| !up(*k))
+                .flat_map(|(_, e)| e.iter().map(|s| s.0))
+                .collect();
+            let mut must = BTreeSet::new();
+            let mut choices: BTreeSet<Vec<u16>> = BTreeSet::new();
+            for (k, end) in ends.iter().enumerate() {
+                if !up(k) {
+                    continue;
+                }
+                let lift: BTreeSet<u16> = end
+                    .iter()
+                    .map(|s| s.0)
+                    .filter(|s| !down.contains(s))
+                    .collect();
+                match lift.len() {
+                    0 => return None, // this end cannot rise while its neighbours stay down
+                    1 => {
+                        must.extend(lift);
+                    }
+                    _ => {
+                        choices.insert(lift.into_iter().collect());
+                    }
+                }
+            }
+            let choices = choices
+                .into_iter()
+                .filter(|c| !c.iter().any(|s| must.contains(s)))
+                .collect();
+            Some(PhaseRule {
+                down,
+                must,
+                choices,
+            })
+        };
+        TabbyRule {
+            phases: [build(true), build(false)],
+        }
+    }
+
+    /// `Some(true)` when `raised` is tabby a, `Some(false)` tabby b, `None` when it is not a
+    /// plain-weave shed of this threading.
+    pub fn phase(&self, raised: &[ShaftId]) -> Option<bool> {
+        let r: BTreeSet<u16> = raised.iter().map(|s| s.0).collect();
+        self.phases
+            .iter()
+            .position(|rule| {
+                rule.as_ref().is_some_and(|rule| {
+                    r.iter().all(|s| !rule.down.contains(s))
+                        && rule.must.iter().all(|s| r.contains(s))
+                        && rule.choices.iter().all(|c| c.iter().any(|s| r.contains(s)))
+                })
+            })
+            .map(|i| i == 0)
+    }
+}
+
 /// A WIF `[SECTION]` Ply does not model (e.g. `[WARP THICKNESS]`, a vendor section), kept verbatim
 /// on import so `write` can re-emit it — closing the lossy-save gap for sections Ply ignores. `name`
 /// is the section header without brackets; `entries` are its raw `key=value` pairs, in order.
@@ -285,6 +407,12 @@ pub struct Draft {
     /// Carried through cosmetic edits; a resize drops the per-thread WARP/WEFT ones on a changing
     /// axis (their rows would desync). Empty for a from-scratch draft.
     pub retained: Vec<RetainedSection>,
+    /// Per weft pick, its [`PickRole`]. EMPTY means every role is unknown (the common case, and
+    /// every third-party WIF); otherwise length-coupled to `picks` like the weft colors, and every
+    /// operation that changes the picks keeps it aligned (a resize pads `Unknown` and truncates; the
+    /// shed and drive conversions keep the picks, so they keep the roles). Not part of WIF proper:
+    /// stored in Ply's WIF 1.1 private section (see `wif.rs` and ADR 0008).
+    pub pick_roles: Vec<PickRole>,
 }
 
 impl Draft {
@@ -312,6 +440,7 @@ impl Draft {
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         }
     }
 
@@ -321,6 +450,31 @@ impl Draft {
 
     pub fn picks(&self) -> usize {
         self.drive.picks()
+    }
+
+    /// The role of the 0-based `pick`: its recorded [`PickRole`], or `Unknown` when the draft records
+    /// no roles (an empty `pick_roles`) or the pick lies past the recorded ones.
+    pub fn pick_role(&self, pick: usize) -> PickRole {
+        self.pick_roles.get(pick).copied().unwrap_or_default()
+    }
+
+    /// True when at least one pick has a known role (so there is something to store).
+    pub fn has_pick_roles(&self) -> bool {
+        self.pick_roles.iter().any(|&r| r != PickRole::Unknown)
+    }
+
+    /// Whether the raised-shaft set `raised` is one of the draft's two plain-weave (tabby) sheds, and
+    /// which one (see [`TabbyRule`]): `Some(true)` = "tabby a" (lifts the first threaded warp end),
+    /// `Some(false)` = "tabby b", `None` = not a plain-weave shed. Builds the rule from the threading
+    /// each call; to check many picks, build one [`TabbyRule`] and reuse it.
+    pub fn plain_weave_phase(&self, raised: &[ShaftId]) -> Option<bool> {
+        TabbyRule::new(&self.threading).phase(raised)
+    }
+
+    /// True when the 0-based `pick` raises one of the draft's two plain-weave (tabby) sheds (see
+    /// [`plain_weave_phase`](Self::plain_weave_phase)).
+    pub fn is_tabby_shed(&self, pick: usize) -> bool {
+        self.plain_weave_phase(&self.raised_shafts(pick)).is_some()
     }
 
     /// The canonical form the drawdown consumes: the set of **raised shafts** for a given
@@ -520,6 +674,9 @@ impl Draft {
             weft_thickness: resize_thickness(&self.weft_thickness, picks),
             notes: self.notes.clone(),
             retained,
+            // Roles stay length-coupled to the picks: a shrink drops the removed picks' roles, a grow
+            // adds blank picks whose role is Unknown, and "no roles recorded" stays empty.
+            pick_roles: resize_roles(&self.pick_roles, picks),
         }
     }
 
@@ -550,6 +707,16 @@ fn resize_thickness(t: &[f32], len: usize) -> Vec<f32> {
         Vec::new()
     } else {
         resize_rows(t, len, || 1.0)
+    }
+}
+
+/// Resize the per-pick roles, preserving the "empty == every role unknown" convention: an empty
+/// slice stays empty; a recorded one is length-coupled, padding new picks with `Unknown`.
+fn resize_roles(roles: &[PickRole], len: usize) -> Vec<PickRole> {
+    if roles.is_empty() {
+        Vec::new()
+    } else {
+        resize_rows(roles, len, PickRole::default)
     }
 }
 
@@ -682,6 +849,7 @@ mod tests {
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         };
         assert!(validate(&d).iter().all(|i| i.severity != Severity::Error));
     }
@@ -727,6 +895,7 @@ mod tests {
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         };
         let lp = d.to_liftplan_draft();
         assert!(matches!(lp.drive, Drive::Liftplan(_)));
@@ -767,6 +936,7 @@ mod tests {
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         };
         let lp = d.to_liftplan_draft();
         let factored = lp.factor_liftplan(40).expect("a 2-lift plan factors");
@@ -813,6 +983,7 @@ mod tests {
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         };
         assert!(
             lp.factor_liftplan(2).is_none(),
@@ -903,6 +1074,7 @@ mod tests {
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         };
         let removed = d.with_color_removed(2).unwrap(); // drop RED (referenced by warp[0], weft[1])
         assert_eq!(removed.colors.palette.len(), 2);
@@ -996,6 +1168,7 @@ mod tests {
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         }
     }
 
@@ -1099,6 +1272,7 @@ mod tests {
             warp_thickness: Vec::new(),
             weft_thickness: Vec::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         };
         let d = lp.resized(2, 2, 2, 0); // shafts 4 -> 2
         if let Drive::Liftplan(l) = &d.drive {
@@ -1126,6 +1300,194 @@ mod tests {
             panic!("expected treadled");
         }
         assert!(no_errors(&d));
+    }
+
+    // --- Pick roles (M8-06): length-coupled to the picks through every draft operation. ---
+
+    fn roles_fixture() -> Draft {
+        Draft {
+            pick_roles: vec![
+                PickRole::Pattern,
+                PickRole::Tabby,
+                PickRole::Pattern,
+                PickRole::Tabby,
+            ],
+            ..resize_fixture()
+        }
+    }
+
+    #[test]
+    fn pick_role_reads_unknown_when_nothing_is_recorded() {
+        let d = resize_fixture();
+        assert!(d.pick_roles.is_empty());
+        assert!(!d.has_pick_roles());
+        assert_eq!(d.pick_role(0), PickRole::Unknown);
+        let r = roles_fixture();
+        assert!(r.has_pick_roles());
+        assert_eq!(r.pick_role(1), PickRole::Tabby);
+        assert_eq!(
+            r.pick_role(99),
+            PickRole::Unknown,
+            "past the picks is unknown"
+        );
+    }
+
+    #[test]
+    fn resize_keeps_roles_aligned_with_the_picks() {
+        // Grow: the new picks' roles are Unknown, the old ones keep theirs.
+        let g = roles_fixture().resized(4, 6, 4, 4);
+        assert_eq!(g.pick_roles.len(), g.picks());
+        assert_eq!(&g.pick_roles[..4], &roles_fixture().pick_roles[..]);
+        assert_eq!(&g.pick_roles[4..], &[PickRole::Unknown, PickRole::Unknown]);
+        // Shrink: the removed picks take their roles with them.
+        let s = roles_fixture().resized(4, 3, 4, 4);
+        assert_eq!(
+            s.pick_roles,
+            vec![PickRole::Pattern, PickRole::Tabby, PickRole::Pattern]
+        );
+        // To zero, and an unchanged pick axis, stay aligned.
+        assert!(roles_fixture().resized(4, 0, 4, 4).pick_roles.is_empty());
+        assert_eq!(
+            roles_fixture().resized(9, 4, 2, 1).pick_roles,
+            roles_fixture().pick_roles,
+            "an ends/shafts/treadles resize leaves the roles alone"
+        );
+        // "No roles recorded" stays empty instead of materializing Unknowns.
+        assert!(resize_fixture().resized(4, 8, 4, 4).pick_roles.is_empty());
+    }
+
+    #[test]
+    fn drive_and_shed_conversions_keep_every_role() {
+        let d = roles_fixture();
+        // Shed conversion keeps the picks, so it keeps the roles (both directions).
+        let sinking = d.with_shed(ShedType::Sinking);
+        assert_eq!(sinking.pick_roles, d.pick_roles);
+        assert_eq!(sinking.with_shed(ShedType::Rising).pick_roles, d.pick_roles);
+        // Treadled -> liftplan -> factored back: same picks, same roles.
+        let lp = sinking.to_liftplan_draft();
+        assert_eq!(lp.pick_roles, d.pick_roles);
+        let factored = lp.factor_liftplan(40).expect("4 lifts factor");
+        assert_eq!(factored.pick_roles, d.pick_roles);
+        // A palette edit does not touch the picks.
+        let mut colored = d.clone();
+        colored.colors.palette.push(Color::rgb(1, 2, 3));
+        assert_eq!(
+            colored.with_color_removed(2).unwrap().pick_roles,
+            d.pick_roles
+        );
+    }
+
+    #[test]
+    fn plain_weave_phase_finds_the_two_tabby_sheds() {
+        // Overshot-style threading 1,2,1,2,3,4,3,4: {1,3} lifts ends 1,3,5,7 and {2,4} the others.
+        let mut d = Draft::blank(4, 0);
+        d.threading = Threading(
+            [1, 2, 1, 2, 3, 4, 3, 4]
+                .iter()
+                .map(|&s| vec![ShaftId(s)])
+                .collect(),
+        );
+        assert_eq!(d.plain_weave_phase(&[ShaftId(1), ShaftId(3)]), Some(true));
+        assert_eq!(d.plain_weave_phase(&[ShaftId(2), ShaftId(4)]), Some(false));
+        // A pattern shed (a whole block up) is not plain weave, nor is nothing or everything.
+        assert_eq!(d.plain_weave_phase(&[ShaftId(1), ShaftId(2)]), None);
+        assert_eq!(d.plain_weave_phase(&[]), None);
+        assert_eq!(
+            d.plain_weave_phase(&[ShaftId(1), ShaftId(2), ShaftId(3), ShaftId(4)]),
+            None
+        );
+        // Unthreaded ends are skipped; one threaded end cannot show alternation.
+        d.threading.0.insert(1, Vec::new());
+        assert_eq!(d.plain_weave_phase(&[ShaftId(1), ShaftId(3)]), Some(true));
+        d.threading = Threading(vec![vec![ShaftId(1)], Vec::new()]);
+        assert_eq!(d.plain_weave_phase(&[ShaftId(1)]), None);
+        // On a straight 1,2,3,4 threading a twill shed is not tabby either.
+        d.threading = Threading::straight(8, 4);
+        assert_eq!(d.plain_weave_phase(&[ShaftId(1), ShaftId(2)]), None);
+        assert_eq!(d.plain_weave_phase(&[ShaftId(2), ShaftId(4)]), Some(false));
+    }
+
+    #[test]
+    fn tabby_rule_handles_ends_on_several_shafts() {
+        // Ends: {1}, {2,3}, {1}, {2}. Tabby a lifts ends 1 and 3 (shaft 1 only); tabby b lifts
+        // ends 2 and 4, which needs shaft 2 (end 4) and so also covers end 2.
+        let t = Threading(vec![
+            vec![ShaftId(1)],
+            vec![ShaftId(2), ShaftId(3)],
+            vec![ShaftId(1)],
+            vec![ShaftId(2)],
+        ]);
+        let rule = TabbyRule::new(&t);
+        assert_eq!(rule.phase(&[ShaftId(1)]), Some(true));
+        assert_eq!(rule.phase(&[ShaftId(1), ShaftId(2)]), None);
+        assert_eq!(rule.phase(&[ShaftId(2)]), Some(false));
+        assert_eq!(rule.phase(&[ShaftId(2), ShaftId(3)]), Some(false));
+        assert_eq!(rule.phase(&[ShaftId(3)]), None, "end 4 would stay down");
+        // An unthreaded shaft in the lift changes nothing.
+        assert_eq!(rule.phase(&[ShaftId(1), ShaftId(9)]), Some(true));
+        // An end whose shafts all belong to ends that must stay down can never rise alone.
+        let stuck = Threading(vec![vec![ShaftId(1)], vec![ShaftId(1)], vec![ShaftId(2)]]);
+        assert_eq!(TabbyRule::new(&stuck).phase(&[ShaftId(1)]), None);
+        assert_eq!(TabbyRule::new(&stuck).phase(&[ShaftId(2)]), None);
+    }
+
+    /// The rule is the alternation definition, checked exhaustively against a direct walk of the
+    /// threaded ends for every lift on small threadings (single- and multi-shaft ends).
+    #[test]
+    fn tabby_rule_matches_a_direct_alternation_walk() {
+        fn walk(t: &Threading, raised: &[ShaftId]) -> Option<bool> {
+            let ups: Vec<bool> =
+                t.0.iter()
+                    .filter(|e| !e.is_empty())
+                    .map(|e| e.iter().any(|s| raised.contains(s)))
+                    .collect();
+            if ups.len() < 2 || ups.windows(2).any(|w| w[0] == w[1]) {
+                return None;
+            }
+            Some(ups[0])
+        }
+        let threadings = [
+            Threading::straight(6, 4),
+            Threading::point(9, 4),
+            Threading(
+                [1, 2, 1, 2, 3, 4, 3, 4]
+                    .iter()
+                    .map(|&s| vec![ShaftId(s)])
+                    .collect(),
+            ),
+            Threading(vec![
+                vec![ShaftId(1)],
+                vec![],
+                vec![ShaftId(2), ShaftId(4)],
+                vec![ShaftId(3)],
+                vec![ShaftId(4)],
+                vec![ShaftId(1), ShaftId(3)],
+            ]),
+        ];
+        for t in &threadings {
+            let rule = TabbyRule::new(t);
+            for mask in 0u16..32 {
+                let raised: Vec<ShaftId> = (1..=5)
+                    .filter(|s| mask & (1 << (s - 1)) != 0)
+                    .map(ShaftId)
+                    .collect();
+                assert_eq!(rule.phase(&raised), walk(t, &raised), "{t:?} {raised:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn is_tabby_shed_reads_the_raised_shafts_on_a_sinking_shed() {
+        // Sinking: treadle 1 SINKS {2,4}, so it RAISES {1,3}, the tabby that lifts end 1.
+        let mut d = Draft::blank(4, 2);
+        d.shed = ShedType::Sinking;
+        d.threading = Threading::straight(4, 4);
+        d.drive = Drive::Treadled {
+            tieup: TieUp(vec![vec![ShaftId(2), ShaftId(4)], vec![ShaftId(1)]]),
+            treadling: Treadling(vec![vec![TreadleId(1)], vec![TreadleId(2)]]),
+        };
+        assert!(d.is_tabby_shed(0));
+        assert!(!d.is_tabby_shed(1), "raising 2,3,4 is not plain weave");
     }
 
     #[test]

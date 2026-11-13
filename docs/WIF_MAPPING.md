@@ -25,7 +25,8 @@ Implementation: `rust/ply-weave/src/wif.rs` (`parse` / `write`).
 | `[TEXT]` `Title` | `Draft.name` | ✅ (read/written) |
 | `[COLOR PALETTE]` `Range`, `Form` | palette range/format | ✅ (any `Range` scaled to 0..255; re-export normalizes to 255) |
 | `[WARP THICKNESS]`, `[WEFT THICKNESS]` | `Draft.warp_thickness` / `weft_thickness` | ✅ (modeled; drives variable-cell rendering) |
-| other unmodeled sections (spacing, vendor) | `Draft.retained` | ✅ (kept verbatim, re-emitted) |
+| `[PRIVATE PLY PICK ROLES]` (Ply's WIF 1.1 private section) | `Draft.pick_roles` | ✅ (written only when some role is known; see below) |
+| other unmodeled sections (spacing, vendor, other programs' `[PRIVATE ...]`) | `Draft.retained` | ✅ (kept verbatim, re-emitted) |
 | `[NOTES]` | `Draft.notes` | ✅ |
 
 Index convention: WIF is **1-based** (color index 1, shaft 1, …). The parser converts color
@@ -37,6 +38,33 @@ references to 0-based `ColorIndex` and stores the palette 0-based; shaft/treadle
 The common shaft-loom draft: geometry + threading + (tie-up & treadling **or** liftplan) +
 color table + warp/weft color sequences. `wif::tests::roundtrips_through_write_then_parse`
 asserts `parse → write → parse` is stable for that case.
+
+## Pick roles (Ply private section)
+
+Per-pick roles (pattern, tabby, top layer, bottom layer) are not part of WIF proper. WIF 1.1 reserves
+`[PRIVATE <SourceID> <SectionName>]` sections for program-specific data, and readers that do not
+recognize one skip it, so Ply stores roles in `[PRIVATE PLY PICK ROLES]` (Source ID `PLY`, listed in
+`[CONTENTS]` as `PRIVATE PLY PICK ROLES=true`):
+
+```
+[PRIVATE PLY PICK ROLES]
+Version=1
+Picks=8
+Sheds=<fingerprint>
+1=pattern
+2=tabby
+```
+
+`Version` is the section layout (a higher one is kept verbatim and not read). Only picks with a known
+role are listed; the tokens are `pattern`, `tabby`, `top-layer`, `bottom-layer`. `Picks` and `Sheds`
+tie the roles to the cloth: `Sheds` is FNV-1a 64-bit over each pick's raised shafts (ascending,
+comma-separated, each pick followed by `;`) as 16 lowercase hex digits, so it is the same for any
+re-expression of one cloth (tie-up or liftplan, either shed) and changes when picks are added,
+removed, reordered, or re-shedded. Roles are read only when both match, so a file whose picks another
+program changed opens with every role unknown rather than with roles on the wrong picks. A WIF without
+the section (every third-party file) opens with every role unknown; roles are never guessed. A
+program that re-saves a Ply file may drop private sections (WIF does not require keeping them); the
+woven draft is unaffected, only the roles are lost.
 
 ## Known gaps / caveats
 

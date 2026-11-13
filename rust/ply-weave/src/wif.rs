@@ -8,6 +8,10 @@
 //! `TIEUP`+`TREADLING` or `LIFTPLAN`, `COLOR TABLE`, and `WARP`/`WEFT` default +
 //! per-thread colors. Thickness, spacing, and non-0..255 palette ranges are parsed
 //! leniently / defaulted (never panic) and are TODO for full fidelity.
+//!
+//! Per-pick roles (not part of WIF proper) live in Ply's WIF 1.1 private section
+//! [`PICK_ROLES_SECTION`], tied to the cloth by a pick count and [`shed_fingerprint`] so a file
+//! whose picks another program changed reads back with every role unknown (ADR 0008).
 
 use crate::draft::*;
 use crate::error::{Result, WeaveError};
@@ -279,10 +283,16 @@ pub fn parse(text: &str) -> Result<Draft> {
         "WARP THICKNESS",
         "WEFT THICKNESS",
     ];
+    // Ply's own private section (pick roles) is MODELED when this build can read its version; a
+    // section from a NEWER Ply is kept verbatim like any unmodeled section, so re-saving here does
+    // not destroy it (see `read_pick_roles`).
+    let roles_section = ini.section(PICK_ROLES_SECTION);
+    let roles_version = roles_section.map(pick_roles_version);
     let retained = ini
         .sections
         .iter()
         .filter(|s| !MODELED.contains(&s.name.as_str()))
+        .filter(|s| s.name != PICK_ROLES_SECTION || roles_version == Some(RolesVersion::Newer))
         .map(|s| RetainedSection {
             name: s.name.clone(),
             entries: s.entries.clone(),
@@ -295,7 +305,7 @@ pub fn parse(text: &str) -> Result<Draft> {
         ));
     }
 
-    let draft = Draft {
+    let mut draft = Draft {
         name,
         shafts,
         treadles,
@@ -308,7 +318,13 @@ pub fn parse(text: &str) -> Result<Draft> {
         weft_thickness,
         notes,
         retained,
+        pick_roles: Vec::new(),
     };
+    // Roles are checked against the cloth just parsed (pick count and per-pick raised shafts), so a
+    // section another program carried over while it changed the picks is dropped, never misapplied.
+    if let (Some(section), Some(RolesVersion::Current)) = (roles_section, roles_version) {
+        draft.pick_roles = read_pick_roles(section, &draft);
+    }
     // A dobby-style WIF (a [LIFTPLAN] with no tie-up) would otherwise show the whole lift pattern in
     // the treadling column with no tie-up. When the plan is simple enough to weave on a treadle loom,
     // factor it into the conventional tie-up + treadling (identical cloth); a too-complex plan stays a
@@ -321,6 +337,121 @@ pub fn parse(text: &str) -> Result<Draft> {
 /// treadling (see [`Draft::factor_liftplan`]). Generous enough for hand-weaving (overshot, twills,
 /// summer-and-winter all factor to a handful of treadles); a more complex dobby plan stays a liftplan.
 const MAX_FACTOR_TREADLES: usize = 40;
+
+// ---------------------------------------------------------------------------
+// Pick roles: Ply's WIF 1.1 private section (ADR 0008)
+// ---------------------------------------------------------------------------
+
+/// The WIF 1.1 private section Ply stores per-pick roles in. WIF 1.1 reserves
+/// `[PRIVATE <SourceID> <SectionName>]` for program-specific data ("A program that does not
+/// recognize a private section skips it"); `PLY` is Ply's Source ID and stays fixed even if the
+/// app is renamed, so files keep reading. Section names are matched case-insensitively (the INI
+/// reader uppercases them).
+pub const PICK_ROLES_SECTION: &str = "PRIVATE PLY PICK ROLES";
+
+/// The layout version of [`PICK_ROLES_SECTION`] this build reads and writes.
+pub const PICK_ROLES_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RolesVersion {
+    /// [`PICK_ROLES_VERSION`]: read it.
+    Current,
+    /// A later Ply's layout: keep the section verbatim, read no roles from it.
+    Newer,
+    /// Missing or unreadable `Version`: no Ply build wrote it, so ignore and drop it.
+    Unreadable,
+}
+
+fn pick_roles_version(section: &Section) -> RolesVersion {
+    match section.get("Version").and_then(|v| v.parse::<u32>().ok()) {
+        Some(PICK_ROLES_VERSION) => RolesVersion::Current,
+        Some(v) if v > PICK_ROLES_VERSION => RolesVersion::Newer,
+        _ => RolesVersion::Unreadable,
+    }
+}
+
+/// The token a role is written as (lowercase; read case-insensitively).
+fn role_token(role: PickRole) -> &'static str {
+    match role {
+        PickRole::Unknown => "unknown",
+        PickRole::Pattern => "pattern",
+        PickRole::Tabby => "tabby",
+        PickRole::TopLayer => "top-layer",
+        PickRole::BottomLayer => "bottom-layer",
+    }
+}
+
+/// The role a token names. An unrecognized token is `Unknown`: never a guess.
+fn role_from_token(token: &str) -> PickRole {
+    match token.trim().to_ascii_lowercase().as_str() {
+        "pattern" => PickRole::Pattern,
+        "tabby" => PickRole::Tabby,
+        "top-layer" => PickRole::TopLayer,
+        "bottom-layer" => PickRole::BottomLayer,
+        _ => PickRole::Unknown,
+    }
+}
+
+/// A fingerprint of the draft's cloth along the weft: FNV-1a (64-bit) over, for each pick in order,
+/// its raised shafts ascending and comma-separated, each pick followed by `;` (pick 1 raising shafts
+/// 1 and 3 then pick 2 raising nothing hashes `"1,3;;"`), written as 16 lowercase hex digits. It is
+/// computed from [`Draft::raised_shafts`], so it does not change when the same cloth is re-expressed
+/// (liftplan or tie-up, either shed direction, a factored liftplan) but does change when any pick's
+/// shed changes or picks are added, removed, or reordered. Roles are read back only when it matches.
+pub fn shed_fingerprint(draft: &Draft) -> String {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = OFFSET;
+    let mut feed = |bytes: &[u8]| {
+        for &b in bytes {
+            hash ^= u64::from(b);
+            hash = hash.wrapping_mul(PRIME);
+        }
+    };
+    for pick in 0..draft.picks() {
+        let mut raised: Vec<u16> = draft.raised_shafts(pick).iter().map(|s| s.0).collect();
+        raised.sort_unstable();
+        raised.dedup();
+        for (i, s) in raised.iter().enumerate() {
+            if i > 0 {
+                feed(b",");
+            }
+            feed(s.to_string().as_bytes());
+        }
+        feed(b";");
+    }
+    format!("{hash:016x}")
+}
+
+/// Read a current-version [`PICK_ROLES_SECTION`] against the parsed `draft`. The section is used
+/// only when its `Picks` count AND its `Sheds` fingerprint match the cloth; otherwise the picks were
+/// changed by software that kept the section without understanding it, and the roles cannot be
+/// trusted, so every role is Unknown (the section is dropped and not re-written). Keys are 1-based
+/// picks (sparse: a pick not listed is Unknown); a key past the picks is ignored. A result with no
+/// known role is empty (the "no roles recorded" convention).
+fn read_pick_roles(section: &Section, draft: &Draft) -> Vec<PickRole> {
+    let picks = draft.picks();
+    let count_ok = section.get("Picks").and_then(|v| v.parse::<usize>().ok()) == Some(picks);
+    let sheds_ok = section
+        .get("Sheds")
+        .is_some_and(|v| v.eq_ignore_ascii_case(&shed_fingerprint(draft)));
+    if !count_ok || !sheds_ok {
+        return Vec::new();
+    }
+    let mut roles = vec![PickRole::Unknown; picks];
+    for (k, v) in &section.entries {
+        if let Ok(i) = k.trim().parse::<usize>() {
+            if (1..=picks).contains(&i) {
+                roles[i - 1] = role_from_token(v);
+            }
+        }
+    }
+    if roles.iter().all(|&r| r == PickRole::Unknown) {
+        Vec::new()
+    } else {
+        roles
+    }
+}
 
 /// Parse a per-thread `[WARP/WEFT THICKNESS]` section (`index=value`) into a length-`n` `Vec<f32>`.
 /// Returns EMPTY when the section is absent so the "all-default uniform" convention survives. A
@@ -471,7 +602,19 @@ pub fn write(draft: &Draft) -> String {
     if !draft.weft_thickness.is_empty() {
         line!("WEFT THICKNESS=true");
     }
-    for sec in &draft.retained {
+    // Ply's private pick-roles section is written only when some role is known. When it is, a kept
+    // copy from a newer Ply (in `retained`) is replaced by it rather than written twice.
+    let write_roles = draft.has_pick_roles();
+    let retained: Vec<&RetainedSection> = draft
+        .retained
+        .iter()
+        .filter(|s| !(write_roles && s.name.eq_ignore_ascii_case(PICK_ROLES_SECTION)))
+        .collect();
+    // WIF 1.1 lists private sections in [CONTENTS] as `PRIVATE <SourceID> <SectionName>=true`.
+    if write_roles {
+        line!("{}=true", PICK_ROLES_SECTION);
+    }
+    for sec in &retained {
         line!("{}=true", sec.name);
     }
     line!("");
@@ -565,10 +708,26 @@ pub fn write(draft: &Draft) -> String {
         }
     }
 
+    // Pick roles (Ply private section, ADR 0008): the layout version, the pick count and shed
+    // fingerprint they belong to, then one `pick=role` line per pick whose role is known (sparse: an
+    // unlisted pick is Unknown). No value starts with `[`, as WIF 1.1 requires of private sections.
+    if write_roles {
+        line!("");
+        line!("[{}]", PICK_ROLES_SECTION);
+        line!("Version={}", PICK_ROLES_VERSION);
+        line!("Picks={}", draft.picks());
+        line!("Sheds={}", shed_fingerprint(draft));
+        for (i, &role) in draft.pick_roles.iter().take(draft.picks()).enumerate() {
+            if role != PickRole::Unknown {
+                line!("{}={}", i + 1, role_token(role));
+            }
+        }
+    }
+
     // Re-emit unmodeled sections kept verbatim on import (spacing, vendor sections), so a
     // structurally-edited re-serialize is no longer lossy for them. (A resize already dropped any
     // per-thread section whose axis changed — see `Draft::resized`.)
-    for sec in &draft.retained {
+    for sec in retained {
         line!("");
         line!("[{}]", sec.name);
         for (k, v) in &sec.entries {
@@ -956,6 +1115,7 @@ Threads=4
             weft_thickness: Vec::new(),
             notes: String::new(),
             retained: Vec::new(),
+            pick_roles: Vec::new(),
         };
 
         let lp = d.to_liftplan_draft();
@@ -1016,6 +1176,169 @@ Threads=4
         for p in 0..rt2.picks() {
             assert!(rt2.raised_shafts(p).is_empty(), "pick {p} stays empty");
         }
+    }
+
+    // --- Pick roles in Ply's WIF 1.1 private section (ADR 0008) ---
+
+    /// The generated overshot, with its pattern/tabby roles.
+    fn overshot_roles() -> Draft {
+        crate::structure::overshot(16, 8, 4)
+    }
+
+    #[test]
+    fn pick_roles_round_trip_in_the_private_section() {
+        let d = overshot_roles();
+        assert!(d.has_pick_roles());
+        let text = write(&d);
+        assert!(text.contains("[PRIVATE PLY PICK ROLES]"));
+        assert!(
+            text.contains("PRIVATE PLY PICK ROLES=true"),
+            "listed in [CONTENTS] as WIF 1.1 specifies"
+        );
+        assert!(text.contains("Version=1\r\nPicks=8\r\nSheds="));
+        assert!(text.contains("1=pattern") && text.contains("2=tabby"));
+        let back = parse(&text).unwrap();
+        assert_eq!(back.pick_roles, d.pick_roles);
+        assert!(
+            back.retained.is_empty(),
+            "modeled, not kept as an unknown section"
+        );
+        assert_eq!(back, d, "the whole draft round-trips");
+        // A second write is byte-identical (no duplicate section).
+        assert_eq!(write(&back), text);
+    }
+
+    #[test]
+    fn roles_are_sparse_and_written_only_when_some_role_is_known() {
+        let mut d = parse(SAMPLE).unwrap();
+        assert!(d.pick_roles.is_empty(), "a third-party WIF has no roles");
+        assert!(
+            !write(&d).contains("PRIVATE PLY"),
+            "nothing known, nothing written"
+        );
+        d.pick_roles = vec![PickRole::Unknown; 4];
+        assert!(
+            !write(&d).contains("PRIVATE PLY"),
+            "all-unknown writes nothing either"
+        );
+        d.pick_roles[2] = PickRole::BottomLayer;
+        let text = write(&d);
+        assert!(text.contains("3=bottom-layer"));
+        assert!(!text.contains("1=unknown"), "unknown picks are not listed");
+        let back = parse(&text).unwrap();
+        assert_eq!(
+            back.pick_roles,
+            vec![
+                PickRole::Unknown,
+                PickRole::Unknown,
+                PickRole::BottomLayer,
+                PickRole::Unknown
+            ]
+        );
+    }
+
+    /// A Ply file opened and re-saved by software that keeps the private section but changes the
+    /// picks: the roles no longer describe the cloth, so they are dropped (all Unknown), never applied
+    /// to the wrong picks.
+    #[test]
+    fn roles_from_a_changed_cloth_are_dropped() {
+        let text = write(&overshot_roles());
+        // One more pick (WEFT Threads and a treadling line), section untouched.
+        let grown = text
+            .replace("[WEFT]\r\nThreads=8", "[WEFT]\r\nThreads=9")
+            .replace(
+                "8=4\r\n\r\n[WARP COLORS]",
+                "8=4\r\n9=1\r\n\r\n[WARP COLORS]",
+            );
+        let g = parse(&grown).unwrap();
+        assert_eq!((g.ends(), g.picks()), (16, 9));
+        assert_eq!(
+            g.raised_shafts(8),
+            vec![ShaftId(1), ShaftId(2)],
+            "the added pick"
+        );
+        assert!(g.pick_roles.is_empty(), "pick count changed: roles dropped");
+        assert!(!write(&g).contains("PRIVATE PLY"), "and not written back");
+        // Same count, one shed changed (pick 2 now presses the pattern treadle 1).
+        let edited = text.replace("[TREADLING]\r\n1=1\r\n2=3", "[TREADLING]\r\n1=1\r\n2=1");
+        assert_ne!(edited, text);
+        assert!(
+            parse(&edited).unwrap().pick_roles.is_empty(),
+            "sheds changed: dropped"
+        );
+        // A re-expression of the SAME cloth keeps them: the fingerprint reads raised shafts.
+        let lp = overshot_roles().to_liftplan_draft();
+        assert_eq!(
+            parse(&write(&lp)).unwrap().pick_roles,
+            overshot_roles().pick_roles
+        );
+    }
+
+    #[test]
+    fn a_liftplan_only_import_keeps_roles_through_factoring() {
+        let lp = overshot_roles().to_liftplan_draft();
+        let back = parse(&write(&lp)).unwrap();
+        assert!(
+            matches!(back.drive, Drive::Treadled { .. }),
+            "factored on import"
+        );
+        assert_eq!(back.pick_roles, overshot_roles().pick_roles);
+    }
+
+    #[test]
+    fn a_newer_roles_section_is_kept_verbatim_and_unread() {
+        let newer = format!(
+            "{SAMPLE}[PRIVATE PLY PICK ROLES]\nVersion=2\nPicks=4\nShuttles=a,b\n1=pattern\n"
+        );
+        let d = parse(&newer).unwrap();
+        assert!(d.pick_roles.is_empty(), "this build cannot read version 2");
+        assert_eq!(d.retained.len(), 1, "kept so a re-save does not destroy it");
+        let text = write(&d);
+        assert!(text.contains("Version=2") && text.contains("Shuttles=a,b"));
+        // Once this build records roles of its own, its section replaces the kept one.
+        let mut d2 = d.clone();
+        d2.pick_roles = vec![PickRole::Pattern; 4];
+        let text2 = write(&d2);
+        assert_eq!(text2.matches("[PRIVATE PLY PICK ROLES]").count(), 1);
+        assert_eq!(text2.matches("PRIVATE PLY PICK ROLES=true").count(), 1);
+        assert!(text2.contains("Version=1") && !text2.contains("Version=2"));
+        // An unreadable (versionless) section is ignored and dropped.
+        let junk = format!("{SAMPLE}[PRIVATE PLY PICK ROLES]\n1=tabby\n");
+        let j = parse(&junk).unwrap();
+        assert!(j.pick_roles.is_empty() && j.retained.is_empty());
+    }
+
+    #[test]
+    fn other_programs_private_sections_are_untouched() {
+        // Another program's private section is an ordinary unmodeled section: kept verbatim.
+        let other = format!("{SAMPLE}[PRIVATE WEAVEIT AWESOME]\nSparkles=1\n");
+        let d = parse(&other).unwrap();
+        assert_eq!(d.retained.len(), 1);
+        assert!(d.pick_roles.is_empty());
+        assert!(write(&d).contains("[PRIVATE WEAVEIT AWESOME]"));
+        // Section and token matching is case-insensitive, like the rest of WIF.
+        let mut text = write(&overshot_roles())
+            .replace("[PRIVATE PLY PICK ROLES]", "[private ply pick roles]");
+        text = text.replace("1=pattern", "1=PATTERN");
+        assert_eq!(
+            parse(&text).unwrap().pick_roles,
+            overshot_roles().pick_roles
+        );
+    }
+
+    #[test]
+    fn shed_fingerprint_follows_the_documented_recipe() {
+        // Two picks: raise 1 and 3, then nothing -> FNV-1a 64 of "1,3;;".
+        let mut d = Draft::blank(3, 0);
+        d.threading = Threading(vec![vec![ShaftId(1)]]);
+        d.drive = Drive::Liftplan(Liftplan(vec![vec![ShaftId(3), ShaftId(1)], vec![]]));
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in b"1,3;;" {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        assert_eq!(shed_fingerprint(&d), format!("{h:016x}"));
+        assert_eq!(shed_fingerprint(&d).len(), 16);
     }
 
     /// A malformed WIF must never drive an unbounded allocation: a sparse 4-billion numeric key would,

@@ -392,6 +392,20 @@ class DraftRepository {
         ? [for (final r in baseDrive.treadling) r.toList()]
         : <List<int>>[];
     final touchesDrive = genTieup != null || applyTreadling;
+    // A LIFTPLAN base has no tie-up or treadling to keep: touching the drive replaces the liftplan
+    // with the generated tie-up + treadling, so anything they do not fully cover would silently lose
+    // its lifts (a tie-up alone left no picks at all; a short treadling dropped the rest). Refuse
+    // instead, unless both are applied and the treadling covers every existing pick from pick 1.
+    if (baseDrive is DraftLiftplan && touchesDrive && base.picks > 0) {
+      final coversAll = genTieup != null && applyTreadling && pickStart == 0 && picks >= base.picks;
+      if (!coversAll) {
+        throw StructureApplyRefused(
+          'This draft is driven by a lift plan, and generating a tie-up or treadling replaces it. '
+          'Apply both the tie-up and the treadling, starting at pick 1 and covering all '
+          '${base.picks} picks, so no pick loses its lifts.',
+        );
+      }
+    }
     if (genTieup != null) {
       tieupRows = [for (final r in genTieup) r.toList()];
     }
@@ -430,6 +444,20 @@ class DraftRepository {
                 : [...src, ...List<double>.filled(len - src.length, 1.0)]));
     final weftPad = base.weftColors.isEmpty ? (base.palette.length > 1 ? 1 : 0) : 0;
 
+    // Pick roles stay coupled to the picks like the weft colors (new picks are unknown). A pick whose
+    // shed the generated treadling REPLACES gets an unknown role too: plain, twill, and satin record
+    // no roles, and the old role described the shed that is gone.
+    List<PickRole> resizeRoles(List<PickRole> src, int len) {
+      if (src.isEmpty) return const <PickRole>[];
+      final out = [for (var p = 0; p < len; p++) p < src.length ? src[p] : PickRole.unknown];
+      if (applyTreadling) {
+        for (var i = 0; i < picks; i++) {
+          out[pickStart + i] = PickRole.unknown;
+        }
+      }
+      return out;
+    }
+
     return base.copyWith(
       shafts: newShafts,
       treadles: newTreadles,
@@ -439,6 +467,7 @@ class DraftRepository {
       weftColors: resizeInts(base.weftColors, newPicks, weftPad),
       warpThickness: resizeDbls(base.warpThickness, newEnds),
       weftThickness: resizeDbls(base.weftThickness, newPicks),
+      pickRoles: resizeRoles(base.pickRoles, newPicks),
       // Per-thread retained WARP/WEFT sections desync if a dimension changed; drop them then, else
       // keep (passing null leaves base.retained untouched).
       retained: (newEnds != base.ends || newPicks != base.picks) ? const <RetainedSection>[] : null,
@@ -812,8 +841,25 @@ class DraftRepository {
             ],
           ),
       ],
+      pickRoles: [for (final r in doc.pickRoles) _roleKind(r)],
     );
   }
+
+  static PickRoleKind _roleKind(PickRole r) => switch (r) {
+        PickRole.unknown => PickRoleKind.unknown,
+        PickRole.pattern => PickRoleKind.pattern,
+        PickRole.tabby => PickRoleKind.tabby,
+        PickRole.topLayer => PickRoleKind.topLayer,
+        PickRole.bottomLayer => PickRoleKind.bottomLayer,
+      };
+
+  static PickRole _role(PickRoleKind k) => switch (k) {
+        PickRoleKind.unknown => PickRole.unknown,
+        PickRoleKind.pattern => PickRole.pattern,
+        PickRoleKind.tabby => PickRole.tabby,
+        PickRoleKind.topLayer => PickRole.topLayer,
+        PickRoleKind.bottomLayer => PickRole.bottomLayer,
+      };
 
   /// Map a wire `DraftDto` back to a domain [DraftDoc].
   DraftDoc fromDto(DraftDto dto) {
@@ -854,6 +900,7 @@ class DraftRepository {
             [for (final e in s.entries) RetainedEntry(e.key, e.value)],
           ),
       ],
+      pickRoles: [for (final k in dto.pickRoles) _role(k)],
     );
   }
 
@@ -927,4 +974,14 @@ String regionPreviewErrorMessage(Object error) {
     return 'Too much of this draft is in view to draw at once. Zoom in to see the cloth.';
   }
   return previewErrorMessage(error);
+}
+
+/// Why [DraftRepository.applyBasicStructure] refused to apply a generated structure: applying it
+/// would have lost existing picks. [toString] is the plain message shown to the user.
+class StructureApplyRefused implements Exception {
+  const StructureApplyRefused(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
 }

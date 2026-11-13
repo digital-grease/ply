@@ -707,6 +707,7 @@ pub fn generate(params: &ShadowParams) -> Result<Draft, ShadowError> {
         weft_thickness: Vec::new(),
         notes: recipe(params, ends, picks, unit.len()),
         retained: Vec::new(),
+        pick_roles: Vec::new(),
     })
 }
 

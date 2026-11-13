@@ -10,7 +10,8 @@ use proptest::prelude::*;
 /// genuine identity (not a normalization artifact): `shafts >= 1` (so parse never rejects), a
 /// non-empty whitespace-free `name` (an empty name writes no `[TEXT]` and parse defaults to
 /// "Untitled"), `notes` with no spaces (parse trims each line), `>= 1` palette color, and every
-/// list sized to its header count. `retained` is empty here (its round-trip has its own unit test).
+/// list sized to its header count. Retained sections are VENDOR-prefixed; pick roles are arbitrary
+/// (an all-Unknown draw is normalized to the empty "no roles" form a read returns).
 fn arb_draft() -> impl Strategy<Value = Draft> {
     (1u16..=6, 1u16..=6, 0usize..=10, 0usize..=10, 1usize..=4).prop_flat_map(
         |(shafts, treadles, ends, picks, ncol)| {
@@ -38,6 +39,9 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                     ),
                     0..=2,
                 ), // retained
+                // Pick roles: one per pick drawn from all five (Unknown included), so the sparse
+                // private-section write and the fingerprint-checked read are both exercised.
+                prop::collection::vec(0u8..5, picks),
             )
                 .prop_map(
                     move |(
@@ -51,6 +55,7 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                         warp,
                         weft,
                         retained,
+                        roles,
                     )| Draft {
                         name,
                         shafts,
@@ -103,6 +108,25 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                                 entries,
                             })
                             .collect(),
+                        // "No known role" is stored as EMPTY (that is what a read of a file with no
+                        // roles section gives back), so normalize an all-Unknown draw to it.
+                        pick_roles: {
+                            let r: Vec<PickRole> = roles
+                                .into_iter()
+                                .map(|k| match k {
+                                    1 => PickRole::Pattern,
+                                    2 => PickRole::Tabby,
+                                    3 => PickRole::TopLayer,
+                                    4 => PickRole::BottomLayer,
+                                    _ => PickRole::Unknown,
+                                })
+                                .collect();
+                            if r.iter().all(|&x| x == PickRole::Unknown) {
+                                Vec::new()
+                            } else {
+                                r
+                            }
+                        },
                     },
                 )
         },

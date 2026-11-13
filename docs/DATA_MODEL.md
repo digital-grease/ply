@@ -30,6 +30,7 @@ import/export is lossless for what we support.
 | `ShedType` | `Rising` or `Sinking` — which way the named shafts move. |
 | `ColorPlan` | `palette: Vec<Color>` + `warp: Vec<ColorIndex>` + `weft: Vec<ColorIndex>`. |
 | `warp_thickness`, `weft_thickness` (`Vec<f32>`) | Per warp end / weft pick, a **relative** thread thickness (1.0 = base) that drives variable-width/height drawdown cells (M4). Empty = uniform. Length-coupled to ends/picks like colors; parsed from WIF `[WARP/WEFT THICKNESS]`, the thinnest present thread maps to the base pixel pitch. |
+| `PickRole`, `pick_roles` (`Vec<PickRole>`) | Per weft pick, what it is for: `Unknown` (default), `Pattern`, `Tabby`, `TopLayer`, `BottomLayer`. Empty = every role unknown (every third-party WIF); otherwise length-coupled to the picks and kept aligned by every operation that changes them. Never inferred from color or shafts. The overshot and double-weave generators record them; the Book view sets them and, when they allow it exactly, shows the overshot "Use tabby" shorthand. Stored in a WIF 1.1 private section (see WIF_MAPPING). |
 | `RetainedSection` | A WIF `[SECTION]` Ply does not model (spacing, vendor sections), kept verbatim for export fidelity (M3): round-tripped on a structural edit, stale per-thread ones dropped on a resize. |
 
 ### Three decisions worth knowing
@@ -71,8 +72,12 @@ is `WarpUp(colorIndex)` or `WeftUp(colorIndex)`; `render_rgba` turns that into p
 ### Validation (`validate.rs`)
 
 Cheap structural checks (shaft/treadle ranges, color-count mismatches, treadles with no
-tie-up), returned as `Vec<ValidationIssue>` with `Error`/`Warning` severity. Safe to run on
-every edit.
+tie-up, a pick-role list whose length disagrees with the picks, picks marked tabby whose shed
+is not plain weave), returned as `Vec<ValidationIssue>` with `Error`/`Warning` severity. Safe
+to run on every edit.
+
+A **tabby (plain-weave) shed** is a raised-shaft set that lifts exactly every other threaded
+warp end (`Draft::plain_weave_phase`); "tabby a" lifts the first threaded end.
 
 ## Knitting (sketch — not built, M5)
 
