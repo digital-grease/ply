@@ -9,6 +9,7 @@ import '../models/draft_doc.dart' show MeasureUnit;
 import '../state/backup_providers.dart';
 import '../state/theme_providers.dart';
 import '../theme/spacing.dart';
+import '../widgets/progress_dialog.dart';
 import 'diagnostics_screen.dart';
 import 'ravelry_screen.dart';
 import 'restore_preview_screen.dart';
@@ -160,8 +161,9 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-/// Back up the whole library to one file, and restore one (see `library_backup.dart`). Both run
-/// offline through the system save dialog and file picker.
+/// Back up the whole library to one file (with the app settings if the user keeps them ticked), and
+/// restore one, or a single-project export, which is the same format (see `library_backup.dart`).
+/// Both run offline through the system save dialog and file picker.
 class _BackupSection extends ConsumerStatefulWidget {
   const _BackupSection();
 
@@ -178,62 +180,22 @@ class _BackupSectionState extends ConsumerState<_BackupSection> {
   }
 
   /// Run [work] behind a modal progress dialog labelled [label].
-  Future<T> _withProgress<T>(String label, Future<T> Function() work) async {
-    final navigator = Navigator.of(context, rootNavigator: true);
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(width: PlySpacing.md),
-              Expanded(child: Text(label)),
-            ],
-          ),
-        ),
-      ),
-    );
-    try {
-      return await work();
-    } finally {
-      navigator.pop();
-    }
-  }
+  Future<T> _withProgress<T>(String label, Future<T> Function() work) =>
+      showProgressWhile(context, label, work);
 
   Future<void> _backUp() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
       final backup = ref.read(libraryBackupProvider);
-      final plan = await _withProgress('Preparing backup...', backup.planBackup);
+      final planned = await _withProgress('Preparing backup...', backup.planBackup);
       if (!mounted) return;
-      final go = await showDialog<bool>(
+      // The summary pops with the plan to write (the app settings in or out), or null to cancel.
+      final plan = await showDialog<BackupPlan>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Back up library'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final craft in BackupCraft.values)
-                Text('${craft.label}: ${plural(plan.projectCounts[craft] ?? 0, 'project')}'
-                    '${craft == BackupCraft.nalbinding && plan.photoCount > 0 ? ', ${plural(plan.photoCount, 'photo')}' : ''}'),
-              const SizedBox(height: PlySpacing.sm),
-              Text('Size: ${formatBytes(plan.archiveSize)}'),
-              const SizedBox(height: PlySpacing.sm),
-              const Text('App settings are not included.'),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
-          ],
-        ),
+        builder: (context) => _BackupSummaryDialog(plan: planned),
       );
-      if (go != true || !mounted) return;
+      if (plan == null || !mounted) return;
       final bytes = await _withProgress('Making backup...', () => backup.buildBackup(plan));
       final saved = await ref.read(backupFileAccessProvider).save(plan.fileName, bytes);
       if (saved) _snack('Backup saved.');
@@ -264,9 +226,8 @@ class _BackupSectionState extends ConsumerState<_BackupSection> {
       final result = await Navigator.of(context).push<RestoreResult>(
         MaterialPageRoute(builder: (_) => RestorePreviewScreen(plan: plan)),
       );
-      if (result != null && result.count > 0) {
-        _snack('Restored ${plural(result.count, 'project')}.');
-      }
+      final restored = result == null ? null : restoredMessage(result);
+      if (restored != null) _snack(restored);
     } catch (e) {
       PlyLog.instance.warn('Restore refused: $e');
       refusal = e is BackupException
@@ -298,17 +259,72 @@ class _BackupSectionState extends ConsumerState<_BackupSection> {
         ListTile(
           leading: const Icon(Icons.save_alt),
           title: const Text('Back up library'),
-          subtitle: const Text('Save all projects to one file. App settings are not included.'),
+          subtitle: const Text('Save all projects to one file, optionally with your app settings.'),
           enabled: !_busy,
           onTap: _backUp,
         ),
         ListTile(
           leading: const Icon(Icons.restore),
           title: const Text('Restore from backup'),
-          subtitle: const Text('Add projects from a backup file. Nothing is replaced.'),
+          subtitle: const Text(
+              'Add projects from a backup or an exported project. Your projects are never replaced.'),
           enabled: !_busy,
           onTap: _restore,
         ),
+      ],
+    );
+  }
+}
+
+/// The summary shown before a backup is saved: projects per craft, photos, the file size, and (when
+/// the app settings can be included) a checkbox for them, ticked by default. Pops with the plan to
+/// write, or null when cancelled.
+class _BackupSummaryDialog extends StatefulWidget {
+  const _BackupSummaryDialog({required this.plan});
+
+  final BackupPlan plan;
+
+  @override
+  State<_BackupSummaryDialog> createState() => _BackupSummaryDialogState();
+}
+
+class _BackupSummaryDialogState extends State<_BackupSummaryDialog> {
+  late final BackupPlan _withSettings = widget.plan.withSettings(true);
+  late final BackupPlan _withoutSettings = widget.plan.withSettings(false);
+  late bool _includeSettings = widget.plan.settings != null;
+
+  @override
+  Widget build(BuildContext context) {
+    final offered = widget.plan.settings != null;
+    final plan = _includeSettings ? _withSettings : _withoutSettings;
+    return AlertDialog(
+      title: const Text('Back up library'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final craft in BackupCraft.values)
+            Text('${craft.label}: ${plural(plan.projectCounts[craft] ?? 0, 'project')}'
+                '${craft == BackupCraft.nalbinding && plan.photoCount > 0 ? ', ${plural(plan.photoCount, 'photo')}' : ''}'),
+          const SizedBox(height: PlySpacing.sm),
+          Text('Size: ${formatBytes(plan.archiveSize)}'),
+          const SizedBox(height: PlySpacing.sm),
+          if (offered)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _includeSettings,
+              onChanged: (on) => setState(() => _includeSettings = on ?? false),
+              title: const Text('Include app settings'),
+              subtitle: const Text('Theme, accent color, Material You and units'),
+            )
+          else
+            const Text('App settings are not included.'),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        FilledButton(onPressed: () => Navigator.of(context).pop(plan), child: const Text('Save')),
       ],
     );
   }

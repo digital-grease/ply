@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart' show ThemeMode;
@@ -88,5 +89,17 @@ void main() {
       expect(File('${tmp.path}/app_settings.json.tmp').existsSync(), isFalse);
       expect(await repo.load(), const AppSettings(accentSeed: 0xFF00696E));
     });
+  });
+
+  test('decode reads bytes exactly as load reads the file (a restore checks settings with it)', () {
+    const s = AppSettings(themeMode: ThemeMode.light, unit: MeasureUnit.centimeters);
+    expect(AppSettingsRepository.decode(utf8.encode(jsonEncode(s.toJson()))), s);
+    // Unknown keys are ignored, unknown values fall back.
+    expect(AppSettingsRepository.decode(utf8.encode('{"themeMode":"light","x":1,"unit":"cubits"}')),
+        const AppSettings(themeMode: ThemeMode.light));
+    for (final bad in ['{"accentSeed":"purple"}', '[1, 2]', '"settings"', '{not json']) {
+      expect(AppSettingsRepository.decode(utf8.encode(bad)), isNull, reason: bad);
+    }
+    expect(AppSettingsRepository.decode(const [0xFF, 0xFE, 0x00, 0x7B]), isNull);
   });
 }

@@ -97,7 +97,9 @@ class KnitRepository {
   // reuses the craft-agnostic DraftMeta (craft = 'Knitting').
   // ---------------------------------------------------------------------------
 
-  static const int _thumbCellPx = 6;
+  /// Pixels per cell of a saved pattern's thumbnail, for a save and for a rebuild of a missing one
+  /// (`rebuildKnitThumbnail`) alike. Small: tiles are ~180px wide.
+  static const int thumbnailCellPx = 6;
   static const Uuid _uuid = Uuid();
   Directory? _knitsDirCache;
 
@@ -334,7 +336,7 @@ class KnitRepository {
   Future<void> _writeThumb(Directory dir, String id, KnitPatternDto pattern) async {
     ui.Image? img;
     try {
-      img = await render(pattern, cellPx: _thumbCellPx);
+      img = await render(pattern, cellPx: thumbnailCellPx);
       final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
       if (bytes == null) return;
       await _atomicWriteBytes(

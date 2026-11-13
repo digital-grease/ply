@@ -5,8 +5,10 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
+import 'package:ply/src/data/backup_file_access.dart';
 import 'package:ply/src/data/library_backup.dart';
 import 'package:ply/src/data/ustar.dart';
+import 'package:ply/src/models/app_settings.dart';
 import 'package:ply/src/models/nalbind_project.dart';
 import 'package:ply/src/models/native_format.dart';
 
@@ -20,12 +22,16 @@ const int knitVersion = 2;
 late Directory docs;
 late Directory work;
 
+/// A backup service over [into] (default [docs]). [settings], when given, are the app settings in
+/// effect that a full backup offers; [applySettings] receives restored settings (and may throw).
 LibraryBackup service({
   Directory? into,
   BackupLimits limits = const BackupLimits(),
   NativeFileChecks checks = const NativeFileChecks(),
   Future<void> Function(String target)? beforePlace,
   List<(BackupCraft, String)>? thumbnails,
+  AppSettings? settings,
+  Future<void> Function(AppSettings settings)? applySettings,
 }) =>
     LibraryBackup(
       documentsDir: () async => into ?? docs,
@@ -34,6 +40,8 @@ LibraryBackup service({
       limits: limits,
       checks: checks,
       rebuildThumbnail: (craft, id) async => thumbnails?.add((craft, id)),
+      currentSettings: settings == null ? null : () async => settings,
+      applySettings: applySettings,
       clock: () => DateTime.utc(2026, 11, 12, 10, 30),
       beforePlace: beforePlace,
     );
@@ -105,8 +113,18 @@ Future<Map<String, List<int>>> snapshot(Directory root) async {
   return out;
 }
 
-Future<File> backUp(LibraryBackup s, {String name = 'library.plybackup'}) async {
+Future<File> backUp(LibraryBackup s,
+    {String name = 'library.plybackup', bool includeSettings = true}) async {
   final plan = await s.planBackup();
+  final f = File(p.join(work.path, name));
+  await f.writeAsBytes(await s.buildBackup(plan.withSettings(includeSettings)));
+  return f;
+}
+
+/// A single-project export of [id] of [craft] from [s]'s library.
+Future<File> exportOne(LibraryBackup s, BackupCraft craft, String id,
+    {String name = 'project.plybackup'}) async {
+  final plan = await s.planProjectBackup(craft, id);
   final f = File(p.join(work.path, name));
   await f.writeAsBytes(await s.buildBackup(plan));
   return f;
@@ -128,3 +146,89 @@ Future<List<(String, Uint8List)>> entriesOf(File f) async {
   }
 }
 
+
+/// A stand-in for the system save dialog and file picker.
+class FakeFiles implements BackupFileAccess {
+  final saved = <(String, Uint8List)>[];
+  bool saveResult = true;
+  Object? saveError;
+  File? toPick;
+  int discards = 0;
+
+  @override
+  Future<bool> save(String fileName, Uint8List bytes) async {
+    if (saveError != null) throw saveError!;
+    saved.add((fileName, bytes));
+    return saveResult;
+  }
+
+  @override
+  Future<File?> pick() async => toPick;
+
+  @override
+  Future<void> discardPicked() async => discards++;
+}
+
+/// A stand-in backup service for the UI: canned plans and results, and a record of what was asked.
+class FakeBackup extends LibraryBackup {
+  FakeBackup()
+      : super(
+          documentsDir: () async => Directory.systemTemp,
+          currentKnitSchemaVersion: () async => knitVersion,
+          appVersion: 'test',
+        );
+
+  BackupPlan? plan;
+  Object? planError;
+  BackupPlan? projectPlan;
+  Object? projectPlanError;
+  final Uint8List built = Uint8List.fromList([1, 2, 3]);
+  RestorePlan? inspected;
+  Object? inspectError;
+  Object? restoreError;
+
+  /// What the UI asked for.
+  (BackupCraft, String)? projectAsked;
+  BackupPlan? builtFrom;
+  Set<String>? skipped;
+  bool? restoredSettings;
+
+  @override
+  Future<BackupPlan> planBackup() async {
+    if (planError != null) throw planError!;
+    return plan!;
+  }
+
+  @override
+  Future<BackupPlan> planProjectBackup(BackupCraft craft, String id) async {
+    projectAsked = (craft, id);
+    if (projectPlanError != null) throw projectPlanError!;
+    return projectPlan!;
+  }
+
+  @override
+  Future<Uint8List> buildBackup(BackupPlan plan) async {
+    builtFrom = plan;
+    return built;
+  }
+
+  @override
+  Future<RestorePlan> inspectBackup(File archive) async {
+    if (inspectError != null) throw inspectError!;
+    return inspected!;
+  }
+
+  @override
+  Future<RestoreResult> restore(RestorePlan plan,
+      {Set<String> skippedConflicts = const {}, bool restoreSettings = false}) async {
+    skipped = skippedConflicts;
+    restoredSettings = restoreSettings;
+    if (restoreError != null) throw restoreError!;
+    return RestoreResult([
+      for (final p in plan.projects)
+        if (p.status == RestoreStatus.add ||
+            (p.status == RestoreStatus.conflict && !skippedConflicts.contains(p.key)))
+          (craft: p.craft, id: p.targetId!),
+    ], settingsRestored: restoreSettings && plan.settings?.settings != null);
+  }
+}

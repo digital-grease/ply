@@ -37,12 +37,22 @@ class AppSettingsRepository {
     } catch (_) {
       return const AppSettings(); // can't reach / read the file (I/O): leave it where it is
     }
+    final settings = decode(bytes);
+    if (settings != null) return settings;
+    await _setAside(f);
+    return const AppSettings();
+  }
+
+  /// Read settings file [bytes] the way [load] does: a JSON object parsed by [AppSettings.fromJson],
+  /// so unknown keys are ignored (and not written back by the next save) and a missing or
+  /// unrecognized value falls back to its default. Null when the bytes are not UTF-8, not a JSON
+  /// object, or a field has the wrong type. A library restore checks backed-up settings with this.
+  static AppSettings? decode(List<int> bytes) {
     try {
       final json = jsonDecode(utf8.decode(bytes));
       if (json is Map<String, dynamic>) return AppSettings.fromJson(json);
-    } catch (_) {/* malformed JSON or a field of the wrong type: handled below */}
-    await _setAside(f);
-    return const AppSettings();
+    } catch (_) {/* malformed JSON or a field of the wrong type */}
+    return null;
   }
 
   /// Move an unparseable settings file aside instead of letting the next save overwrite it.

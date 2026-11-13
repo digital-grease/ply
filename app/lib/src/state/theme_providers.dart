@@ -40,6 +40,15 @@ class AppSettingsNotifier extends Notifier<AppSettings> {
     ref.read(appSettingsRepositoryProvider).save(next); // persist, don't await
   }
 
+  /// Replace every setting at once with [next] (app settings from a library backup). Persists FIRST
+  /// and awaits it, so the live settings change only once they are on disk: a failed save throws
+  /// with nothing changed (and the restore rolls back).
+  Future<void> restore(AppSettings next) async {
+    await ref.read(appSettingsRepositoryProvider).save(next);
+    _userTouched = true;
+    state = next;
+  }
+
   void setThemeMode(ThemeMode mode) => _update(state.copyWith(themeMode: mode));
   void setAccentSeed(int seed) => _update(state.copyWith(accentSeed: seed));
   void setUseDynamicColor(bool value) => _update(state.copyWith(useDynamicColor: value));

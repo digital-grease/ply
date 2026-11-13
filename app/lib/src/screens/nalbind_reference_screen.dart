@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/library_backup.dart' show BackupCraft;
 import '../data/nalbind_repository.dart';
 import '../rust/nalbind_dto.dart';
 import '../state/nalbind_providers.dart';
 import '../widgets/nalbind_diagram_view.dart';
 import '../widgets/notation_feedback.dart';
+import '../widgets/project_export.dart';
 import 'nalbind_project_screen.dart';
 
 /// Open the nalbind project editor ([id] null = new); refresh the saved-projects list on return.
@@ -19,7 +21,7 @@ Future<void> _openNalbindProject(BuildContext context, WidgetRef ref, String? id
 /// The Nalbinding tab: a stitch REFERENCE (M6 v1). A notation playground at the top (type a Hansen
 /// string → live loop diagram + validation), then the curated builtin dictionary, each stitch showing
 /// its notation, the `a+b` thumb-loop alias, alternate names, the generated structural diagram, and a
-/// one-line description, plus the "My projects" list of saved pieces (open, rename, delete) and the
+/// one-line description, plus the "My projects" list of saved pieces (open, export, delete) and the
 /// New project button. See `docs/NALBIND_DESIGN.md`.
 class NalbindReferenceScreen extends ConsumerWidget {
   const NalbindReferenceScreen({super.key});
@@ -64,7 +66,8 @@ class NalbindReferenceScreen extends ConsumerWidget {
 }
 
 /// The saved-projects list at the top of the Nalbinding tab (hidden until the first project exists —
-/// the FAB invites creation before then). Tap to open; the overflow menu deletes.
+/// the FAB invites creation before then). Tap to open; the overflow menu exports (a `.plybackup` of
+/// the project and its photos) and deletes.
 class _ProjectsSection extends ConsumerWidget {
   const _ProjectsSection();
 
@@ -90,9 +93,14 @@ class _ProjectsSection extends ConsumerWidget {
                   trailing: PopupMenuButton<String>(
                     tooltip: 'Project actions',
                     onSelected: (v) {
+                      if (v == 'export') {
+                        exportProject(context, ref,
+                            craft: BackupCraft.nalbinding, id: proj.id, name: proj.name);
+                      }
                       if (v == 'delete') _confirmDelete(context, ref, proj.id, proj.name);
                     },
                     itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'export', child: Text('Export')),
                       PopupMenuItem(value: 'delete', child: Text('Delete')),
                     ],
                   ),

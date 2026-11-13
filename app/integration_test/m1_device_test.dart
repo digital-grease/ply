@@ -15,6 +15,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
@@ -155,7 +156,8 @@ void main() {
     expect(File(verifyPath).existsSync(), isTrue);
 
     // 8. The Library widget renders the saved tile on the real device.
-    await tester.pumpWidget(MaterialApp(home: LibraryScreen(repository: repo)));
+    await tester.pumpWidget(
+        ProviderScope(child: MaterialApp(home: LibraryScreen(repository: repo))));
     await tester.pumpAndSettle();
     expect(find.text('Renamed twill'), findsOneWidget,
         reason: 'tile should show the renamed draft');

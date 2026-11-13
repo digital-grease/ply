@@ -170,7 +170,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "How do I back up my patterns, or move them to a new phone?",
-      "Open Settings and choose \"Back up library\". Ply saves all your projects (weaving, knitting, and nalbinding, with their photos) into one .plybackup file wherever you choose, such as your Downloads folder or a cloud drive app. To bring them back, use \"Restore from backup\": Ply checks the file, shows you what is new, what you already have, and what differs, and only then adds the projects. Nothing in your library is replaced; a project that differs is added as a copy. App settings are not included.",
+      "Open Settings and choose \"Back up library\". Ply saves all your projects (weaving, knitting, and nalbinding, with their photos) into one .plybackup file wherever you choose, such as your Downloads folder or a cloud drive app. To bring them back, use \"Restore from backup\": Ply checks the file, shows you what is new, what you already have, and what differs, and only then adds the projects. Nothing in your library is replaced; a project that differs is added as a copy. The backup can also hold your app settings (theme, colors, and units; ticked by default when you back up), and a restore offers them separately, unticked, so your current settings stay unless you choose them. To share or move just one project, use Export in its menu in the library; the file it saves is restored the same way, with \"Restore from backup\".",
     ),
     FaqEntry(
       "What is that colored band in the editor telling me?",

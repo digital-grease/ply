@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/library_backup.dart';
+import '../models/app_settings.dart';
+import '../models/draft_doc.dart' show MeasureUnit;
 import '../state/backup_providers.dart';
 import '../state/nalbind_providers.dart';
 import '../theme/spacing.dart';
 
-/// The restore preview: what a checked backup holds, grouped by craft into new projects, projects
-/// that differ from the library (restored as copies unless unticked), projects already in the
-/// library (skipped) and projects this build cannot restore (with the reason). Nothing is written
-/// until "Restore" is tapped. Pops with the [RestoreResult] after a successful restore.
+/// The restore preview: what a checked backup (or single-project export) holds, grouped by craft
+/// into new projects, projects that differ from the library (restored as copies unless unticked),
+/// projects already in the library (skipped) and projects this build cannot restore (with the
+/// reason), then the backup's app settings when it has them: their own item, unticked by default,
+/// applied only when ticked (or refused with the reason). Nothing is written until "Restore" is
+/// tapped. Pops with the [RestoreResult] after a successful restore.
 class RestorePreviewScreen extends ConsumerStatefulWidget {
   const RestorePreviewScreen({required this.plan, super.key});
 
@@ -22,6 +26,9 @@ class RestorePreviewScreen extends ConsumerStatefulWidget {
 class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
   /// Keys of the conflicts the user unticked.
   final Set<String> _skipped = {};
+
+  /// Whether to apply the backup's app settings (never by default: they replace the user's own).
+  bool _restoreSettings = false;
   bool _busy = false;
 
   RestorePlan get _plan => widget.plan;
@@ -35,8 +42,8 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
   Future<void> _restore() async {
     setState(() => _busy = true);
     try {
-      final result =
-          await ref.read(libraryBackupProvider).restore(_plan, skippedConflicts: {..._skipped});
+      final result = await ref.read(libraryBackupProvider).restore(_plan,
+          skippedConflicts: {..._skipped}, restoreSettings: _restoreSettings);
       // Every library tab reloads its list.
       ref.read(libraryRevisionProvider.notifier).state++;
       ref.invalidate(nalbindProjectsProvider);
@@ -63,6 +70,7 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
   @override
   Widget build(BuildContext context) {
     final count = _toRestore;
+    final settings = _restoreSettings && _plan.settings?.settings != null;
     final theme = Theme.of(context);
     final muted = theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant);
     return PopScope(
@@ -80,8 +88,7 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: PlySpacing.md),
-              child: Text('Nothing in your library is replaced. App settings are not restored.',
-                  style: muted),
+              child: Text('Nothing in your library is replaced.', style: muted),
             ),
             if (_plan.projects.isEmpty)
               Padding(
@@ -89,13 +96,14 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
                 child: Text('This backup has no projects.', style: muted),
               ),
             for (final craft in BackupCraft.values) ..._craftSection(craft, muted),
+            ..._settingsSection(),
           ],
         ),
         bottomNavigationBar: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(PlySpacing.md),
             child: FilledButton(
-              onPressed: (count > 0 && !_busy) ? _restore : null,
+              onPressed: ((count > 0 || settings) && !_busy) ? _restore : null,
               child: _busy
                   ? const Row(
                       mainAxisSize: MainAxisSize.min,
@@ -106,7 +114,7 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
                         Text('Restoring...'),
                       ],
                     )
-                  : Text(count > 0 ? 'Restore ${plural(count, 'project')}' : 'Nothing to restore'),
+                  : Text(_restoreLabel(count, settings: settings)),
             ),
           ),
         ),
@@ -123,14 +131,7 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
     final theme = Theme.of(context);
     return [
       const Divider(height: PlySpacing.lg),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(PlySpacing.md, 0, PlySpacing.md, PlySpacing.xs),
-        child: Semantics(
-          header: true,
-          child: Text(craft.label,
-              style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary)),
-        ),
-      ),
+      _sectionHeader(craft.label),
       if (added.isNotEmpty) ...[
         _groupHeader('New (${added.length})'),
         for (final p in added)
@@ -176,6 +177,53 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
     ];
   }
 
+  /// The backup's app settings, after the projects: a tickable item (off by default) describing
+  /// them, or the reason they cannot be restored. Nothing when the backup has none.
+  List<Widget> _settingsSection() {
+    final s = _plan.settings;
+    if (s == null) return const [];
+    final theme = Theme.of(context);
+    final value = s.settings;
+    return [
+      const Divider(height: PlySpacing.lg),
+      _sectionHeader('App settings'),
+      if (value != null)
+        CheckboxListTile(
+          dense: true,
+          value: _restoreSettings,
+          onChanged: _busy ? null : (on) => setState(() => _restoreSettings = on == true),
+          title: const Text('Restore app settings'),
+          subtitle: Text('${describeSettings(value)} Replaces your current settings.'),
+          secondary: ExcludeSemantics(child: _AccentDot(color: Color(value.accentSeed))),
+        )
+      else
+        ListTile(
+          dense: true,
+          leading: Icon(Icons.error_outline, color: theme.colorScheme.error),
+          title: Text(s.refusal ?? RestoreSettings.unreadable),
+        ),
+    ];
+  }
+
+  Widget _sectionHeader(String text) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(PlySpacing.md, 0, PlySpacing.md, PlySpacing.xs),
+      child: Semantics(
+        header: true,
+        child: Text(text,
+            style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary)),
+      ),
+    );
+  }
+
+  static String _restoreLabel(int count, {required bool settings}) {
+    if (count > 0 && settings) return 'Restore ${plural(count, 'project')} and app settings';
+    if (count > 0) return 'Restore ${plural(count, 'project')}';
+    if (settings) return 'Restore app settings';
+    return 'Nothing to restore';
+  }
+
   Widget _groupHeader(String text) => Padding(
         padding: const EdgeInsets.fromLTRB(
             PlySpacing.md, PlySpacing.sm, PlySpacing.md, PlySpacing.xs),
@@ -191,3 +239,46 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
 
 /// "1 project", "3 projects".
 String plural(int n, String noun) => '$n $noun${n == 1 ? '' : 's'}';
+
+/// The sentence after a restore ("Restored 2 projects and app settings."), or null when it wrote
+/// nothing.
+String? restoredMessage(RestoreResult result) {
+  final projects = plural(result.count, 'project');
+  if (result.count > 0 && result.settingsRestored) return 'Restored $projects and app settings.';
+  if (result.count > 0) return 'Restored $projects.';
+  if (result.settingsRestored) return 'Restored app settings.';
+  return null;
+}
+
+/// Backed-up app settings in words, for the restore preview: "Dark theme, Material You off, metric
+/// units." (the accent color is shown as a swatch beside it).
+String describeSettings(AppSettings settings) {
+  final theme = switch (settings.themeMode) {
+    ThemeMode.system => 'System',
+    ThemeMode.light => 'Light',
+    ThemeMode.dark => 'Dark',
+  };
+  final units = switch (settings.unit) {
+    MeasureUnit.inches => 'imperial',
+    MeasureUnit.centimeters => 'metric',
+  };
+  return '$theme theme, Material You ${settings.useDynamicColor ? 'on' : 'off'}, $units units.';
+}
+
+/// A small swatch of the backed-up accent color (decorative; the text describes the rest).
+class _AccentDot extends StatelessWidget {
+  const _AccentDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
+        ),
+      );
+}

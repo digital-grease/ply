@@ -1,4 +1,4 @@
-// Portable backup and restore of the whole on-device library (roadmap M7-07; see the backup ADR).
+// Portable backup and restore of the on-device library (roadmap M7-07; see the backup ADR).
 //
 // A backup is one `.plybackup` file: an UNCOMPRESSED POSIX ustar archive (see `ustar.dart`) whose
 // first entry is `manifest.json`, followed by every project's files copied VERBATIM from the library:
@@ -7,19 +7,23 @@
 //   knits/<id>.plyknit + knits/<id>.json + knits/<id>.plyknit.v<n>.bak (format-upgrade backups)
 //   nalbinds/<id>.plynal + nalbinds/<id>.json + nalbinds/<id>.photos/<name>.<ext>
 //
-// Thumbnails (`<id>.png`) are rebuildable caches and are left out; a restore rebuilds them. App
-// settings are not part of a backup (version 1).
+// A full backup may also carry `app_settings.json` (opt-in, the settings in effect); a single-project
+// export is the same format holding one project and never the settings. Thumbnails (`<id>.png`) are
+// rebuildable caches and are left out; a restore rebuilds them.
 //
 // A restore treats the file as hostile until every check has passed: hard limits on size, entry
 // count, entry size and path length; only regular files at paths of the layout above (no absolute
 // paths, `..`, backslashes, duplicates, links or devices); every entry listed in the manifest with
 // its size and SHA-256, and every SHA-256 verified; no newer backup schema; and each project's files
 // checked with the existing format probes (a project newer than this build is refused, with the
-// reason). Only then is a preview built, and nothing in the library is written until the user
-// confirms it. The commit stages every file inside the documents directory, then moves each project
-// into place with its sidecar LAST (the library lists sidecars), and on any failure removes what it
-// placed, so the library is left exactly as it was. Existing projects are never overwritten: one
-// with the same id and different content is restored as a copy under a new id.
+// reason), as are the app settings (offered only when they parse as the settings model). Only then
+// is a preview built, and nothing in the library is written until the user confirms it. The commit
+// stages every file inside the documents directory, then moves each project into place with its
+// sidecar LAST (the library lists sidecars), applies the app settings only if the user ticked them,
+// and on any failure removes what it placed, so the library is left exactly as it was. Existing
+// projects are never overwritten: one with the same id and different content is restored as a copy
+// under a new id, and the copy's name is the only thing rewritten (in its sidecar, and for
+// nalbinding also in its `.plynal`, which carries the name the project screen shows).
 
 import 'dart:convert';
 import 'dart:io';
@@ -32,9 +36,11 @@ import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../diagnostics/log_buffer.dart';
+import '../models/app_settings.dart';
 import '../models/draft_meta.dart';
 import '../models/nalbind_project.dart';
 import '../models/native_format.dart';
+import 'app_settings_repository.dart';
 import 'ustar.dart';
 
 const int _mib = 1024 * 1024;
@@ -110,6 +116,10 @@ class LibraryPath {
 /// The name of the manifest, the first entry of every backup.
 const String backupManifestPath = 'manifest.json';
 
+/// The app settings entry a full backup may carry, at the archive root (the same name the settings
+/// file has in the documents directory). It is the only path outside a craft folder a backup holds.
+const String backupSettingsPath = 'app_settings.json';
+
 /// A project id as Ply writes it (a uuid), and as a backup may name it: ASCII letters, digits, '-'
 /// and '_', at most 64 characters, starting with a letter or digit. No '.', so a file name splits
 /// into id and extension unambiguously.
@@ -179,6 +189,7 @@ class BackupLimits {
     this.maxManifestBytes = 4 * _mib,
     this.maxSidecarBytes = _mib,
     this.maxFileBytes = 64 * _mib,
+    this.maxSettingsBytes = 64 * 1024,
   });
 
   /// The limits for the device this runs on: a phone saves a backup through the system save dialog,
@@ -208,6 +219,9 @@ class BackupLimits {
   /// The largest native file, upgrade backup or photo.
   final int maxFileBytes;
 
+  /// The largest app settings entry. The file Ply writes is about a hundred bytes.
+  final int maxSettingsBytes;
+
   int maxBytesFor(BackupFileRole role) =>
       role == BackupFileRole.sidecar ? maxSidecarBytes : maxFileBytes;
 }
@@ -220,6 +234,10 @@ enum BackupProblem {
   libraryTooManyFiles,
   fileTooLarge,
   libraryChanged,
+  // Exporting one project.
+  projectNotFound,
+  projectTooLarge,
+  projectTooManyFiles,
   // Checking a backup before a restore.
   backupTooLarge,
   backupTooManyFiles,
@@ -256,6 +274,11 @@ class BackupException implements Exception {
           'A file in "${projectName ?? ''}" is too large to back up (over ${formatBytes(limit ?? 0)}).',
         BackupProblem.libraryChanged =>
           'Your library changed while the backup was being made. Try again.',
+        BackupProblem.projectNotFound => 'This project is no longer in your library.',
+        BackupProblem.projectTooLarge =>
+          'This project is too large for one file on this device (over ${formatBytes(limit ?? 0)}).',
+        BackupProblem.projectTooManyFiles =>
+          'This project has too many files for one export (over ${limit ?? 0}).',
         BackupProblem.backupTooLarge =>
           'This backup is too large to restore (over ${formatBytes(limit ?? 0)}).',
         BackupProblem.backupTooManyFiles =>
@@ -290,26 +313,50 @@ class BackupManifestFile {
     required this.projectId,
   });
 
+  /// The [backupSettingsPath] entry, which belongs to no project.
+  const BackupManifestFile.settings({required this.size, required this.sha256})
+      : path = backupSettingsPath,
+        craft = null,
+        projectId = null;
+
   final String path;
   final int size;
 
   /// Lowercase hex.
   final String sha256;
-  final BackupCraft craft;
-  final String projectId;
+
+  /// The project's craft and id; both null for the app settings entry (which has neither key).
+  final BackupCraft? craft;
+  final String? projectId;
 
   Map<String, Object?> toJson() => {
         'path': path,
         'size': size,
         'sha256': sha256,
-        'craft': craft.manifestName,
-        'project': projectId,
+        if (craft != null) 'craft': craft!.manifestName,
+        if (projectId != null) 'project': projectId,
       };
+}
+
+/// What a backup file holds, recorded in the manifest's optional `contents` key ("library" or
+/// "project"). Informational only: a restore never reads it (a single-project export restores
+/// exactly like a full backup), so adding it kept the manifest at schema version 1.
+enum BackupContents {
+  /// A full backup from Settings: every project, and the app settings if the user chose.
+  library,
+
+  /// A single-project export from a library's project actions.
+  project,
 }
 
 /// The `manifest.json` that opens every backup.
 class BackupManifest {
-  const BackupManifest({required this.createdAt, required this.appVersion, required this.files});
+  const BackupManifest({
+    required this.createdAt,
+    required this.appVersion,
+    required this.files,
+    this.contents,
+  });
 
   /// The `format` value of every backup manifest.
   static const String format = 'ply.backup';
@@ -321,11 +368,15 @@ class BackupManifest {
   final String appVersion;
   final List<BackupManifestFile> files;
 
+  /// Written by an export; [parse] leaves it null (a restore ignores the key).
+  final BackupContents? contents;
+
   Map<String, Object?> toJson() => {
         'format': format,
         'schema_version': currentSchemaVersion,
         'created_at': createdAt.toUtc().toIso8601String(),
         'app_version': appVersion,
+        if (contents != null) 'contents': contents!.name,
         'files': [for (final f in files) f.toJson()],
       };
 
@@ -378,13 +429,23 @@ class BackupManifest {
       if (path.length > limits.maxPathLength) {
         throw const BackupException(BackupProblem.unsafe, detail: 'a long path');
       }
-      final classified = classifyLibraryPath(path);
-      if (classified == null) {
+      final isSettings = path == backupSettingsPath;
+      final classified = isSettings ? null : classifyLibraryPath(path);
+      if (!isSettings && classified == null) {
         throw BackupException(BackupProblem.unsafe, detail: 'manifest path $path');
       }
       // Case-insensitively unique: on a case-insensitive file system two such paths are one file.
       if (!seen.add(path.toLowerCase())) {
         throw BackupException(BackupProblem.unsafe, detail: 'duplicate manifest path $path');
+      }
+      if (classified == null) {
+        // The app settings: no project, and a limit of their own.
+        if (craftName != null || project != null) throw damaged('craft or project of $path');
+        if (size > limits.maxSettingsBytes) {
+          throw BackupException(BackupProblem.unsafe, detail: '$path is $size bytes');
+        }
+        files.add(BackupManifestFile.settings(size: size, sha256: digest));
+        continue;
       }
       if (craftName != classified.craft.manifestName || project != classified.projectId) {
         throw damaged('craft or project of $path');
@@ -427,35 +488,122 @@ class BackupFile {
   final String projectId;
 }
 
+/// The app settings a full backup can carry: the `app_settings.json` it writes, encoded the way
+/// `AppSettingsRepository.save` writes the file.
+class BackupSettingsFile {
+  factory BackupSettingsFile.of(AppSettings settings) {
+    final bytes = Uint8List.fromList(utf8.encode(jsonEncode(settings.toJson())));
+    return BackupSettingsFile._(bytes, _hexSha256(bytes));
+  }
+
+  const BackupSettingsFile._(this.bytes, this.sha256);
+
+  final Uint8List bytes;
+
+  /// Lowercase hex.
+  final String sha256;
+}
+
+/// Lowercase hex SHA-256 of a small byte list (files are hashed in chunks instead).
+String _hexSha256(List<int> bytes) => sha256.convert(bytes).toString();
+
 /// A backup ready to be written: every file hashed and the manifest built. [archiveSize] is the
 /// exact size of the file [LibraryBackup.buildBackup] makes from it.
 class BackupPlan {
-  const BackupPlan({
+  BackupPlan({
     required this.createdAt,
+    required this.appVersion,
     required this.files,
-    required this.manifestBytes,
     required this.projectCounts,
     required this.photoCount,
+    this.contents = BackupContents.library,
+    this.projectName,
+    this.settings,
+    this.includeSettings = false,
   });
 
   final DateTime createdAt;
+  final String appVersion;
   final List<BackupFile> files;
-  final Uint8List manifestBytes;
   final Map<BackupCraft, int> projectCounts;
   final int photoCount;
+  final BackupContents contents;
+
+  /// The project of a single-project export (names its file).
+  final String? projectName;
+
+  /// The app settings this backup can carry (a full backup only), and whether it does.
+  final BackupSettingsFile? settings;
+  final bool includeSettings;
+
+  /// Whether the file made from this plan holds `app_settings.json`.
+  bool get carriesSettings => includeSettings && settings != null;
+
+  /// This plan with the app settings in or out (the backup summary's checkbox).
+  BackupPlan withSettings(bool include) => BackupPlan(
+        createdAt: createdAt,
+        appVersion: appVersion,
+        files: files,
+        projectCounts: projectCounts,
+        photoCount: photoCount,
+        contents: contents,
+        projectName: projectName,
+        settings: settings,
+        includeSettings: include,
+      );
 
   int get projectCount => projectCounts.values.sum;
 
+  BackupManifest get manifest => BackupManifest(
+        createdAt: createdAt,
+        appVersion: appVersion,
+        contents: contents,
+        files: [
+          if (carriesSettings)
+            BackupManifestFile.settings(size: settings!.bytes.length, sha256: settings!.sha256),
+          for (final f in files)
+            BackupManifestFile(
+              path: f.archivePath,
+              size: f.size,
+              sha256: f.sha256,
+              craft: f.craft,
+              projectId: f.projectId,
+            ),
+        ],
+      );
+
+  late final Uint8List manifestBytes = manifest.encode();
+
   int get archiveSize =>
       ustarEntryLength(manifestBytes.length) +
+      (carriesSettings ? ustarEntryLength(settings!.bytes.length) : 0) +
       files.fold<int>(0, (sum, f) => sum + ustarEntryLength(f.size)) +
       ustarEndLength;
 
-  /// The suggested file name: `ply-library-<yyyy-mm-dd>.plybackup` (local date).
+  /// The suggested file name (local date): `ply-library-<yyyy-mm-dd>.plybackup` for a full backup,
+  /// `<project name> <yyyy-mm-dd>.plybackup` for a single-project export.
   String get fileName {
     final d = createdAt.toLocal();
     String two(int v) => v.toString().padLeft(2, '0');
-    return 'ply-library-${d.year}-${two(d.month)}-${two(d.day)}.plybackup';
+    final date = '${d.year}-${two(d.month)}-${two(d.day)}';
+    return contents == BackupContents.project
+        ? '${safeFileStem(projectName ?? '')} $date.plybackup'
+        : 'ply-library-$date.plybackup';
+  }
+
+  /// [name] as a file name every platform accepts: path separators, reserved and control characters
+  /// become '-', runs of white space one space, no leading or trailing dots or spaces, at most 60
+  /// characters; "project" when nothing is left.
+  @visibleForTesting
+  static String safeFileStem(String name) {
+    var s = name
+        .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F\x7F]'), '-')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'^[\s.]+|[\s.]+$'), '');
+    if (s.runes.length > 60) {
+      s = String.fromCharCodes(s.runes.take(60)).replaceAll(RegExp(r'[\s.]+$'), '');
+    }
+    return s.isEmpty ? 'project' : s;
   }
 }
 
@@ -538,6 +686,20 @@ class RestoreProject {
   int get photoCount => _files.where((f) => f.layout.role == BackupFileRole.photo).length;
 }
 
+/// The app settings of a backup, as the restore preview offers them: [settings] when they can be
+/// restored, otherwise the [refusal] sentence. They are applied only when the user ticks them.
+class RestoreSettings {
+  const RestoreSettings.available(AppSettings this.settings) : refusal = null;
+  const RestoreSettings.refused(String this.refusal) : settings = null;
+
+  final AppSettings? settings;
+  final String? refusal;
+
+  /// The reason for settings that are not a settings model (not UTF-8, not a JSON object, or a
+  /// field of the wrong type).
+  static const String unreadable = 'The app settings in this backup could not be read.';
+}
+
 /// A checked backup, ready to preview and restore. Nothing has been written yet.
 class RestorePlan {
   const RestorePlan({
@@ -545,6 +707,7 @@ class RestorePlan {
     required this.createdAt,
     required this.appVersion,
     required this.projects,
+    this.settings,
   });
 
   /// The backup file. It must stay in place until [LibraryBackup.restore] returns.
@@ -553,16 +716,22 @@ class RestorePlan {
   final String appVersion;
   final List<RestoreProject> projects;
 
+  /// The backup's app settings; null when it has none.
+  final RestoreSettings? settings;
+
   List<RestoreProject> forCraft(BackupCraft craft, RestoreStatus status) =>
       [for (final p in projects) if (p.craft == craft && p.status == status) p];
 }
 
 /// What a restore wrote.
 class RestoreResult {
-  const RestoreResult(this.restored);
+  const RestoreResult(this.restored, {this.settingsRestored = false});
 
   /// The projects now in the library, with their final ids.
   final List<({BackupCraft craft, String id})> restored;
+
+  /// Whether the backup's app settings were applied.
+  final bool settingsRestored;
 
   int get count => restored.length;
 }
@@ -588,6 +757,8 @@ class LibraryBackup {
     this.limits = const BackupLimits(),
     this.checks = const NativeFileChecks(),
     this.rebuildThumbnail,
+    this.currentSettings,
+    this.applySettings,
     DateTime Function()? clock,
     @visibleForTesting this.beforePlace,
   }) : _clock = clock ?? DateTime.now;
@@ -606,6 +777,13 @@ class LibraryBackup {
 
   /// Rebuilds the thumbnail of a restored weaving or knitting project (best-effort).
   final Future<void> Function(BackupCraft craft, String id)? rebuildThumbnail;
+
+  /// The app settings in effect, offered for a full backup. Null: backups never carry settings.
+  final Future<AppSettings> Function()? currentSettings;
+
+  /// Applies restored app settings (production persists them first, then updates the app). Throwing
+  /// rolls the whole restore back. Null: settings cannot be restored.
+  final Future<void> Function(AppSettings settings)? applySettings;
   final DateTime Function() _clock;
 
   /// Test seam: called before each file or folder is moved into the library on restore. Throwing
@@ -621,20 +799,17 @@ class LibraryBackup {
 
   // --- Making a backup -----------------------------------------------------------------------
 
-  /// Find and hash every project in the library. Throws a [BackupException] for an empty library
-  /// and for one over the limits (naming the project of an oversized file).
+  /// Find and hash every project in the library, and offer the app settings in effect. Throws a
+  /// [BackupException] for an empty library and for one over the limits (naming the project of an
+  /// oversized file). The plan includes the settings when there are any; the summary may leave them
+  /// out with [BackupPlan.withSettings].
   Future<BackupPlan> planBackup() async {
     final docs = await documentsDir();
     final files = <BackupFile>[];
     final counts = {for (final c in BackupCraft.values) c: 0};
     var photos = 0;
     for (final craft in BackupCraft.values) {
-      final dir = Directory(p.join(docs.path, craft.directory));
-      if (!await dir.exists()) continue;
-      final names = <String, FileSystemEntity>{};
-      await for (final ent in dir.list(followLinks: false)) {
-        names[p.basename(ent.path)] = ent;
-      }
+      final names = await _listing(Directory(p.join(docs.path, craft.directory)));
       final ids = [
         for (final e in names.entries)
           if (e.value is File && e.key.endsWith('.json')) e.key.substring(0, e.key.length - 5),
@@ -644,73 +819,10 @@ class LibraryBackup {
           PlyLog.instance.warn('Backup: skipped ${craft.directory}/$id.json (not a Ply id).');
           continue;
         }
-        final native = names['$id.${craft.nativeExtension}'];
-        if (native is! File) continue; // the library does not list it either
-        final sidecar = names['$id.json'] as File;
-        final String name;
-        try {
-          if (await sidecar.length() > limits.maxSidecarBytes) {
-            throw BackupException(BackupProblem.fileTooLarge,
-                projectName: id, limit: limits.maxSidecarBytes);
-          }
-          final json = jsonDecode(await sidecar.readAsString());
-          name = DraftMeta.fromJson(json as Map<String, dynamic>).name;
-        } on BackupException {
-          rethrow;
-        } catch (_) {
-          continue; // an unreadable sidecar: the library does not list it either
-        }
-        final layoutFiles = <(LibraryPath, File)>[
-          (LibraryPath._(craft, id, BackupFileRole.native), native),
-        ];
-        if (craft == BackupCraft.knitting) {
-          final backups = <(int, File)>[];
-          for (final e in names.entries) {
-            if (e.value is! File || !e.key.startsWith('$id.')) continue;
-            final m = _upgradeBackupPattern.firstMatch(e.key.substring(id.length + 1));
-            if (m != null) backups.add((int.parse(m.group(1)!), e.value as File));
-          }
-          backups.sort((a, b) => a.$1.compareTo(b.$1));
-          for (final (v, f) in backups) {
-            layoutFiles.add((LibraryPath._(craft, id, BackupFileRole.upgradeBackup, version: v), f));
-          }
-        }
-        if (craft == BackupCraft.nalbinding && names['$id.photos'] is Directory) {
-          final found = <File>[];
-          await for (final ent in (names['$id.photos'] as Directory).list(followLinks: false)) {
-            if (ent is! File) continue;
-            final m = _photoPattern.firstMatch(p.basename(ent.path));
-            if (m != null && _photoExtensions.contains(m.group(1)!.toLowerCase())) found.add(ent);
-          }
-          found.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
-          for (final f in found) {
-            layoutFiles.add((
-              LibraryPath._(craft, id, BackupFileRole.photo, photoName: p.basename(f.path)),
-              f,
-            ));
-          }
-          photos += found.length;
-        }
-        layoutFiles.add((LibraryPath._(craft, id, BackupFileRole.sidecar), sidecar));
-
-        for (final (layout, file) in layoutFiles) {
-          final max = limits.maxBytesFor(layout.role);
-          if (await file.length() > max) {
-            throw BackupException(BackupProblem.fileTooLarge, projectName: name, limit: max);
-          }
-          final (digest, size) = await _hashFile(file, max);
-          if (size > max) {
-            throw BackupException(BackupProblem.fileTooLarge, projectName: name, limit: max);
-          }
-          files.add(BackupFile(
-            archivePath: layout.pathFor(id),
-            sourcePath: file.path,
-            size: size,
-            sha256: digest,
-            craft: craft,
-            projectId: id,
-          ));
-        }
+        final project = await _collectProject(craft, id, names);
+        if (project == null) continue; // the library does not list it either
+        files.addAll(project.files);
+        photos += project.photos;
         counts[craft] = counts[craft]! + 1;
         if (files.length + 1 > limits.maxEntries) {
           throw BackupException(BackupProblem.libraryTooManyFiles, limit: limits.maxEntries);
@@ -718,38 +830,163 @@ class LibraryBackup {
       }
     }
     if (files.isEmpty) throw const BackupException(BackupProblem.noProjects);
-    final createdAt = _clock();
-    final manifest = BackupManifest(
-      createdAt: createdAt,
+    final settings = await _settingsFile();
+    return _checked(BackupPlan(
+      createdAt: _clock(),
       appVersion: appVersion,
-      files: [
-        for (final f in files)
-          BackupManifestFile(
-            path: f.archivePath,
-            size: f.size,
-            sha256: f.sha256,
-            craft: f.craft,
-            projectId: f.projectId,
-          ),
-      ],
-    );
-    final plan = BackupPlan(
-      createdAt: createdAt,
       files: files,
-      manifestBytes: manifest.encode(),
       projectCounts: counts,
       photoCount: photos,
-    );
-    if (plan.manifestBytes.length > limits.maxManifestBytes ||
-        plan.archiveSize > limits.maxExportBytes) {
-      throw BackupException(BackupProblem.libraryTooLarge, limit: limits.maxExportBytes);
+      settings: settings,
+      includeSettings: settings != null,
+    ));
+  }
+
+  /// Plan a single-project export: the same format, layout and limits as a full backup, holding just
+  /// the project [id] of [craft] (never the app settings). "Restore from backup" imports it like any
+  /// backup. Throws [BackupProblem.projectNotFound] when the library does not list that project.
+  Future<BackupPlan> planProjectBackup(BackupCraft craft, String id) async {
+    if (!isBackupProjectId(id)) throw const BackupException(BackupProblem.projectNotFound);
+    final docs = await documentsDir();
+    final names = await _listing(Directory(p.join(docs.path, craft.directory)));
+    if (names['$id.json'] is! File) throw const BackupException(BackupProblem.projectNotFound);
+    final project = await _collectProject(craft, id, names);
+    if (project == null) throw const BackupException(BackupProblem.projectNotFound);
+    if (project.files.length + 1 > limits.maxEntries) {
+      throw BackupException(BackupProblem.projectTooManyFiles, limit: limits.maxEntries);
+    }
+    return _checked(BackupPlan(
+      createdAt: _clock(),
+      appVersion: appVersion,
+      files: project.files,
+      projectCounts: {for (final c in BackupCraft.values) c: c == craft ? 1 : 0},
+      photoCount: project.photos,
+      contents: BackupContents.project,
+      projectName: project.name,
+    ));
+  }
+
+  /// Every entry of a craft folder by file name (links are listed, never followed); empty when the
+  /// folder does not exist.
+  static Future<Map<String, FileSystemEntity>> _listing(Directory dir) async {
+    final names = <String, FileSystemEntity>{};
+    if (!await dir.exists()) return names;
+    await for (final ent in dir.list(followLinks: false)) {
+      names[p.basename(ent.path)] = ent;
+    }
+    return names;
+  }
+
+  /// The files of project [id] of [craft] (from its folder's [names]), hashed, sidecar last, or null
+  /// when the library would not list it (no native file, or a sidecar it cannot read). Throws
+  /// [BackupProblem.fileTooLarge] for a file over its limit.
+  Future<({List<BackupFile> files, int photos, String name})?> _collectProject(
+      BackupCraft craft, String id, Map<String, FileSystemEntity> names) async {
+    final native = names['$id.${craft.nativeExtension}'];
+    final sidecar = names['$id.json'];
+    if (native is! File || sidecar is! File) return null;
+    final String name;
+    try {
+      if (await sidecar.length() > limits.maxSidecarBytes) {
+        throw BackupException(BackupProblem.fileTooLarge,
+            projectName: id, limit: limits.maxSidecarBytes);
+      }
+      final json = jsonDecode(await sidecar.readAsString());
+      name = DraftMeta.fromJson(json as Map<String, dynamic>).name;
+    } on BackupException {
+      rethrow;
+    } catch (_) {
+      return null; // an unreadable sidecar: the library does not list it either
+    }
+    final layoutFiles = <(LibraryPath, File)>[
+      (LibraryPath._(craft, id, BackupFileRole.native), native),
+    ];
+    if (craft == BackupCraft.knitting) {
+      final backups = <(int, File)>[];
+      for (final e in names.entries) {
+        if (e.value is! File || !e.key.startsWith('$id.')) continue;
+        final m = _upgradeBackupPattern.firstMatch(e.key.substring(id.length + 1));
+        if (m != null) backups.add((int.parse(m.group(1)!), e.value as File));
+      }
+      backups.sort((a, b) => a.$1.compareTo(b.$1));
+      for (final (v, f) in backups) {
+        layoutFiles.add((LibraryPath._(craft, id, BackupFileRole.upgradeBackup, version: v), f));
+      }
+    }
+    var photos = 0;
+    if (craft == BackupCraft.nalbinding && names['$id.photos'] is Directory) {
+      final found = <File>[];
+      await for (final ent in (names['$id.photos'] as Directory).list(followLinks: false)) {
+        if (ent is! File) continue;
+        final m = _photoPattern.firstMatch(p.basename(ent.path));
+        if (m != null && _photoExtensions.contains(m.group(1)!.toLowerCase())) found.add(ent);
+      }
+      found.sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
+      for (final f in found) {
+        layoutFiles.add((
+          LibraryPath._(craft, id, BackupFileRole.photo, photoName: p.basename(f.path)),
+          f,
+        ));
+      }
+      photos = found.length;
+    }
+    layoutFiles.add((LibraryPath._(craft, id, BackupFileRole.sidecar), sidecar));
+
+    final files = <BackupFile>[];
+    for (final (layout, file) in layoutFiles) {
+      final max = limits.maxBytesFor(layout.role);
+      if (await file.length() > max) {
+        throw BackupException(BackupProblem.fileTooLarge, projectName: name, limit: max);
+      }
+      final (digest, size) = await _hashFile(file, max);
+      if (size > max) {
+        throw BackupException(BackupProblem.fileTooLarge, projectName: name, limit: max);
+      }
+      files.add(BackupFile(
+        archivePath: layout.pathFor(id),
+        sourcePath: file.path,
+        size: size,
+        sha256: digest,
+        craft: craft,
+        projectId: id,
+      ));
+    }
+    return (files: files, photos: photos, name: name);
+  }
+
+  /// The app settings in effect as the `app_settings.json` a backup writes, or null when there is no
+  /// settings source or they could not be read (the backup is then made without them).
+  Future<BackupSettingsFile?> _settingsFile() async {
+    final read = currentSettings;
+    if (read == null) return null;
+    try {
+      final file = BackupSettingsFile.of(await read());
+      return file.bytes.length <= limits.maxSettingsBytes ? file : null;
+    } catch (e) {
+      PlyLog.instance.warn('Backup: app settings left out ($e).');
+      return null;
+    }
+  }
+
+  /// [plan], once it is within the export limits with the app settings included (the larger
+  /// variant), so Ply never hands out a file it would refuse to restore.
+  BackupPlan _checked(BackupPlan plan) {
+    final largest = plan.withSettings(true);
+    if (largest.manifestBytes.length > limits.maxManifestBytes ||
+        largest.archiveSize > limits.maxExportBytes) {
+      throw BackupException(
+        plan.contents == BackupContents.project
+            ? BackupProblem.projectTooLarge
+            : BackupProblem.libraryTooLarge,
+        limit: limits.maxExportBytes,
+      );
     }
     return plan;
   }
 
-  /// Write the backup file for [plan] into memory: the manifest, then every file, read again and
-  /// checked against the digest the manifest records. Throws [BackupProblem.libraryChanged] when a
-  /// file changed since [planBackup].
+  /// Write the backup file for [plan] into memory: the manifest, the app settings when the plan
+  /// carries them, then every file, read again and checked against the digest the manifest records.
+  /// Throws [BackupProblem.libraryChanged] when a file changed since it was planned.
   Future<Uint8List> buildBackup(BackupPlan plan) async {
     final out = Uint8List(plan.archiveSize);
     final mtime = plan.createdAt.millisecondsSinceEpoch ~/ 1000;
@@ -760,9 +997,18 @@ class LibraryBackup {
       offset += ustarBlockSize;
     }
 
+    void data(Uint8List bytes) {
+      out.setRange(offset, offset + bytes.length, bytes);
+      offset += bytes.length + ustarPadding(bytes.length);
+    }
+
     header(backupManifestPath, plan.manifestBytes.length);
-    out.setRange(offset, offset + plan.manifestBytes.length, plan.manifestBytes);
-    offset += plan.manifestBytes.length + ustarPadding(plan.manifestBytes.length);
+    data(plan.manifestBytes);
+    if (plan.carriesSettings) {
+      final settings = plan.settings!.bytes;
+      header(backupSettingsPath, settings.length);
+      data(settings);
+    }
 
     for (final f in plan.files) {
       header(f.archivePath, f.size);
@@ -798,7 +1044,9 @@ class LibraryBackup {
 
   /// Check [archive] completely and build the restore preview. Writes nothing to the library.
   /// Throws a [BackupException] when the whole backup must be refused; a project this build cannot
-  /// restore is returned as [RestoreStatus.refused] with its reason instead.
+  /// restore is returned as [RestoreStatus.refused] with its reason instead, and app settings that
+  /// are not a settings model as [RestoreSettings.refused]. A single-project export is checked and
+  /// previewed exactly like a full backup.
   Future<RestorePlan> inspectBackup(File archive) async {
     final docs = await documentsDir();
     await _sweepStaging(docs);
@@ -814,7 +1062,7 @@ class LibraryBackup {
       throw BackupException(BackupProblem.unreadable, detail: '$e');
     }
     try {
-      final (manifest, accumulators) = await _readArchive(raf, length);
+      final (manifest, accumulators, settings) = await _readArchive(raf, length);
       final projects = <RestoreProject>[];
       for (final craft in BackupCraft.values) {
         final dir = Directory(p.join(docs.path, craft.directory));
@@ -822,7 +1070,7 @@ class LibraryBackup {
         final ofCraft = accumulators.values.where((a) => a.craft == craft).toList()
           ..sort((a, b) => a.id.compareTo(b.id));
         for (final acc in ofCraft) {
-          projects.add(await _classify(acc, dir, stems));
+          projects.add(await _classify(raf, acc, dir, stems));
         }
       }
       return RestorePlan(
@@ -830,6 +1078,7 @@ class LibraryBackup {
         createdAt: manifest.createdAt,
         appVersion: manifest.appVersion,
         projects: projects,
+        settings: settings,
       );
     } on FileSystemException catch (e) {
       throw BackupException(BackupProblem.unreadable, detail: '$e');
@@ -839,10 +1088,10 @@ class LibraryBackup {
   }
 
   /// Read every entry: the manifest first, then each file, checked against it and hashed. A file
-  /// that must be inspected (native file, upgrade backup, sidecar) is read into memory, within the
-  /// per-entry limits, checked with the format probes right away, and dropped: only the verdict and
-  /// a few digests are kept per project. Photos are only hashed.
-  Future<(BackupManifest, Map<String, _ProjectAccumulator>)> _readArchive(
+  /// that must be inspected (native file, upgrade backup, sidecar, app settings) is read into
+  /// memory, within the per-entry limits, checked right away, and dropped: only the verdict and a
+  /// few digests are kept per project (and the parsed settings). Photos are only hashed.
+  Future<(BackupManifest, Map<String, _ProjectAccumulator>, RestoreSettings?)> _readArchive(
       RandomAccessFile raf, int length) async {
     final reader = UstarReader(raf, length);
     final BackupManifest manifest;
@@ -863,6 +1112,7 @@ class LibraryBackup {
     final expected = {for (final f in manifest.files) f.path: f};
     final seen = <String>{};
     final accumulators = <String, _ProjectAccumulator>{};
+    RestoreSettings? settings;
     int? knitVersion;
     Future<int> knit() async => knitVersion ??= await currentKnitSchemaVersion();
     var entries = 1;
@@ -877,8 +1127,11 @@ class LibraryBackup {
         if (path.length > limits.maxPathLength) {
           throw const BackupException(BackupProblem.unsafe, detail: 'a long path');
         }
-        final layout = classifyLibraryPath(path);
-        if (layout == null) throw BackupException(BackupProblem.unsafe, detail: 'path $path');
+        final isSettings = path == backupSettingsPath;
+        final layout = isSettings ? null : classifyLibraryPath(path);
+        if (!isSettings && layout == null) {
+          throw BackupException(BackupProblem.unsafe, detail: 'path $path');
+        }
         if (!seen.add(path.toLowerCase())) {
           throw BackupException(BackupProblem.unsafe, detail: 'duplicate path $path');
         }
@@ -889,13 +1142,18 @@ class LibraryBackup {
         if (record.size != entry.size) {
           throw BackupException(BackupProblem.damaged, detail: '$path size');
         }
-        if (entry.size > limits.maxBytesFor(layout.role)) {
+        final max = layout == null ? limits.maxSettingsBytes : limits.maxBytesFor(layout.role);
+        if (entry.size > max) {
           throw BackupException(BackupProblem.unsafe, detail: '$path is ${entry.size} bytes');
         }
         final (digest, content) = await _hashSlice(raf, entry.dataOffset, entry.size,
-            keep: layout.role != BackupFileRole.photo);
+            keep: layout?.role != BackupFileRole.photo);
         if (digest != record.sha256) {
           throw BackupException(BackupProblem.damaged, detail: '$path checksum');
+        }
+        if (layout == null) {
+          settings = _checkSettings(content!);
+          continue;
         }
         final acc = accumulators.putIfAbsent(
             '${layout.craft.manifestName}/${layout.projectId}',
@@ -914,7 +1172,18 @@ class LibraryBackup {
     if (seen.length != expected.length) {
       throw const BackupException(BackupProblem.damaged, detail: 'a manifest file is missing');
     }
-    return (manifest, accumulators);
+    return (manifest, accumulators, settings);
+  }
+
+  /// App settings from a backup, as untrusted input: offered only when they parse as the settings
+  /// model the way the settings repository reads its own file (unknown keys ignored, an unknown
+  /// value back to its default); anything else is refused with the reason. The size limit was
+  /// checked before the bytes were read.
+  static RestoreSettings _checkSettings(Uint8List bytes) {
+    final settings = AppSettingsRepository.decode(bytes);
+    return settings == null
+        ? const RestoreSettings.refused(RestoreSettings.unreadable)
+        : RestoreSettings.available(settings);
   }
 
   /// Check one file of a project with the format probes and record the verdict on [acc].
@@ -1007,9 +1276,10 @@ class LibraryBackup {
   }
 
   /// Decide what a restore does with one checked project: refuse it, add it, skip it as already
-  /// present, or restore it as a copy.
-  Future<RestoreProject> _classify(
-      _ProjectAccumulator acc, Directory dir, Set<String> stems) async {
+  /// present, or restore it as a copy. [raf] is the open archive (a nalbinding copy's renamed
+  /// `.plynal` is derived from it when an earlier copy may already be in the library).
+  Future<RestoreProject> _classify(RandomAccessFile raf, _ProjectAccumulator acc, Directory dir,
+      Set<String> stems) async {
     final RestoreRefusal? refusal = acc.newer
         ? RestoreRefusal.newerVersion
         : acc.unreadable
@@ -1040,7 +1310,12 @@ class LibraryBackup {
     // A copy: a deterministic id, so restoring the same backup again finds the copy it made.
     var copyId = _copyId(acc);
     if (stems.contains(copyId)) {
-      if (await _sameAsLibrary(dir, copyId, acc.files, acc.copySidecarDigest!)) {
+      // A nalbinding copy's `.plynal` carries the copy's name, so compare against that version.
+      final renamedNative = acc.craft == BackupCraft.nalbinding
+          ? await _renamedNative(raf, acc, copyNameFor(name))
+          : null;
+      if (await _sameAsLibrary(dir, copyId, acc.files, acc.copySidecarDigest!,
+          native: renamedNative)) {
         return make(RestoreStatus.alreadyPresent);
       }
       do {
@@ -1073,10 +1348,12 @@ class LibraryBackup {
   }
 
   /// Whether the library already holds everything the backup has for this project, under [id]:
-  /// the same native file, a sidecar with [sidecarDigest] (see [LibraryBackup.sidecarDigest]), and
-  /// every upgrade backup and photo of the backup with the same bytes.
+  /// the same native file (or, when given, the [native] size and digest instead of the backup's),
+  /// a sidecar with [sidecarDigest] (see [LibraryBackup.sidecarDigest]), and every upgrade backup
+  /// and photo of the backup with the same bytes.
   Future<bool> _sameAsLibrary(
-      Directory dir, String id, List<_ArchivedFile> files, String sidecarDigest) async {
+      Directory dir, String id, List<_ArchivedFile> files, String sidecarDigest,
+      {({int size, String sha256})? native}) async {
     try {
       for (final f in files) {
         final local = File(p.joinAll([dir.path, ...f.layout.pathFor(id).split('/').skip(1)]));
@@ -1091,14 +1368,40 @@ class LibraryBackup {
           if (LibraryBackup.sidecarDigest(mine) != sidecarDigest) return false;
           continue;
         }
-        if (await local.length() != f.size) return false;
-        final (digest, _) = await _hashFile(local, f.size);
-        if (digest != f.sha256) return false;
+        final want = f.layout.role == BackupFileRole.native && native != null
+            ? native
+            : (size: f.size, sha256: f.sha256);
+        if (await local.length() != want.size) return false;
+        final (digest, _) = await _hashFile(local, want.size);
+        if (digest != want.sha256) return false;
       }
       return true;
     } catch (_) {
       return false; // unreadable: not provably the same, so keep both
     }
+  }
+
+  /// The size and digest of a nalbinding project's `.plynal` as a restored copy named [name] has it
+  /// (see [_withName]), read again from the archive and checked against its recorded digest.
+  Future<({int size, String sha256})> _renamedNative(
+      RandomAccessFile raf, _ProjectAccumulator acc, String name) async {
+    final f = acc.files.firstWhere((f) => f.layout.role == BackupFileRole.native);
+    final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
+    if (digest != f.sha256) {
+      throw BackupException(BackupProblem.damaged, detail: '${f.layout.pathFor(acc.id)} changed');
+    }
+    final renamed = _withName(bytes!, name);
+    return (size: renamed.length, sha256: _hexSha256(renamed));
+  }
+
+  /// [json] (the bytes of a JSON object: a sidecar or a `.plynal`) with its `name` set to [name].
+  /// Every other key, known or not, keeps its value and its place (the format and version keys of a
+  /// `.plynal` included); a missing `name` is added. Deterministic, so a repeated restore can tell
+  /// the copy it made before.
+  static Uint8List _withName(Uint8List json, String name) {
+    final map = jsonDecode(utf8.decode(json)) as Map<String, dynamic>;
+    map['name'] = name;
+    return Uint8List.fromList(utf8.encode(jsonEncode(map)));
   }
 
   /// A version-8 (custom) UUID derived from the project's craft, id and file digests.
@@ -1131,32 +1434,38 @@ class LibraryBackup {
   // --- Writing a restore ---------------------------------------------------------------------
 
   /// Restore [plan]: every [RestoreStatus.add] project, and every conflict whose key is not in
-  /// [skippedConflicts] (as a copy). Files are copied from the archive into a staging folder (their
-  /// digests checked again), then each project is moved into the library, sidecar last. On any
-  /// failure everything placed so far is removed and a [BackupProblem.restoreFailed] is thrown: the
-  /// library is exactly as it was. Afterwards thumbnails are rebuilt (best-effort).
-  Future<RestoreResult> restore(RestorePlan plan, {Set<String> skippedConflicts = const {}}) async {
+  /// [skippedConflicts] (as a copy), and the backup's app settings when [restoreSettings] is true and
+  /// they could be read. Files are copied from the archive into a staging folder (their digests
+  /// checked again), then each project is moved into the library, sidecar last, and then the
+  /// settings are applied. On any failure (the settings' included) everything placed so far is
+  /// removed and a [BackupProblem.restoreFailed] is thrown: the library and the settings are exactly
+  /// as they were. Afterwards thumbnails are rebuilt (best-effort).
+  Future<RestoreResult> restore(RestorePlan plan,
+      {Set<String> skippedConflicts = const {}, bool restoreSettings = false}) async {
     final selected = [
       for (final project in plan.projects)
         if (project.status == RestoreStatus.add ||
             (project.status == RestoreStatus.conflict && !skippedConflicts.contains(project.key)))
           project,
     ];
-    if (selected.isEmpty) return const RestoreResult([]);
+    final settings = restoreSettings ? plan.settings?.settings : null;
+    if (selected.isEmpty && settings == null) return const RestoreResult([]);
     final docs = await documentsDir();
     await _sweepStaging(docs);
     final staging = Directory(p.join(docs.path, '$stagingPrefix${_uuid.v4()}'));
     final placed = <FileSystemEntity>[];
     final createdDirs = <Directory>[];
     try {
-      await staging.create();
-      final raf = await plan.archive.open();
-      try {
-        for (final project in selected) {
-          await _stage(raf, staging, project);
+      if (selected.isNotEmpty) {
+        await staging.create();
+        final raf = await plan.archive.open();
+        try {
+          for (final project in selected) {
+            await _stage(raf, staging, project);
+          }
+        } finally {
+          await raf.close();
         }
-      } finally {
-        await raf.close();
       }
 
       final stems = <BackupCraft, Set<String>>{};
@@ -1193,6 +1502,12 @@ class LibraryBackup {
               : await File(from).rename(to));
         }
       }
+      // Last: a failure to apply the settings still rolls every project back.
+      if (settings != null) {
+        final apply = applySettings;
+        if (apply == null) throw StateError('this build cannot apply app settings');
+        await apply(settings);
+      }
     } catch (e) {
       await _rollback(placed, createdDirs);
       await _deleteQuietly(staging);
@@ -1202,7 +1517,8 @@ class LibraryBackup {
     await _deleteQuietly(staging);
 
     final restored = [for (final s in selected) (craft: s.craft, id: s.targetId!)];
-    PlyLog.instance.info('Restored ${restored.length} projects from a backup.');
+    PlyLog.instance.info('Restored ${restored.length} projects'
+        '${settings != null ? ' and the app settings' : ''} from a backup.');
     final rebuild = rebuildThumbnail;
     if (rebuild != null) {
       for (final r in restored) {
@@ -1214,24 +1530,28 @@ class LibraryBackup {
         }
       }
     }
-    return RestoreResult(restored);
+    return RestoreResult(restored, settingsRestored: settings != null);
   }
 
   /// Copy [project]'s files out of the archive into [staging], under its target id. Each digest is
-  /// checked again (the archive could have changed since it was inspected). A copy's sidecar gets
-  /// its new name; every other file is written byte for byte.
+  /// checked again (the archive could have changed since it was inspected). A copy gets its new name
+  /// in its sidecar and, for nalbinding, in its `.plynal` too (the project screen shows and saves the
+  /// name the `.plynal` carries): a JSON edit of the `name` key alone, the one deliberate exception
+  /// to copying a document byte for byte. A project restored under its own id, and every other file
+  /// of a copy, is written byte for byte.
   Future<void> _stage(RandomAccessFile raf, Directory staging, RestoreProject project) async {
     final id = project.targetId!;
     final rename = project.status == RestoreStatus.conflict;
     for (final f in project._files) {
       final dest = File(p.joinAll([staging.path, ...f.layout.pathFor(id).split('/')]));
       await dest.parent.create(recursive: true);
-      if (rename && f.layout.role == BackupFileRole.sidecar) {
+      if (rename &&
+          (f.layout.role == BackupFileRole.sidecar ||
+              (f.layout.role == BackupFileRole.native &&
+                  project.craft == BackupCraft.nalbinding))) {
         final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
         if (digest != f.sha256) throw StateError('${f.layout.pathFor(project.id)} changed');
-        final json = jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>;
-        json['name'] = project.targetName;
-        await dest.writeAsString(jsonEncode(json), flush: true);
+        await dest.writeAsBytes(_withName(bytes!, project.targetName!), flush: true);
         continue;
       }
       final out = await dest.open(mode: FileMode.writeOnly);

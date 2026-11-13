@@ -2,12 +2,17 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
+import '../data/library_backup.dart' show BackupCraft;
 import '../models/knit_entry.dart';
 import '../rust/knit_dto.dart' show KnitPatternDto;
+import '../state/backup_providers.dart' show rebuildKnitThumbnail;
 import '../state/knit_editor_providers.dart';
+import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/name_input_dialog.dart';
+import '../widgets/project_export.dart';
 import 'knit_editor_screen.dart';
 import 'new_knit_setup_screen.dart';
 
@@ -16,7 +21,9 @@ import 'new_knit_setup_screen.dart';
 /// now (unifying the two crafts into one home is an owner-level decision, deferred).
 ///
 /// Riverpod-wired to [knitRepositoryProvider] (the same repo the editor uses) so a test can inject a
-/// fake. `dart:io` is only for wrapping a thumbnail path in a `File` for `Image.file`.
+/// fake. `dart:io` wraps a thumbnail path in a `File` for `Image.file` and checks that a rebuilt
+/// thumbnail landed. A tile without a thumbnail asks [thumbnailRegeneratorProvider] to rebuild it in
+/// the background (once per app run).
 class KnitLibraryScreen extends ConsumerStatefulWidget {
   const KnitLibraryScreen({super.key});
 
@@ -24,15 +31,51 @@ class KnitLibraryScreen extends ConsumerStatefulWidget {
   ConsumerState<KnitLibraryScreen> createState() => _KnitLibraryScreenState();
 }
 
-enum _TileAction { open, rename, delete }
+enum _TileAction { open, rename, export, delete }
 
 class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
   late Future<List<KnitEntry>> _entriesFuture;
 
+  /// Patterns listed without a thumbnail whose thumbnail has since been rebuilt.
+  final Set<String> _rebuiltThumbs = {};
+
   @override
   void initState() {
     super.initState();
-    _entriesFuture = ref.read(knitRepositoryProvider).listKnits();
+    _entriesFuture = _load();
+  }
+
+  /// List the library, then rebuild the missing thumbnails in the background (the list does not
+  /// wait for them).
+  Future<List<KnitEntry>> _load() {
+    final future = ref.read(knitRepositoryProvider).listKnits();
+    future.then(_rebuildMissingThumbnails, onError: (Object _) {});
+    return future;
+  }
+
+  /// Where a pattern's thumbnail lives (beside its `.plyknit`, as the repository writes it).
+  static String _thumbPathOf(KnitEntry entry) =>
+      p.join(p.dirname(entry.patternPath), '${entry.id}.png');
+
+  void _rebuildMissingThumbnails(List<KnitEntry> entries) {
+    if (!mounted) return;
+    final regenerator = ref.read(thumbnailRegeneratorProvider);
+    final repository = ref.read(knitRepositoryProvider);
+    for (final entry in entries) {
+      if (entry.thumbPath != null) continue;
+      final id = entry.id;
+      final thumb = _thumbPathOf(entry);
+      regenerator.request('knitting/$id', () async {
+        // Throws when the pattern cannot be read or drawn: it keeps the placeholder.
+        await rebuildKnitThumbnail(repository, id, knitsDir: Directory(p.dirname(thumb)));
+        return File(thumb).existsSync();
+      }).then((rebuilt) {
+        if (!rebuilt || !mounted) return;
+        setState(() {
+          _rebuiltThumbs.add(id);
+        });
+      });
+    }
   }
 
   /// Re-scan the library and rebuild; returns the future so a RefreshIndicator can await it. Self-
@@ -42,7 +85,7 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
   /// evaluates to the assigned Future, and `setState` throws on a callback that returns a Future.
   Future<void> _refresh() async {
     if (!mounted) return;
-    final future = ref.read(knitRepositoryProvider).listKnits();
+    final future = _load();
     setState(() {
       _entriesFuture = future;
     });
@@ -128,6 +171,10 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
         await _open(entry);
       case _TileAction.rename:
         await _rename(entry);
+      case _TileAction.export:
+        if (!mounted) return; // the action sheet was an async gap
+        await exportProject(context, ref,
+            craft: BackupCraft.knitting, id: entry.id, name: entry.meta.name);
       case _TileAction.delete:
         await _delete(entry);
     }
@@ -149,6 +196,11 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
               leading: const Icon(Icons.drive_file_rename_outline),
               title: const Text('Rename'),
               onTap: () => Navigator.pop(ctx, _TileAction.rename),
+            ),
+            ListTile(
+              leading: const Icon(Icons.save_alt),
+              title: const Text('Export'),
+              onTap: () => Navigator.pop(ctx, _TileAction.export),
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline),
@@ -286,6 +338,7 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
                       onSelected: (a) => _handle(a, entry),
                       itemBuilder: (_) => const [
                         PopupMenuItem(value: _TileAction.rename, child: Text('Rename')),
+                        PopupMenuItem(value: _TileAction.export, child: Text('Export')),
                         PopupMenuItem(value: _TileAction.delete, child: Text('Delete')),
                       ],
                       child: const SizedBox(
@@ -305,7 +358,8 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
   }
 
   Widget _thumb(KnitEntry entry) {
-    final path = entry.thumbPath;
+    final path =
+        entry.thumbPath ?? (_rebuiltThumbs.contains(entry.id) ? _thumbPathOf(entry) : null);
     if (path != null) {
       return Image.file(
         File(path),

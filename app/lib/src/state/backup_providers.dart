@@ -12,6 +12,7 @@ import '../diagnostics/crash_reporter.dart' show kPlyAppVersion;
 import '../models/native_format.dart';
 import 'editor_providers.dart';
 import 'knit_editor_providers.dart';
+import 'theme_providers.dart';
 
 /// The system save dialog and file picker for backups. Tests override it.
 final backupFileAccessProvider =
@@ -20,7 +21,9 @@ final backupFileAccessProvider =
 /// The library backup service, wired to the app documents directory and the engine: the current
 /// `.plyknit` version comes from what the engine writes (so a knit format bump needs no change
 /// here), WIF and knit files are also parsed by the engine before a restore, and restored projects
-/// get their thumbnails rebuilt. Tests override it with a service over a temp directory.
+/// get their thumbnails rebuilt. A full backup offers the app settings in effect; restored settings
+/// go through the settings notifier (saved first, then applied). Tests override it with a service
+/// over a temp directory.
 final libraryBackupProvider = Provider<LibraryBackup>((ref) {
   final drafts = ref.watch(repositoryProvider);
   final knits = ref.watch(knitRepositoryProvider);
@@ -49,22 +52,21 @@ final libraryBackupProvider = Provider<LibraryBackup>((ref) {
           break; // no thumbnails
       }
     },
+    currentSettings: () async => ref.read(appSettingsProvider),
+    applySettings: (settings) => ref.read(appSettingsProvider.notifier).restore(settings),
   );
 });
 
 /// Bumped after a restore so the home screen rebuilds the library tabs (each reloads its list).
 final libraryRevisionProvider = StateProvider<int>((_) => 0);
 
-/// Pixels per cell of a knitting thumbnail. Mirrors `KnitRepository`'s private thumbnail scale.
-const int knitThumbnailCellPx = 6;
-
 /// Rebuild the thumbnail `<knitsDir>/<id>.png` of a saved knitting pattern from its `.plyknit`, the
-/// way a save writes it (atomically). Throws when the pattern cannot be read or drawn; the caller
-/// treats the thumbnail as best-effort.
+/// way a save writes it (atomically, at [KnitRepository.thumbnailCellPx]). Throws when the pattern
+/// cannot be read or drawn; the caller treats the thumbnail as best-effort.
 Future<void> rebuildKnitThumbnail(KnitRepository repo, String id,
     {required Directory knitsDir}) async {
   final pattern = await repo.readPattern(id);
-  final image = await repo.render(pattern, cellPx: knitThumbnailCellPx);
+  final image = await repo.render(pattern, cellPx: KnitRepository.thumbnailCellPx);
   try {
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
     if (png == null) return;

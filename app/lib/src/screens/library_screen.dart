@@ -3,38 +3,78 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../data/draft_repository.dart';
+import '../data/library_backup.dart' show BackupCraft;
 import '../models/draft_meta.dart';
 import '../models/loom_type.dart';
+import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/loom_type_picker.dart';
+import '../widgets/project_export.dart';
 import 'editor_screen.dart';
 import 'preview_screen.dart';
 
 /// Home screen: a grid of saved drafts with preview thumbnails, plus an import FAB.
 ///
-/// Depends only on [DraftRepository] (never the generated bridge). `dart:io` is
-/// imported solely to wrap a thumbnail path in a `File` for `Image.file`.
-class LibraryScreen extends StatefulWidget {
+/// Depends only on [DraftRepository] (never the generated bridge). `dart:io` wraps a thumbnail
+/// path in a `File` for `Image.file` and checks that a rebuilt thumbnail landed. A tile without a
+/// thumbnail asks [thumbnailRegeneratorProvider] to rebuild it in the background (once per app run).
+class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({required this.repository, super.key});
 
   final DraftRepository repository;
 
   @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-enum _TileAction { open, rename, delete }
+enum _TileAction { open, rename, export, delete }
 
-class _LibraryScreenState extends State<LibraryScreen> {
+class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   late Future<List<DraftEntry>> _entriesFuture;
+
+  /// Drafts listed without a thumbnail whose thumbnail has since been rebuilt.
+  final Set<String> _rebuiltThumbs = {};
 
   @override
   void initState() {
     super.initState();
-    _entriesFuture = widget.repository.list();
+    _entriesFuture = _load();
+  }
+
+  /// List the library, then rebuild the missing thumbnails in the background (the list does not
+  /// wait for them).
+  Future<List<DraftEntry>> _load() {
+    final future = widget.repository.list();
+    future.then(_rebuildMissingThumbnails, onError: (Object _) {});
+    return future;
+  }
+
+  /// Where a draft's thumbnail lives (beside its `.wif`, as the repository writes it).
+  static String _thumbPathOf(DraftEntry entry) =>
+      p.join(p.dirname(entry.wifPath), '${entry.id}.png');
+
+  void _rebuildMissingThumbnails(List<DraftEntry> entries) {
+    if (!mounted) return;
+    final regenerator = ref.read(thumbnailRegeneratorProvider);
+    final repository = widget.repository;
+    for (final entry in entries) {
+      if (entry.thumbPath != null) continue;
+      final id = entry.id;
+      final thumb = _thumbPathOf(entry);
+      regenerator.request('weaving/$id', () async {
+        await repository.rebuildThumbnail(id); // best-effort: writes nothing it cannot draw
+        return File(thumb).existsSync();
+      }).then((rebuilt) {
+        if (!rebuilt || !mounted) return;
+        setState(() {
+          _rebuiltThumbs.add(id);
+        });
+      });
+    }
   }
 
   /// Re-scan the library and rebuild. Returns the future so RefreshIndicator can
@@ -46,7 +86,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   /// (which the delete/rename try-catch would silently swallow, leaving the grid stale).
   Future<void> _refresh() async {
     if (!mounted) return;
-    final future = widget.repository.list();
+    final future = _load();
     setState(() {
       _entriesFuture = future;
     });
@@ -225,6 +265,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         await _open(entry);
       case _TileAction.rename:
         await _rename(entry);
+      case _TileAction.export:
+        if (!mounted) return; // the action sheet was an async gap
+        await exportProject(context, ref,
+            craft: BackupCraft.weaving, id: entry.id, name: entry.meta.name);
       case _TileAction.delete:
         await _delete(entry);
     }
@@ -246,6 +290,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               leading: const Icon(Icons.drive_file_rename_outline),
               title: const Text('Rename'),
               onTap: () => Navigator.pop(ctx, _TileAction.rename),
+            ),
+            ListTile(
+              leading: const Icon(Icons.save_alt),
+              title: const Text('Export'),
+              onTap: () => Navigator.pop(ctx, _TileAction.export),
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline),
@@ -432,6 +481,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         child: Text('Rename'),
                       ),
                       PopupMenuItem(
+                        value: _TileAction.export,
+                        child: Text('Export'),
+                      ),
+                      PopupMenuItem(
                         value: _TileAction.delete,
                         child: Text('Delete'),
                       ),
@@ -453,7 +506,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _thumb(DraftEntry entry) {
-    final path = entry.thumbPath;
+    final path =
+        entry.thumbPath ?? (_rebuiltThumbs.contains(entry.id) ? _thumbPathOf(entry) : null);
     if (path != null) {
       return Image.file(
         File(path),
