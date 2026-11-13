@@ -97,6 +97,18 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'the self-finished lengthwise edge of the cloth.',
   ),
   GlossaryTerm(
+    term: 'Floating selvedge',
+    definition: 'an extra warp end at each edge, sleyed in the reed but not threaded through a heddle, so no shaft moves it. Taking the shuttle over it going in and under it coming out (or the reverse) catches the weft at the edge when the shed alone would not, as on a double shot.',
+  ),
+  GlossaryTerm(
+    term: 'Shuttle',
+    definition: 'the tool that carries a weft across the warp. A draft with several wefts uses several shuttles, and each one changes direction on every pass, so the direction of a pick follows from its shuttle.',
+  ),
+  GlossaryTerm(
+    term: 'Double shot',
+    definition: 'two passes of the weft in one shed, without changing the shed between them (a triple shot is three). It is not double weave, and not two strands carried together in one pass.',
+  ),
+  GlossaryTerm(
     term: 'Take-up',
     definition: 'warp/weft shortening from interlacing (cloth is shorter/narrower than the yarn measured straight); budgeted in yarn estimates alongside shrinkage.',
   ),

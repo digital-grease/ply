@@ -2,8 +2,11 @@
 //!
 //! v1 covers the headline weaving numbers: **sett** (how densely to space the warp),
 //! **warp length / total warp yarn**, and **weft yarn** from picks-per-unit, woven
-//! width, and a user-supplied weft take-up allowance.
+//! width, and a user-supplied weft take-up allowance. The weft estimate works from totals
+//! (picks per unit over the woven length); [`estimate_weft_for_draft`] additionally counts the
+//! strands each pass of the draft carries.
 
+use crate::draft::Draft;
 use serde::{Deserialize, Serialize};
 
 /// Weave structure family — controls how dense a sett to suggest from yarn WPI.
@@ -112,6 +115,22 @@ pub fn estimate_weft(plan: &WeftPlan) -> WeftEstimate {
     WeftEstimate { picks, total_weft }
 }
 
+/// [`estimate_weft`], counting the strands each pass carries in `draft` (roadmap M8-06). The plan
+/// works from totals (picks per unit over the woven length), not pick by pick, so the draft's picks
+/// are taken as the repeat that fills the woven length: every pick woven uses the draft's AVERAGE
+/// strands per pick ([`Draft::mean_strands`]). A draft that records no strands gives exactly
+/// [`estimate_weft`].
+///
+/// `total_weft = estimate_weft(plan).total_weft * draft.mean_strands()`; `picks` (passes) is
+/// unchanged, because two strands carried together are still one pick.
+pub fn estimate_weft_for_draft(plan: &WeftPlan, draft: &Draft) -> WeftEstimate {
+    let base = estimate_weft(plan);
+    WeftEstimate {
+        picks: base.picks,
+        total_weft: base.total_weft * draft.mean_strands(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,5 +167,31 @@ mod tests {
         let est = estimate_weft(&plan);
         assert_eq!(est.picks, 720); // 12 * 60
         assert_eq!(est.total_weft, 15_840.0); // 720 * 20 * 1.1
+    }
+
+    /// Strands per pick scale the yarn, not the pick count: a draft whose 4 picks carry 1, 2, 1, 2
+    /// strands averages 1.5 strands per pick, so the same plan needs 1.5 times the single-strand weft.
+    #[test]
+    fn weft_estimate_for_a_draft_counts_strands() {
+        let plan = WeftPlan {
+            picks_per_unit: 12.0,
+            width: 20.0,
+            woven_length: 60.0,
+            items: 1,
+            takeup: 0.10,
+        };
+        let mut d = crate::structure::plain_weave(4, 4);
+        let single = estimate_weft_for_draft(&plan, &d);
+        assert_eq!(
+            single,
+            estimate_weft(&plan),
+            "no strands recorded: unchanged"
+        );
+        d.weft_work.strands = vec![1, 2, 1, 2];
+        let est = estimate_weft_for_draft(&plan, &d);
+        assert_eq!(est.picks, 720, "two strands in one pass are still one pick");
+        assert_eq!(est.total_weft, 15_840.0 * 1.5);
+        // A draft with no picks has nothing to average: one strand.
+        assert_eq!(crate::draft::Draft::blank(4, 4).mean_strands(), 1.0);
     }
 }

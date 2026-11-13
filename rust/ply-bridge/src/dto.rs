@@ -16,8 +16,8 @@
 use ply_common::{Color, Unit};
 use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
 use ply_weave::draft::{
-    ColorPlan, Draft, Drive, Liftplan, PickRole, RetainedSection, ShaftId, ShedType, Threading,
-    TieUp, TreadleId, Treadling,
+    ColorPlan, Draft, Drive, Liftplan, PickRole, RetainedSection, ShaftId, ShedType, ShotGroup,
+    ShuttleId, Side, Threading, TieUp, TreadleId, Treadling, WeftWork,
 };
 use ply_weave::shadow::{
     ShadowBlock, ShadowError, ShadowLayout, ShadowParams, ShadowShafts, ShadowSystem,
@@ -73,6 +73,29 @@ impl From<PickRoleKind> for PickRole {
             PickRoleKind::BottomLayer => PickRole::BottomLayer,
         }
     }
+}
+
+/// A selvedge as the weaver sees the cloth from the front of the loom, mirroring `draft::Side`. Flat
+/// C-like enum, so frb mirrors it as a plain Dart enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShuttleSideKind {
+    Left,
+    Right,
+}
+
+/// A shot group (consecutive picks worked as repeated passes in ONE shed), mirroring
+/// `draft::ShotGroup`: `start` is the 0-based first pick, `picks` how many passes (at least 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShotGroupDto {
+    pub start: u32,
+    pub picks: u32,
+}
+
+/// The side shuttle `shuttle` (1-based) starts its first pass from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShuttleStartDto {
+    pub shuttle: u8,
+    pub side: ShuttleSideKind,
 }
 
 /// Measurement unit for the draft's lengths.
@@ -215,6 +238,9 @@ pub enum DriveDto {
 pub enum SeverityKind {
     Error,
     Warning,
+    /// Advice about a deliberate instruction (weaving validation only; knitting and nalbinding never
+    /// report it).
+    Info,
 }
 
 /// One validation problem, with its severity preserved (not flattened into the message) so
@@ -439,6 +465,15 @@ pub struct DraftDto {
     pub retained: Vec<RetainedSectionDto>,
     /// Per pick, its role. EMPTY means every role is unknown; otherwise length-coupled to the picks.
     pub pick_roles: Vec<PickRoleKind>,
+    /// Per pick, the 1-based shuttle that carries it, `0` when unknown. EMPTY means every shuttle is
+    /// unknown; otherwise length-coupled to the picks.
+    pub pick_shuttles: Vec<u8>,
+    /// Per pick, how many strands its pass carries (1..=4). EMPTY means one strand for every pick.
+    pub pick_strands: Vec<u8>,
+    /// The shot groups, in pick order.
+    pub shot_groups: Vec<ShotGroupDto>,
+    /// Each shuttle's starting side, ascending by shuttle; a shuttle not listed has none recorded.
+    pub shuttle_starts: Vec<ShuttleStartDto>,
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +507,7 @@ impl From<&ValidationIssue> for ValidationIssueDto {
             severity: match i.severity {
                 Severity::Error => SeverityKind::Error,
                 Severity::Warning => SeverityKind::Warning,
+                Severity::Info => SeverityKind::Info,
             },
             message: i.message.clone(),
         }
@@ -533,6 +569,34 @@ impl From<&Draft> for DraftDto {
                 })
                 .collect(),
             pick_roles: d.pick_roles.iter().map(|&r| r.into()).collect(),
+            pick_shuttles: d
+                .weft_work
+                .shuttles
+                .iter()
+                .map(|s| s.map_or(0, |s| s.0))
+                .collect(),
+            pick_strands: d.weft_work.strands.clone(),
+            shot_groups: d
+                .weft_work
+                .shot_groups
+                .iter()
+                .map(|g| ShotGroupDto {
+                    start: u32::try_from(g.start).unwrap_or(u32::MAX),
+                    picks: u32::try_from(g.picks).unwrap_or(u32::MAX),
+                })
+                .collect(),
+            shuttle_starts: d
+                .weft_work
+                .shuttle_starts
+                .iter()
+                .map(|(s, side)| ShuttleStartDto {
+                    shuttle: s.0,
+                    side: match side {
+                        Side::Left => ShuttleSideKind::Left,
+                        Side::Right => ShuttleSideKind::Right,
+                    },
+                })
+                .collect(),
         }
     }
 }
@@ -584,6 +648,33 @@ impl TryFrom<DraftDto> for Draft {
                 })
                 .collect(),
             pick_roles: dto.pick_roles.into_iter().map(PickRole::from).collect(),
+            weft_work: WeftWork {
+                shuttles: dto
+                    .pick_shuttles
+                    .iter()
+                    .map(|&s| (s > 0).then_some(ShuttleId(s)))
+                    .collect(),
+                shuttle_starts: dto
+                    .shuttle_starts
+                    .iter()
+                    .map(|s| {
+                        let side = match s.side {
+                            ShuttleSideKind::Left => Side::Left,
+                            ShuttleSideKind::Right => Side::Right,
+                        };
+                        (ShuttleId(s.shuttle), side)
+                    })
+                    .collect(),
+                strands: dto.pick_strands,
+                shot_groups: dto
+                    .shot_groups
+                    .iter()
+                    .map(|g| ShotGroup {
+                        start: g.start as usize,
+                        picks: g.picks as usize,
+                    })
+                    .collect(),
+            },
         })
     }
 }
@@ -638,8 +729,42 @@ mod tests {
             }],
             // Every role kind must cross the DTO and come back (Draft's PartialEq includes them).
             pick_roles: vec![PickRole::TopLayer, PickRole::BottomLayer],
+            weft_work: Default::default(),
         };
         assert_roundtrip(&d);
+    }
+
+    #[test]
+    fn roundtrip_weft_work() {
+        use ply_weave::draft::{ShotGroup, ShuttleId, Side, WeftWork};
+        let mut d = ply_weave::structure::overshot(8, 6, 2);
+        d.weft_work = WeftWork {
+            shuttles: vec![
+                Some(ShuttleId(1)),
+                None,
+                Some(ShuttleId(8)),
+                None,
+                None,
+                None,
+            ],
+            shuttle_starts: [(ShuttleId(1), Side::Left), (ShuttleId(8), Side::Right)]
+                .into_iter()
+                .collect(),
+            strands: vec![1, 2, 3, 4, 1, 1],
+            shot_groups: vec![ShotGroup { start: 2, picks: 2 }],
+        };
+        assert_roundtrip(&d);
+        let dto = DraftDto::from(&d);
+        assert_eq!(
+            dto.pick_shuttles,
+            vec![1, 0, 8, 0, 0, 0],
+            "unknown crosses as 0"
+        );
+        assert_eq!(dto.shot_groups, vec![ShotGroupDto { start: 2, picks: 2 }]);
+        // Nothing recorded crosses as empty lists.
+        let blank = DraftDto::from(&Draft::blank(4, 4));
+        assert!(blank.pick_shuttles.is_empty() && blank.pick_strands.is_empty());
+        assert!(blank.shot_groups.is_empty() && blank.shuttle_starts.is_empty());
     }
 
     #[test]

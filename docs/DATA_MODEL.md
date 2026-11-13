@@ -31,6 +31,7 @@ import/export is lossless for what we support.
 | `ColorPlan` | `palette: Vec<Color>` + `warp: Vec<ColorIndex>` + `weft: Vec<ColorIndex>`. |
 | `warp_thickness`, `weft_thickness` (`Vec<f32>`) | Per warp end / weft pick, a **relative** thread thickness (1.0 = base) that drives variable-width/height drawdown cells (M4). Empty = uniform. Length-coupled to ends/picks like colors; parsed from WIF `[WARP/WEFT THICKNESS]`, the thinnest present thread maps to the base pixel pitch. |
 | `PickRole`, `pick_roles` (`Vec<PickRole>`) | Per weft pick, what it is for: `Unknown` (default), `Pattern`, `Tabby`, `TopLayer`, `BottomLayer`. Empty = every role unknown (every third-party WIF); otherwise length-coupled to the picks and kept aligned by every operation that changes them. Never inferred from color or shafts. The overshot and double-weave generators record them; the Book view sets them and, when they allow it exactly, shows the overshot "Use tabby" shorthand. Stored in a WIF 1.1 private section (see WIF_MAPPING). |
+| `WeftWork`, `weft_work` | How the weft is worked (M8-06): per pick its shuttle (`Option<ShuttleId>`, 1 to 8; empty = all unknown) and strands carried together in the pass (`u8`, 1 to 4; empty = all 1), each shuttle's starting `Side`, and the `ShotGroup`s (a range of at least two consecutive picks worked as repeated passes in ONE shed: a double or triple shot, which is not double weave). Pass direction is DERIVED (`Draft::pass_starts`: each shuttle alternates its own direction from its starting side), never stored. Groups are kept on one shed by `Draft::sound_shot_groups` through every pick edit. Never inferred. Stored with the roles in the WIF private section. |
 | `RetainedSection` | A WIF `[SECTION]` Ply does not model (spacing, vendor sections), kept verbatim for export fidelity (M3): round-tripped on a structural edit, stale per-thread ones dropped on a resize. |
 
 ### Three decisions worth knowing
@@ -68,13 +69,18 @@ is `WarpUp(colorIndex)` or `WeftUp(colorIndex)`; `render_rgba` turns that into p
   and item count. Weft take-up + selvedge wastage is a **user-supplied field** (`takeup`),
   not a baked-in constant: it's width-direction crimp that varies with yarn and beat, so
   the weaver dials it in. Scales each pick's length, not the pick count.
+- `estimate_weft_for_draft(plan, draft)`: the same, counting the strands each pass carries. The plan
+  works from totals, so the draft's picks are taken as the repeat and the total scales by the draft's
+  average strands per pick (`Draft::mean_strands`); the pick count is unchanged.
 
 ### Validation (`validate.rs`)
 
 Cheap structural checks (shaft/treadle ranges, color-count mismatches, treadles with no
 tie-up, a pick-role list whose length disagrees with the picks, picks marked tabby whose shed
-is not plain weave), returned as `Vec<ValidationIssue>` with `Error`/`Warning` severity. Safe
-to run on every edit.
+is not plain weave, shuttle and strand ranges, a shot group whose picks do not share one shed,
+one shuttle passing twice in one shed without a shot group), returned as `Vec<ValidationIssue>`
+with `Error`/`Warning`/`Info` severity. `Info` is advice about a deliberate instruction (a grouped
+double shot needs the weft caught at the selvedge). Safe to run on every edit.
 
 A **tabby (plain-weave) shed** is a raised-shaft set that lifts exactly every other threaded
 warp end (`Draft::plain_weave_phase`); "tabby a" lifts the first threaded end.

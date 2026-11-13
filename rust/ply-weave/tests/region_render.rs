@@ -139,6 +139,7 @@ fn twill(ends: usize, picks: usize, shed: ShedType) -> Draft {
         notes: String::new(),
         retained: Vec::<RetainedSection>::new(),
         pick_roles: Vec::new(),
+        weft_work: Default::default(),
     }
 }
 
@@ -597,6 +598,7 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                 notes: String::new(),
                 retained: Vec::new(),
                 pick_roles: Vec::new(),
+                weft_work: Default::default(),
             }
         })
 }

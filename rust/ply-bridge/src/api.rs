@@ -29,9 +29,9 @@ use ply_weave::{self as weave, Draft};
 pub use crate::dto::{
     ColorDto, DraftDto, DrawdownRegionDto, DriveDto, PickRoleKind, RenderFailure,
     RenderFailureKind, RenderOptionsDto, RetainedEntryDto, RetainedSectionDto, SeverityKind,
-    ShadowBlockDto, ShadowLayoutKind, ShadowParamsDto, ShadowSystemKind, ShedKind, StructureFamily,
-    ThreadingKind, TwillDirectionKind, UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto,
-    WeftPhaseKind, WeftPlanDto, YarnEstimateDto,
+    ShadowBlockDto, ShadowLayoutKind, ShadowParamsDto, ShadowSystemKind, ShedKind, ShotGroupDto,
+    ShuttleSideKind, ShuttleStartDto, StructureFamily, ThreadingKind, TwillDirectionKind, UnitKind,
+    ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPhaseKind, WeftPlanDto, YarnEstimateDto,
 };
 
 /// Most shafts a structure generator will build a tie-up for. Real looms stop far below this (the
@@ -277,6 +277,21 @@ pub fn estimate_weft(plan: WeftPlan) -> WeftEstimate {
 /// `estimate_weft`, both the input and the result cross FFI as readable mirrored DTOs.
 pub fn estimate_weft_dto(plan: WeftPlanDto) -> WeftEstimateDto {
     WeftEstimateDto::from(&weave::calc::estimate_weft(&plan.into()))
+}
+
+/// [`estimate_weft_dto`], counting the strands each pass of `dto` carries: the plan works from
+/// totals, so the draft's picks are taken as the repeat and every pick woven uses the draft's average
+/// strands per pick (`calc::estimate_weft_for_draft`). `picks` is unchanged (two strands in one pass
+/// are one pick); `total_weft` scales. A draft with no strands recorded gives exactly
+/// [`estimate_weft_dto`]. `Err` if the DTO can't convert back to a `Draft`.
+pub fn estimate_weft_for_draft_dto(
+    plan: WeftPlanDto,
+    dto: DraftDto,
+) -> Result<WeftEstimateDto, String> {
+    let draft = Draft::try_from(dto)?;
+    Ok(WeftEstimateDto::from(
+        &weave::calc::estimate_weft_for_draft(&plan.into(), &draft),
+    ))
 }
 
 /// Generate a tie-up for a weave-structure family (the editor's "Generate structure" action). Each
@@ -863,6 +878,120 @@ mod tests {
         assert!(issues
             .iter()
             .any(|i| matches!(i.severity, SeverityKind::Error) && i.message.contains("pick role")));
+    }
+
+    /// Shuttles, starting sides, strands, and shot groups survive the editor's FFI round trips (WIF
+    /// write and parse, resize, the liftplan convert, the shed convert), validation reports the
+    /// grouped-double-shot advice as Info, and the weft estimate counts strands.
+    #[test]
+    fn weft_work_crosses_every_bridge_round_trip() {
+        let mut dto = generate_structure_dto(StructureFamily::Overshot, 16, 8, 4).unwrap();
+        // Make picks 7 and 8 one shed (pattern treadle 1) and group them as a double shot.
+        if let DriveDto::Treadled { treadling, .. } = &mut dto.drive {
+            treadling[6] = vec![1];
+            treadling[7] = vec![1];
+        }
+        dto.pick_roles[7] = PickRoleKind::Pattern;
+        dto.pick_shuttles = vec![1, 2, 1, 2, 1, 2, 1, 1];
+        dto.pick_strands = vec![2, 1, 2, 1, 2, 1, 2, 2];
+        dto.shot_groups = vec![ShotGroupDto { start: 6, picks: 2 }];
+        dto.shuttle_starts = vec![
+            ShuttleStartDto {
+                shuttle: 1,
+                side: ShuttleSideKind::Right,
+            },
+            ShuttleStartDto {
+                shuttle: 2,
+                side: ShuttleSideKind::Left,
+            },
+        ];
+        let copy = |d: &DraftDto| parse_wif_dto(write_wif(clone_dto(d)).unwrap()).unwrap();
+        let back = copy(&dto);
+        assert_eq!(back.pick_shuttles, dto.pick_shuttles);
+        assert_eq!(back.pick_strands, dto.pick_strands);
+        assert_eq!(back.shot_groups, dto.shot_groups);
+        assert_eq!(back.shuttle_starts, dto.shuttle_starts);
+        let lp = to_liftplan_dto(clone_dto(&dto)).unwrap();
+        assert_eq!(lp.shot_groups, dto.shot_groups);
+        assert_eq!(lp.pick_shuttles, dto.pick_shuttles);
+        let sinking = draft_with_shed_dto(clone_dto(&dto), ShedKind::Sinking).unwrap();
+        assert_eq!(sinking.shot_groups, dto.shot_groups);
+        // A shrink through the double shot dissolves it; the per-pick lists stay coupled.
+        let cut = resize_dto(clone_dto(&dto), 16, 7, 4, 4).unwrap();
+        assert!(cut.shot_groups.is_empty());
+        assert_eq!((cut.pick_shuttles.len(), cut.pick_strands.len()), (7, 7));
+        let issues = validate_draft(clone_dto(&dto)).unwrap();
+        assert!(issues
+            .iter()
+            .all(|i| !matches!(i.severity, SeverityKind::Error)));
+        assert!(
+            issues
+                .iter()
+                .any(|i| matches!(i.severity, SeverityKind::Info)
+                    && i.message.contains("double shot"))
+        );
+        // 2,1,2,1,2,1,2,2 strands average 13/8 per pick.
+        let plan = || WeftPlanDto {
+            picks_per_unit: 10.0,
+            width: 10.0,
+            woven_length: 10.0,
+            items: 1,
+            takeup: 0.0,
+        };
+        let single = estimate_weft_dto(plan());
+        let counted = estimate_weft_for_draft_dto(plan(), clone_dto(&dto)).unwrap();
+        assert_eq!(counted.picks, single.picks);
+        assert_eq!(counted.total_weft, single.total_weft * 13.0 / 8.0);
+    }
+
+    /// A field-by-field copy (the frb DTOs do not derive `Clone`).
+    fn clone_dto(d: &DraftDto) -> DraftDto {
+        DraftDto::from(
+            &ply_weave::Draft::try_from(DraftDto {
+                name: d.name.clone(),
+                shafts: d.shafts,
+                treadles: d.treadles,
+                shed: match d.shed {
+                    ShedKind::Rising => ShedKind::Rising,
+                    ShedKind::Sinking => ShedKind::Sinking,
+                },
+                unit: match d.unit {
+                    UnitKind::Inches => UnitKind::Inches,
+                    UnitKind::Centimeters => UnitKind::Centimeters,
+                },
+                threading: d.threading.clone(),
+                drive: match &d.drive {
+                    DriveDto::Treadled { tieup, treadling } => DriveDto::Treadled {
+                        tieup: tieup.clone(),
+                        treadling: treadling.clone(),
+                    },
+                    DriveDto::Liftplan { liftplan } => DriveDto::Liftplan {
+                        liftplan: liftplan.clone(),
+                    },
+                },
+                palette: d
+                    .palette
+                    .iter()
+                    .map(|c| ColorDto {
+                        r: c.r,
+                        g: c.g,
+                        b: c.b,
+                    })
+                    .collect(),
+                warp_colors: d.warp_colors.clone(),
+                weft_colors: d.weft_colors.clone(),
+                warp_thickness: d.warp_thickness.clone(),
+                weft_thickness: d.weft_thickness.clone(),
+                notes: d.notes.clone(),
+                retained: Vec::new(),
+                pick_roles: d.pick_roles.clone(),
+                pick_shuttles: d.pick_shuttles.clone(),
+                pick_strands: d.pick_strands.clone(),
+                shot_groups: d.shot_groups.clone(),
+                shuttle_starts: d.shuttle_starts.clone(),
+            })
+            .unwrap(),
+        )
     }
 
     /// A family sent to the wrong generator is an error, not a silently different structure.

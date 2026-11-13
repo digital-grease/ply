@@ -126,7 +126,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Will the app tell me if my draft has problems?",
-      "Yes. A validation band runs the engine's structural checks live on every edit and appears next to the draft (below the cloth on a phone, in the side panel on a tablet) only when there are real issues, with errors in red and warnings in amber. It stays out of the way on a clean draft, and you can tap it to expand a scrollable list with the errors sorted first.",
+      "Yes. A validation band runs the engine's structural checks live on every edit and appears next to the draft (below the cloth on a phone, in the side panel on a tablet) only when there is something to say, with errors in red, warnings in amber, and notes (advice about a deliberate instruction, such as catching the weft at the selvedge on a double shot) in the accent color. It stays out of the way on a clean draft, and you can tap it to expand a scrollable list with the errors sorted first.",
     ),
   ]),
   FaqSection('Knitting & nalbinding', [

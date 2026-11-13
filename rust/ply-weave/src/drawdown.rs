@@ -924,6 +924,7 @@ mod tests {
             notes: String::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         }
     }
 
@@ -1074,6 +1075,7 @@ mod tests {
             notes: String::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         };
         let center = |img: &RgbaImage| -> [u8; 3] {
             let o = (2 * img.width as usize + 2) * 4; // somewhere inside the column
@@ -1136,6 +1138,7 @@ mod tests {
             notes: String::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         }
     }
 

@@ -21,6 +21,7 @@ import 'package:collection/collection.dart';
 import 'draft_doc.dart';
 import 'draft_region.dart';
 import 'treadling_entries.dart';
+import 'weft_work.dart';
 
 /// Compares undo/redo snapshot stacks element-wise using each [DraftDoc]'s own deep `==`.
 const ListEquality<DraftDoc> _stackEq = ListEquality<DraftDoc>();
@@ -363,9 +364,11 @@ class EditorState {
     }
     if (pick < 0) throw RangeError.range(pick, 0, null, 'pick');
     final newTreadling = _setRow(drive.treadling, pick, treadles);
-    final next = draft.copyWith(
+    final next = withSoundShotGroups(draft.copyWith(
         drive: drive.copyWith(treadling: newTreadling),
-        pickRoles: _rolesForPickCount(newTreadling.length));
+        pickRoles: _rolesForPickCount(newTreadling.length),
+        pickShuttles: _shuttlesForPickCount(newTreadling.length),
+        pickStrands: _strandsForPickCount(newTreadling.length)));
     return next == draft ? this : copyWith(draft: next);
   }
 
@@ -377,18 +380,23 @@ class EditorState {
     }
     if (pick < 0) throw RangeError.range(pick, 0, null, 'pick');
     final newLift = _setRow(drive.liftplan, pick, shafts);
-    final next = draft.copyWith(
-        drive: DraftLiftplan(liftplan: newLift), pickRoles: _rolesForPickCount(newLift.length));
+    final next = withSoundShotGroups(draft.copyWith(
+        drive: DraftLiftplan(liftplan: newLift),
+        pickRoles: _rolesForPickCount(newLift.length),
+        pickShuttles: _shuttlesForPickCount(newLift.length),
+        pickStrands: _strandsForPickCount(newLift.length)));
     return next == draft ? this : copyWith(draft: next);
   }
 
   /// Set pick [pick] (0-based) to press [ids] (treadle ids treadled, raised shaft ids liftplan),
   /// canonicalized ascending. The structural grid's right-band paint routes here: one row is one
-  /// pick, for both drives. Pure; returns `this` on a no-op. Throws on an out-of-range [pick].
+  /// pick, for both drives. A shot group whose picks no longer share one shed keeps only its one-shed
+  /// runs (see weft_work.dart). Pure; returns `this` on a no-op. Throws on an out-of-range [pick].
   EditorState withShedForPick(int pick, List<int> ids) {
     final rows = draft.drive.rows;
     if (pick < 0 || pick >= rows.length) throw RangeError.range(pick, 0, rows.length - 1, 'pick');
-    final next = draft.copyWith(drive: _driveFromRows(_setRow(rows, pick, ids)));
+    final next =
+        withSoundShotGroups(draft.copyWith(drive: _driveFromRows(_setRow(rows, pick, ids))));
     return next == draft ? this : copyWith(draft: next);
   }
 
@@ -397,9 +405,9 @@ class EditorState {
   // its neighbour simply groups with it next time; the per-pick treadling stays the canonical form
   // and every operation below names exactly which picks it changes. ---
 
-  /// The treadling grouped into runs of identical sheds: the rows the Book view lists. Generic over
-  /// the drive (treadle ids for treadled, raised shaft ids for liftplan).
-  List<TreadlingEntry> get entries => treadlingEntries(draft.drive.rows);
+  /// The treadling grouped into runs of identical sheds, each shot group its own row: the rows the
+  /// Book view lists. Generic over the drive (treadle ids for treadled, raised shaft ids for liftplan).
+  List<TreadlingEntry> get entries => treadlingEntries(draft.drive.rows, draft.shotGroups);
 
   /// Set every pick in entry [index]'s run (picks `startPick` to `endPick - 1`) to press [ids],
   /// canonicalized ascending. Pure; returns `this` on a no-op.
@@ -413,15 +421,19 @@ class EditorState {
       for (var p = 0; p < rows.length; p++)
         (p >= e.startPick && p < e.endPick) ? shed : List<int>.of(rows[p]),
     ];
-    final next = draft.copyWith(drive: _driveFromRows(newRows));
+    // A shot group row changes all its passes together, so it stays one shed; the sound check is the
+    // safety net for any other group.
+    final next = withSoundShotGroups(draft.copyWith(drive: _driveFromRows(newRows)));
     return next == draft ? this : copyWith(draft: next);
   }
 
   /// Set entry [index]'s pick COUNT (>= 1) by adding or removing picks at the END of its run. Each
-  /// added pick is a copy of the run's LAST pick (its shed, weft color, role, and weft thickness when
-  /// the draft tracks thickness); a shrink removes picks from the end. Either way the run stays one entry
-  /// (it keeps at least one pick between its neighbours) and every other pick is untouched, so the
-  /// change is exactly "append/remove N picks after pick `endPick - 1`". Pure; no-op when unchanged.
+  /// added pick is a copy of the run's LAST pick (its shed, weft color, role, shuttle, strands, and
+  /// weft thickness when the draft tracks thickness); a shrink removes picks from the end. On a shot
+  /// group's row the added picks are more passes of that group (a double shot becomes a triple shot),
+  /// and shrinking it to one pick dissolves the group. Either way the run stays one entry and every
+  /// other pick is untouched, so the change is exactly "append/remove N picks after pick
+  /// `endPick - 1`". Pure; no-op when unchanged.
   EditorState setEntryCount(int index, int count) {
     if (count < 1) throw RangeError.range(count, 1, null, 'count');
     final es = entries;
@@ -431,7 +443,11 @@ class EditorState {
     if (count > e.count) {
       final last = e.endPick - 1;
       return _insertPicks(e.endPick, count - e.count, e.shed, _weftColorAt(last),
-          _weftThicknessAt(last), draft.roleAt(last));
+          _weftThicknessAt(last),
+          role: draft.roleAt(last),
+          shuttle: draft.shuttleAt(last),
+          strands: draft.strandsAt(last),
+          joinGroup: e.grouped);
     }
     return _removePicks(e.endPick - (e.count - count), e.count - count);
   }
@@ -473,10 +489,105 @@ class EditorState {
     return next == draft ? this : copyWith(draft: next);
   }
 
+  // --- SHOT GROUPS, SHUTTLES, STRANDS (M8-06). Like roles these only annotate picks: they never change
+  // a shed, a color, or the pick count. ---
+
+  /// Group the [count] picks from 0-based [start] as ONE shot (passes in one shed). Throws when the
+  /// picks are not inside the draft, fewer than two, not all in one shed, or overlap another group:
+  /// the Book view offers grouping only on a row of identical sheds. Pure; `this` when already so.
+  EditorState withShotGroup(int start, int count) {
+    final end = start + count;
+    if (count < 2 || start < 0 || end > draft.picks) {
+      throw RangeError('a shot group needs at least 2 picks inside 0..${draft.picks}, got '
+          '$start..$end');
+    }
+    for (var p = start + 1; p < end; p++) {
+      if (!sameRaisedShed(draft, start, p)) {
+        throw StateError('picks ${start + 1} and ${p + 1} are not in one shed');
+      }
+    }
+    final group = ShotGroup(start, count);
+    if (draft.shotGroups.contains(group)) return this;
+    if (draft.shotGroups.any((g) => g.start < end && start < g.end)) {
+      throw StateError('picks ${start + 1} to $end overlap another shot group');
+    }
+    return copyWith(draft: draft.copyWith(shotGroups: [...draft.shotGroups, group]));
+  }
+
+  /// Dissolve the shot group that starts at 0-based [start]: its picks become separate picks again
+  /// (sheds unchanged). Pure; `this` when no group starts there.
+  EditorState withoutShotGroup(int start) {
+    if (!draft.shotGroups.any((g) => g.start == start)) return this;
+    return copyWith(
+        draft: draft.copyWith(shotGroups: [
+      for (final g in draft.shotGroups)
+        if (g.start != start) g,
+    ]));
+  }
+
+  /// Set the shuttle of picks [start] to [end] - 1 (0-based, half-open) to [shuttle]
+  /// (1..[kMaxShuttles], or null for unknown). Pure; `this` on a no-op. Throws on a bad range or
+  /// shuttle.
+  EditorState withPickShuttles(int start, int end, int? shuttle) {
+    _checkPickRange(start, end);
+    if (shuttle != null && (shuttle < 1 || shuttle > kMaxShuttles)) {
+      throw RangeError.range(shuttle, 1, kMaxShuttles, 'shuttle');
+    }
+    final n = draft.picks;
+    final next = draft.copyWith(pickShuttles: [
+      for (var p = 0; p < n; p++) (p >= start && p < end) ? shuttle : draft.shuttleAt(p),
+    ]);
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// Set [shuttle]'s starting side (null clears it). Pure; `this` on a no-op.
+  EditorState withShuttleStart(int shuttle, ShuttleSide? side) {
+    if (shuttle < 1 || shuttle > kMaxShuttles) {
+      throw RangeError.range(shuttle, 1, kMaxShuttles, 'shuttle');
+    }
+    final starts = Map<int, ShuttleSide>.of(draft.shuttleStarts);
+    if (side == null) {
+      starts.remove(shuttle);
+    } else {
+      starts[shuttle] = side;
+    }
+    final next = draft.copyWith(shuttleStarts: starts);
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  /// Set the strands carried in each pass of picks [start] to [end] - 1 to [strands]
+  /// (1..[kMaxStrands]). Pure; `this` on a no-op.
+  EditorState withPickStrands(int start, int end, int strands) {
+    _checkPickRange(start, end);
+    if (strands < 1 || strands > kMaxStrands) {
+      throw RangeError.range(strands, 1, kMaxStrands, 'strands');
+    }
+    final n = draft.picks;
+    final next = draft.copyWith(pickStrands: [
+      for (var p = 0; p < n; p++) (p >= start && p < end) ? strands : draft.strandsAt(p),
+    ]);
+    return next == draft ? this : copyWith(draft: next);
+  }
+
+  void _checkPickRange(int start, int end) {
+    final n = draft.picks;
+    if (start < 0 || end > n || start >= end) {
+      throw RangeError('pick range $start..$end is not inside 0..$n');
+    }
+  }
+
   /// The roles re-coupled to [picks] after the drive grew or shrank: kept, padded with unknown, or
   /// truncated. Null (leave unchanged) when the draft records no roles.
   List<PickRole>? _rolesForPickCount(int picks) =>
       draft.pickRoles.isEmpty ? null : _padded(draft.pickRoles, picks, PickRole.unknown);
+
+  /// The shuttles re-coupled to [picks] (padded with unknown). Null when none are recorded.
+  List<int?>? _shuttlesForPickCount(int picks) =>
+      draft.pickShuttles.isEmpty ? null : _padded<int?>(draft.pickShuttles, picks, null);
+
+  /// The strands re-coupled to [picks] (padded with one strand). Null when none are recorded.
+  List<int>? _strandsForPickCount(int picks) =>
+      draft.pickStrands.isEmpty ? null : _padded(draft.pickStrands, picks, 1);
 
   int _weftColorAt(int pick) =>
       (pick >= 0 && pick < draft.weftColors.length) ? draft.weftColors[pick] : 0;
@@ -498,12 +609,14 @@ class EditorState {
   static List<T> _padded<T>(List<T> xs, int len, T fill) =>
       [for (var i = 0; i < len; i++) i < xs.length ? xs[i] : fill];
 
-  /// Insert [n] picks at 0-based [at], each pressing [shed] with weft color [color], role [role] (and
-  /// [thickness] when the draft tracks per-pick thickness). Keeps treadling/liftplan, weftColors,
-  /// weftThickness, and pickRoles coupled to the new pick count, and drops the per-pick retained WIF
+  /// Insert [n] picks at 0-based [at], each pressing [shed] with weft color [color], role [role],
+  /// [shuttle], [strands] (and [thickness] when the draft tracks per-pick thickness). Keeps
+  /// treadling/liftplan, weftColors, weftThickness, pickRoles, pickShuttles, and pickStrands coupled to
+  /// the new pick count, moves the shot groups with their picks ([joinGroup]: the new picks are more
+  /// passes of the group ending at [at]; see weft_work.dart), and drops the per-pick retained WIF
   /// sections whose rows would now desync (the engine resize rule).
   EditorState _insertPicks(int at, int n, List<int> shed, int color, double? thickness,
-      [PickRole role = PickRole.unknown]) {
+      {PickRole role = PickRole.unknown, int? shuttle, int strands = 1, bool joinGroup = false}) {
     if (n <= 0) return this;
     final rows = draft.drive.rows;
     final cut = at.clamp(0, rows.length);
@@ -528,13 +641,30 @@ class EditorState {
             final p = _padded(pr, rows.length, PickRole.unknown);
             return [...p.sublist(0, cut), for (var k = 0; k < n; k++) role, ...p.sublist(cut)];
           })();
-    return copyWith(
-        draft: draft.copyWith(
-            drive: _driveFromRows(newRows),
-            weftColors: newWc,
-            weftThickness: newWt,
-            pickRoles: newPr,
-            retained: retainedForPickCount(draft, newRows.length)));
+    final ps = draft.pickShuttles;
+    final newPs = ps.isEmpty && shuttle == null
+        ? ps
+        : (() {
+            final p = _padded<int?>(ps, rows.length, null);
+            return [...p.sublist(0, cut), for (var k = 0; k < n; k++) shuttle, ...p.sublist(cut)];
+          })();
+    final st = draft.pickStrands;
+    final newSt = st.isEmpty && strands == 1
+        ? st
+        : (() {
+            final p = _padded(st, rows.length, 1);
+            return [...p.sublist(0, cut), for (var k = 0; k < n; k++) strands, ...p.sublist(cut)];
+          })();
+    final next = draft.copyWith(
+        drive: _driveFromRows(newRows),
+        weftColors: newWc,
+        weftThickness: newWt,
+        pickRoles: newPr,
+        pickShuttles: newPs,
+        pickStrands: newSt,
+        shotGroups: shotGroupsAfterInsert(draft.shotGroups, cut, n, joinGroupEndingAt: joinGroup),
+        retained: retainedForPickCount(draft, newRows.length));
+    return copyWith(draft: withSoundShotGroups(next));
   }
 
   /// Remove [n] picks starting at 0-based [at], keeping the per-pick bands coupled. A bad range is a
@@ -561,12 +691,29 @@ class EditorState {
             final p = _padded(pr, rows.length, PickRole.unknown);
             return [for (var i = 0; i < p.length; i++) if (keep(i)) p[i]];
           })();
+    final ps = draft.pickShuttles;
+    final newPs = ps.isEmpty
+        ? ps
+        : (() {
+            final p = _padded<int?>(ps, rows.length, null);
+            return [for (var i = 0; i < p.length; i++) if (keep(i)) p[i]];
+          })();
+    final st = draft.pickStrands;
+    final newSt = st.isEmpty
+        ? st
+        : (() {
+            final p = _padded(st, rows.length, 1);
+            return [for (var i = 0; i < p.length; i++) if (keep(i)) p[i]];
+          })();
     return copyWith(
         draft: draft.copyWith(
             drive: _driveFromRows(newRows),
             weftColors: newWc,
             weftThickness: newWt,
             pickRoles: newPr,
+            pickShuttles: newPs,
+            pickStrands: newSt,
+            shotGroups: shotGroupsAfterRemove(draft.shotGroups, at, end - at),
             retained: retainedForPickCount(draft, newRows.length)));
   }
 

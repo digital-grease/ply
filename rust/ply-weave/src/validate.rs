@@ -2,13 +2,16 @@
 //! can surface problems live (shafts out of range, color counts that don't line up,
 //! treadles with no tie-up, etc.).
 
-use crate::draft::{Draft, Drive, PickRole, TabbyRule};
+use crate::draft::{Draft, Drive, PickRole, ShotGroup, TabbyRule, MAX_SHUTTLES, MAX_STRANDS};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Severity {
     Error,
     Warning,
+    /// Advice for the weaver about a deliberate instruction, not a problem with the draft (e.g. how
+    /// to catch the weft at the selvedge on a double shot).
+    Info,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -200,6 +203,8 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
         );
     }
 
+    weft_work_issues(draft, &mut issues);
+
     // A shaft that is THREADED but never RAISED by any pick floats the whole cloth length on the
     // back. Every such shaft is in range, so nothing above catches it, yet the cloth is structurally
     // broken — e.g. a satin whose move number shares a factor with the shaft count. `raised_shafts`
@@ -229,6 +234,234 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
     }
 
     issues
+}
+
+/// Shuttles, strands, and shot groups (M8-06, ADR 0009): the per-pick lists stay coupled to the picks,
+/// values stay in range, every shot group is one shed, and the working sequence is checked where a
+/// weaver would stumble: two passes of one shuttle in one shed with no group (the weft is not caught),
+/// and, as advice, every grouped return pass (the weft must be caught at the selvedge).
+fn weft_work_issues(draft: &Draft, issues: &mut Vec<ValidationIssue>) {
+    let work = &draft.weft_work;
+    let picks = draft.picks();
+    let mut push = |severity: Severity, message: String| {
+        issues.push(ValidationIssue { severity, message });
+    };
+    if !work.shuttles.is_empty() && work.shuttles.len() != picks {
+        push(
+            Severity::Error,
+            format!(
+                "pick shuttle count ({}) != picks ({picks})",
+                work.shuttles.len()
+            ),
+        );
+    }
+    if !work.strands.is_empty() && work.strands.len() != picks {
+        push(
+            Severity::Error,
+            format!(
+                "strands per pick count ({}) != picks ({picks})",
+                work.strands.len()
+            ),
+        );
+    }
+    for (p, s) in work.shuttles.iter().enumerate() {
+        if let Some(s) = s.filter(|s| s.0 == 0 || s.0 > MAX_SHUTTLES) {
+            push(
+                Severity::Error,
+                format!(
+                    "pick {} uses shuttle {} outside 1..={MAX_SHUTTLES}",
+                    p + 1,
+                    s.0
+                ),
+            );
+        }
+    }
+    for s in work.shuttle_starts.keys() {
+        if s.0 == 0 || s.0 > MAX_SHUTTLES {
+            push(
+                Severity::Error,
+                format!(
+                    "shuttle {} has a starting side but shuttles are numbered 1..={MAX_SHUTTLES}",
+                    s.0
+                ),
+            );
+        }
+    }
+    for (p, &n) in work.strands.iter().enumerate() {
+        if n == 0 || n > MAX_STRANDS {
+            push(
+                Severity::Error,
+                format!(
+                    "pick {} carries {n} strands, outside 1..={MAX_STRANDS}",
+                    p + 1
+                ),
+            );
+        }
+    }
+
+    // Shot groups: each is a range of at least two picks inside the draft, the groups do not overlap,
+    // and every pick of a group raises the same shafts (a group is ONE shed).
+    let mut groups: Vec<ShotGroup> = work.shot_groups.clone();
+    groups.sort_by_key(|g| (g.start, g.picks));
+    let mut sound: Vec<ShotGroup> = Vec::new();
+    for g in &groups {
+        let range = picks_range(g.start, g.end());
+        if g.picks < 2 {
+            push(
+                Severity::Error,
+                format!(
+                    "the shot group at pick {} has {} pick{}; a shot group needs at least 2",
+                    g.start + 1,
+                    g.picks,
+                    if g.picks == 1 { "" } else { "s" }
+                ),
+            );
+        } else if g.end() > picks {
+            push(
+                Severity::Error,
+                format!("the shot group at {range} reaches past the last pick ({picks})"),
+            );
+        } else if let Some(prev) = sound.last().filter(|prev| prev.end() > g.start) {
+            push(
+                Severity::Error,
+                format!(
+                    "the shot groups at {} and {range} overlap",
+                    picks_range(prev.start, prev.end())
+                ),
+            );
+        } else {
+            let off: Vec<usize> = (g.start + 1..g.end())
+                .filter(|&p| !draft.same_shed(g.start, p))
+                .collect();
+            if off.is_empty() {
+                sound.push(*g);
+            } else {
+                push(
+                    Severity::Error,
+                    format!(
+                        "{range} are grouped as one shot, but {} {} a different shed from pick {}",
+                        noun_picks(&off),
+                        if off.len() == 1 { "uses" } else { "use" },
+                        g.start + 1
+                    ),
+                );
+            }
+        }
+    }
+
+    // Two passes of ONE shuttle in ONE shed, not grouped: the second pass lies in the same shed as the
+    // first, so the weft turns at the selvedge without interlacing and pulls back out. Either the
+    // weaver meant a double shot (group it) or the draft has a mistake. Reported as maximal runs.
+    let grouped_together =
+        |a: usize, b: usize| sound.iter().any(|g| g.contains(a) && g.contains(b));
+    let mut runs: Vec<(usize, usize)> = Vec::new(); // (first, last) 0-based, inclusive
+    for p in 1..picks {
+        let same = draft.shuttle(p).is_some()
+            && draft.shuttle(p) == draft.shuttle(p - 1)
+            && !grouped_together(p - 1, p)
+            && draft.same_shed(p - 1, p);
+        if same {
+            match runs.last_mut() {
+                Some(run) if run.1 == p - 1 => run.1 = p,
+                _ => runs.push((p - 1, p)),
+            }
+        }
+    }
+    if !runs.is_empty() {
+        let message = if let [(first, last)] = runs[..] {
+            format!(
+                "{} use the same shed and shuttle {} but are not grouped as one shot, so the weft \
+                 will not catch the selvedge",
+                picks_range(first, last + 1),
+                draft.shuttle(first).map_or(0, |s| s.0)
+            )
+        } else {
+            format!(
+                "{} each use one shed and one shuttle but are not grouped as one shot, so the weft \
+                 will not catch the selvedge",
+                range_list(&runs)
+            )
+        };
+        push(Severity::Warning, message);
+    }
+
+    // Advice for every sound group that a shuttle may pass through twice (consecutive passes not
+    // known to be on different shuttles): the return pass must be caught at the selvedge.
+    let returning: Vec<(usize, usize)> = sound
+        .iter()
+        .filter(|g| {
+            (g.start + 1..g.end()).any(|p| {
+                let (a, b) = (draft.shuttle(p - 1), draft.shuttle(p));
+                a.is_none() || b.is_none() || a == b
+            })
+        })
+        .map(|g| (g.start, g.end() - 1))
+        .collect();
+    if let [(first, last)] = returning[..] {
+        push(
+            Severity::Info,
+            format!(
+                "{} are a {}: a shuttle that passes again in the same shed needs the weft caught at \
+                 the selvedge, for example with a floating selvedge",
+                picks_range(first, last + 1),
+                shot_name(last + 1 - first)
+            ),
+        );
+    } else if !returning.is_empty() {
+        push(
+            Severity::Info,
+            format!(
+                "{} shot groups ({}) pass more than once in one shed: a shuttle that passes again \
+                 in the same shed needs the weft caught at the selvedge, for example with a floating \
+                 selvedge",
+                returning.len(),
+                range_list(&returning)
+            ),
+        );
+    }
+}
+
+/// "double shot", "triple shot", or "group of 5 passes" for a shot group of `passes` picks.
+fn shot_name(passes: usize) -> String {
+    match passes {
+        2 => "double shot".to_string(),
+        3 => "triple shot".to_string(),
+        n => format!("group of {n} passes in one shed"),
+    }
+}
+
+/// "pick 4" or "picks 4 to 6" (or "picks 4 and 5") for the 0-based half-open range `start..end`.
+fn picks_range(start: usize, end: usize) -> String {
+    let first = start.saturating_add(1);
+    match end.saturating_sub(start) {
+        0 | 1 => format!("pick {first}"),
+        2 => format!("picks {first} and {end}"),
+        _ => format!("picks {first} to {end}"),
+    }
+}
+
+/// "pick 4" or "picks 4, 6 and 8" (via [`pick_list`]) for 0-based picks.
+fn noun_picks(picks: &[usize]) -> String {
+    let noun = if picks.len() == 1 { "pick" } else { "picks" };
+    format!("{noun} {}", pick_list(picks))
+}
+
+/// Up to three inclusive 0-based ranges as "picks 4 and 5, picks 9 to 11 and picks 20 and 21", then
+/// "and N more".
+fn range_list(runs: &[(usize, usize)]) -> String {
+    const SHOWN: usize = 3;
+    let parts: Vec<String> = runs
+        .iter()
+        .take(SHOWN)
+        .map(|&(a, b)| picks_range(a, b + 1))
+        .collect();
+    if runs.len() > SHOWN {
+        return format!("{} and {} more", parts.join(", "), runs.len() - SHOWN);
+    }
+    match parts.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => parts.join(""),
+    }
 }
 
 /// "4", "4 and 6", "4, 6 and 8", or "4, 6, 8, 10, 12 and 3 more" for 0-based picks (shown 1-based),
@@ -283,6 +516,7 @@ mod tests {
             notes: String::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         };
         let issues = validate(&d);
         assert!(
@@ -383,6 +617,180 @@ mod tests {
         );
         // Pattern picks on any shed are fine.
         assert!(validate(&roles_draft(&[3, 4], vec![Pattern, Pattern])).is_empty());
+    }
+
+    // --- Shuttles, strands, and shot groups (M8-06, ADR 0009) ---
+
+    /// The overshot-style draft with treadles 1, 1, 3, 2, 2, 2, 4 (pattern A twice, tabby a, pattern
+    /// B three times, tabby b), every pick unknown role.
+    fn shots_draft() -> Draft {
+        roles_draft(&[1, 1, 3, 2, 2, 2, 4], vec![])
+    }
+
+    fn messages(d: &Draft, severity: Severity) -> Vec<String> {
+        validate(d)
+            .into_iter()
+            .filter(|i| i.severity == severity)
+            .map(|i| i.message)
+            .collect()
+    }
+
+    fn shuttles(ids: &[u8]) -> Vec<Option<ShuttleId>> {
+        ids.iter()
+            .map(|&s| (s > 0).then_some(ShuttleId(s)))
+            .collect()
+    }
+
+    #[test]
+    fn a_shot_group_on_mixed_sheds_is_an_error_naming_the_picks() {
+        let mut d = shots_draft();
+        d.weft_work.shot_groups = vec![ShotGroup { start: 0, picks: 3 }];
+        assert_eq!(
+            messages(&d, Severity::Error),
+            vec!["picks 1 to 3 are grouped as one shot, but pick 3 uses a different shed from pick 1"]
+        );
+        d.weft_work.shot_groups = vec![ShotGroup { start: 2, picks: 5 }];
+        assert_eq!(
+            messages(&d, Severity::Error),
+            vec![
+                "picks 3 to 7 are grouped as one shot, but picks 4, 5, 6 and 7 use a different shed \
+                 from pick 3"
+            ]
+        );
+        // Same shed is clean (apart from the advice note).
+        d.weft_work.shot_groups = vec![ShotGroup { start: 3, picks: 3 }];
+        assert!(messages(&d, Severity::Error).is_empty());
+    }
+
+    #[test]
+    fn malformed_groups_and_out_of_range_values_are_errors() {
+        let mut d = shots_draft();
+        d.weft_work.shot_groups = vec![
+            ShotGroup { start: 0, picks: 2 },
+            ShotGroup { start: 1, picks: 2 },
+            ShotGroup { start: 2, picks: 1 },
+            ShotGroup { start: 5, picks: 3 },
+        ];
+        d.weft_work.shuttles = shuttles(&[1, 9, 0, 0, 0, 0, 0]);
+        d.weft_work.strands = vec![1, 0, 5, 1, 1, 1];
+        d.weft_work.shuttle_starts.insert(ShuttleId(12), Side::Left);
+        assert_eq!(
+            messages(&d, Severity::Error),
+            vec![
+                "strands per pick count (6) != picks (7)",
+                "pick 2 uses shuttle 9 outside 1..=8",
+                "shuttle 12 has a starting side but shuttles are numbered 1..=8",
+                "pick 2 carries 0 strands, outside 1..=4",
+                "pick 3 carries 5 strands, outside 1..=4",
+                "the shot groups at picks 1 and 2 and picks 2 and 3 overlap",
+                "the shot group at pick 3 has 1 pick; a shot group needs at least 2",
+                "the shot group at picks 6 to 8 reaches past the last pick (7)",
+            ]
+        );
+        let mut short = shots_draft();
+        short.weft_work.shuttles = shuttles(&[1, 1]);
+        assert_eq!(
+            messages(&short, Severity::Error),
+            vec!["pick shuttle count (2) != picks (7)"]
+        );
+    }
+
+    #[test]
+    fn one_shuttle_twice_in_one_shed_without_a_group_is_a_warning() {
+        let mut d = shots_draft();
+        d.weft_work.shuttles = shuttles(&[1, 1, 2, 1, 1, 1, 2]);
+        assert_eq!(
+            messages(&d, Severity::Warning),
+            vec![
+                "picks 1 and 2 and picks 4 to 6 each use one shed and one shuttle but are not \
+                 grouped as one shot, so the weft will not catch the selvedge"
+            ]
+        );
+        // One run reads with its shuttle.
+        d.weft_work.shuttles = shuttles(&[1, 2, 2, 1, 1, 2, 2]);
+        assert_eq!(
+            messages(&d, Severity::Warning),
+            vec![
+                "picks 4 and 5 use the same shed and shuttle 1 but are not grouped as one shot, so \
+                 the weft will not catch the selvedge"
+            ]
+        );
+        // Grouped, it is a deliberate double shot: no warning, and an advice note instead.
+        d.weft_work.shot_groups = vec![ShotGroup { start: 3, picks: 2 }];
+        assert!(messages(&d, Severity::Warning).is_empty());
+        assert_eq!(
+            messages(&d, Severity::Info),
+            vec![
+                "picks 4 and 5 are a double shot: a shuttle that passes again in the same shed \
+                 needs the weft caught at the selvedge, for example with a floating selvedge"
+            ]
+        );
+        // Different shuttles in one shed, or unknown shuttles: nothing to warn about.
+        d.weft_work.shot_groups.clear();
+        d.weft_work.shuttles = shuttles(&[1, 2, 1, 2, 1, 2, 1]);
+        assert!(messages(&d, Severity::Warning).is_empty());
+        d.weft_work.shuttles = shuttles(&[1, 0, 1, 1, 0, 1, 1]);
+        assert!(messages(&d, Severity::Warning).is_empty());
+        // Same shuttle on consecutive picks in DIFFERENT sheds is ordinary weaving.
+        d.weft_work.shuttles = shuttles(&[1, 2, 1, 1, 2, 1, 1]);
+        assert!(messages(&d, Severity::Warning).is_empty());
+    }
+
+    #[test]
+    fn grouped_return_passes_get_one_advice_note() {
+        let mut d = shots_draft();
+        // No shuttles recorded: a group may be one shuttle passing twice, so the note applies.
+        d.weft_work.shot_groups = vec![
+            ShotGroup { start: 0, picks: 2 },
+            ShotGroup { start: 3, picks: 3 },
+        ];
+        assert_eq!(
+            messages(&d, Severity::Info),
+            vec![
+                "2 shot groups (picks 1 and 2 and picks 4 to 6) pass more than once in one shed: a \
+                 shuttle that passes again in the same shed needs the weft caught at the selvedge, \
+                 for example with a floating selvedge"
+            ]
+        );
+        assert!(validate(&d).iter().all(|i| i.severity != Severity::Error));
+        // A triple shot alone names itself.
+        d.weft_work.shot_groups = vec![ShotGroup { start: 3, picks: 3 }];
+        assert!(messages(&d, Severity::Info)[0].starts_with("picks 4 to 6 are a triple shot: "));
+        // Every pass on a different shuttle than the one before: no return pass, no note.
+        d.weft_work.shuttles = shuttles(&[1, 1, 1, 1, 2, 1, 1]);
+        assert!(messages(&d, Severity::Info).is_empty());
+        // Four passes name the count.
+        let mut four = roles_draft(&[1, 1, 1, 1], vec![]);
+        four.weft_work.shot_groups = vec![ShotGroup { start: 0, picks: 4 }];
+        assert!(messages(&four, Severity::Info)[0]
+            .starts_with("picks 1 to 4 are a group of 4 passes in one shed: "));
+    }
+
+    /// A group from a hostile DTO (a start or length near the integer limit) is reported, never a
+    /// panic.
+    #[test]
+    fn an_absurd_group_is_an_error_not_a_panic() {
+        let mut d = shots_draft();
+        d.weft_work.shot_groups = vec![
+            ShotGroup {
+                start: usize::MAX,
+                picks: 2,
+            },
+            ShotGroup {
+                start: 1,
+                picks: usize::MAX,
+            },
+        ];
+        let errors = messages(&d, Severity::Error);
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(errors
+            .iter()
+            .all(|m| m.contains("reaches past the last pick (7)")));
+        // Making them sound cuts at the last pick (the resize rule) and keeps one-shed runs only.
+        assert_eq!(
+            d.sound_shot_groups(),
+            vec![ShotGroup { start: 3, picks: 3 }]
+        );
     }
 
     #[test]

@@ -25,7 +25,8 @@ Implementation: `rust/ply-weave/src/wif.rs` (`parse` / `write`).
 | `[TEXT]` `Title` | `Draft.name` | ✅ (read/written) |
 | `[COLOR PALETTE]` `Range`, `Form` | palette range/format | ✅ (any `Range` scaled to 0..255; re-export normalizes to 255) |
 | `[WARP THICKNESS]`, `[WEFT THICKNESS]` | `Draft.warp_thickness` / `weft_thickness` | ✅ (modeled; drives variable-cell rendering) |
-| `[PRIVATE PLY PICK ROLES]` (Ply's WIF 1.1 private section) | `Draft.pick_roles` | ✅ (written only when some role is known; see below) |
+| `[PRIVATE PLY PICKS]` (Ply's WIF 1.1 private section) | `Draft.pick_roles`, `Draft.weft_work` (shuttles, starting sides, strands, shot groups) | ✅ (written only when something is recorded; see below) |
+| `[PRIVATE PLY PICK ROLES]` (the earlier roles-only layout) | `Draft.pick_roles` | read only (`Version=1`); the next save writes `[PRIVATE PLY PICKS]` |
 | other unmodeled sections (spacing, vendor, other programs' `[PRIVATE ...]`) | `Draft.retained` | ✅ (kept verbatim, re-emitted) |
 | `[NOTES]` | `Draft.notes` | ✅ |
 
@@ -39,32 +40,41 @@ The common shaft-loom draft: geometry + threading + (tie-up & treadling **or** l
 color table + warp/weft color sequences. `wif::tests::roundtrips_through_write_then_parse`
 asserts `parse → write → parse` is stable for that case.
 
-## Pick roles (Ply private section)
+## Per-pick working data (Ply private section)
 
-Per-pick roles (pattern, tabby, top layer, bottom layer) are not part of WIF proper. WIF 1.1 reserves
+Per-pick roles (pattern, tabby, top layer, bottom layer), shuttles and their starting sides, strands
+per pick, and shot groups (double shots and longer) are not part of WIF proper. WIF 1.1 reserves
 `[PRIVATE <SourceID> <SectionName>]` sections for program-specific data, and readers that do not
-recognize one skip it, so Ply stores roles in `[PRIVATE PLY PICK ROLES]` (Source ID `PLY`, listed in
-`[CONTENTS]` as `PRIVATE PLY PICK ROLES=true`):
+recognize one skip it, so Ply stores them in `[PRIVATE PLY PICKS]` (Source ID `PLY`, listed in
+`[CONTENTS]` as `PRIVATE PLY PICKS=true`):
 
 ```
-[PRIVATE PLY PICK ROLES]
+[PRIVATE PLY PICKS]
 Version=1
 Picks=8
 Sheds=<fingerprint>
-1=pattern
-2=tabby
+Shuttle 1 Start=right
+Shot 5=2
+1=role pattern, shuttle 1, strands 2
+2=role tabby, shuttle 2
 ```
 
-`Version` is the section layout (a higher one is kept verbatim and not read). Only picks with a known
-role are listed; the tokens are `pattern`, `tabby`, `top-layer`, `bottom-layer`. `Picks` and `Sheds`
-tie the roles to the cloth: `Sheds` is FNV-1a 64-bit over each pick's raised shafts (ascending,
-comma-separated, each pick followed by `;`) as 16 lowercase hex digits, so it is the same for any
-re-expression of one cloth (tie-up or liftplan, either shed) and changes when picks are added,
-removed, reordered, or re-shedded. Roles are read only when both match, so a file whose picks another
-program changed opens with every role unknown rather than with roles on the wrong picks. A WIF without
-the section (every third-party file) opens with every role unknown; roles are never guessed. A
-program that re-saves a Ply file may drop private sections (WIF does not require keeping them); the
-woven draft is unaffected, only the roles are lost.
+`Version` is the section layout (a higher one is kept verbatim and not read). Only picks with
+something recorded are listed, as comma-separated `name value` attributes: `role` (`pattern`,
+`tabby`, `top-layer`, `bottom-layer`), `shuttle` (1 to 8), `strands` (1 to 4; 1 is not written).
+`Shuttle <n> Start` is that shuttle's starting side (`left` / `right`, as the weaver sits at the
+loom); pass directions are derived from it, never stored. `Shot <first pick>=<passes>` is a shot
+group: that many passes in one shed. `Picks` and `Sheds` tie the data to the cloth: `Sheds` is FNV-1a
+64-bit over each pick's raised shafts (ascending, comma-separated, each pick followed by `;`) as 16
+lowercase hex digits, so it is the same for any re-expression of one cloth (tie-up or liftplan,
+either shed) and changes when picks are added, removed, reordered, or re-shedded. The section is read
+only when both match, so a file whose picks another program changed opens with all of it unknown
+rather than on the wrong picks. A WIF without the section (every third-party file) opens with
+everything unknown; nothing is guessed (not shuttles from colors, not double shots from repeated
+treadles). A program that re-saves a Ply file may drop private sections (WIF does not require
+keeping them); the woven draft is unaffected (a double shot is two consecutive picks on one shed in
+any reader), only the working data is lost. The earlier `[PRIVATE PLY PICK ROLES]` layout (`Version=1`,
+`pick=role` lines) is still read for roles. Rationale: ADR 0008 and ADR 0009 (private).
 
 ## Known gaps / caveats
 

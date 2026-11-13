@@ -511,6 +511,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // A shot group an edit split or dissolved as a side effect (a painted shed, a pruned treadle) is
+    // said once, so a deliberate double shot never disappears silently.
+    ref.listen<String?>(shotGroupNoticeProvider, (_, notice) {
+      if (notice == null) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(notice)));
+      ref.read(shotGroupNoticeProvider.notifier).state = null;
+    });
     final ready = !_loading && _error == null;
     // Narrow select: the AppBar only needs the two undo/redo booleans, which flip at stroke
     // boundaries, so a multi-cell drag does not rebuild the AppBar per painted cell.

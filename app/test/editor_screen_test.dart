@@ -1192,4 +1192,41 @@ void main() {
           reason: 'the resumed save bailed at !mounted (saveCount stays 0) before persisting');
     });
   });
+
+  testWidgets('a shot group split by a shed change is announced once in a SnackBar (M8-06)',
+      (tester) async {
+    final container = await pumpEditor(tester, FakeRepo());
+    // Let the push transition finish, so only the editor's Scaffold is on stage for the SnackBar.
+    await tester.pump(const Duration(seconds: 1));
+    final n = container.read(draftEditorProvider.notifier);
+    final d = container.read(draftEditorProvider).draft;
+    final grouped = d.copyWith(
+      drive: (d.drive as DraftTreadled).copyWith(treadling: const [
+        [1],
+        [1],
+        [3],
+        [4],
+      ]),
+      shotGroups: const [ShotGroup(0, 2)],
+    );
+    n.commitEdit(grouped);
+    await tester.pump();
+    expect(find.byType(SnackBar), findsNothing, reason: 'adding a group is not a side effect');
+    // Pick 2 moves to treadle 2 (as a paint on the draft grid would): the double shot dissolves.
+    n.commitEdit(grouped.copyWith(
+        drive: (grouped.drive as DraftTreadled).copyWith(treadling: const [
+      [1],
+      [2],
+      [3],
+      [4],
+    ])));
+    await tester.pump();
+    await tester.pump();
+    expect(container.read(draftEditorProvider).draft.shotGroups, isEmpty);
+    expect(
+        find.text('Picks 1 to 2 are no longer a double shot, because their sheds now differ. '
+            'Every pass of a shot group uses the same shed.'),
+        findsOneWidget);
+    expect(container.read(shotGroupNoticeProvider), isNull, reason: 'shown once, then cleared');
+  });
 }

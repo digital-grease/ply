@@ -111,6 +111,12 @@ final zoomUserSetProvider = StateProvider<bool>((ref) => false);
 /// it lives off EditorState and never touches undo/dedup.
 final overshotTreadlingProvider = StateProvider<bool>((ref) => false);
 
+/// The latest notice about shot groups that an edit changed as a SIDE EFFECT (a member's shed was
+/// painted on the draft grid, a resize pruned a treadle, the shed direction changed), in plain words,
+/// or null. Set by [DraftEditorNotifier]; the editor screen shows it once and clears it. Explicit
+/// group edits in the Book view never set it.
+final shotGroupNoticeProvider = StateProvider<String?>((ref) => null);
+
 /// The loom type of the open draft. Seeded on [DraftEditorNotifier.load] from the sidecar
 /// [DraftMeta] (a saved draft) or the new-draft choice, written back into the sidecar on save.
 /// Ephemeral editor chrome (like [zoomCellProvider]) — it is metadata, not part of the rendered

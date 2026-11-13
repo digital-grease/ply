@@ -708,6 +708,7 @@ pub fn generate(params: &ShadowParams) -> Result<Draft, ShadowError> {
         notes: recipe(params, ends, picks, unit.len()),
         retained: Vec::new(),
         pick_roles: Vec::new(),
+        weft_work: Default::default(),
     })
 }
 

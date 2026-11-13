@@ -12,6 +12,7 @@ import '../models/draft_doc.dart';
 import '../models/draft_region.dart';
 import '../models/editor_state.dart';
 import '../models/use_tabby.dart';
+import '../models/weft_work.dart';
 import 'editor_providers.dart';
 
 /// The single source of truth for the open draft and its undo history.
@@ -55,6 +56,29 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   /// Apply confirmed per-pick roles (the "Mark tabby picks" proposal) as one undo entry. See
   /// [EditorState.withPickRoleMap].
   void applyPickRoles(Map<int, PickRole> roles) => commitEdit(state.withPickRoleMap(roles).draft);
+
+  /// Book view: group the [count] picks from [start] as one shot (passes in one shed), as one undo
+  /// entry. See [EditorState.withShotGroup].
+  void groupShot(int start, int count) => _commitExplicit(state.withShotGroup(start, count).draft);
+
+  /// Book view: make the shot group at [start] separate picks again, as one undo entry. See
+  /// [EditorState.withoutShotGroup].
+  void ungroupShot(int start) => _commitExplicit(state.withoutShotGroup(start).draft);
+
+  /// Set the shuttle (null = unknown) of picks [start] to [end] - 1, as one undo entry. See
+  /// [EditorState.withPickShuttles].
+  void setPickShuttles(int start, int end, int? shuttle) =>
+      commitEdit(state.withPickShuttles(start, end, shuttle).draft);
+
+  /// Set [shuttle]'s starting side (null clears it), as one undo entry. See
+  /// [EditorState.withShuttleStart].
+  void setShuttleStart(int shuttle, ShuttleSide? side) =>
+      commitEdit(state.withShuttleStart(shuttle, side).draft);
+
+  /// Set the strands per pass of picks [start] to [end] - 1, as one undo entry. See
+  /// [EditorState.withPickStrands].
+  void setPickStrands(int start, int end, int strands) =>
+      commitEdit(state.withPickStrands(start, end, strands).draft);
 
   /// Run a Use tabby edit (see use_tabby.dart) on the live draft and commit the result as one undo
   /// entry. Returns null when it was committed, or the reason it was refused (nothing changes).
@@ -114,9 +138,26 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   /// the dimensions bar): committing the in-flight stroke as its own undo entry keeps the history
   /// chronological, instead of leaving `strokeBase` to push a stale pre-resize snapshot on the
   /// later pointer-up. (`load()` defends the same way; this is its twin.)
+  ///
+  /// Shot groups are made sound on the way in (a group whose picks no longer share one shed keeps only
+  /// its one-shed runs), and when that changed a group as a side effect of an edit that kept the pick
+  /// count, [shotGroupNoticeProvider] says so.
   void commitEdit(DraftDoc next) {
     _sealOpenStroke();
+    final before = state.draft;
+    state = state.commitEdit(withSoundShotGroups(next));
+    _noticeGroups(before, state.draft);
+  }
+
+  /// [commitEdit] for an explicit shot-group edit, which never raises the side-effect notice.
+  void _commitExplicit(DraftDoc next) {
+    _sealOpenStroke();
     state = state.commitEdit(next);
+  }
+
+  void _noticeGroups(DraftDoc before, DraftDoc after) {
+    final notice = shotGroupChangeNotice(before, after);
+    if (notice != null) ref.read(shotGroupNoticeProvider.notifier).state = notice;
   }
 
   // --- Drag-paint stroke driver (Phase 3.1) ----------------------------------
@@ -181,18 +222,18 @@ class DraftEditorNotifier extends Notifier<EditorState> {
     };
   }
 
-  /// End the stroke, committing it as one undo entry (or nothing if it was a net no-op).
+  /// End the stroke, committing it as one undo entry (or nothing if it was a net no-op). A shed paint
+  /// that split or dissolved a shot group raises [shotGroupNoticeProvider].
   void endStroke() {
+    final base = state.strokeBase;
     _clearStroke();
     state = state.endStroke();
+    if (base != null) _noticeGroups(base, state.draft);
   }
 
   /// Seal an open stroke as its own undo entry before a discrete commit (stripe fill, etc.).
   void _sealOpenStroke() {
-    if (state.strokeBase != null) {
-      _clearStroke();
-      state = state.endStroke();
-    }
+    if (state.strokeBase != null) endStroke();
   }
 
   void _clearStroke() {

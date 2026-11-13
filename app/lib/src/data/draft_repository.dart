@@ -14,6 +14,7 @@ import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
 import '../models/drawdown_region.dart';
 import '../models/shadow_weave_params.dart';
+import '../models/weft_work.dart' show withSoundShotGroups;
 import '../rust/api.dart';
 import '../rust/dto.dart';
 
@@ -458,7 +459,12 @@ class DraftRepository {
       return out;
     }
 
-    return base.copyWith(
+    // Shuttles and strands describe the weft, not the shed, so they stay with their picks like the
+    // weft colors (new picks: unknown shuttle, one strand). A shot group is an instruction about a
+    // shed, so a group over picks whose shed the generated treadling REPLACES is dropped; any other
+    // group is kept only while its picks still share one shed.
+    final replaced = applyTreadling ? (pickStart, pickStart + picks) : null;
+    final out = base.copyWith(
       shafts: newShafts,
       treadles: newTreadles,
       threading: threadingRows,
@@ -468,10 +474,19 @@ class DraftRepository {
       warpThickness: resizeDbls(base.warpThickness, newEnds),
       weftThickness: resizeDbls(base.weftThickness, newPicks),
       pickRoles: resizeRoles(base.pickRoles, newPicks),
+      pickShuttles:
+          base.pickShuttles.isEmpty ? null : [for (var p = 0; p < newPicks; p++) base.shuttleAt(p)],
+      pickStrands:
+          base.pickStrands.isEmpty ? null : [for (var p = 0; p < newPicks; p++) base.strandsAt(p)],
+      shotGroups: [
+        for (final g in base.shotGroups)
+          if (replaced == null || g.end <= replaced.$1 || g.start >= replaced.$2) g,
+      ],
       // Per-thread retained WARP/WEFT sections desync if a dimension changed; drop them then, else
       // keep (passing null leaves base.retained untouched).
       retained: (newEnds != base.ends || newPicks != base.picks) ? const <RetainedSection>[] : null,
     );
+    return withSoundShotGroups(out);
   }
 
   // ---------------------------------------------------------------------------
@@ -516,25 +531,31 @@ class DraftRepository {
   /// (10 = 10%, width-direction weft take-up + selvedge allowance) and converted to the engine's
   /// fraction here. Returns `(picks, totalWeft)` — `picks` is a count, `totalWeft` is in the draft's
   /// unit. (Named `estimateWeftPlan` to avoid colliding with the generated `estimateWeftDto`.)
+  ///
+  /// With a [draft] that records strands per pick, the engine counts them: the draft's picks are the
+  /// repeat, and every pick woven carries the draft's average strands per pick (M8-06). `picks` stays
+  /// the number of passes.
   Future<(int picks, double totalWeft)> estimateWeftPlan({
     required double picksPerUnit,
     required double width,
     required double wovenLength,
     required int items,
     required double takeupPercent,
+    DraftDoc? draft,
   }) async {
     // Guard the u32 wire field against silent mod-2^32 truncation (THROW-don't-truncate, as the warp
     // wrapper and `_indicesToU32` do). The UI validators cap far below; this is the backstop.
     if (items < 0 || items > 0xFFFFFFFF) throw RangeError.range(items, 0, 0xFFFFFFFF, 'items');
-    final est = await estimateWeftDto(
-      plan: WeftPlanDto(
-        picksPerUnit: picksPerUnit,
-        width: width,
-        wovenLength: wovenLength,
-        items: items,
-        takeup: takeupPercent / 100.0,
-      ),
+    final plan = WeftPlanDto(
+      picksPerUnit: picksPerUnit,
+      width: width,
+      wovenLength: wovenLength,
+      items: items,
+      takeup: takeupPercent / 100.0,
     );
+    final est = draft != null && draft.pickStrands.isNotEmpty
+        ? await estimateWeftForDraftDto(plan: plan, dto: toDto(draft))
+        : await estimateWeftDto(plan: plan);
     return (est.picks, est.totalWeft);
   }
 
@@ -842,7 +863,32 @@ class DraftRepository {
           ),
       ],
       pickRoles: [for (final r in doc.pickRoles) _roleKind(r)],
+      // Unknown shuttles cross as 0 (the wire's sentinel); ids and counts are range-checked so a
+      // corrupt value throws instead of truncating mod 256.
+      pickShuttles: Uint8List.fromList([for (final s in doc.pickShuttles) _checkU8(s ?? 0)]),
+      pickStrands: Uint8List.fromList([for (final n in doc.pickStrands) _checkU8(n)]),
+      shotGroups: [
+        for (final g in doc.shotGroups)
+          ShotGroupDto(start: _checkU32(g.start), picks: _checkU32(g.count)),
+      ],
+      shuttleStarts: [
+        for (final e in doc.shuttleStarts.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))
+          ShuttleStartDto(
+            shuttle: _checkU8(e.key),
+            side: e.value == ShuttleSide.left ? ShuttleSideKind.left : ShuttleSideKind.right,
+          ),
+      ],
     );
+  }
+
+  static int _checkU8(int v) {
+    if (v < 0 || v > 0xFF) throw RangeError.range(v, 0, 0xFF, 'u8');
+    return v;
+  }
+
+  static int _checkU32(int v) {
+    if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, 'u32');
+    return v;
   }
 
   static PickRoleKind _roleKind(PickRole r) => switch (r) {
@@ -901,6 +947,13 @@ class DraftRepository {
           ),
       ],
       pickRoles: [for (final k in dto.pickRoles) _role(k)],
+      pickShuttles: [for (final s in dto.pickShuttles) s == 0 ? null : s],
+      pickStrands: List<int>.of(dto.pickStrands),
+      shotGroups: [for (final g in dto.shotGroups) ShotGroup(g.start, g.picks)],
+      shuttleStarts: {
+        for (final s in dto.shuttleStarts)
+          s.shuttle: s.side == ShuttleSideKind.left ? ShuttleSide.left : ShuttleSide.right,
+      },
     );
   }
 
@@ -908,6 +961,7 @@ class DraftRepository {
         severity: switch (issue.severity) {
           SeverityKind.error => IssueSeverity.error,
           SeverityKind.warning => IssueSeverity.warning,
+          SeverityKind.info => IssueSeverity.info,
         },
         message: issue.message,
       );

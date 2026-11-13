@@ -327,14 +327,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
     expect(find.text('120 picks in 120 rows'), findsOneWidget);
-    // The header (Use tabby switch, Mark tabby picks, pin) scrolls with the rows on a short phone.
-    await tester.ensureVisible(find.text('Pick 1'));
+    // The header (Use tabby switch, Mark tabby picks, Shuttles, pin) scrolls with the rows on a short
+    // phone; the list is lazy, so scroll to the first row rather than assume it is already built.
+    final list = find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable));
+    await tester.scrollUntilVisible(find.text('Pick 1'), 100, scrollable: list);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Pick 1'));
     await tester.pump();
     expect(find.text('Editing row 1, pick 1'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Pick 120'), 600,
-        scrollable: find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)));
+    await tester.scrollUntilVisible(find.text('Pick 120'), 600, scrollable: list);
     await tester.pumpAndSettle();
     expect(find.text('Pick 120'), findsOneWidget, reason: 'the list scrolls to its last row');
     expect(tester.takeException(), isNull, reason: 'no layout overflow at phone width');

@@ -18,8 +18,8 @@ pub mod validate;
 pub mod wif;
 
 pub use draft::{
-    Draft, Drive, Liftplan, PickRole, ShaftId, ShedType, TabbyRule, Threading, TieUp, TreadleId,
-    Treadling,
+    Draft, Drive, Liftplan, PickRole, ShaftId, ShedType, ShotGroup, ShuttleId, Side, TabbyRule,
+    Threading, TieUp, TreadleId, Treadling, WeftWork, MAX_SHUTTLES, MAX_STRANDS,
 };
 pub use drawdown::{
     compute, fit_cell_px, fit_region_cell_px, render_rgba, render_rgba_with, try_compute,

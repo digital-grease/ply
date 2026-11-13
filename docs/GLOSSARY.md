@@ -33,6 +33,14 @@ plain so it can double as user-facing help content.
 - **Sley / sleying** — threading the warp through the reed; the reed sets the sett.
 - **Beat** — pressing each pick into place against the cloth (the "fell").
 - **Selvedge** (selvage) — the self-finished lengthwise edge of the cloth.
+- **Floating selvedge**: an extra warp end at each edge, sleyed in the reed but not threaded through
+  a heddle, so no shaft moves it. Taking the shuttle over it going in and under it coming out (or the
+  reverse) catches the weft at the edge when the shed alone would not, as on a double shot.
+- **Shuttle**: the tool that carries a weft across the warp. A draft with several wefts uses several
+  shuttles, and each one changes direction on every pass, so the direction of a pick follows from
+  its shuttle.
+- **Double shot**: two passes of the weft in one shed, without changing the shed between them (a
+  triple shot is three). It is not double weave, and not two strands carried together in one pass.
 - **Take-up** — warp/weft shortening from interlacing (cloth is shorter/narrower than the
   yarn measured straight); budgeted in yarn estimates alongside shrinkage.
 - **Loom waste** — warp that can't be woven (tie-on, thrums); a fixed allowance per warp.

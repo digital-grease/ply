@@ -70,6 +70,46 @@ enum MeasureUnit { inches, centimeters }
 /// is [unknown], which is also every pick of a third-party WIF.
 enum PickRole { unknown, pattern, tabby, topLayer, bottomLayer }
 
+/// A selvedge as the weaver sees the cloth from the front of the loom (M8-06). A shuttle that starts
+/// from the right makes its first pass right to left. A domain twin of the wire `ShuttleSideKind`.
+enum ShuttleSide { left, right }
+
+/// The most shuttles a draft can number (1..8), matching the engine's `MAX_SHUTTLES`.
+const int kMaxShuttles = 8;
+
+/// The most strands one pass can carry together (1..4), matching the engine's `MAX_STRANDS`.
+const int kMaxStrands = 4;
+
+/// A deliberate instruction to work consecutive picks as repeated passes of the weft in ONE shed: a
+/// double shot (2 passes), a triple shot (3), and so on (M8-06). Not double weave, and not two yarns
+/// carried in one pass (that is [DraftDoc.pickStrands]). Consecutive picks with identical sheds and no
+/// group stay unrelated picks. A domain twin of the wire `ShotGroupDto`. Immutable and value-equal.
+class ShotGroup {
+  const ShotGroup(this.start, this.count);
+
+  /// The 0-based first pick of the group.
+  final int start;
+
+  /// How many picks (passes) the group holds; at least 2 in a sound draft.
+  final int count;
+
+  /// The 0-based pick just past the group.
+  int get end => start + count;
+
+  /// True when the 0-based [pick] is one of the group's passes.
+  bool contains(int pick) => pick >= start && pick < end;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is ShotGroup && start == other.start && count == other.count;
+
+  @override
+  int get hashCode => Object.hash(start, count);
+
+  @override
+  String toString() => 'ShotGroup($start, $count)';
+}
+
 /// An sRGB color in the draft's palette: three 0..255 channels, no alpha (the engine and WIF
 /// `Color` are RGB only, so an alpha channel here would be a value the wire type cannot
 /// carry). A tiny value type so `DeepCollectionEquality` over `List<DraftColor>` compares and
@@ -330,6 +370,10 @@ class DraftDoc {
     List<double> weftThickness = const <double>[],
     List<RetainedSection> retained = const <RetainedSection>[],
     List<PickRole> pickRoles = const <PickRole>[],
+    List<int?> pickShuttles = const <int?>[],
+    List<int> pickStrands = const <int>[],
+    List<ShotGroup> shotGroups = const <ShotGroup>[],
+    Map<int, ShuttleSide> shuttleStarts = const <int, ShuttleSide>{},
   })  : threading = _sealRows(threading),
         palette = _sealList(palette),
         warpColors = _sealList(warpColors),
@@ -337,7 +381,11 @@ class DraftDoc {
         warpThickness = _sealList(warpThickness),
         weftThickness = _sealList(weftThickness),
         retained = _sealList(retained),
-        pickRoles = _sealRoles(pickRoles);
+        pickRoles = _sealRoles(pickRoles),
+        pickShuttles = _sealShuttles(pickShuttles),
+        pickStrands = _sealStrands(pickStrands),
+        shotGroups = _sealGroups(shotGroups),
+        shuttleStarts = _sealStarts(shuttleStarts);
 
   /// Internal constructor for lists that are ALREADY sealed, so [copyWith] can reuse the
   /// unchanged fields of `this` by reference (keeping the `identical()` short-circuit alive on
@@ -360,6 +408,10 @@ class DraftDoc {
     this.weftThickness = const <double>[],
     this.retained = const <RetainedSection>[],
     this.pickRoles = const <PickRole>[],
+    this.pickShuttles = const <int?>[],
+    this.pickStrands = const <int>[],
+    this.shotGroups = const <ShotGroup>[],
+    this.shuttleStarts = const <int, ShuttleSide>{},
   });
 
   /// A blank, structurally-valid document to start editing from scratch, mirroring the
@@ -471,6 +523,46 @@ class DraftDoc {
   PickRole roleAt(int pick) =>
       pick >= 0 && pick < pickRoles.length ? pickRoles[pick] : PickRole.unknown;
 
+  /// Per pick, the 1-based shuttle that carries it, null when unknown (M8-06). EMPTY means every
+  /// shuttle is unknown (the common case, and every third-party WIF); otherwise length-coupled to
+  /// [picks] like [pickRoles]. A list with no known shuttle is normalized to empty. Never guessed from
+  /// colors. DEEPLY IMMUTABLE.
+  final List<int?> pickShuttles;
+
+  /// Per pick, how many strands its pass carries together (1..[kMaxStrands]). EMPTY means one strand
+  /// for every pick; a list of all ones is normalized to empty. DEEPLY IMMUTABLE.
+  final List<int> pickStrands;
+
+  /// The shot groups (double shots and longer), sorted by first pick. Every reducer that inserts,
+  /// removes, or re-sheds picks keeps them on the right picks (see weft_work.dart). DEEPLY IMMUTABLE.
+  final List<ShotGroup> shotGroups;
+
+  /// Shuttle number -> the selvedge that shuttle starts its first pass from. A shuttle not listed has
+  /// no recorded starting side, so its passes have no known direction. Directions themselves are never
+  /// stored; they follow from this and [pickShuttles]. DEEPLY IMMUTABLE.
+  final Map<int, ShuttleSide> shuttleStarts;
+
+  /// The shuttle of the 0-based [pick], or null when unknown.
+  int? shuttleAt(int pick) => pick >= 0 && pick < pickShuttles.length ? pickShuttles[pick] : null;
+
+  /// The strands the 0-based [pick] carries in its pass: the recorded count, or 1.
+  int strandsAt(int pick) => pick >= 0 && pick < pickStrands.length ? pickStrands[pick] : 1;
+
+  /// The shot group the 0-based [pick] belongs to, or null.
+  ShotGroup? shotGroupAt(int pick) {
+    for (final g in shotGroups) {
+      if (g.contains(pick)) return g;
+    }
+    return null;
+  }
+
+  /// True when any shuttle, starting side, strand count, or shot group is recorded.
+  bool get hasWeftWork =>
+      pickShuttles.isNotEmpty ||
+      pickStrands.isNotEmpty ||
+      shotGroups.isNotEmpty ||
+      shuttleStarts.isNotEmpty;
+
   /// Number of warp ends (= columns in the drawdown), defined by the threading length (the
   /// authoritative warp axis). Mirrors the engine's `ends()` so UI, reducers, and validation
   /// read one obvious source instead of recomputing `threading.length` ad hoc. Excluded from
@@ -511,6 +603,10 @@ class DraftDoc {
     String? notes,
     List<RetainedSection>? retained,
     List<PickRole>? pickRoles,
+    List<int?>? pickShuttles,
+    List<int>? pickStrands,
+    List<ShotGroup>? shotGroups,
+    Map<int, ShuttleSide>? shuttleStarts,
   }) {
     return DraftDoc._sealed(
       name: name ?? this.name,
@@ -528,6 +624,10 @@ class DraftDoc {
       notes: notes ?? this.notes,
       retained: retained == null ? this.retained : _sealList(retained),
       pickRoles: pickRoles == null ? this.pickRoles : _sealRoles(pickRoles),
+      pickShuttles: pickShuttles == null ? this.pickShuttles : _sealShuttles(pickShuttles),
+      pickStrands: pickStrands == null ? this.pickStrands : _sealStrands(pickStrands),
+      shotGroups: shotGroups == null ? this.shotGroups : _sealGroups(shotGroups),
+      shuttleStarts: shuttleStarts == null ? this.shuttleStarts : _sealStarts(shuttleStarts),
     );
   }
 
@@ -554,7 +654,11 @@ class DraftDoc {
           _deepEq.equals(warpThickness, other.warpThickness) &&
           _deepEq.equals(weftThickness, other.weftThickness) &&
           _deepEq.equals(retained, other.retained) &&
-          _deepEq.equals(pickRoles, other.pickRoles);
+          _deepEq.equals(pickRoles, other.pickRoles) &&
+          _deepEq.equals(pickShuttles, other.pickShuttles) &&
+          _deepEq.equals(pickStrands, other.pickStrands) &&
+          _deepEq.equals(shotGroups, other.shotGroups) &&
+          _deepEq.equals(shuttleStarts, other.shuttleStarts);
 
   /// `hashCode` consistent with `==`: scalars and enums by value, `drive` by its own deep hash,
   /// and every nested list by the SAME deep hash that backs `==`. This hashes the full deep
@@ -579,6 +683,10 @@ class DraftDoc {
         _deepEq.hash(weftThickness),
         _deepEq.hash(retained),
         _deepEq.hash(pickRoles),
+        _deepEq.hash(pickShuttles),
+        _deepEq.hash(pickStrands),
+        _deepEq.hash(shotGroups),
+        _deepEq.hash(shuttleStarts),
       );
 
   @override
@@ -616,6 +724,26 @@ List<T> _sealList<T>(List<T> source) =>
 /// Seal per-pick roles, normalizing a list with no known role to the empty "nothing recorded" form.
 List<PickRole> _sealRoles(List<PickRole> roles) =>
     roles.every((r) => r == PickRole.unknown) ? const <PickRole>[] : _sealList(roles);
+
+/// Seal per-pick shuttles, normalizing a list with no known shuttle to the empty form.
+List<int?> _sealShuttles(List<int?> shuttles) =>
+    shuttles.every((s) => s == null) ? const <int?>[] : _sealList(shuttles);
+
+/// Seal per-pick strands, normalizing a list of all ones to the empty "one strand each" form.
+List<int> _sealStrands(List<int> strands) =>
+    strands.every((n) => n == 1) ? const <int>[] : _sealList(strands);
+
+/// Seal the shot groups in pick order (by first pick, then length) so equal sets compare equal.
+List<ShotGroup> _sealGroups(List<ShotGroup> groups) {
+  if (groups.isEmpty) return const <ShotGroup>[];
+  final sorted = List<ShotGroup>.of(groups)
+    ..sort((a, b) => a.start != b.start ? a.start.compareTo(b.start) : a.count.compareTo(b.count));
+  return UnmodifiableListView<ShotGroup>(sorted);
+}
+
+/// Seal the starting sides as an unmodifiable map.
+Map<int, ShuttleSide> _sealStarts(Map<int, ShuttleSide> starts) =>
+    starts.isEmpty ? const <int, ShuttleSide>{} : Map<int, ShuttleSide>.unmodifiable(starts);
 
 /// Wrap a list-of-lists so BOTH the outer and every inner list are unmodifiable. Each inner
 /// row is independently sealed (copied + view-wrapped) so no row can be mutated through a

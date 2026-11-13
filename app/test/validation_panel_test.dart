@@ -33,6 +33,7 @@ class FakeRepo extends DraftRepository {
 
 DraftIssue err(String m) => DraftIssue(severity: IssueSeverity.error, message: m);
 DraftIssue warn(String m) => DraftIssue(severity: IssueSeverity.warning, message: m);
+DraftIssue note(String m) => DraftIssue(severity: IssueSeverity.info, message: m);
 
 Future<ProviderContainer> pumpPanel(WidgetTester tester, List<DraftIssue> issues,
     {bool hang = false, bool fail = false}) async {
@@ -74,6 +75,32 @@ void main() {
     expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
     expect(find.byIcon(Icons.error), findsNothing);
     expect(find.text('warp color count (5) != warp ends (4)'), findsOneWidget);
+  });
+
+  testWidgets('a note (advice, M8-06) shows the info icon in the neutral tone', (tester) async {
+    const msg = 'picks 4 and 5 are a double shot: a shuttle that passes again in the same shed '
+        'needs the weft caught at the selvedge, for example with a floating selvedge';
+    final handle = tester.ensureSemantics();
+    await pumpPanel(tester, [note(msg)]);
+    expect(find.byIcon(Icons.info_outline), findsOneWidget);
+    expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+    expect(find.text(msg), findsOneWidget);
+    final colors = Theme.of(tester.element(find.byType(ValidationPanel))).colorScheme;
+    expect(tester.widget<Icon>(find.byIcon(Icons.info_outline)).color, colors.primary);
+    expect(find.bySemanticsLabel('Note: $msg'), findsOneWidget, reason: 'the severity is spoken');
+    handle.dispose();
+  });
+
+  testWidgets('notes are counted and sorted after errors and warnings', (tester) async {
+    await pumpPanel(tester, [note('n1'), warn('w1'), err('e1'), note('n2')]);
+    expect(find.text('1 error, 1 warning, 2 notes'), findsOneWidget);
+    expect(find.byIcon(Icons.error), findsOneWidget, reason: 'the worst severity sets the tone');
+    await tester.tap(find.text('1 error, 1 warning, 2 notes'));
+    await tester.pump();
+    final order = [
+      for (final t in ['e1', 'w1', 'n1', 'n2']) tester.getTopLeft(find.text(t)).dy,
+    ];
+    expect(order, [...order]..sort());
   });
 
   testWidgets('a still-loading validation renders zero chrome (no blink)', (tester) async {

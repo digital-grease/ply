@@ -63,6 +63,7 @@ fn base_draft(
         notes: String::new(),
         retained: Vec::new(),
         pick_roles: Vec::new(),
+        weft_work: Default::default(),
     }
 }
 

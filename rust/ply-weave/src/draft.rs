@@ -14,7 +14,7 @@
 
 use ply_common::{Color, Unit};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// 1-based shaft (harness) identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -277,6 +277,94 @@ pub enum PickRole {
     BottomLayer,
 }
 
+/// The most shuttles a draft can number (1..=8). Hand weaving rarely uses more than four; the cap keeps
+/// file data and the editor's controls bounded.
+pub const MAX_SHUTTLES: u8 = 8;
+
+/// The most strands one pass can carry together (1..=4): "two yarns in one pass" up to a few more.
+pub const MAX_STRANDS: u8 = 4;
+
+/// 1-based shuttle number, as the weaver labels the shuttles (shuttle 1, shuttle 2, ...).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ShuttleId(pub u8);
+
+/// A selvedge, as the weaver sees the cloth sitting at the front of the loom. A shuttle that starts
+/// from the right makes its first pass right to left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Side {
+    Left,
+    Right,
+}
+
+impl Side {
+    /// The opposite selvedge.
+    pub fn other(self) -> Side {
+        match self {
+            Side::Left => Side::Right,
+            Side::Right => Side::Left,
+        }
+    }
+}
+
+/// A deliberate instruction to work consecutive picks as repeated passes of the weft in ONE shed: a
+/// double shot (2 passes), a triple shot (3), and so on (roadmap M8-06). This is not double weave, and
+/// it is not two yarns carried in one pass (that is [`WeftWork::strands`]).
+///
+/// Consecutive picks with identical sheds and NO group stay unrelated picks: the weaver changes the
+/// shed between them. A group always covers at least two picks, and every pick in it must raise the
+/// same shafts (validation reports a group that does not).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ShotGroup {
+    /// The 0-based first pick of the group.
+    pub start: usize,
+    /// How many picks (passes) the group holds; at least 2.
+    pub picks: usize,
+}
+
+impl ShotGroup {
+    /// The 0-based pick just past the group.
+    pub fn end(&self) -> usize {
+        self.start.saturating_add(self.picks)
+    }
+
+    /// True when the 0-based `pick` is one of the group's passes.
+    pub fn contains(&self, pick: usize) -> bool {
+        pick >= self.start && pick < self.end()
+    }
+}
+
+/// How the weft is worked beyond its sheds (roadmap M8-06): which shuttle carries each pick, where
+/// each shuttle starts, how many strands each pass carries, and which picks are shot groups. All of it
+/// is optional and never inferred (not from colors, not from repeated sheds): an empty list means
+/// nothing is recorded, which is the case for every third-party WIF. The pass direction of a pick is
+/// NOT stored; it follows from the shuttles and their starting sides (see [`Draft::pass_starts`]).
+/// Stored with the pick roles in Ply's WIF 1.1 private section (ADR 0009).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct WeftWork {
+    /// Per pick, the shuttle that carries it; `None` = unknown. EMPTY = every shuttle unknown;
+    /// otherwise length-coupled to the picks like the roles.
+    pub shuttles: Vec<Option<ShuttleId>>,
+    /// Per shuttle, the selvedge it starts its first pass from. A shuttle with no entry has an unknown
+    /// starting side, so its picks have no known direction.
+    pub shuttle_starts: BTreeMap<ShuttleId, Side>,
+    /// Per pick, how many strands the pass carries together (1..=[`MAX_STRANDS`]). EMPTY = one strand
+    /// for every pick; otherwise length-coupled to the picks.
+    pub strands: Vec<u8>,
+    /// The shot groups, in pick order and not overlapping.
+    pub shot_groups: Vec<ShotGroup>,
+}
+
+impl WeftWork {
+    /// True when nothing is recorded (the state of every draft from before M8-06 and every
+    /// third-party WIF).
+    pub fn is_empty(&self) -> bool {
+        self.shuttles.iter().all(Option::is_none)
+            && self.shuttle_starts.is_empty()
+            && self.strands.iter().all(|&s| s == 1)
+            && self.shot_groups.is_empty()
+    }
+}
+
 /// The draft's two plain-weave (tabby) sheds, precomputed from the threading. A raised-shaft set is
 /// a tabby shed when, over the THREADED warp ends in warp order (unthreaded ends are skipped), it
 /// lifts exactly every other end; "tabby a" lifts the first threaded end, "tabby b" the second. An end
@@ -413,6 +501,9 @@ pub struct Draft {
     /// shed and drive conversions keep the picks, so they keep the roles). Not part of WIF proper:
     /// stored in Ply's WIF 1.1 private section (see `wif.rs` and ADR 0008).
     pub pick_roles: Vec<PickRole>,
+    /// Shuttles, strands, and shot groups (see [`WeftWork`]). Empty for a draft that records none.
+    /// Kept aligned with the picks by every operation that changes them, like `pick_roles`.
+    pub weft_work: WeftWork,
 }
 
 impl Draft {
@@ -441,6 +532,7 @@ impl Draft {
             weft_thickness: Vec::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         }
     }
 
@@ -461,6 +553,112 @@ impl Draft {
     /// True when at least one pick has a known role (so there is something to store).
     pub fn has_pick_roles(&self) -> bool {
         self.pick_roles.iter().any(|&r| r != PickRole::Unknown)
+    }
+
+    /// The shuttle that carries the 0-based `pick`, or `None` when it is not recorded.
+    pub fn shuttle(&self, pick: usize) -> Option<ShuttleId> {
+        self.weft_work.shuttles.get(pick).copied().flatten()
+    }
+
+    /// How many strands the 0-based `pick` carries in its pass: the recorded count, or 1 when the
+    /// draft records none.
+    pub fn strands(&self, pick: usize) -> u8 {
+        self.weft_work.strands.get(pick).copied().unwrap_or(1)
+    }
+
+    /// The shot group the 0-based `pick` belongs to, if any.
+    pub fn shot_group_at(&self, pick: usize) -> Option<ShotGroup> {
+        self.weft_work
+            .shot_groups
+            .iter()
+            .copied()
+            .find(|g| g.contains(pick))
+    }
+
+    /// The average number of strands per pick over the draft (1.0 for a draft with no picks or no
+    /// strands recorded). A pass carrying two strands uses twice the weft of a single-strand pass, so
+    /// this scales a weft-yarn estimate (see `calc::estimate_weft_for_draft`).
+    pub fn mean_strands(&self) -> f32 {
+        let picks = self.picks();
+        if picks == 0 || self.weft_work.strands.is_empty() {
+            return 1.0;
+        }
+        let total: u64 = (0..picks).map(|p| u64::from(self.strands(p))).sum();
+        total as f32 / picks as f32
+    }
+
+    /// True when the 0-based picks `a` and `b` raise exactly the same shafts (the same shed, whatever
+    /// treadles or liftplan rows express it).
+    pub fn same_shed(&self, a: usize, b: usize) -> bool {
+        sorted_set(self.raised_shafts(a)) == sorted_set(self.raised_shafts(b))
+    }
+
+    /// The side each pick's pass STARTS from, derived from the shuttles; `None` where it is unknown.
+    /// Directions are never stored. Every shuttle alternates its own direction: its first pass starts
+    /// from its recorded starting side, its next pass from the other side, and so on, counting only
+    /// that shuttle's picks. So two shuttles each keep their own rhythm, and a double shot woven with
+    /// one shuttle reverses direction inside the shed (its second pass comes back).
+    ///
+    /// A pick's direction is unknown when its shuttle is unknown or has no starting side, and also
+    /// for EVERY pick after a pick whose shuttle is unknown: that pick may have been woven with any
+    /// shuttle, so the later passes of every shuttle can no longer be counted.
+    pub fn pass_starts(&self) -> Vec<Option<Side>> {
+        let picks = self.picks();
+        let mut passes: BTreeMap<ShuttleId, usize> = BTreeMap::new();
+        let mut counting = true;
+        let mut out = Vec::with_capacity(picks);
+        for p in 0..picks {
+            let Some(shuttle) = self.shuttle(p).filter(|_| counting) else {
+                counting = false;
+                out.push(None);
+                continue;
+            };
+            let n = passes.entry(shuttle).or_insert(0);
+            let even = n.is_multiple_of(2);
+            *n += 1;
+            out.push(self.weft_work.shuttle_starts.get(&shuttle).map(|&side| {
+                if even {
+                    side
+                } else {
+                    side.other()
+                }
+            }));
+        }
+        out
+    }
+
+    /// The shot groups that are still sound for this draft's picks: in pick order, cut at the last
+    /// pick, a group overlapping an earlier one dropped, and each split into its maximal runs of picks
+    /// that raise the same shafts, keeping only runs of at least two picks. A group that stays in one
+    /// shed is returned unchanged; one whose shed changed under it shrinks, splits, or disappears, so
+    /// a group can never be left naming picks it does not describe. Operations that can change sheds
+    /// or drop picks (resize, a shed-direction conversion) apply this.
+    pub fn sound_shot_groups(&self) -> Vec<ShotGroup> {
+        let picks = self.picks();
+        let mut groups = self.weft_work.shot_groups.clone();
+        groups.sort_by_key(|g| (g.start, g.picks));
+        let mut out: Vec<ShotGroup> = Vec::new();
+        let mut taken = 0usize; // first pick not yet claimed by an accepted group
+        for g in groups {
+            let (start, end) = (g.start, g.end().min(picks));
+            if start < taken || start >= end {
+                continue;
+            }
+            let mut run = start;
+            for p in start + 1..=end {
+                if p == end || !self.same_shed(run, p) {
+                    if p - run >= 2 {
+                        out.push(ShotGroup {
+                            start: run,
+                            picks: p - run,
+                        });
+                    }
+                    run = p;
+                }
+            }
+            taken = end;
+        }
+        out
     }
 
     /// Whether the raised-shaft set `raised` is one of the draft's two plain-weave (tabby) sheds, and
@@ -534,11 +732,15 @@ impl Draft {
             },
             Drive::Liftplan(lp) => Drive::Liftplan(lp.clone()),
         };
-        Draft {
+        let mut out = Draft {
             shed,
             drive,
             ..self.clone()
-        }
+        };
+        // A pick pressing several treadles (or none) can raise different shafts on the other shed
+        // direction, so a shot group over such picks may no longer share one shed.
+        out.weft_work.shot_groups = out.sound_shot_groups();
+        out
     }
 
     /// A canonical **liftplan-driven** copy of this draft. The drawdown is unchanged: the
@@ -655,7 +857,7 @@ impl Draft {
             .cloned()
             .collect();
 
-        Draft {
+        let mut out = Draft {
             name: self.name.clone(),
             shafts,
             treadles,
@@ -677,7 +879,19 @@ impl Draft {
             // Roles stay length-coupled to the picks: a shrink drops the removed picks' roles, a grow
             // adds blank picks whose role is Unknown, and "no roles recorded" stays empty.
             pick_roles: resize_roles(&self.pick_roles, picks),
-        }
+            // Shuttles and strands couple to the picks the same way (a new pick has an unknown shuttle
+            // and one strand). Starting sides belong to shuttles, not picks, so they are kept.
+            weft_work: WeftWork {
+                shuttles: resize_if_recorded(&self.weft_work.shuttles, picks, None),
+                shuttle_starts: self.weft_work.shuttle_starts.clone(),
+                strands: resize_if_recorded(&self.weft_work.strands, picks, 1),
+                shot_groups: self.weft_work.shot_groups.clone(),
+            },
+        };
+        // A shrink cuts the groups at the last pick, and pruned shafts or treadles can change sheds:
+        // keep each group only where its picks remain and still share one shed.
+        out.weft_work.shot_groups = out.sound_shot_groups();
+        out
     }
 
     /// A copy with palette color `idx` removed and all warp/weft references safely remapped (see
@@ -690,6 +904,14 @@ impl Draft {
             ..self.clone()
         })
     }
+}
+
+/// The shaft numbers of `raised`, ascending and without repeats (a shed as a set).
+fn sorted_set(raised: Vec<ShaftId>) -> Vec<u16> {
+    let mut s: Vec<u16> = raised.into_iter().map(|s| s.0).collect();
+    s.sort_unstable();
+    s.dedup();
+    s
 }
 
 /// First `len` of `rows`, padding with `pad()` when growing (truncating when shrinking).
@@ -717,6 +939,16 @@ fn resize_roles(roles: &[PickRole], len: usize) -> Vec<PickRole> {
         Vec::new()
     } else {
         resize_rows(roles, len, PickRole::default)
+    }
+}
+
+/// Resize a per-pick list whose EMPTY form means "nothing recorded": an empty list stays empty; a
+/// recorded one is length-coupled, padding new picks with `pad`.
+fn resize_if_recorded<T: Clone>(xs: &[T], len: usize, pad: T) -> Vec<T> {
+    if xs.is_empty() {
+        Vec::new()
+    } else {
+        resize_rows(xs, len, || pad.clone())
     }
 }
 
@@ -850,6 +1082,7 @@ mod tests {
             weft_thickness: Vec::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         };
         assert!(validate(&d).iter().all(|i| i.severity != Severity::Error));
     }
@@ -896,6 +1129,7 @@ mod tests {
             weft_thickness: Vec::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         };
         let lp = d.to_liftplan_draft();
         assert!(matches!(lp.drive, Drive::Liftplan(_)));
@@ -937,6 +1171,7 @@ mod tests {
             weft_thickness: Vec::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         };
         let lp = d.to_liftplan_draft();
         let factored = lp.factor_liftplan(40).expect("a 2-lift plan factors");
@@ -984,6 +1219,7 @@ mod tests {
             weft_thickness: Vec::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         };
         assert!(
             lp.factor_liftplan(2).is_none(),
@@ -1075,6 +1311,7 @@ mod tests {
             weft_thickness: Vec::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         };
         let removed = d.with_color_removed(2).unwrap(); // drop RED (referenced by warp[0], weft[1])
         assert_eq!(removed.colors.palette.len(), 2);
@@ -1169,6 +1406,7 @@ mod tests {
             weft_thickness: Vec::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         }
     }
 
@@ -1273,6 +1511,7 @@ mod tests {
             weft_thickness: Vec::new(),
             retained: Vec::new(),
             pick_roles: Vec::new(),
+            weft_work: WeftWork::default(),
         };
         let d = lp.resized(2, 2, 2, 0); // shafts 4 -> 2
         if let Drive::Liftplan(l) = &d.drive {
@@ -1488,6 +1727,294 @@ mod tests {
         };
         assert!(d.is_tabby_shed(0));
         assert!(!d.is_tabby_shed(1), "raising 2,3,4 is not plain weave");
+    }
+
+    // --- Shuttles, strands, and shot groups (M8-06, ADR 0009) ---
+
+    /// Six picks on a straight 4-shaft draft: treadles 1, 1, 1, 2, 3, 3. Picks 1 and 2 are a double
+    /// shot and picks 5 and 6 another; shuttle 1 weaves every pick except pick 4 (shuttle 2).
+    fn worked_fixture() -> Draft {
+        let mut d = resize_fixture().resized(4, 6, 4, 4);
+        if let Drive::Treadled { treadling, .. } = &mut d.drive {
+            treadling.0 = [1, 1, 1, 2, 3, 3]
+                .iter()
+                .map(|&t| vec![TreadleId(t)])
+                .collect();
+        }
+        d.weft_work = WeftWork {
+            shuttles: [1, 1, 1, 2, 1, 1]
+                .iter()
+                .map(|&s| Some(ShuttleId(s)))
+                .collect(),
+            shuttle_starts: [(ShuttleId(1), Side::Right)].into_iter().collect(),
+            strands: vec![1, 1, 2, 1, 1, 3],
+            shot_groups: vec![
+                ShotGroup { start: 0, picks: 2 },
+                ShotGroup { start: 4, picks: 2 },
+            ],
+        };
+        d
+    }
+
+    #[test]
+    fn weft_work_reads_unknown_and_one_strand_when_nothing_is_recorded() {
+        let d = resize_fixture();
+        assert!(d.weft_work.is_empty());
+        assert_eq!(d.shuttle(0), None);
+        assert_eq!(d.strands(0), 1);
+        assert_eq!(d.shot_group_at(0), None);
+        assert_eq!(d.pass_starts(), vec![None; 4]);
+        let w = worked_fixture();
+        assert_eq!(w.shuttle(3), Some(ShuttleId(2)));
+        assert_eq!(w.strands(5), 3);
+        assert_eq!(w.strands(99), 1, "past the picks is one strand");
+        assert_eq!(w.shot_group_at(1), Some(ShotGroup { start: 0, picks: 2 }));
+        assert_eq!(w.shot_group_at(2), None);
+    }
+
+    #[test]
+    fn resize_keeps_shuttles_strands_and_groups_aligned() {
+        // Grow: new picks have no shuttle and one strand; the groups and starting sides are kept.
+        let g = worked_fixture().resized(4, 8, 4, 4);
+        assert_eq!(g.weft_work.shuttles.len(), 8);
+        assert_eq!(&g.weft_work.shuttles[6..], &[None, None]);
+        assert_eq!(&g.weft_work.strands[6..], &[1, 1]);
+        assert_eq!(
+            g.weft_work.shot_groups,
+            worked_fixture().weft_work.shot_groups
+        );
+        assert_eq!(
+            g.weft_work.shuttle_starts,
+            worked_fixture().weft_work.shuttle_starts
+        );
+        // Shrink through the second group: it would keep one pick, so it is dissolved.
+        let s = worked_fixture().resized(4, 5, 4, 4);
+        assert_eq!(
+            s.weft_work.shot_groups,
+            vec![ShotGroup { start: 0, picks: 2 }]
+        );
+        assert_eq!(s.weft_work.shuttles.len(), 5);
+        assert_eq!(s.weft_work.strands, vec![1, 1, 2, 1, 1]);
+        // A triple shot cut to two picks stays a (double) shot.
+        let mut t = worked_fixture();
+        t.weft_work.shot_groups = vec![ShotGroup { start: 0, picks: 3 }];
+        assert_eq!(
+            t.resized(4, 2, 4, 4).weft_work.shot_groups,
+            vec![ShotGroup { start: 0, picks: 2 }]
+        );
+        // Shrinking to 0 treadles prunes every press, so every pick raises nothing: each group is
+        // still one shed and stays.
+        let z = worked_fixture().resized(4, 6, 4, 0);
+        assert_eq!(
+            z.weft_work.shot_groups,
+            worked_fixture().weft_work.shot_groups
+        );
+        // To zero picks, everything per pick empties.
+        let e = worked_fixture().resized(4, 0, 4, 4);
+        assert!(e.weft_work.shuttles.is_empty() && e.weft_work.strands.is_empty());
+        assert!(e.weft_work.shot_groups.is_empty());
+        // "Nothing recorded" stays empty instead of materializing unknowns and ones.
+        let n = resize_fixture().resized(4, 9, 4, 4);
+        assert!(n.weft_work.shuttles.is_empty() && n.weft_work.strands.is_empty());
+    }
+
+    #[test]
+    fn a_group_whose_shed_changes_under_it_is_not_sound() {
+        // Pick 6 presses treadles 3 + 4 and treadle 4 ties nothing, so it shares pick 5's shed and the
+        // group over picks 5 and 6 is sound. Tying shaft 1 to treadle 4 changes pick 6's shed.
+        let mut d = worked_fixture();
+        if let Drive::Treadled { treadling, .. } = &mut d.drive {
+            treadling.0[5] = vec![TreadleId(3), TreadleId(4)];
+        }
+        if let Drive::Treadled { tieup, .. } = &mut d.drive {
+            tieup.0[3] = vec![]; // treadle 4 ties nothing, so picks 5 and 6 share one shed
+        }
+        assert!(d.same_shed(4, 5));
+        assert_eq!(
+            d.sound_shot_groups(),
+            d.weft_work.shot_groups,
+            "sound as built"
+        );
+        if let Drive::Treadled { tieup, .. } = &mut d.drive {
+            tieup.0[3] = vec![ShaftId(1)]; // now pick 6 also raises shaft 1
+        }
+        assert!(!d.same_shed(4, 5));
+        assert_eq!(
+            d.sound_shot_groups(),
+            vec![ShotGroup { start: 0, picks: 2 }],
+            "a group whose shed changed under it is dropped, never left on mixed sheds"
+        );
+    }
+
+    #[test]
+    fn sound_shot_groups_split_at_shed_changes_and_drop_overlaps() {
+        let mut d = worked_fixture();
+        // One group over picks 1 to 4 (treadles 1, 1, 1, 2): its one-shed run is picks 1 to 3.
+        d.weft_work.shot_groups = vec![ShotGroup { start: 0, picks: 4 }];
+        assert_eq!(
+            d.sound_shot_groups(),
+            vec![ShotGroup { start: 0, picks: 3 }]
+        );
+        // Treadles 1, 2, 1 inside one group: no run of two, so nothing survives.
+        if let Drive::Treadled { treadling, .. } = &mut d.drive {
+            treadling.0[1] = vec![TreadleId(2)];
+        }
+        d.weft_work.shot_groups = vec![ShotGroup { start: 0, picks: 3 }];
+        assert!(d.sound_shot_groups().is_empty());
+        // Out of order, overlapping, one-pick, and past-the-end groups.
+        let mut o = worked_fixture();
+        o.weft_work.shot_groups = vec![
+            ShotGroup { start: 4, picks: 2 },
+            ShotGroup { start: 1, picks: 2 },
+            ShotGroup { start: 0, picks: 2 },
+            ShotGroup { start: 3, picks: 1 },
+            ShotGroup { start: 5, picks: 4 },
+        ];
+        assert_eq!(
+            o.sound_shot_groups(),
+            vec![
+                ShotGroup { start: 0, picks: 2 },
+                ShotGroup { start: 4, picks: 2 }
+            ]
+        );
+    }
+
+    #[test]
+    fn shed_and_drive_conversions_keep_weft_work() {
+        let d = worked_fixture();
+        let sinking = d.with_shed(ShedType::Sinking);
+        assert_eq!(
+            sinking.weft_work, d.weft_work,
+            "one treadle per pick: the cloth is unchanged"
+        );
+        assert_eq!(sinking.with_shed(ShedType::Rising).weft_work, d.weft_work);
+        let lp = sinking.to_liftplan_draft();
+        assert_eq!(lp.weft_work, d.weft_work);
+        assert_eq!(lp.factor_liftplan(40).unwrap().weft_work, d.weft_work);
+        let mut colored = d.clone();
+        colored.colors.palette.push(Color::rgb(1, 2, 3));
+        assert_eq!(
+            colored.with_color_removed(2).unwrap().weft_work,
+            d.weft_work
+        );
+    }
+
+    #[test]
+    fn a_shed_conversion_that_separates_a_group_drops_it() {
+        // Rising: pick 1 presses treadles 1 + 2 (shafts 1 and 2), pick 2 presses treadle 3 (tied to
+        // shafts 1 and 2): one shed, grouped. On a sinking loom pick 1 sinks every shaft and pick 2
+        // only 3 and 4, so they are no longer one shed and the group is dropped.
+        let mut d = Draft::blank(4, 3);
+        d.threading = Threading::straight(4, 4);
+        d.drive = Drive::Treadled {
+            tieup: TieUp(vec![
+                vec![ShaftId(1)],
+                vec![ShaftId(2)],
+                vec![ShaftId(1), ShaftId(2)],
+            ]),
+            treadling: Treadling(vec![vec![TreadleId(1), TreadleId(2)], vec![TreadleId(3)]]),
+        };
+        d.weft_work.shot_groups = vec![ShotGroup { start: 0, picks: 2 }];
+        assert!(d.same_shed(0, 1));
+        let s = d.with_shed(ShedType::Sinking);
+        assert!(!s.same_shed(0, 1));
+        assert!(s.weft_work.shot_groups.is_empty());
+    }
+
+    #[test]
+    fn one_shuttle_alternates_and_reverses_inside_a_double_shot() {
+        use Side::*;
+        let mut d = worked_fixture();
+        d.weft_work.shuttles = vec![Some(ShuttleId(1)); 6];
+        // Six passes of shuttle 1 from the right: the double shots at picks 1-2 and 5-6 come back
+        // inside their shed, because each pass is one crossing.
+        assert_eq!(
+            d.pass_starts(),
+            vec![
+                Some(Right),
+                Some(Left),
+                Some(Right),
+                Some(Left),
+                Some(Right),
+                Some(Left)
+            ]
+        );
+        d.weft_work.shuttle_starts.insert(ShuttleId(1), Left);
+        assert_eq!(d.pass_starts()[0], Some(Left));
+        assert_eq!(d.pass_starts()[1], Some(Right));
+    }
+
+    #[test]
+    fn two_shuttles_each_keep_their_own_rhythm() {
+        use Side::*;
+        let mut d = worked_fixture();
+        // Shuttle 1 from the right weaves picks 1, 2, 3, 5, 6; shuttle 2 from the left weaves pick 4.
+        d.weft_work.shuttle_starts.insert(ShuttleId(2), Left);
+        assert_eq!(
+            d.pass_starts(),
+            vec![
+                Some(Right),
+                Some(Left),
+                Some(Right),
+                Some(Left),
+                Some(Left),
+                Some(Right)
+            ]
+        );
+        // Alternating shuttles with no groups: each alternates on its own passes only.
+        d.weft_work.shot_groups.clear();
+        d.weft_work.shuttles = [1, 2, 1, 2, 1, 2]
+            .iter()
+            .map(|&s| Some(ShuttleId(s)))
+            .collect();
+        assert_eq!(
+            d.pass_starts(),
+            vec![
+                Some(Right),
+                Some(Left),
+                Some(Left),
+                Some(Right),
+                Some(Right),
+                Some(Left)
+            ]
+        );
+        // A double shot with two shuttles (shuttle 1 then shuttle 2 in one shed): each starts from
+        // its own side.
+        d.weft_work.shot_groups = vec![ShotGroup { start: 0, picks: 2 }];
+        assert_eq!(d.pass_starts()[..2], [Some(Right), Some(Left)]);
+    }
+
+    #[test]
+    fn unknown_shuttles_and_sides_leave_directions_unknown() {
+        use Side::*;
+        let mut d = worked_fixture();
+        // Shuttle 2 has no starting side: its pick has no direction, shuttle 1 keeps counting.
+        assert_eq!(
+            d.pass_starts(),
+            vec![
+                Some(Right),
+                Some(Left),
+                Some(Right),
+                None,
+                Some(Left),
+                Some(Right)
+            ]
+        );
+        // A pick with an unknown shuttle could have been any shuttle, so nothing after it is known.
+        d.weft_work.shuttles[2] = None;
+        assert_eq!(
+            d.pass_starts(),
+            vec![Some(Right), Some(Left), None, None, None, None]
+        );
+        // No shuttles at all: no directions, even with starting sides recorded.
+        d.weft_work.shuttles.clear();
+        assert_eq!(d.pass_starts(), vec![None; 6]);
+    }
+
+    #[test]
+    fn mean_strands_averages_every_pick() {
+        assert_eq!(worked_fixture().mean_strands(), 9.0 / 6.0);
+        assert_eq!(resize_fixture().mean_strands(), 1.0);
     }
 
     #[test]

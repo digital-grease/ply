@@ -173,7 +173,29 @@ DraftDoc doubleWeaveLayerDraft(DraftDoc doc, {required Set<int> topShafts, requi
     weftColors: weftColors,
     warpThickness: narrowThickness(doc.warpThickness, keepEnds, doc.ends),
     weftThickness: narrowThickness(doc.weftThickness, keepPicks, doc.picks),
-    // Roles are per pick, so they narrow with the picks (empty stays empty).
+    // Roles, shuttles, and strands are per pick, so they narrow with the picks (empty stays empty).
     pickRoles: [for (final p in keepPicks) doc.roleAt(p)],
+    pickShuttles: [for (final p in keepPicks) doc.shuttleAt(p)],
+    pickStrands: [for (final p in keepPicks) doc.strandsAt(p)],
+    // A shot group keeps the members this layer keeps (still consecutive here, still one shed) when
+    // at least two remain.
+    shotGroups: _narrowGroups(doc.shotGroups, keepPicks),
   );
+}
+
+/// [groups] re-indexed onto the kept picks [keep] (ascending 0-based picks of the parent): each group
+/// keeps its members that are kept, when at least two are. Between two kept members of one group only
+/// that group's own picks can have been dropped, so the kept members stay consecutive.
+List<ShotGroup> _narrowGroups(List<ShotGroup> groups, List<int> keep) {
+  if (groups.isEmpty) return const [];
+  final index = {for (var i = 0; i < keep.length; i++) keep[i]: i};
+  final out = <ShotGroup>[];
+  for (final g in groups) {
+    final kept = [
+      for (var p = g.start; p < g.end; p++)
+        if (index.containsKey(p)) p,
+    ];
+    if (kept.length >= 2) out.add(ShotGroup(index[kept.first]!, kept.length));
+  }
+  return out;
 }

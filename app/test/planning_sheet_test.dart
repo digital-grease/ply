@@ -19,6 +19,7 @@ class FakePlanningRepo extends DraftRepository {
   ({double finishedLength, int items, int ends, double loomWaste, double takeupPercent})? warpArgs;
   ({double picksPerUnit, double width, double wovenLength, int items, double takeupPercent})?
       weftArgs;
+  DraftDoc? weftDraft;
 
   @override
   Future<double> suggestSettCalc(double wpi, String structure) async {
@@ -52,7 +53,9 @@ class FakePlanningRepo extends DraftRepository {
     required double wovenLength,
     required int items,
     required double takeupPercent,
+    DraftDoc? draft,
   }) async {
+    weftDraft = draft;
     weftArgs = (
       picksPerUnit: picksPerUnit,
       width: width,
@@ -292,6 +295,33 @@ void main() {
     expect(find.text('Total picks: 720'), findsOneWidget);
     // 15840 in -> yards (÷36) = 440 yd.
     expect(find.text('Total weft yarn: 440 yd'), findsOneWidget);
+  });
+
+  testWidgets('the weft estimate hands the engine the draft so its strands per pick count',
+      (t) async {
+    final repo = FakePlanningRepo();
+    // Four picks, two of them carrying two strands: 1.5 strands per pick on average.
+    final doc = fourEnds().copyWith(
+        drive: DraftLiftplan(liftplan: const [
+          [1],
+          [2],
+          [1],
+          [2],
+        ]),
+        weftColors: const [0, 0, 0, 0],
+        pickStrands: const [1, 2, 1, 2]);
+    await pumpSheet(t, repo, doc: doc);
+    await t.enterText(find.widgetWithText(TextFormField, 'Picks per in'), '12');
+    await t.enterText(find.widgetWithText(TextFormField, 'Woven width (in)'), '20');
+    await t.enterText(find.widgetWithText(TextFormField, 'Woven length (yd)'), '60');
+    await t.ensureVisible(find.text('Estimate weft'));
+    await t.tap(find.text('Estimate weft'));
+    await t.pump();
+    expect(repo.weftDraft, doc, reason: 'the engine counts the strands of this draft');
+    expect(
+        find.text('Counts the strands carried in each pick of this draft: 1.50 per pick on '
+            'average, repeated over the woven length.'),
+        findsOneWidget);
   });
 
   testWidgets('an empty required weft field blocks the estimate', (t) async {

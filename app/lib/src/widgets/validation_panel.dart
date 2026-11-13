@@ -1,5 +1,7 @@
-// The inline validation band: surfaces the engine's structural issues (Errors red, Warnings amber)
-// between the draft and the DimensionsBar, re-running live on every edit via [validationProvider].
+// The inline validation band: surfaces the engine's structural issues (Errors red, Warnings amber,
+// Notes in the neutral primary tone) between the draft and the DimensionsBar, re-running live on
+// every edit via [validationProvider]. A note is advice about a deliberate instruction (a double
+// shot's selvedge), never a problem.
 //
 // ZERO CHROME WHEN CLEAN. A clean draft (or a still-loading / errored validation) collapses to a
 // SizedBox.shrink — validation is ADVISORY, so the band never blinks a spinner or an error card; it
@@ -34,12 +36,17 @@ class ValidationPanel extends ConsumerWidget {
     // amber the band historically hardcoded so the warning tone never resolves to null.
     final warning = Theme.of(context).extension<PlyColors>()?.warning ?? const Color(0xFFB26A00);
     final errors = issues.where((i) => i.isError).length;
-    final warnings = issues.length - errors;
+    final notes = issues.where((i) => i.isInfo).length;
+    final warnings = issues.length - errors - notes;
     final hasError = errors > 0;
+    final onlyNotes = notes == issues.length;
     // The worst severity present drives the band's tone.
-    final tone = hasError ? colors.error : warning;
-    final bg = hasError ? colors.errorContainer : warning.withValues(alpha: 0.12);
-    final headerIcon = hasError ? Icons.error : Icons.warning_amber_rounded;
+    final tone = hasError ? colors.error : (onlyNotes ? colors.primary : warning);
+    final bg = hasError
+        ? colors.errorContainer
+        : (onlyNotes ? colors.primary.withValues(alpha: 0.08) : warning.withValues(alpha: 0.12));
+    final headerIcon =
+        hasError ? Icons.error : (onlyNotes ? Icons.info_outline : Icons.warning_amber_rounded);
     final expanded = ref.watch(editorIssuesExpandedProvider);
 
     return Material(
@@ -65,9 +72,9 @@ class ValidationPanel extends ConsumerWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          _summary(issues, errors, warnings),
+                          _summary(issues, errors, warnings, notes),
                           // Severity is SPOKEN, not signalled by color alone, on the at-rest summary.
-                          semanticsLabel: _semanticSummary(issues, errors, warnings),
+                          semanticsLabel: _semanticSummary(issues, errors, warnings, notes),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodyMedium,
@@ -121,26 +128,27 @@ class ValidationPanel extends ConsumerWidget {
 
   /// The summary as a screen reader should hear it: a single issue is prefixed with its severity
   /// (color is not the only signal); a multi-issue summary already names the severities.
-  String _semanticSummary(List<DraftIssue> issues, int errors, int warnings) {
+  String _semanticSummary(List<DraftIssue> issues, int errors, int warnings, int notes) {
     if (issues.length == 1) {
       final i = issues.single;
-      return '${i.isError ? 'Error' : 'Warning'}: ${i.message}';
+      return '${severityWord(i)}: ${i.message}';
     }
-    return _summary(issues, errors, warnings);
+    return _summary(issues, errors, warnings, notes);
   }
 
   /// Exactly one issue -> its engine-formatted message verbatim (e.g. "treadle 1 ties shaft 5
   /// outside 1..=2"); many -> a pluralized count, omitting a zero count.
-  String _summary(List<DraftIssue> issues, int errors, int warnings) {
+  String _summary(List<DraftIssue> issues, int errors, int warnings, int notes) {
     if (issues.length == 1) return issues.single.message;
     final parts = <String>[];
     if (errors > 0) parts.add('$errors ${errors == 1 ? 'error' : 'errors'}');
     if (warnings > 0) parts.add('$warnings ${warnings == 1 ? 'warning' : 'warnings'}');
+    if (notes > 0) parts.add('$notes ${notes == 1 ? 'note' : 'notes'}');
     return parts.join(', ');
   }
 
-  /// Errors first, then Warnings; engine order preserved within each group (stable sort over the
-  /// severity index, error=0 < warning=1).
+  /// Errors first, then Warnings, then Notes; engine order preserved within each group (stable sort
+  /// over the severity index, error=0 < warning=1 < info=2).
   List<DraftIssue> _sorted(List<DraftIssue> issues) {
     final out = [...issues];
     out.sort((a, b) => a.severity.index.compareTo(b.severity.index));
@@ -157,12 +165,19 @@ class _IssueRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final isError = issue.isError;
-    final tone = isError ? colors.error : amber;
-    final icon = isError ? Icons.error : Icons.warning_amber_rounded;
+    final tone = switch (issue.severity) {
+      IssueSeverity.error => colors.error,
+      IssueSeverity.warning => amber,
+      IssueSeverity.info => colors.primary,
+    };
+    final icon = switch (issue.severity) {
+      IssueSeverity.error => Icons.error,
+      IssueSeverity.warning => Icons.warning_amber_rounded,
+      IssueSeverity.info => Icons.info_outline,
+    };
     // Color is not the only signal: screen readers get an explicit severity prefix.
     return Semantics(
-      label: '${isError ? 'Error' : 'Warning'}: ${issue.message}',
+      label: '${severityWord(issue)}: ${issue.message}',
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Row(
@@ -180,3 +195,10 @@ class _IssueRow extends StatelessWidget {
     );
   }
 }
+
+/// The spoken severity prefix: "Error", "Warning", or "Note".
+String severityWord(DraftIssue issue) => switch (issue.severity) {
+      IssueSeverity.error => 'Error',
+      IssueSeverity.warning => 'Warning',
+      IssueSeverity.info => 'Note',
+    };

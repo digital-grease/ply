@@ -10,6 +10,7 @@ import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/draft_doc.dart';
+import '../models/weft_work.dart' show meanStrands;
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../state/theme_providers.dart';
@@ -165,6 +166,8 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
           wovenLength: _fromLong(double.parse(_wovenLength.text.trim())),
           items: int.parse(_weftItems.text.trim()),
           takeupPercent: double.parse(_weftTakeup.text.trim()),
+          // The draft's strands per pick (two yarns in one pass use twice the weft) are counted.
+          draft: ref.read(draftEditorProvider).draft,
         );
     if (mounted) setState(() => _weft = weft);
   }
@@ -360,6 +363,13 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
                       Text('Total picks: ${_weft!.$1}', style: text.bodyLarge),
                       Text('Total weft yarn: ${_fmt(_toLong(_weft!.$2))} $_longUnit',
                           style: text.bodyLarge),
+                      if (ref.read(draftEditorProvider).draft.pickStrands.isNotEmpty)
+                        Text(
+                            'Counts the strands carried in each pick of this draft: '
+                            '${_fmt(meanStrands(ref.read(draftEditorProvider).draft))} per pick on '
+                            'average, repeated over the woven length.',
+                            key: const ValueKey('weft-strands-note'),
+                            style: text.bodySmall),
                     ],
                   ),
                 ),

@@ -10,10 +10,19 @@
 // This is NOT "Use Tabby" shorthand. Tabby picks interleave the pattern picks, so consecutive-run
 // grouping cannot recover them; that needs explicit pattern/tabby pick roles, and lives in
 // use_tabby.dart (shown by the Book view only when the draft's roles make it exact).
+//
+// SHOT GROUPS (M8-06). A run of identical sheds is a display convenience: the picks stay unrelated
+// picks, with a shed change between them. A shot group is a deliberate instruction (passes in ONE
+// shed), so each group is always its own entry, flagged [TreadlingEntry.grouped], and runs of
+// ungrouped picks never reach into a group.
 
-/// One Book view entry: a maximal run of consecutive picks pressing the same shed.
+import 'draft_doc.dart' show ShotGroup;
+
+/// One Book view entry: a shot group, or a maximal run of consecutive ungrouped picks pressing the
+/// same shed.
 class TreadlingEntry {
-  const TreadlingEntry({required this.shed, required this.count, required this.startPick});
+  const TreadlingEntry(
+      {required this.shed, required this.count, required this.startPick, this.grouped = false});
 
   /// The 1-based ids pressed for every pick in the run: treadle ids (treadled) or raised shaft ids
   /// (liftplan). Empty means a pick that presses nothing (a blank shed).
@@ -24,6 +33,10 @@ class TreadlingEntry {
 
   /// The 0-based index of the run's FIRST pick in the per-pick model.
   final int startPick;
+
+  /// True when the entry is a shot group: its picks are passes in ONE shed (a double shot, a triple
+  /// shot, ...), not separate picks that happen to share a shed.
+  final bool grouped;
 
   /// The 0-based index just past the run's last pick (`startPick + count`).
   int get endPick => startPick + count;
@@ -37,15 +50,29 @@ bool sameShed(List<int> a, List<int> b) {
   return b.every(sa.contains);
 }
 
-/// Group a per-pick [rows] list (treadling or liftplan) into maximal runs of identical sheds, in
-/// pick order. The entries' counts sum to `rows.length`; an empty input yields an empty list.
-List<TreadlingEntry> treadlingEntries(List<List<int>> rows) {
+/// Group a per-pick [rows] list (treadling or liftplan) into entries, in pick order: every shot group
+/// in [groups] is one entry (its shed is its first pick's), and the other picks form maximal runs of
+/// identical sheds that stop at a group. The entries' counts sum to `rows.length`; an empty input
+/// yields an empty list. A group that does not fit inside [rows] is ignored here.
+List<TreadlingEntry> treadlingEntries(List<List<int>> rows,
+    [List<ShotGroup> groups = const <ShotGroup>[]]) {
+  final starts = <int, int>{
+    for (final g in groups)
+      if (g.count >= 1 && g.start >= 0 && g.end <= rows.length) g.start: g.count,
+  };
   final entries = <TreadlingEntry>[];
   var i = 0;
   while (i < rows.length) {
     final shed = rows[i];
+    final group = starts[i];
+    if (group != null) {
+      entries.add(TreadlingEntry(
+          shed: List<int>.unmodifiable(shed), count: group, startPick: i, grouped: true));
+      i += group;
+      continue;
+    }
     var n = 1;
-    while (i + n < rows.length && sameShed(rows[i + n], shed)) {
+    while (i + n < rows.length && !starts.containsKey(i + n) && sameShed(rows[i + n], shed)) {
       n++;
     }
     entries.add(TreadlingEntry(shed: List<int>.unmodifiable(shed), count: n, startPick: i));

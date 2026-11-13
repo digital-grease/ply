@@ -518,6 +518,7 @@ fn pw3_powell_independent_weft_from_the_engine_rules() {
         notes: String::new(),
         retained: Vec::new(),
         pick_roles: Vec::new(),
+        weft_work: Default::default(),
     };
     assert_eq!(
         shafts_of(&d),
@@ -685,6 +686,7 @@ fn legacy_log_cabin(ends: usize, picks: usize, twill: bool, block: usize) -> Dra
         notes: String::new(),
         retained: Vec::new(),
         pick_roles: Vec::new(),
+        weft_work: Default::default(),
     }
 }
 

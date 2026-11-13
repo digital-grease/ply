@@ -10,7 +10,10 @@
 //   * every tabby pick raises a plain-weave (tabby) shed of THIS draft's threading, and consecutive
 //     tabby picks use opposite tabby sheds, always the same two recorded sheds (treadles, or shaft
 //     sets for a liftplan);
-//   * every tabby pick has the same weft color (and thickness, when the draft records thickness).
+//   * every tabby pick has the same weft color (and thickness, when the draft records thickness),
+//     and the same shuttle and strands (M8-06: one tabby weft, carried the same way every time);
+//   * no shot group: the shorthand lists one pass per shed, so a double shot falls back to the full
+//     listing with its own reason.
 //
 // Under that policy the draft is exactly: which tabby comes first, whether a tabby opens and closes
 // the sequence, the tabby weft, and the list of pattern picks. [readUseTabby] derives that and then
@@ -26,6 +29,7 @@ import 'package:collection/collection.dart';
 import 'double_weave_layers.dart' show raisedShafts;
 import 'draft_doc.dart';
 import 'treadling_entries.dart' show sameShed;
+import 'weft_work.dart' show shotGroupPhrase;
 
 const ListEquality<int> _ids = ListEquality<int>();
 
@@ -260,23 +264,28 @@ final class UseTabbyUnavailable extends UseTabbyReading {
   final String reason;
 }
 
-/// One pattern pick of the shorthand: its shed (as recorded), weft color, and weft thickness (null
-/// when the draft records no thickness).
+/// One pattern pick of the shorthand: its shed (as recorded), weft color, weft thickness (null when
+/// the draft records no thickness), shuttle (null when unknown), and strands.
 class UseTabbyPick {
-  const UseTabbyPick({required this.shed, required this.color, this.thickness});
+  const UseTabbyPick(
+      {required this.shed, required this.color, this.thickness, this.shuttle, this.strands = 1});
   final List<int> shed;
   final int color;
   final double? thickness;
+  final int? shuttle;
+  final int strands;
 
   @override
   bool operator ==(Object other) =>
       other is UseTabbyPick &&
       _ids.equals(shed, other.shed) &&
       color == other.color &&
-      thickness == other.thickness;
+      thickness == other.thickness &&
+      shuttle == other.shuttle &&
+      strands == other.strands;
 
   @override
-  int get hashCode => Object.hash(_ids.hash(shed), color, thickness);
+  int get hashCode => Object.hash(_ids.hash(shed), color, thickness, shuttle, strands);
 }
 
 /// One Use tabby row: consecutive pattern picks with the same shed.
@@ -309,8 +318,14 @@ class UseTabbyRow {
 
 /// The full per-pick data a shorthand expands to.
 class ExpandedPicks {
-  const ExpandedPicks(
-      {required this.sheds, required this.roles, required this.colors, required this.thickness});
+  const ExpandedPicks({
+    required this.sheds,
+    required this.roles,
+    required this.colors,
+    required this.thickness,
+    this.shuttles = const [],
+    this.strands = const [],
+  });
   final List<List<int>> sheds;
   final List<PickRole> roles;
   final List<int> colors;
@@ -318,16 +333,23 @@ class ExpandedPicks {
   /// Empty when the draft records no weft thickness.
   final List<double> thickness;
 
+  /// Per pick, the shuttle (null = unknown), and the strands.
+  final List<int?> shuttles;
+  final List<int> strands;
+
   /// True when [doc]'s picks are exactly these: the same recorded shed (as a list), role, weft color,
-  /// and (when recorded) thickness for every pick, and the same number of picks.
+  /// shuttle, strands, and (when recorded) thickness for every pick, the same number of picks, and no
+  /// shot group (the shorthand has none).
   bool matches(DraftDoc doc) {
-    if (doc.picks != sheds.length) return false;
+    if (doc.picks != sheds.length || doc.shotGroups.isNotEmpty) return false;
     final rows = doc.drive.rows;
     for (var p = 0; p < sheds.length; p++) {
       if (!_ids.equals(rows[p], sheds[p])) return false;
       if (doc.roleAt(p) != roles[p]) return false;
       if (_colorAt(doc, p) != colors[p]) return false;
       if (thickness.isNotEmpty && _thicknessAt(doc, p) != thickness[p]) return false;
+      if (doc.shuttleAt(p) != (p < shuttles.length ? shuttles[p] : null)) return false;
+      if (doc.strandsAt(p) != (p < strands.length ? strands[p] : 1)) return false;
     }
     return thickness.isEmpty == doc.weftThickness.isEmpty;
   }
@@ -345,6 +367,8 @@ final class UseTabbyBook extends UseTabbyReading {
     required this.tabbyThickness,
     required this.tracksThickness,
     required this.pattern,
+    this.tabbyShuttle,
+    this.tabbyStrands = 1,
   });
 
   /// Whether sheds are treadle ids (else raised shaft ids of a liftplan), for labels.
@@ -369,6 +393,10 @@ final class UseTabbyBook extends UseTabbyReading {
 
   /// Whether the draft records per-pick weft thickness.
   final bool tracksThickness;
+
+  /// The shuttle (null = unknown) and strands of every tabby pick.
+  final int? tabbyShuttle;
+  final int tabbyStrands;
 
   /// The pattern picks, in weaving order.
   final List<UseTabbyPick> pattern;
@@ -420,6 +448,8 @@ final class UseTabbyBook extends UseTabbyReading {
         tabbyColor: tabbyColor,
         tabbyThickness: tabbyThickness,
         tracksThickness: tracksThickness,
+        tabbyShuttle: tabbyShuttle,
+        tabbyStrands: tabbyStrands,
         pattern: List<UseTabbyPick>.unmodifiable(next),
       );
 
@@ -429,12 +459,16 @@ final class UseTabbyBook extends UseTabbyReading {
     final roles = <PickRole>[];
     final colors = <int>[];
     final thick = <double>[];
+    final shuttles = <int?>[];
+    final strands = <int>[];
     var t = 0;
     void tabby() {
       sheds.add(tabbySheds[t % tabbySheds.length]);
       roles.add(PickRole.tabby);
       colors.add(tabbyColor);
       thick.add(tabbyThickness ?? 1.0);
+      shuttles.add(tabbyShuttle);
+      strands.add(tabbyStrands);
       t++;
     }
 
@@ -445,10 +479,17 @@ final class UseTabbyBook extends UseTabbyReading {
       roles.add(PickRole.pattern);
       colors.add(pattern[k].color);
       thick.add(pattern[k].thickness ?? 1.0);
+      shuttles.add(pattern[k].shuttle);
+      strands.add(pattern[k].strands);
     }
     if (pattern.isNotEmpty && trailingTabby) tabby();
     return ExpandedPicks(
-        sheds: sheds, roles: roles, colors: colors, thickness: tracksThickness ? thick : const []);
+        sheds: sheds,
+        roles: roles,
+        colors: colors,
+        thickness: tracksThickness ? thick : const [],
+        shuttles: shuttles,
+        strands: strands);
   }
 }
 
@@ -487,6 +528,13 @@ UseTabbyReading readUseTabby(DraftDoc doc) {
       return UseTabbyUnavailable('Use tabby shorthand needs only pattern and tabby picks. '
           'Pick ${p + 1} is marked ${pickRoleWord(r)}.');
     }
+  }
+  // A shot group is several passes in one shed; the shorthand lists one pass per shed.
+  if (doc.shotGroups.isNotEmpty) {
+    final g = doc.shotGroups.first;
+    return UseTabbyUnavailable('Use tabby shorthand needs one pass in each shed, but '
+        '${describePicks([for (var p = g.start; p < g.end; p++) p])} are grouped as '
+        '${shotGroupPhrase(g.count)}.');
   }
   for (var p = 1; p < n; p++) {
     final r = doc.roleAt(p);
@@ -562,6 +610,18 @@ UseTabbyReading readUseTabby(DraftDoc doc) {
           'Use tabby shorthand needs one tabby weft. Pick ${p + 1} is a tabby '
           'pick with a different weft thickness from pick ${t0 + 1}.');
     }
+    if (doc.shuttleAt(p) != doc.shuttleAt(t0)) {
+      String on(int? s) => s == null ? 'with no shuttle' : 'on shuttle $s';
+      return UseTabbyUnavailable(
+          'Use tabby shorthand needs one tabby weft. Pick ${p + 1} is a tabby pick '
+          '${on(doc.shuttleAt(p))}, but pick ${t0 + 1} is ${on(doc.shuttleAt(t0))}.');
+    }
+    if (doc.strandsAt(p) != doc.strandsAt(t0)) {
+      String strands(int k) => k == 1 ? '1 strand' : '$k strands';
+      return UseTabbyUnavailable(
+          'Use tabby shorthand needs one tabby weft. Pick ${p + 1} is a tabby pick with '
+          '${strands(doc.strandsAt(p))}, but pick ${t0 + 1} has ${strands(doc.strandsAt(t0))}.');
+    }
   }
 
   final book = UseTabbyBook(
@@ -576,12 +636,16 @@ UseTabbyReading readUseTabby(DraftDoc doc) {
     tabbyColor: color,
     tabbyThickness: tracks ? _thicknessAt(doc, t0) : null,
     tracksThickness: tracks,
+    tabbyShuttle: doc.shuttleAt(t0),
+    tabbyStrands: doc.strandsAt(t0),
     pattern: List<UseTabbyPick>.unmodifiable([
       for (final p in patternPicks)
         UseTabbyPick(
           shed: List<int>.unmodifiable(rows[p]),
           color: _colorAt(doc, p),
           thickness: tracks ? _thicknessAt(doc, p) : null,
+          shuttle: doc.shuttleAt(p),
+          strands: doc.strandsAt(p),
         ),
     ]),
   );
@@ -657,14 +721,19 @@ UseTabbyEditResult editUseTabbyRowShed(DraftDoc doc, int row, List<int> ids) =>
         for (var k = 0; k < book.pattern.length; k++)
           (k >= r.firstPattern && k < r.endPattern)
               ? UseTabbyPick(
-                  shed: shed, color: book.pattern[k].color, thickness: book.pattern[k].thickness)
+                  shed: shed,
+                  color: book.pattern[k].color,
+                  thickness: book.pattern[k].thickness,
+                  shuttle: book.pattern[k].shuttle,
+                  strands: book.pattern[k].strands)
               : book.pattern[k],
       ];
     });
 
 /// Set Use tabby row [row]'s pattern pick count (>= 1) by adding or removing pattern picks at the END
-/// of the row; an added pattern pick copies the row's last one (shed, weft color, thickness). The
-/// tabby picks follow from the policy: one between every two pattern picks, still alternating.
+/// of the row; an added pattern pick copies the row's last one (shed, weft color, thickness, shuttle,
+/// strands). The tabby picks follow from the policy: one between every two pattern picks, still
+/// alternating.
 UseTabbyEditResult editUseTabbyRowCount(DraftDoc doc, int row, int count) {
   if (count < 1) throw RangeError.range(count, 1, null, 'count');
   return _editPattern(doc, row, (book, r) {
@@ -718,6 +787,8 @@ UseTabbyEditResult _editPattern(
     weftColors: e.colors,
     weftThickness: next.tracksThickness ? e.thickness : null,
     pickRoles: e.roles,
+    pickShuttles: e.shuttles,
+    pickStrands: e.strands,
     retained: retainedForPickCount(doc, e.sheds.length),
   );
   // Read the result back: it must be Use tabby again with exactly the edited pattern list and the
@@ -728,6 +799,8 @@ UseTabbyEditResult _editPattern(
       back.trailingTabby != next.trailingTabby ||
       back.firstIsA != next.firstIsA ||
       back.tabbyColor != next.tabbyColor ||
+      back.tabbyShuttle != next.tabbyShuttle ||
+      back.tabbyStrands != next.tabbyStrands ||
       !const ListEquality<UseTabbyPick>().equals(back.pattern, next.pattern)) {
     return const UseTabbyRefused(kUseTabbyEditNotExact);
   }
