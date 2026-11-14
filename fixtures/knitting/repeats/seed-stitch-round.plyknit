@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 3,
+  "schema_version": 4,
   "document": {
     "name": "Seed stitch in the round",
     "construction": "InTheRound",
@@ -279,6 +279,7 @@
         }
       ]
     },
-    "notes": "A 2-stitch motif worked 6 times; the next round offsets it."
+    "notes": "A 2-stitch motif worked 6 times; the next round offsets it.",
+    "sections": []
   }
 }

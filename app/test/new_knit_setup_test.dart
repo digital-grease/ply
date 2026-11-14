@@ -25,6 +25,7 @@ class FakeSetupRepo extends KnitRepository {
         legend: StitchLegendDto(stitches: []),
         chart: ChartDto(width: 0, rows: []),
         notes: '',
+        sections: [],
       );
 
   @override

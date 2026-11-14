@@ -460,6 +460,7 @@ mod tests {
             legend: StitchLegend::builtin(),
             chart: Chart { width, rows },
             notes: String::new(),
+            sections: Vec::new(),
         }
     }
 

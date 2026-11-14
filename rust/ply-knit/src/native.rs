@@ -2,7 +2,7 @@
 //! the ordered migrations that bring an older file up to the current schema.
 //!
 //! ```json
-//! { "format": "ply.knit", "schema_version": 3, "document": { "name": "...", "legend": ... } }
+//! { "format": "ply.knit", "schema_version": 4, "document": { "name": "...", "legend": ... } }
 //! ```
 //!
 //! **Version detection (deterministic).** A `.plyknit` file is one JSON object.
@@ -29,6 +29,9 @@
 //! - 2: the envelope; built-in stitches stored exactly as saved (the frozen `builtins_v2`).
 //! - 3: the document gains `cast_on` (a stitch count, or `null` when the pattern does not state
 //!   one). The built-in vocabulary is unchanged from version 2.
+//! - 4: the document gains `sections` (the construction layer, [`crate::sections`]; `[]` for a
+//!   chart-only pattern). The built-in vocabulary is unchanged from version 2. A step kind this
+//!   build does not know makes the file unreadable: it is never dropped on load.
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -40,7 +43,7 @@ use crate::pattern::KnitPattern;
 pub const KNIT_FORMAT: &str = "ply.knit";
 
 /// The `.plyknit` schema version this build writes, and the newest it can read.
-pub const KNIT_SCHEMA_VERSION: u32 = 3;
+pub const KNIT_SCHEMA_VERSION: u32 = 4;
 
 /// A pattern read from a `.plyknit` file, with the schema version the file was written at.
 #[derive(Debug, Clone, PartialEq)]
@@ -128,7 +131,7 @@ type Migration = fn(Value) -> Result<Value, KnitError>;
 /// The ordered migration chain: `MIGRATIONS[i]` upgrades a document from version `i + 1` to `i + 2`.
 /// The length is tied to [`KNIT_SCHEMA_VERSION`], so bumping the version without appending its
 /// migration does not compile.
-const MIGRATIONS: [Migration; KNIT_SCHEMA_VERSION as usize - 1] = [v1_to_v2, v2_to_v3];
+const MIGRATIONS: [Migration; KNIT_SCHEMA_VERSION as usize - 1] = [v1_to_v2, v2_to_v3, v3_to_v4];
 
 /// Run every migration from `from` up to the current version, in order.
 fn migrate(from: u32, mut document: Value) -> Result<Value, KnitError> {
@@ -144,8 +147,8 @@ fn migrate(from: u32, mut document: Value) -> Result<Value, KnitError> {
 const LEGACY_BUILTIN_COUNTS: [usize; 3] = [12, 20, 21];
 
 /// The built-in stitch vocabulary exactly as schema version 2 defines it, in wire form. FROZEN: this
-/// is what a version-2 legend's built-in entries mean. Version 3 changed the document shape only, so
-/// it uses this vocabulary unchanged. A later vocabulary gets its own frozen copy and its own
+/// is what a version-2 legend's built-in entries mean. Versions 3 and 4 changed the document shape
+/// only, so they use this vocabulary unchanged. A later vocabulary gets its own frozen copy and its own
 /// migration; this one never changes.
 fn builtins_v2() -> Vec<Value> {
     let def = |symbol: &str, consumes: u8, produces: u8, ws_variant: Option<u8>| {
@@ -292,6 +295,20 @@ fn v2_to_v3(mut doc: Value) -> Result<Value, KnitError> {
     Ok(doc)
 }
 
+/// Version 3 to 4: the document gains `sections`, set to `[]` (a chart-only pattern).
+///
+/// A version-3 pattern was a chart and nothing else, so the migration gives it no sections and it
+/// behaves exactly as before. A `sections` key already in a version-3 document was written by no
+/// release and meant nothing there, so it is replaced by `[]` rather than read as sections now.
+/// Everything else in the document is untouched.
+fn v3_to_v4(mut doc: Value) -> Result<Value, KnitError> {
+    if let Some(obj) = doc.as_object_mut() {
+        obj.insert("sections".into(), Value::Array(Vec::new()));
+    }
+    // Not an object: left as is, so the typed decode reports what is wrong.
+    Ok(doc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,24 +375,40 @@ mod tests {
                 ])],
             },
             notes: String::new(),
+            sections: Vec::new(),
         }
     }
 
-    /// The bare (legacy, version 1) JSON a release wrote for `p`: no envelope, and no `cast_on`
-    /// (no release had one).
+    /// The bare (legacy, version 1) JSON a release wrote for `p`: no envelope, and no `cast_on` or
+    /// `sections` (no release had them).
     fn legacy_json(p: &KnitPattern) -> String {
         let mut v = serde_json::to_value(p).unwrap();
         v.as_object_mut().unwrap().remove("cast_on");
+        v.as_object_mut().unwrap().remove("sections");
         serde_json::to_string_pretty(&v).unwrap()
     }
 
-    /// A version-2 envelope holding `p` as the version-2 writer stored it (no `cast_on` key).
+    /// A version-2 envelope holding `p` as the version-2 writer stored it (no `cast_on` or
+    /// `sections` key).
     fn v2_json(p: &KnitPattern) -> String {
         let mut doc = serde_json::to_value(p).unwrap();
         doc.as_object_mut().unwrap().remove("cast_on");
+        doc.as_object_mut().unwrap().remove("sections");
         serde_json::to_string_pretty(&json!({
             "format": "ply.knit",
             "schema_version": 2,
+            "document": doc,
+        }))
+        .unwrap()
+    }
+
+    /// A version-3 envelope holding `p` as the version-3 writer stored it (no `sections` key).
+    fn v3_json(p: &KnitPattern) -> String {
+        let mut doc = serde_json::to_value(p).unwrap();
+        doc.as_object_mut().unwrap().remove("sections");
+        serde_json::to_string_pretty(&json!({
+            "format": "ply.knit",
+            "schema_version": 3,
             "document": doc,
         }))
         .unwrap()
@@ -388,14 +421,21 @@ mod tests {
         "cable-repeat-round",
     ];
 
+    /// The real version-3 bytes the engine wrote before version 4 (see each `.fixture.toml`).
+    const SCHEMA_V3: [&str; 3] = [
+        "rib-cast-on-flat",
+        "seed-stitch-round",
+        "cable-repeat-round",
+    ];
+
     /// The built-in vocabulary is part of the schema. If this fails, the built-ins changed: bump
     /// KNIT_SCHEMA_VERSION, freeze the new vocabulary next to `builtins_v2`, and append a migration
     /// that maps exactly what changed (see the format ADR). Do not edit `builtins_v2`. Schema 3 only
-    /// added `cast_on`, so its vocabulary is still the version-2 one.
+    /// added `cast_on` and schema 4 only `sections`, so the vocabulary is still the version-2 one.
     #[test]
     fn current_builtins_are_the_frozen_schema_vocabulary() {
         assert_eq!(
-            KNIT_SCHEMA_VERSION, 3,
+            KNIT_SCHEMA_VERSION, 4,
             "update this test with the new snapshot"
         );
         let current = serde_json::to_value(&StitchLegend::builtin().stitches).unwrap();
@@ -408,14 +448,19 @@ mod tests {
         let json = write(&ribbing()).unwrap();
         let v: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["format"], "ply.knit");
-        assert_eq!(v["schema_version"], 3);
+        assert_eq!(v["schema_version"], 4);
         assert_eq!(v["document"]["name"], "1x1 rib");
         assert_eq!(
             v["document"]["cast_on"],
             Value::Null,
             "not set is written as null"
         );
-        assert_eq!(schema_version(&json).unwrap(), 3);
+        assert_eq!(
+            v["document"]["sections"],
+            json!([]),
+            "a chart-only pattern is written with no sections"
+        );
+        assert_eq!(schema_version(&json).unwrap(), 4);
     }
 
     #[test]
@@ -426,16 +471,16 @@ mod tests {
         assert_eq!(loaded.source_version, KNIT_SCHEMA_VERSION);
     }
 
-    /// A version-3 file keeps its cast-on through save and load, byte for byte on a re-save.
+    /// A current file keeps its cast-on through save and load, byte for byte on a re-save.
     #[test]
-    fn a_v3_cast_on_round_trips() {
+    fn a_cast_on_round_trips() {
         let mut p = ribbing();
         p.cast_on = Some(26);
         let text = write(&p).unwrap();
         let v: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(v["document"]["cast_on"], 26);
         let loaded = read(&text).unwrap();
-        assert_eq!(loaded.source_version, 3);
+        assert_eq!(loaded.source_version, KNIT_SCHEMA_VERSION);
         assert_eq!(loaded.pattern, p);
         assert_eq!(write(&loaded.pattern).unwrap(), text);
     }
@@ -464,6 +509,11 @@ mod tests {
             assert_eq!(
                 migrated.as_object_mut().unwrap().remove("cast_on"),
                 Some(Value::Null)
+            );
+            assert_eq!(
+                migrated.as_object_mut().unwrap().remove("sections"),
+                Some(json!([])),
+                "{name}: migrated on through version 4 with no sections"
             );
             assert_eq!(migrated, stored_doc, "{name}: nothing else changes");
 
@@ -568,6 +618,235 @@ mod tests {
         }
     }
 
+    /// The real version-3 bytes migrate to the current version with no sections and every other
+    /// document field exactly as stored (the cast-on included); a re-save is a current envelope that
+    /// loads unchanged.
+    #[test]
+    fn every_schema_v3_fixture_migrates_to_v4_unchanged_but_for_the_sections() {
+        for name in SCHEMA_V3 {
+            let text = fixture(&format!("schema-v3/{name}.plyknit"));
+            assert_eq!(schema_version(&text).unwrap(), 3, "{name}");
+            let stored: Value = serde_json::from_str(&text).unwrap();
+            let stored_doc = stored["document"].clone();
+            assert!(
+                stored_doc.get("sections").is_none(),
+                "{name}: v3 had no sections"
+            );
+            assert!(
+                stored_doc.get("cast_on").is_some(),
+                "{name}: v3 had a cast_on"
+            );
+
+            let loaded = read(&text).unwrap();
+            assert_eq!(loaded.source_version, 3, "{name}");
+            assert!(
+                loaded.pattern.sections.is_empty(),
+                "{name}: a migration never invents sections"
+            );
+            let mut migrated = serde_json::to_value(&loaded.pattern).unwrap();
+            assert_eq!(
+                migrated.as_object_mut().unwrap().remove("sections"),
+                Some(json!([]))
+            );
+            assert_eq!(migrated, stored_doc, "{name}: nothing else changes");
+
+            let saved = write(&loaded.pattern).unwrap();
+            assert_eq!(schema_version(&saved).unwrap(), KNIT_SCHEMA_VERSION);
+            let again = read(&saved).unwrap();
+            assert_eq!(again.source_version, KNIT_SCHEMA_VERSION);
+            assert_eq!(again.pattern, loaded.pattern, "{name}");
+            assert_eq!(write(&again.pattern).unwrap(), saved, "{name}: byte-stable");
+        }
+    }
+
+    /// The migrated version-3 fixtures count, write and validate exactly as they did at version 3
+    /// (the oracle results recorded in `fixtures/knitting/repeats/` when these bytes were written).
+    #[test]
+    fn schema_v3_fixtures_count_write_and_validate_as_before() {
+        use crate::{stitch_flow, to_written, validate, Severity};
+        let expect = |name: &str| -> Value {
+            let path = format!(
+                "{}/../../fixtures/knitting/repeats/{name}.expect.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        for name in SCHEMA_V3 {
+            let p = read(&fixture(&format!("schema-v3/{name}.plyknit")))
+                .unwrap()
+                .pattern;
+            let want = expect(name);
+            let mut lines = to_written(&p);
+            if let Some(line) = want.get("cast_on_line").and_then(Value::as_str) {
+                assert_eq!(lines.remove(0), line, "{name}");
+            }
+            let rows = want["rows"].as_array().unwrap();
+            let written: Vec<&str> = rows
+                .iter()
+                .map(|r| r["written"].as_str().unwrap())
+                .collect();
+            assert_eq!(lines, written, "{name}: written rows as before");
+            let produced: Vec<Option<u64>> = rows.iter().map(|r| r["produces"].as_u64()).collect();
+            let counts: Vec<Option<u64>> = stitch_flow(&p)
+                .iter()
+                .map(|f| f.count.map(|c| c.produced))
+                .collect();
+            assert_eq!(counts, produced, "{name}: counts");
+            let got: Vec<(String, String)> = validate(&p)
+                .into_iter()
+                .map(|i| {
+                    let s = match i.severity {
+                        Severity::Error => "error",
+                        Severity::Warning => "warning",
+                    };
+                    (s.to_string(), i.message)
+                })
+                .collect();
+            let issues: Vec<(String, String)> = want["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|i| {
+                    (
+                        i["severity"].as_str().unwrap().to_string(),
+                        i["message"].as_str().unwrap().to_string(),
+                    )
+                })
+                .collect();
+            assert_eq!(got, issues, "{name}: validation");
+        }
+    }
+
+    /// A version-3 document never meant anything by a `sections` key (no writer produced one), so
+    /// the migration replaces it with no sections instead of reading it as a construction now.
+    #[test]
+    fn v3_to_v4_never_carries_sections_forward() {
+        let p = ribbing();
+        let mut v: Value = serde_json::from_str(&v3_json(&p)).unwrap();
+        v["document"]["sections"] = json!([{"id": "x", "name": "stray", "notes": "", "steps": []}]);
+        let loaded = read(&v.to_string()).unwrap();
+        assert_eq!(loaded.source_version, 3);
+        assert!(loaded.pattern.sections.is_empty());
+        assert_eq!(loaded.pattern, p);
+        assert_eq!(v3_to_v4(json!("x")).unwrap(), json!("x"));
+    }
+
+    /// Sections survive save and load exactly, every step kind included, and the re-save is
+    /// byte-stable.
+    #[test]
+    fn sections_round_trip() {
+        use crate::pattern::Side;
+        use crate::sections::*;
+        let mut p = ribbing();
+        p.cast_on = Some(24);
+        let step = |id: &str, action: StepAction| Step {
+            id: id.into(),
+            action,
+        };
+        p.sections = vec![Section {
+            id: "section-1".into(),
+            name: "Shoulder".into(),
+            notes: "Use the smaller needle.".into(),
+            steps: vec![
+                step("step-1", StepAction::ChartRows { first: 1, last: 1 }),
+                step(
+                    "step-2",
+                    StepAction::ShortRow {
+                        stitch: WorkStitch::Knit,
+                        to: TurnAt::Last(6),
+                        method: TurnMethod::WrapAndTurn,
+                        resolve_turns: false,
+                    },
+                ),
+                step(
+                    "step-3",
+                    StepAction::Work {
+                        stitch: WorkStitch::InPattern,
+                        to: WorkTo::Count(3),
+                        resolve_turns: true,
+                    },
+                ),
+                step("step-4", StepAction::CastOn { count: 2 }),
+                step(
+                    "step-5",
+                    StepAction::BindOff {
+                        count: None,
+                        resolve_turns: true,
+                    },
+                ),
+                step(
+                    "step-6",
+                    StepAction::Hold {
+                        count: Some(4),
+                        name: "neck".into(),
+                    },
+                ),
+                step(
+                    "step-7",
+                    StepAction::Resume {
+                        hold: "step-6".into(),
+                        facing: Some(Side::Ws),
+                    },
+                ),
+                step(
+                    "step-8",
+                    StepAction::Opaque {
+                        text: "Try it on.".into(),
+                        stitch_change: Some(-2),
+                    },
+                ),
+                step(
+                    "step-9",
+                    StepAction::ShortRow {
+                        stitch: WorkStitch::Purl,
+                        to: TurnAt::Count(5),
+                        method: TurnMethod::German,
+                        resolve_turns: false,
+                    },
+                ),
+            ],
+        }];
+        let text = write(&p).unwrap();
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            v["document"]["sections"][0]["steps"][1]["action"]["ShortRow"]["to"],
+            json!({"Last": 6})
+        );
+        assert_eq!(
+            v["document"]["sections"][0]["steps"][4]["action"]["BindOff"]["count"],
+            Value::Null
+        );
+        let loaded = read(&text).unwrap();
+        assert_eq!(loaded.pattern, p);
+        assert_eq!(write(&loaded.pattern).unwrap(), text);
+    }
+
+    /// A step kind this build does not know is never dropped. Within version 4 no writer
+    /// produces one, so the file is unreadable (a typed error, nothing loaded); a later version that
+    /// adds kinds bumps the schema version and is refused as newer before its document is read.
+    #[test]
+    fn an_unknown_step_kind_is_refused_not_dropped() {
+        let p = ribbing();
+        let mut v: Value = serde_json::from_str(&write(&p).unwrap()).unwrap();
+        v["document"]["sections"] = json!([{
+            "id": "section-1", "name": "Heel", "notes": "",
+            "steps": [{"id": "step-1", "action": {"PickUp": {"count": 12}}}]
+        }]);
+        assert!(matches!(read(&v.to_string()), Err(KnitError::Json(_))));
+        v["schema_version"] = json!(5);
+        assert!(matches!(
+            read(&v.to_string()),
+            Err(KnitError::NewerVersion {
+                found: 5,
+                supported: 4
+            })
+        ));
+        // The control: the same file with a step kind this build knows loads.
+        v["schema_version"] = json!(4);
+        v["document"]["sections"][0]["steps"][0]["action"] = json!({"CastOn": {"count": 3}});
+        assert!(read(&v.to_string()).is_ok());
+    }
+
     /// A version-2 document never meant anything by a `cast_on` key (no writer produced one), so the
     /// migration replaces it with "not set" instead of giving it a meaning now.
     #[test]
@@ -649,6 +928,7 @@ mod tests {
                 p.cast_on, None,
                 "{release}/{name}: migrated all the way, not set"
             );
+            assert!(p.sections.is_empty(), "{release}/{name}: no sections");
             assert_eq!(p.palette.len(), old["palette"].as_array().unwrap().len());
         }
     }
@@ -714,7 +994,7 @@ mod tests {
         assert!(matches!(err, KnitError::Malformed(_)), "{err}");
     }
 
-    /// Version 2 and 3 legends load exactly as saved: no prefix matching. Here built-in 5 (ssk)
+    /// Version 2, 3 and 4 legends load exactly as saved: no prefix matching. Here built-in 5 (ssk)
     /// differs from the vocabulary and a custom equals a built-in; neither is touched.
     #[test]
     fn a_v2_legend_loads_exactly_as_saved() {
@@ -729,6 +1009,9 @@ mod tests {
         let from_v2 = read(&v2_json(&p)).unwrap();
         assert_eq!(from_v2.source_version, 2);
         assert_eq!(from_v2.pattern, p);
+        let from_v3 = read(&v3_json(&p)).unwrap();
+        assert_eq!(from_v3.source_version, 3);
+        assert_eq!(from_v3.pattern, p);
 
         // The same legend written as a LEGACY file goes through the v1 -> v2 rule instead, which does
         // not recognize the altered built-ins as any release's vocabulary.
@@ -743,14 +1026,14 @@ mod tests {
         let p = ribbing();
         let text = write(&p)
             .unwrap()
-            .replace("\"schema_version\": 3", "\"schema_version\": 4");
+            .replace("\"schema_version\": 4", "\"schema_version\": 5");
         let err = read(&text).unwrap_err();
         assert!(
             matches!(
                 err,
                 KnitError::NewerVersion {
-                    found: 4,
-                    supported: 3
+                    found: 5,
+                    supported: 4
                 }
             ),
             "{err}"

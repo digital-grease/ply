@@ -186,14 +186,32 @@ impl RowProblem {
     /// name what the row works from: the row below, or for the first row the cast-on); `cols` maps
     /// storage columns to reading-order numbers.
     pub fn reason(&self, row: usize, cols: &ReadingCols) -> String {
+        let from = if row == 0 {
+            CountSource::CastOn
+        } else {
+            CountSource::RowBelow(row)
+        };
+        self.reason_from(from, cols)
+    }
+
+    /// [`RowProblem::reason`] with the row's stitches coming from `from`: the cast-on, the chart row
+    /// below, or (in a section, [`crate::sections`]) the stitches left to work in the row.
+    pub fn reason_from(&self, from: CountSource, cols: &ReadingCols) -> String {
         // Where the row's stitches come from: "row 2 produced 14 stitches" / "the cast-on is 14
-        // stitches" (a first row has a known count only when the pattern states a cast-on).
-        let source = |n: u64| {
-            if row == 0 {
-                format!("the cast-on is {}", stitches(n))
-            } else {
-                format!("row {row} produced {}", stitches(n))
-            }
+        // stitches" (a first row has a known count only when the pattern states a cast-on) / "14
+        // stitches are left to work in this row".
+        let row = match from {
+            CountSource::RowBelow(r) => r,
+            _ => 0,
+        };
+        let source = |n: u64| match from {
+            CountSource::CastOn => format!("the cast-on is {}", stitches(n)),
+            CountSource::RowBelow(r) => format!("row {r} produced {}", stitches(n)),
+            CountSource::InRow => format!(
+                "{} {} left to work in this row",
+                stitches(n),
+                if n == 1 { "is" } else { "are" }
+            ),
         };
         match *self {
             RowProblem::ZeroTimes(s) => format!(
@@ -251,13 +269,16 @@ impl RowProblem {
                 motif,
                 reserved,
             } => {
-                let (why, fix) = if first_row {
-                    (
+                let (why, fix) = match from {
+                    CountSource::InRow => (
+                        "Ply does not know how many stitches are on the needle here".to_string(),
+                        "",
+                    ),
+                    _ if first_row => (
                         "the pattern has no cast-on count".to_string(),
                         "; set the cast-on in the pattern settings",
-                    )
-                } else {
-                    (format!("the stitch count after row {row} is unknown"), "")
+                    ),
+                    _ => (format!("the stitch count after row {row} is unknown"), ""),
                 };
                 format!(
                     "the repeat over {} is worked to the end of the row, but {why}, so Ply cannot count this row (it needs {}){fix}",
@@ -287,10 +308,10 @@ impl RowProblem {
                 source(available)
             ),
             RowProblem::ToEndNoneLeft { span, available } => {
-                let of = if row == 0 {
-                    "of the cast-on".to_string()
-                } else {
-                    format!("row {row} produced")
+                let of = match from {
+                    CountSource::CastOn => "of the cast-on".to_string(),
+                    CountSource::RowBelow(r) => format!("row {r} produced"),
+                    CountSource::InRow => "left to work in this row".to_string(),
                 };
                 format!(
                     "the repeat over {} cannot be worked to the end: the rest of the row uses all {} {of}, leaving none for the repeat",
@@ -328,6 +349,17 @@ impl RowProblem {
             _ => format!("row {n}: {}", self.reason(row, cols)),
         }
     }
+}
+
+/// Where a row's stitches come from, for the wording of a counting problem.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountSource {
+    /// The pattern's cast-on (chart row 1 of a chart-only pattern).
+    CastOn,
+    /// What chart row `n` (1-based) produced.
+    RowBelow(usize),
+    /// The stitches the section ledger has left to work in the row ([`crate::sections`]).
+    InRow,
 }
 
 /// "a multiple of 4 stitches plus 2" (or "... stitches" when nothing is reserved).
@@ -739,6 +771,7 @@ mod tests {
             legend: StitchLegend::builtin(),
             chart: Chart { width, rows },
             notes: String::new(),
+            sections: Vec::new(),
         }
     }
 

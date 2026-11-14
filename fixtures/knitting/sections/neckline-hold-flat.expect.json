@@ -1,0 +1,413 @@
+{
+  "description": "A flat front with a neckline worked on held stitches. 30 sts are cast on and two chart rows of stockinette worked. On the next right-side row 9 sts are knit, the next 12 (the center neck) go on a holder and the remaining 9 (the right side) on a second holder, so only the 9 left-side stitches stay on the needle and the work turns. The left side is worked for 3 more rows and bound off on a right-side row. The right-side stitches go back on the needle with the RS facing (finishing the dividing row), are worked for 4 rows to match and bound off on a right-side row. Last, the center neck stitches go back with the RS facing, one row is knit and they are bound off on the wrong side. Every stitch is accounted for: 9 + 9 + 12 = 30 bound off and nothing left on hold.",
+  "covers": [
+    "working part of a row",
+    "holding the next stitches from the middle of a row",
+    "holding the remaining stitches ends the row",
+    "two groups on hold at once",
+    "binding off everything",
+    "returning a group onto an empty needle with the RS facing",
+    "groups referred to by their hold step",
+    "bound-off total across sections"
+  ],
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "cast_on": 30,
+  "written": [
+    "Cast on 30 sts.",
+    "Section 1: Body",
+    "Row 1 (RS): k30 (30 sts on the needle)",
+    "Row 2 (WS): p30 (30 sts on the needle)",
+    "Section 2: Divide for the neck",
+    "Next row (RS): knit 9 sts. (30 sts on the needle, 21 still to work in this row)",
+    "Place the next 12 sts on a holder (center neck). (18 sts on the needle, 9 still to work in this row; 12 on hold)",
+    "Place the remaining 9 sts on a holder (right side). (9 sts on the needle; on hold: center neck 12, right side 9)",
+    "Section 3: Left side",
+    "Next row (WS): purl to end. (9 sts on the needle; on hold: center neck 12, right side 9)",
+    "Next row (RS): knit to end. (9 sts on the needle; on hold: center neck 12, right side 9)",
+    "Next row (WS): purl to end. (9 sts on the needle; on hold: center neck 12, right side 9)",
+    "Next row (RS): bind off all sts. (0 sts on the needle; on hold: center neck 12, right side 9; 9 bound off)",
+    "Section 4: Right side",
+    "With the RS facing, return the 9 sts on hold (right side) to the needle and join the yarn. (9 sts on the needle; 12 on hold; 9 bound off)",
+    "Next row (RS): knit to end. (9 sts on the needle; 12 on hold; 9 bound off)",
+    "Next row (WS): purl to end. (9 sts on the needle; 12 on hold; 9 bound off)",
+    "Next row (RS): knit to end. (9 sts on the needle; 12 on hold; 9 bound off)",
+    "Next row (WS): purl to end. (9 sts on the needle; 12 on hold; 9 bound off)",
+    "Next row (RS): bind off all sts. (0 sts on the needle; 12 on hold; 18 bound off)",
+    "Section 5: Neck edge",
+    "With the RS facing, return the 12 sts on hold (center neck) to the needle and join the yarn. (12 sts on the needle; 18 bound off)",
+    "Next row (RS): knit to end. (12 sts on the needle; 18 bound off)",
+    "Next row (WS): bind off all sts. (0 sts on the needle; 30 bound off)"
+  ],
+  "steps": [
+    {
+      "section": "Body",
+      "step": 1,
+      "chart_row": 1,
+      "line": "Row 1 (RS): k30 (30 sts on the needle)",
+      "count": {
+        "on_needle": 30,
+        "to_work": 30,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Body",
+      "step": 1,
+      "chart_row": 2,
+      "line": "Row 2 (WS): p30 (30 sts on the needle)",
+      "count": {
+        "on_needle": 30,
+        "to_work": 30,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Divide for the neck",
+      "step": 1,
+      "chart_row": null,
+      "line": "Next row (RS): knit 9 sts. (30 sts on the needle, 21 still to work in this row)",
+      "count": {
+        "on_needle": 30,
+        "to_work": 21,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Divide for the neck",
+      "step": 2,
+      "chart_row": null,
+      "line": "Place the next 12 sts on a holder (center neck). (18 sts on the needle, 9 still to work in this row; 12 on hold)",
+      "count": {
+        "on_needle": 18,
+        "to_work": 9,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Divide for the neck",
+      "step": 3,
+      "chart_row": null,
+      "line": "Place the remaining 9 sts on a holder (right side). (9 sts on the needle; on hold: center neck 12, right side 9)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ],
+          [
+            "right side",
+            9
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Left side",
+      "step": 1,
+      "chart_row": null,
+      "line": "Next row (WS): purl to end. (9 sts on the needle; on hold: center neck 12, right side 9)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ],
+          [
+            "right side",
+            9
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Left side",
+      "step": 2,
+      "chart_row": null,
+      "line": "Next row (RS): knit to end. (9 sts on the needle; on hold: center neck 12, right side 9)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ],
+          [
+            "right side",
+            9
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Left side",
+      "step": 3,
+      "chart_row": null,
+      "line": "Next row (WS): purl to end. (9 sts on the needle; on hold: center neck 12, right side 9)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ],
+          [
+            "right side",
+            9
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Left side",
+      "step": 4,
+      "chart_row": null,
+      "line": "Next row (RS): bind off all sts. (0 sts on the needle; on hold: center neck 12, right side 9; 9 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ],
+          [
+            "right side",
+            9
+          ]
+        ],
+        "bound_off": 9,
+        "side": null
+      }
+    },
+    {
+      "section": "Right side",
+      "step": 1,
+      "chart_row": null,
+      "line": "With the RS facing, return the 9 sts on hold (right side) to the needle and join the yarn. (9 sts on the needle; 12 on hold; 9 bound off)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ]
+        ],
+        "bound_off": 9,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Right side",
+      "step": 2,
+      "chart_row": null,
+      "line": "Next row (RS): knit to end. (9 sts on the needle; 12 on hold; 9 bound off)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ]
+        ],
+        "bound_off": 9,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Right side",
+      "step": 3,
+      "chart_row": null,
+      "line": "Next row (WS): purl to end. (9 sts on the needle; 12 on hold; 9 bound off)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ]
+        ],
+        "bound_off": 9,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Right side",
+      "step": 4,
+      "chart_row": null,
+      "line": "Next row (RS): knit to end. (9 sts on the needle; 12 on hold; 9 bound off)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ]
+        ],
+        "bound_off": 9,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Right side",
+      "step": 5,
+      "chart_row": null,
+      "line": "Next row (WS): purl to end. (9 sts on the needle; 12 on hold; 9 bound off)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ]
+        ],
+        "bound_off": 9,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Right side",
+      "step": 6,
+      "chart_row": null,
+      "line": "Next row (RS): bind off all sts. (0 sts on the needle; 12 on hold; 18 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "center neck",
+            12
+          ]
+        ],
+        "bound_off": 18,
+        "side": null
+      }
+    },
+    {
+      "section": "Neck edge",
+      "step": 1,
+      "chart_row": null,
+      "line": "With the RS facing, return the 12 sts on hold (center neck) to the needle and join the yarn. (12 sts on the needle; 18 bound off)",
+      "count": {
+        "on_needle": 12,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 18,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Neck edge",
+      "step": 2,
+      "chart_row": null,
+      "line": "Next row (RS): knit to end. (12 sts on the needle; 18 bound off)",
+      "count": {
+        "on_needle": 12,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 18,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Neck edge",
+      "step": 3,
+      "chart_row": null,
+      "line": "Next row (WS): bind off all sts. (0 sts on the needle; 30 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 30,
+        "side": null
+      }
+    }
+  ],
+  "issues": []
+}

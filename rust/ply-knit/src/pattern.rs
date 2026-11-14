@@ -38,6 +38,16 @@ pub enum Side {
     Ws,
 }
 
+impl Side {
+    /// The other face: what faces the knitter after turning the work.
+    pub fn other(self) -> Side {
+        match self {
+            Side::Rs => Side::Ws,
+            Side::Ws => Side::Rs,
+        }
+    }
+}
+
 /// Which way a cable leans / which group of stitches crosses on top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Cross {
@@ -334,6 +344,13 @@ pub struct KnitPattern {
     pub legend: StitchLegend,
     pub chart: Chart,
     pub notes: String,
+    /// The pattern's construction, as named sections of ordered steps (cast on, chart rows, short
+    /// rows, stitches put on hold and returned, bind off, unchecked written steps), or empty for a
+    /// chart-only pattern. OPTIONAL: when empty, the pattern behaves exactly as a chart (written
+    /// instructions row by row, rows checked bottom to top). When not empty, the written
+    /// instructions follow the sections and a stitch ledger is kept step by step; see
+    /// [`crate::sections`]. Added in `.plyknit` schema version 4 (older files load with none).
+    pub sections: Vec<crate::sections::Section>,
 }
 
 impl KnitPattern {
@@ -395,6 +412,7 @@ mod tests {
                 rows: vec![Row::plain(vec![k, p]), Row::plain(vec![k, p])],
             },
             notes: String::new(),
+            sections: Vec::new(),
         }
     }
 

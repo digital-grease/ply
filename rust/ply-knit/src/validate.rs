@@ -16,10 +16,16 @@
 //!
 //! When the pattern states a cast-on ([`KnitPattern::cast_on`]), row 1 must consume exactly that
 //! many stitches, and a cast-on of 0 is an error. Without one, row 1's own count is the start.
+//!
+//! A pattern with SECTIONS ([`KnitPattern::sections`]) is checked by its stitch ledger instead of
+//! bottom-to-top row continuity: every chart row's cells and repeats are checked as above, and each
+//! row's stitch count where a section works it ([`crate::sections`]); the ledger's problems carry
+//! their place (`Back, step 3: ...`).
 
 use crate::flow::stitch_flow;
-use crate::instruction::ReadingCols;
+use crate::instruction::{row_instruction, ReadingCols, RowInstruction};
 use crate::pattern::{builtin, KnitPattern, Row, Side, StitchLegend};
+use crate::sections;
 
 /// Issue severity. Errors are hard problems (a save gate should refuse); warnings are advisory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,17 +105,43 @@ pub fn validate(pattern: &KnitPattern) -> Vec<KnitIssue> {
         check_cable_spans(legend, row, rownum, width, rs, &mut issues);
     }
 
-    // Repeats and stitch counts: each row's worked sequence must take exactly what the row below
-    // left, and every repeat must be workable as authored. An unknown stitch counts 0 (it is already
-    // flagged above).
-    for flow in stitch_flow(pattern) {
-        let cols = ReadingCols::for_row(pattern, flow.row);
-        for problem in &flow.problems {
-            let message = problem.message(flow.row, &cols);
-            issues.push(if problem.is_warning() {
-                KnitIssue::warning(message)
-            } else {
-                KnitIssue::error(message)
+    if pattern.sections.is_empty() {
+        // Repeats and stitch counts: each row's worked sequence must take exactly what the row
+        // below left, and every repeat must be workable as authored. An unknown stitch counts 0 (it
+        // is already flagged above).
+        for flow in stitch_flow(pattern) {
+            let cols = ReadingCols::for_row(pattern, flow.row);
+            for problem in &flow.problems {
+                let message = problem.message(flow.row, &cols);
+                issues.push(if problem.is_warning() {
+                    KnitIssue::warning(message)
+                } else {
+                    KnitIssue::error(message)
+                });
+            }
+        }
+    } else {
+        // With sections the chart is a set of rows the sections work, not one bottom-to-top
+        // sequence: row r + 1 need not follow row r. Every row's repeats must still be workable as
+        // drawn; its stitch counts are checked where a section works it, against the stitches the
+        // ledger has waiting (see `crate::sections`).
+        for r in 0..pattern.chart.rows.len() {
+            if let RowInstruction::Unsupported(problems) = row_instruction(pattern, r) {
+                let cols = ReadingCols::for_row(pattern, r);
+                for problem in &problems {
+                    let message = problem.message(r, &cols);
+                    issues.push(if problem.is_warning() {
+                        KnitIssue::warning(message)
+                    } else {
+                        KnitIssue::error(message)
+                    });
+                }
+            }
+        }
+        for issue in sections::ledger(pattern).issues {
+            issues.push(KnitIssue {
+                severity: issue.severity,
+                message: issue.message,
             });
         }
     }
@@ -203,6 +235,7 @@ mod tests {
             legend,
             chart: Chart { width, rows },
             notes: String::new(),
+            sections: Vec::new(),
         }
     }
 

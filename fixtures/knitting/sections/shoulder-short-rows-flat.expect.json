@@ -1,0 +1,223 @@
+{
+  "description": "One flat shoulder sloped with wrap-and-turn short rows. 24 sts are cast on and two chart rows of stockinette are worked, then an unchecked step (stitch change stated as 0) repeats them to length. Three short rows each turn 6 sts further from the end of the right-side row, so the last 6, 12 and 18 sts wait past the turns; every wrong-side row works back to the start edge. A full right-side row then works across all three wraps, working each together with its stitch, and the 24 sts go on hold for a three-needle bind-off. Stitches 1 to 6 get 7 rows, 7 to 12 get 5, 13 to 18 get 3 and 19 to 24 get 1, which is the slope.",
+  "covers": [
+    "cast-on from the pattern settings",
+    "chart rows inside a section",
+    "unchecked step with a stated stitch change",
+    "wrap and turn short rows counted from the end of the needle",
+    "stitches waiting past the turns",
+    "resolving wraps when working across",
+    "short-row and next-row labels with RS/WS",
+    "holding every stitch",
+    "a group still on hold at the end of the pattern"
+  ],
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "cast_on": 24,
+  "written": [
+    "Cast on 24 sts.",
+    "Section 1: Body",
+    "Row 1 (RS): k24 (24 sts on the needle)",
+    "Row 2 (WS): p24 (24 sts on the needle)",
+    "Not checked by Ply: Repeat rows 1 and 2 until the piece measures 4 in (10 cm) from the cast-on, ending with a WS row. (24 sts on the needle)",
+    "Section 2: Shoulder",
+    "Notes: The stitches left at the end of each right-side row become the low end of the slope.",
+    "Short row 1 (RS): knit to last 6 sts, wrap and turn. (24 sts on the needle, 6 waiting past a turn)",
+    "Short row 2 (WS): purl to end. (24 sts on the needle, 6 waiting past a turn)",
+    "Short row 3 (RS): knit to last 12 sts, wrap and turn. (24 sts on the needle, 12 waiting past a turn)",
+    "Short row 4 (WS): purl to end. (24 sts on the needle, 12 waiting past a turn)",
+    "Short row 5 (RS): knit to last 18 sts, wrap and turn. (24 sts on the needle, 18 waiting past a turn)",
+    "Short row 6 (WS): purl to end. (24 sts on the needle, 18 waiting past a turn)",
+    "Next row (RS): knit to end, working each wrap together with its stitch. (24 sts on the needle)",
+    "Place all 24 sts on a holder (shoulder). (0 sts on the needle; 24 on hold)"
+  ],
+  "steps": [
+    {
+      "section": "Body",
+      "step": 1,
+      "chart_row": 1,
+      "line": "Row 1 (RS): k24 (24 sts on the needle)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 24,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Body",
+      "step": 1,
+      "chart_row": 2,
+      "line": "Row 2 (WS): p24 (24 sts on the needle)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 24,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Body",
+      "step": 2,
+      "chart_row": null,
+      "line": "Not checked by Ply: Repeat rows 1 and 2 until the piece measures 4 in (10 cm) from the cast-on, ending with a WS row. (24 sts on the needle)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 24,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Shoulder",
+      "step": 1,
+      "chart_row": null,
+      "line": "Short row 1 (RS): knit to last 6 sts, wrap and turn. (24 sts on the needle, 6 waiting past a turn)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 18,
+        "mid_row": false,
+        "past_turns": 6,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Shoulder",
+      "step": 2,
+      "chart_row": null,
+      "line": "Short row 2 (WS): purl to end. (24 sts on the needle, 6 waiting past a turn)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 24,
+        "mid_row": false,
+        "past_turns": 6,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Shoulder",
+      "step": 3,
+      "chart_row": null,
+      "line": "Short row 3 (RS): knit to last 12 sts, wrap and turn. (24 sts on the needle, 12 waiting past a turn)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 12,
+        "pending_turns": 2,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Shoulder",
+      "step": 4,
+      "chart_row": null,
+      "line": "Short row 4 (WS): purl to end. (24 sts on the needle, 12 waiting past a turn)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 24,
+        "mid_row": false,
+        "past_turns": 12,
+        "pending_turns": 2,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Shoulder",
+      "step": 5,
+      "chart_row": null,
+      "line": "Short row 5 (RS): knit to last 18 sts, wrap and turn. (24 sts on the needle, 18 waiting past a turn)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 6,
+        "mid_row": false,
+        "past_turns": 18,
+        "pending_turns": 3,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Shoulder",
+      "step": 6,
+      "chart_row": null,
+      "line": "Short row 6 (WS): purl to end. (24 sts on the needle, 18 waiting past a turn)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 24,
+        "mid_row": false,
+        "past_turns": 18,
+        "pending_turns": 3,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Shoulder",
+      "step": 7,
+      "chart_row": null,
+      "line": "Next row (RS): knit to end, working each wrap together with its stitch. (24 sts on the needle)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 24,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Shoulder",
+      "step": 8,
+      "chart_row": null,
+      "line": "Place all 24 sts on a holder (shoulder). (0 sts on the needle; 24 on hold)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "shoulder",
+            24
+          ]
+        ],
+        "bound_off": 0,
+        "side": null
+      }
+    }
+  ],
+  "issues": [
+    {
+      "severity": "warning",
+      "message": "Shoulder, step 8: 24 stitches are still on hold (shoulder) at the end of the pattern; no step returns them to the needle"
+    }
+  ]
+}

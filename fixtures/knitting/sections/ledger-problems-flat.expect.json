@@ -1,0 +1,288 @@
+{
+  "description": "Deliberate mistakes, each named in plain words, around a few steps that work. 20 sts are cast on; 4 are bound off at the start of a right-side row (1 st stays on the right needle) and the row is knit to the end, leaving 16 and a wrong-side row next. Chart row 1 is drawn as a right-side row of 20, so working it here is refused: its side is wrong and it does not take the 16 waiting; nothing is applied. Binding off 30, holding 25, turning past the last stitch, a short row with nothing past its turn, and three returns of held stitches that cannot happen (the hold step is gone, its hold failed, or it comes later) are refused and change nothing. A wrap-and-turn short row on the wrong side leaves 5 sts waiting at the start edge; 3 sts go on hold and come straight back (the step says the WS faces you on a RS row), a second return of the same group is refused, and a row that says to work the wraps crosses none, so the section ends with short rows not worked across. An unchecked step that does not say how it changes the stitch count makes every count after it unknown. Chart rows 2 and 3 are not worked by any section, and row 3's repeat is worked 0 times, which validation reports for every chart row.",
+  "covers": [
+    "bind off at the start of a row",
+    "chart row side and count mismatch",
+    "binding off or holding more than is left in the row",
+    "turning past the end",
+    "a short row with nothing past the turn",
+    "returning a group that does not exist, failed, is held later, or was already returned",
+    "facing that contradicts the work",
+    "resolving with nothing to resolve",
+    "short rows left unresolved at the end of a section",
+    "an unchecked step without a stitch change",
+    "chart rows no section works",
+    "chart row repeats still checked with sections"
+  ],
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "cast_on": 20,
+  "written": [
+    "Cast on 20 sts.",
+    "Section 1: Problems",
+    "Next row (RS): bind off 4 sts; 1 st remains on the right needle. (16 sts on the needle, 15 still to work in this row; 4 bound off)",
+    "Knit to end. (16 sts on the needle; 4 bound off)",
+    "Row 1 (RS): k20 (not counted: see the problems)",
+    "Bind off 30 sts. (not counted: see the problems)",
+    "Place the next 25 sts on a holder (sleeve). (not counted: see the problems)",
+    "Knit to last 25 sts, wrap and turn. (not counted: see the problems)",
+    "Knit 16 sts, turn. (not counted: see the problems)",
+    "Return the held sts to the needle. (not counted: see the problems)",
+    "Return the sts on hold (sleeve) to the left needle. (not counted: see the problems)",
+    "Return the sts on hold (cuff) to the left needle. (not counted: see the problems)",
+    "Short row 1 (WS): purl to last 5 sts, wrap and turn. (16 sts on the needle, 5 waiting past a turn; 4 bound off)",
+    "Place the next 3 sts on a holder (cuff). (13 sts on the needle, 5 waiting past a turn; 3 on hold; 4 bound off)",
+    "Return the 3 sts on hold (cuff) to the left needle. (16 sts on the needle, 5 waiting past a turn; 4 bound off)",
+    "Return the 3 sts on hold (cuff) to the left needle. (not counted: see the problems)",
+    "Short row 2 (RS): knit to end. (16 sts on the needle, 5 waiting past a turn; 4 bound off)",
+    "Section 2: Edging",
+    "Not checked by Ply: Work the edging as you like. (stitch count unknown)",
+    "Bind off to end. (stitch count unknown)"
+  ],
+  "steps": [
+    {
+      "section": "Problems",
+      "step": 1,
+      "chart_row": null,
+      "line": "Next row (RS): bind off 4 sts; 1 st remains on the right needle. (16 sts on the needle, 15 still to work in this row; 4 bound off)",
+      "count": {
+        "on_needle": 16,
+        "to_work": 15,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 4,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Problems",
+      "step": 2,
+      "chart_row": null,
+      "line": "Knit to end. (16 sts on the needle; 4 bound off)",
+      "count": {
+        "on_needle": 16,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 4,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Problems",
+      "step": 3,
+      "chart_row": 1,
+      "line": "Row 1 (RS): k20 (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 4,
+      "chart_row": null,
+      "line": "Bind off 30 sts. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 5,
+      "chart_row": null,
+      "line": "Place the next 25 sts on a holder (sleeve). (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 6,
+      "chart_row": null,
+      "line": "Knit to last 25 sts, wrap and turn. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 7,
+      "chart_row": null,
+      "line": "Knit 16 sts, turn. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 8,
+      "chart_row": null,
+      "line": "Return the held sts to the needle. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 9,
+      "chart_row": null,
+      "line": "Return the sts on hold (sleeve) to the left needle. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 10,
+      "chart_row": null,
+      "line": "Return the sts on hold (cuff) to the left needle. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 11,
+      "chart_row": null,
+      "line": "Short row 1 (WS): purl to last 5 sts, wrap and turn. (16 sts on the needle, 5 waiting past a turn; 4 bound off)",
+      "count": {
+        "on_needle": 16,
+        "to_work": 11,
+        "mid_row": false,
+        "past_turns": 5,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 4,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Problems",
+      "step": 12,
+      "chart_row": null,
+      "line": "Place the next 3 sts on a holder (cuff). (13 sts on the needle, 5 waiting past a turn; 3 on hold; 4 bound off)",
+      "count": {
+        "on_needle": 13,
+        "to_work": 8,
+        "mid_row": false,
+        "past_turns": 5,
+        "pending_turns": 1,
+        "held": [
+          [
+            "cuff",
+            3
+          ]
+        ],
+        "bound_off": 4,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Problems",
+      "step": 13,
+      "chart_row": null,
+      "line": "Return the 3 sts on hold (cuff) to the left needle. (16 sts on the needle, 5 waiting past a turn; 4 bound off)",
+      "count": {
+        "on_needle": 16,
+        "to_work": 11,
+        "mid_row": false,
+        "past_turns": 5,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 4,
+        "side": "RS"
+      }
+    },
+    {
+      "section": "Problems",
+      "step": 14,
+      "chart_row": null,
+      "line": "Return the 3 sts on hold (cuff) to the left needle. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Problems",
+      "step": 15,
+      "chart_row": null,
+      "line": "Short row 2 (RS): knit to end. (16 sts on the needle, 5 waiting past a turn; 4 bound off)",
+      "count": {
+        "on_needle": 16,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 5,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 4,
+        "side": "WS"
+      }
+    },
+    {
+      "section": "Edging",
+      "step": 1,
+      "chart_row": null,
+      "line": "Not checked by Ply: Work the edging as you like. (stitch count unknown)",
+      "count": "unknown"
+    },
+    {
+      "section": "Edging",
+      "step": 2,
+      "chart_row": null,
+      "line": "Bind off to end. (stitch count unknown)",
+      "count": "unknown"
+    }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "message": "row 3: the repeat over cols 19-20 is worked 0 times; a repeat must be worked at least once"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 3, chart row 1: the chart has it as a right-side row, but the work is at a wrong-side row here"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 3, chart row 1: works over 20 stitches, but 16 are on the needle, so this row and the rest of the step are not counted"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 4: binds off 30 stitches, but only 16 stitches are left to work in this row"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 5: puts 25 stitches on hold, but only 16 stitches are left to work in this row"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 6: works to the last 25 stitches, but only 16 stitches are left to work in this row"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 7: turns with no stitches left past the turn; to work every stitch left in the row, use a plain work step instead"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 8: returns held stitches, but the step that put them on hold is gone (it may have been deleted)"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 9: returns the stitches on hold (sleeve), but Problems, step 5 could not put them on hold"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 10: returns the stitches on hold (cuff) before Problems, step 12 puts them on hold; move this step after it"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 13: says the wrong side faces you, but the work is at a right-side row here"
+    },
+    {
+      "severity": "error",
+      "message": "Problems, step 14: returns the stitches on hold (cuff), but Problems, step 13 already returned them to the needle"
+    },
+    {
+      "severity": "warning",
+      "message": "Problems, step 15: says to work the wraps or double stitches from the short rows, but it works past none"
+    },
+    {
+      "severity": "warning",
+      "message": "Problems: ends with short rows not yet worked across: 5 stitches are still waiting past a turn, and 1 wrap is not yet worked together with its stitch"
+    },
+    {
+      "severity": "warning",
+      "message": "Edging, step 1: Ply does not check this step, and it does not say how it changes the number of stitches, so the stitch counts after it are unknown; give the change (0 if it changes nothing) to keep counting"
+    },
+    {
+      "severity": "warning",
+      "message": "chart rows 2 to 3 are not worked in any section, so the written instructions leave them out"
+    }
+  ]
+}

@@ -1,0 +1,524 @@
+{
+  "format": "ply.knit",
+  "schema_version": 4,
+  "document": {
+    "name": "Shoulder slope in wrap-and-turn short rows",
+    "construction": "Flat",
+    "first_row_side": "Rs",
+    "cast_on": 24,
+    "gauge": {
+      "sts": 22.0,
+      "rows": 30.0,
+      "unit": "Inches"
+    },
+    "palette": [
+      {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      }
+    ],
+    "legend": {
+      "stitches": [
+        {
+          "symbol": "ns",
+          "consumes": 0,
+          "produces": 0,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 2,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 1,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "yo",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssk",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 4,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "cdd",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1l",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1r",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k3tog",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sk2po",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssp",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kbf",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "pfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1p",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1lp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1rp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ktbl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        }
+      ]
+    },
+    "chart": {
+      "width": 24,
+      "rows": [
+        {
+          "cells": [
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            }
+          ],
+          "repeats": []
+        },
+        {
+          "cells": [
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            }
+          ],
+          "repeats": []
+        }
+      ]
+    },
+    "notes": "One shoulder sloped in three steps of 6 stitches, then held for a three-needle bind-off.",
+    "sections": [
+      {
+        "id": "section-1",
+        "name": "Body",
+        "notes": "",
+        "steps": [
+          {
+            "id": "step-1",
+            "action": {
+              "ChartRows": {
+                "first": 1,
+                "last": 2
+              }
+            }
+          },
+          {
+            "id": "step-2",
+            "action": {
+              "Opaque": {
+                "text": "Repeat rows 1 and 2 until the piece measures 4 in (10 cm) from the cast-on, ending with a WS row.",
+                "stitch_change": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-2",
+        "name": "Shoulder",
+        "notes": "The stitches left at the end of each right-side row become the low end of the slope.",
+        "steps": [
+          {
+            "id": "step-3",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "Last": 6
+                },
+                "method": "WrapAndTurn",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-4",
+            "action": {
+              "Work": {
+                "stitch": "Purl",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-5",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "Last": 12
+                },
+                "method": "WrapAndTurn",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-6",
+            "action": {
+              "Work": {
+                "stitch": "Purl",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-7",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "Last": 18
+                },
+                "method": "WrapAndTurn",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-8",
+            "action": {
+              "Work": {
+                "stitch": "Purl",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-9",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": true
+              }
+            }
+          },
+          {
+            "id": "step-10",
+            "action": {
+              "Hold": {
+                "count": null,
+                "name": "shoulder"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

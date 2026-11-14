@@ -46,10 +46,19 @@ void main() {
       for (final f in files) {
         expect(plyknitSchemaVersion(f.readAsStringSync()), 2, reason: f.path);
       }
-      expect(knitMigrationFixtures(), hasLength(9), reason: 'no migration fixture is unclassified');
     });
 
-    test('every knitting acceptance fixture is a current (version 3) envelope', () {
+    test('every schema-v3 fixture is a version 3 envelope (an upgrade on save)', () {
+      final files = knitMigrationFixtures('schema-v3');
+      expect(files, hasLength(3));
+      for (final f in files) {
+        expect(plyknitSchemaVersion(f.readAsStringSync()), 3, reason: f.path);
+      }
+      expect(knitMigrationFixtures(), hasLength(12),
+          reason: 'no migration fixture is unclassified');
+    });
+
+    test('every knitting acceptance fixture is a current (version 4) envelope', () {
       // fixtures/knitting/: written by the engine's own writer, so the Dart probe must agree.
       final files = Directory('../fixtures/knitting')
           .listSync(recursive: true)
@@ -58,14 +67,15 @@ void main() {
           .toList();
       expect(files, isNotEmpty);
       for (final f in files) {
-        expect(plyknitSchemaVersion(f.readAsStringSync()), 3, reason: f.path);
+        expect(plyknitSchemaVersion(f.readAsStringSync()), 4, reason: f.path);
       }
     });
 
     test('an envelope reports its own version', () {
       expect(plyknitSchemaVersion(envelope(2)), 2);
       expect(plyknitSchemaVersion(envelope(3)), 3);
-      expect(plyknitSchemaVersion(envelope(4)), 4,
+      expect(plyknitSchemaVersion(envelope(4)), 4);
+      expect(plyknitSchemaVersion(envelope(5)), 5,
           reason: 'newer versions are reported, not hidden');
     });
 

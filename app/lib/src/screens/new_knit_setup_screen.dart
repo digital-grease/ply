@@ -143,6 +143,7 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
           purlRun: _ribPurl,
         ),
         notes: base.notes,
+        sections: base.sections,
       );
       if (!mounted) return;
       navigator.pop(pattern);

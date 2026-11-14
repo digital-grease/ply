@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/knit_sections.dart';
 import '../print/knit_print.dart';
 import '../print/print_export.dart' show PdfExportText;
 import '../state/knit_editor_providers.dart';
@@ -56,12 +57,23 @@ class KnitWrittenScreen extends ConsumerWidget {
       );
 
   Widget _list(BuildContext context, List<String> lines) {
-    final style = Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4);
+    final text = Theme.of(context).textTheme;
+    final style = text.bodyLarge?.copyWith(height: 1.4);
+    final heading = text.titleMedium?.copyWith(color: Theme.of(context).colorScheme.primary);
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       itemCount: lines.length,
       separatorBuilder: (_, __) => const Divider(height: 12),
-      itemBuilder: (_, i) => SelectableText(lines[i], style: style),
+      // A pattern with sections is written section by section: its heading lines stand out.
+      itemBuilder: (_, i) => isKnitSectionHeading(lines[i])
+          ? Semantics(
+              header: true,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SelectableText(lines[i], style: heading),
+              ),
+            )
+          : SelectableText(lines[i], style: style),
     );
   }
 }

@@ -74,8 +74,15 @@ class KnitRepository {
 
   /// The chart rendered as human-readable, row-by-row written instructions — RS read right-to-left,
   /// WS left-to-right, run-length collapsed ("k3, p1"). One string per row/round, cast-on edge first,
-  /// after a "Cast on N sts." line when the pattern states a cast-on.
+  /// after a "Cast on N sts." line when the pattern states a cast-on. A pattern with sections is
+  /// written section by section ("Section 1: Back" headings), each step followed by its count.
   Future<List<String>> written(KnitPatternDto pattern) => knitWritten(dto: pattern);
+
+  /// The pattern's worked construction (its sections): every step's text in a knitter's words with
+  /// the stitch count after it, and every problem with the section and step it is about. Empty for a
+  /// chart-only pattern.
+  Future<KnitConstructionDto> construction(KnitPatternDto pattern) =>
+      knitConstruction(dto: pattern);
 
   /// Decode an FFI [PreviewImage] RGBA buffer into a [ui.Image]. A zero-area image (an empty chart)
   /// has no pixels and `decodeImageFromPixels` would never call back — fail fast instead of hanging
@@ -339,6 +346,15 @@ class KnitRepository {
   }
 
   Future<void> _writeThumb(Directory dir, String id, KnitPatternDto pattern) async {
+    if (pattern.chart.width == 0 || pattern.chart.rows.isEmpty) {
+      // Nothing to draw (a pattern of sections only): remove an older thumbnail rather than keep
+      // showing a chart the pattern no longer has. The library shows its placeholder instead.
+      try {
+        final old = File(_pngPath(dir, id));
+        if (await old.exists()) await old.delete();
+      } catch (_) {/* best effort, like the thumbnail itself */}
+      return;
+    }
     ui.Image? img;
     try {
       img = await render(pattern, cellPx: thumbnailCellPx);

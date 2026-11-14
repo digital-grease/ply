@@ -16,11 +16,11 @@ import 'package:ply/src/rust/knit_dto.dart';
 // sidecar. The engine serializer is stood in for by a canned current-version envelope (the real one
 // is covered by the Rust tests); legacy files are the real released bytes from `fixtures/`.
 
-/// What the engine writes for any pattern here: a current-version (3) envelope.
+/// What the engine writes for any pattern here: a current-version (4) envelope.
 final String _current = jsonEncode({
   'format': 'ply.knit',
-  'schema_version': 3,
-  'document': {'name': 'saved now', 'cast_on': null},
+  'schema_version': 4,
+  'document': {'name': 'saved now', 'cast_on': null, 'sections': []},
 });
 
 class DiskOnlyKnitRepo extends KnitRepository {
@@ -50,6 +50,7 @@ const _pattern = KnitPatternDto(
   legend: StitchLegendDto(stitches: []),
   chart: ChartDto(width: 0, rows: []),
   notes: '',
+  sections: [],
 );
 
 List<int> fixtureBytes(String rel) => File('../fixtures/migrations/$rel').readAsBytesSync();
@@ -130,7 +131,7 @@ void main() {
       expect(backup.readAsBytesSync(), original, reason: 'the released bytes, untouched');
       expect(f('k1.plyknit').readAsStringSync(), _current,
           reason: 'upgraded to the current format');
-      expect(plyknitSchemaVersion(f('k1.plyknit').readAsStringSync()), 3);
+      expect(plyknitSchemaVersion(f('k1.plyknit').readAsStringSync()), 4);
 
       // The file is current now: later saves neither add nor replace a backup.
       await repo.saveKnit(pattern: _pattern, meta: meta('Sampler'), id: 'k1');
@@ -153,7 +154,7 @@ void main() {
         await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k2');
         final backup = f('k2.plyknit.v2.bak');
         expect(backup.readAsBytesSync(), original, reason: 'the v2 bytes, untouched');
-        expect(plyknitSchemaVersion(f('k2.plyknit').readAsStringSync()), 3);
+        expect(plyknitSchemaVersion(f('k2.plyknit').readAsStringSync()), 4);
 
         await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k2');
         expect(backup.readAsBytesSync(), original, reason: 'a later save never replaces it');
@@ -161,6 +162,30 @@ void main() {
 
         // Deleting the pattern removes the backup with it.
         await repo.deleteKnit('k2');
+        expect(namesIn(dir), isEmpty);
+      });
+    }
+
+    for (final name in ['rib-cast-on-flat', 'seed-stitch-round', 'cable-repeat-round']) {
+      test('saving over schema-version-3 $name keeps its bytes as a one-time .v3.bak', () async {
+        // Real v3 bytes (written by the engine before v4). Opening one migrates it in memory
+        // (engine, covered by the Rust tests: no sections, nothing else changed); the first save
+        // upgrades the file to v4 and keeps the original next to it, exactly once.
+        final original = fixtureBytes('plyknit/schema-v3/$name.plyknit');
+        expect(plyknitSchemaVersion(utf8.decode(original)), 3);
+        f('k3.plyknit').writeAsBytesSync(original);
+        f('k3.json').writeAsBytesSync(fixtureBytes('sidecar/v0.1.7/knit.json'));
+
+        await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k3');
+        final backup = f('k3.plyknit.v3.bak');
+        expect(backup.readAsBytesSync(), original, reason: 'the v3 bytes, untouched');
+        expect(plyknitSchemaVersion(f('k3.plyknit').readAsStringSync()), 4);
+
+        await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k3');
+        expect(backup.readAsBytesSync(), original, reason: 'a later save never replaces it');
+        expect(namesIn(dir), ['k3.json', 'k3.plyknit', 'k3.plyknit.v3.bak']);
+
+        await repo.deleteKnit('k3');
         expect(namesIn(dir), isEmpty);
       });
     }
@@ -180,6 +205,13 @@ void main() {
       expect(namesIn(dir).where((n) => n.contains('.bak')), isEmpty);
     });
 
+    test('saving a pattern with no chart cells removes an older thumbnail', () async {
+      f('k1.png').writeAsBytesSync([1, 2, 3]);
+      await repo.saveKnit(pattern: _pattern, meta: meta('Sections only'), id: 'k1');
+      expect(f('k1.png').existsSync(), isFalse,
+          reason: 'the chart it showed is gone; the library shows its placeholder');
+    });
+
     test('a new pattern is written with its meta as given and no backup', () async {
       final id = await repo.saveKnit(pattern: _pattern, meta: meta('Fresh'));
       expect(namesIn(dir), ['$id.json', '$id.plyknit']);
@@ -192,7 +224,7 @@ void main() {
     for (final (label, onDisk, problem) in [
       (
         'a file saved by a newer Ply',
-        '{"format":"ply.knit","schema_version":4,"document":{"future":true}}',
+        '{"format":"ply.knit","schema_version":5,"document":{"future":true}}',
         NativeFormatProblem.newerVersion,
       ),
       ('an unreadable file', '{half a pattern', NativeFormatProblem.unreadable),

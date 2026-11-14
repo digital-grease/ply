@@ -248,6 +248,7 @@ void main() {
             RowDto(cells: [CellDto(stitch: 1), CellDto(stitch: 1)], repeats: []),
           ]),
           notes: '',
+          sections: [],
         );
 
     testWidgets('knit editor: More > Print or share PDF prints the open pattern', (tester) async {

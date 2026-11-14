@@ -476,9 +476,11 @@ pub fn tieup_for_shed_dto(rows: Vec<Vec<u16>>, shafts: u16, shed: ShedKind) -> V
 // ---------------------------------------------------------------------------
 
 pub use crate::knit_dto::{
-    CableDefDto, CellDto, ChartDto, ConstructionKind, CrossKind, GaugeDto, KnitFormatFailure,
-    KnitFormatFailureKind, KnitIssueDto, KnitPatternDto, RepeatDto, RepeatSpanDto, RowDto,
-    SideKind, StitchDefDto, StitchLegendDto, YarnWeightKind,
+    CableDefDto, CellDto, ChartDto, ConstructionKind, CrossKind, GaugeDto, KnitConstructionDto,
+    KnitFormatFailure, KnitFormatFailureKind, KnitHeldCountDto, KnitIssueDto, KnitLedgerLineDto,
+    KnitLineCountKind, KnitNeedleCountDto, KnitPatternDto, KnitSectionDto, KnitSectionIssueDto,
+    KnitStepActionDto, KnitStepDto, RepeatDto, RepeatSpanDto, RowDto, SideKind, StitchDefDto,
+    StitchLegendDto, TurnAtDto, TurnMethodKind, WorkStitchKind, WorkToDto, YarnWeightKind,
 };
 
 /// Parse a native `.plyknit` file (any supported schema version) into the editor's
@@ -486,9 +488,15 @@ pub use crate::knit_dto::{
 /// Ply, a foreign format, or an unreadable file is an `Err(KnitFormatFailure)`, which Dart receives
 /// as a thrown `KnitFormatFailure`.
 pub fn parse_knit(json: String) -> Result<KnitPatternDto, KnitFormatFailure> {
-    ply_knit::KnitPattern::from_json(&json)
-        .map(|p| KnitPatternDto::from(&p))
-        .map_err(KnitFormatFailure::from)
+    let pattern = ply_knit::KnitPattern::from_json(&json).map_err(KnitFormatFailure::from)?;
+    // Sizes from a file are untrusted: sections past the engine's limits (counts, text lengths,
+    // a stitch change no ledger could apply) are refused instead of loaded, so every value that
+    // opens also fits the DTOs exactly.
+    ply_knit::sections::check_limits(&pattern).map_err(|why| KnitFormatFailure {
+        kind: KnitFormatFailureKind::Unreadable,
+        message: format!("the pattern's sections are too large to open: {why}"),
+    })?;
+    Ok(KnitPatternDto::from(&pattern))
 }
 
 /// Serialize the editor's `KnitPatternDto` as a current-version native `.plyknit` envelope. `Err` if
@@ -534,6 +542,7 @@ pub fn knit_blank_pattern() -> KnitPatternDto {
             rows: Vec::new(),
         },
         notes: String::new(),
+        sections: Vec::new(),
     };
     KnitPatternDto::from(&pattern)
 }
@@ -557,9 +566,19 @@ pub fn knit_seed_gauge(weight: YarnWeightKind) -> GaugeDto {
 }
 
 /// The chart rendered as WRITTEN INSTRUCTIONS, one line per row (bottom-to-top, RS/WS-aware,
-/// run-length collapsed) — the chart's second view.
+/// run-length collapsed), the chart's second view. A pattern with sections is written section by
+/// section, each step followed by its stitch count (see `ply_knit::sections`).
 pub fn knit_written(dto: KnitPatternDto) -> Vec<String> {
     ply_knit::to_written(&ply_knit::KnitPattern::from(dto))
+}
+
+/// The pattern's worked construction (sections): every ledger line with its text and stitch count,
+/// and every problem with the section and step it is about, in one call. Empty for a chart-only
+/// pattern.
+pub fn knit_construction(dto: KnitPatternDto) -> KnitConstructionDto {
+    let pattern = ply_knit::KnitPattern::from(dto);
+    let ledger = ply_knit::ledger(&pattern);
+    KnitConstructionDto::of(&pattern, &ledger)
 }
 
 // ---------------------------------------------------------------------------

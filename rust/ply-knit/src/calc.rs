@@ -13,10 +13,11 @@ use ply_common::{Unit, YarnWeight};
 
 const CM_PER_IN: f32 = 2.54;
 
-/// A sanity cap on a computed stitch count, so an absurd target can never overflow the `u32`
-/// arithmetic (a float->int cast saturates silently) or return a garbage `u32::MAX`. Far beyond any
-/// real garment.
-const MAX_STITCHES: u32 = 1_000_000;
+/// A sanity cap on a stitch count, far beyond any real garment: a computed cast-on is clamped to it
+/// (so an absurd target can never overflow the `u32` arithmetic, a float->int cast saturating
+/// silently, or return a garbage `u32::MAX`), and the section ledger refuses a step that would put
+/// more than this many stitches on the needle and on hold ([`crate::sections`]).
+pub const MAX_STITCHES: u32 = 1_000_000;
 
 fn positive_finite(x: f32) -> bool {
     x.is_finite() && x > 0.0

@@ -31,7 +31,17 @@ use std::collections::{BTreeSet, HashMap};
 
 /// The written instructions: the cast-on line when the pattern states one, then one line per chart
 /// row, bottom-to-top (row 1 = the first worked).
+///
+/// A pattern with SECTIONS ([`KnitPattern::sections`]) is written section by section instead: the
+/// cast-on line when stated, then for each section a heading line (`Section 1: Back`, or
+/// `Section 2` when it has no name), its notes (`Notes: ...`) when it has any, and one line per step
+/// (one per chart row for a chart-rows step) in a knitter's words, each followed by the stitch
+/// ledger's count in brackets. See [`crate::sections`]. A chart-only pattern is written exactly as
+/// before.
 pub fn to_written(pattern: &KnitPattern) -> Vec<String> {
+    if !pattern.sections.is_empty() {
+        return crate::sections::written(pattern);
+    }
     // Colorwork labels (MC / CC / CC1.. ) — `None` when the chart is a single colour, which keeps a
     // plain stitch line uncluttered (and matches the no-colorwork V1 behaviour).
     let labels = color_labels(pattern);
@@ -41,41 +51,52 @@ pub fn to_written(pattern: &KnitPattern) -> Vec<String> {
     }
 
     for r in 0..pattern.chart.rows.len() {
-        let rs = matches!(pattern.row_side(r), Side::Rs);
-        let label = match pattern.construction {
-            Construction::InTheRound => format!("Round {}", r + 1),
-            Construction::Flat => format!("Row {} ({})", r + 1, if rs { "RS" } else { "WS" }),
-        };
-        let body = match row_instruction(pattern, r) {
-            RowInstruction::Sequence(items) => {
-                let mut writer = LineWriter {
-                    pattern,
-                    labels: labels.as_ref(),
-                    prev_color: None,
-                    parts: Vec::new(),
-                };
-                writer.items(&items);
-                if writer.parts.is_empty() {
-                    "(no stitches)".to_string()
-                } else {
-                    writer.parts.join(", ")
-                }
-            }
-            RowInstruction::Unsupported(problems) => {
-                let cols = ReadingCols::for_row(pattern, r);
-                let reasons: Vec<String> = problems.iter().map(|p| p.reason(r, &cols)).collect();
-                format!("(repeats need fixing: {})", reasons.join("; "))
-            }
-        };
+        let (label, body) = chart_row_text(pattern, r, labels.as_ref());
         lines.push(format!("{label}: {body}"));
     }
 
     lines
 }
 
+/// Chart row `r`'s label (`Row 3 (WS)`, `Round 3`) and its stitches in working order, as the chart
+/// writer gives them. `labels` are the colorwork labels from [`color_labels`].
+pub(crate) fn chart_row_text(
+    pattern: &KnitPattern,
+    r: usize,
+    labels: Option<&HashMap<usize, String>>,
+) -> (String, String) {
+    let rs = matches!(pattern.row_side(r), Side::Rs);
+    let label = match pattern.construction {
+        Construction::InTheRound => format!("Round {}", r + 1),
+        Construction::Flat => format!("Row {} ({})", r + 1, if rs { "RS" } else { "WS" }),
+    };
+    let body = match row_instruction(pattern, r) {
+        RowInstruction::Sequence(items) => {
+            let mut writer = LineWriter {
+                pattern,
+                labels,
+                prev_color: None,
+                parts: Vec::new(),
+            };
+            writer.items(&items);
+            if writer.parts.is_empty() {
+                "(no stitches)".to_string()
+            } else {
+                writer.parts.join(", ")
+            }
+        }
+        RowInstruction::Unsupported(problems) => {
+            let cols = ReadingCols::for_row(pattern, r);
+            let reasons: Vec<String> = problems.iter().map(|p| p.reason(r, &cols)).collect();
+            format!("(repeats need fixing: {})", reasons.join("; "))
+        }
+    };
+    (label, body)
+}
+
 /// The opening instruction for a pattern that casts on `n` stitches: `Cast on 26 sts.` when worked
 /// flat; in the round the cast-on is joined into a ring before round 1.
-fn cast_on_line(construction: Construction, n: u32) -> String {
+pub(crate) fn cast_on_line(construction: Construction, n: u32) -> String {
     let sts = if n == 1 { "st" } else { "sts" };
     match construction {
         Construction::Flat => format!("Cast on {n} {sts}."),
@@ -169,7 +190,7 @@ impl LineWriter<'_> {
 /// ("MC"); other used indices are Contrast Colours — a lone contrast is just "CC", several are
 /// numbered "CC1", "CC2", ... in palette order. Returns `None` when the chart uses a single colour
 /// (nothing to label).
-fn color_labels(pattern: &KnitPattern) -> Option<HashMap<usize, String>> {
+pub(crate) fn color_labels(pattern: &KnitPattern) -> Option<HashMap<usize, String>> {
     let mut used: BTreeSet<usize> = BTreeSet::new();
     for row in &pattern.chart.rows {
         for cell in &row.cells {
@@ -263,6 +284,7 @@ mod tests {
             legend: StitchLegend::builtin(),
             chart: Chart { width, rows },
             notes: String::new(),
+            sections: Vec::new(),
         }
     }
 

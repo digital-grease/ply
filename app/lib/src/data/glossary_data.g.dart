@@ -204,6 +204,28 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'worked as a tube on circular or double-pointed needles, so every round faces the right side.',
   ),
   GlossaryTerm(
+    term: 'Short row',
+    definition: 'a row turned before it reaches the end of the needle. The stitches past the turn stay on the needle unworked, so the part that is worked gains rows; short rows slope shoulders, shape darts and turn heels.',
+  ),
+  GlossaryTerm(
+    term: 'German short row',
+    definition: 'a way to turn a short row: turn, slip the first stitch with the yarn in front, and pull the yarn over the needle, which makes a double stitch. A later row works it as one stitch.',
+  ),
+  GlossaryTerm(
+    term: 'Double stitch',
+    aka: 'DS',
+    definition: 'the stitch a German short row pulls up at its turn, so it looks like two. It counts as one stitch, and a later row works both legs together as one.',
+  ),
+  GlossaryTerm(
+    term: 'Held stitches',
+    aka: 'on hold',
+    definition: 'live stitches moved off the needle onto a stitch holder or waste yarn, to be worked later, such as the center of a neckline. Returning them puts them back on the needle, and the pattern says which side faces you.',
+  ),
+  GlossaryTerm(
+    term: 'Section',
+    definition: 'in Ply, a named part of a pattern\'s construction (such as Back or Left shoulder), with its steps in order. Ply counts the stitches on the needle, on hold and bound off after every step.',
+  ),
+  GlossaryTerm(
     term: 'Beginning',
     aka: 'beg',
     definition: 'the start of a row or round.',
@@ -356,7 +378,7 @@ const List<GlossaryTerm> kGlossary = [
   GlossaryTerm(
     term: 'Wrap and turn',
     aka: 'w&t',
-    definition: 'wrap the next stitch and turn mid-row to work a short row.',
+    definition: 'wrap the next stitch and turn mid-row to work a short row; a later row works the wrap together with its stitch.',
   ),
   GlossaryTerm(
     term: 'Left hand / right hand',

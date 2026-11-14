@@ -88,6 +88,20 @@ plain so it can double as user-facing help content.
   twist.
 - **In the round** — worked as a tube on circular or double-pointed needles, so every round faces
   the right side.
+- **Short row**: a row turned before it reaches the end of the needle. The stitches past the turn
+  stay on the needle unworked, so the part that is worked gains rows; short rows slope shoulders,
+  shape darts and turn heels.
+- **German short row**: a way to turn a short row: turn, slip the first stitch with the yarn in
+  front, and pull the yarn over the needle, which makes a double stitch. A later row works it as one
+  stitch.
+- **Double stitch** (DS): the stitch a German short row pulls up at its turn, so it looks like two.
+  It counts as one stitch, and a later row works both legs together as one.
+- **Held stitches** (on hold): live stitches moved off the needle onto a stitch holder or waste
+  yarn, to be worked later, such as the center of a neckline. Returning them puts them back on the
+  needle, and the pattern says which side faces you.
+- **Section**: in Ply, a named part of a pattern's construction (such as Back or Left shoulder),
+  with its steps in order. Ply counts the stitches on the needle, on hold and bound off after every
+  step.
 
 ### Knitting abbreviations
 - **Beginning** (beg) — the start of a row or round.
@@ -120,7 +134,8 @@ plain so it can double as user-facing help content.
 - **Reverse stockinette** (rev St st) — purl on right-side rows and knit on wrong-side rows, the bumpy face of stockinette.
 - **With yarn in back** (wyib) — hold the working yarn behind the work, often while slipping a stitch.
 - **With yarn in front** (wyif) — hold the working yarn in front of the work.
-- **Wrap and turn** (w&t) — wrap the next stitch and turn mid-row to work a short row.
+- **Wrap and turn** (w&t): wrap the next stitch and turn mid-row to work a short row; a later row
+  works the wrap together with its stitch.
 - **Left hand / right hand** (LH/RH) — which needle or hand a step refers to.
 
 ### Nalbinding

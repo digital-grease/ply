@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 3,
+  "schema_version": 4,
   "document": {
     "name": "2x2 rib with edge stitches",
     "construction": "Flat",
@@ -343,6 +343,7 @@
         }
       ]
     },
-    "notes": "One edge stitch each side of a 4-stitch rib motif worked 3 times."
+    "notes": "One edge stitch each side of a 4-stitch rib motif worked 3 times.",
+    "sections": []
   }
 }

@@ -135,6 +135,7 @@ fn arb_pattern() -> impl Strategy<Value = KnitPattern> {
                     legend: legend.clone(),
                     chart: Chart { width, rows },
                     notes: String::new(),
+                    sections: Vec::new(),
                 },
             )
     })
@@ -238,6 +239,7 @@ fn mk_with(width: usize, rows: Vec<Row>, construction: Construction, first: Side
         legend: StitchLegend::builtin(),
         chart: Chart { width, rows },
         notes: String::new(),
+        sections: Vec::new(),
     }
 }
 
@@ -741,5 +743,6 @@ fn mk(width: usize, rows: Vec<Row>, legend: StitchLegend, gauge: Gauge) -> KnitP
         legend,
         chart: Chart { width, rows },
         notes: String::new(),
+        sections: Vec::new(),
     }
 }

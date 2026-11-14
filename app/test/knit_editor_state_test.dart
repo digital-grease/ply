@@ -25,6 +25,7 @@ KnitPatternDto pattern(int width, int rows) => KnitPatternDto(
         ),
       ),
       notes: '',
+      sections: const [],
     );
 
 void main() {
@@ -145,6 +146,7 @@ void main() {
       ]),
       chart: p.chart,
       notes: p.notes,
+      sections: const [],
     );
     final base = KnitEditorState(pattern: withCable);
     expect(identical(base.fillRegion(0, 0, 1, 1, 0, null), base), isTrue,
@@ -222,6 +224,7 @@ void main() {
         rows: [for (final r in base.chart.rows) RowDto(cells: r.cells, repeats: repeats)],
       ),
       notes: base.notes,
+      sections: const [],
     );
   }
 
@@ -381,6 +384,7 @@ void main() {
           ],
         ),
         notes: '',
+        sections: const [],
       );
 
   const cable22 =

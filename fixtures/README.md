@@ -44,6 +44,7 @@ later work needs them, following the same rules.
 | | `plyknit/v0.1.6/` | `ply-knit` at `v0.1.6` (20 built-in stitches). |
 | | `plyknit/v0.1.7/` | `ply-knit` at `v0.1.7` (21 built-in stitches). |
 | | `plyknit/schema-v2/` | `.plyknit` schema version 2, which no tagged release wrote (v0.1.7 wrote version 1); development builds from the envelope (ADR 0002) to before version 3 (ADR 0006) did. The bytes are copies of `knitting/repeats/` fixtures the engine's own writer produced, taken before the version 3 writer existed. Named by schema version, not app version, and each has a `.fixture.toml` record. |
+| | `plyknit/schema-v3/` | `.plyknit` schema version 3 (the cast-on count), which no tagged release wrote either; development builds before version 4 (sections) did. Copies of `knitting/repeats/` fixtures the engine's own writer produced, taken before the version 4 writer existed, each with a `.fixture.toml` record. |
 | `.plynal` nalbinding project | `plynal/v0.1.7/` | `NalbindProject.toJson` + `jsonEncode` at `v0.1.7`, unchanged since `v0.1.0`. |
 | `<id>.json` sidecar (`DraftMeta`) | `sidecar/v0.1.7/` | `DraftMeta.toJson` + `jsonEncode` at `v0.1.7`, shaped as the weaving, knitting and nalbinding save paths of that release built it. |
 
@@ -59,6 +60,8 @@ Each `.plyknit` folder has:
 `plyknit/schema-v2/` instead holds three charts that exercise the version 2 to 3 migration (flat with
 edge stitches, a first-row to-end repeat, a custom cable in the round), each with a
 `<name>.fixture.toml` recording where the bytes came from and what the migration must produce.
+`plyknit/schema-v3/` holds three charts for the version 3 to 4 migration (a stated cast-on, a fixed
+repeat in the round, a custom cable in the round), recorded the same way.
 
 ### How they were made
 
@@ -98,7 +101,7 @@ fails, and the change has to be reviewed as a change to the cloth.
 Craft acceptance fixtures for knitting: original charts, each with an oracle derived by hand (not
 dumped from the code under test) and a record. Every fixture is three files with the same name:
 
-- `<name>.plyknit`: the chart, written by the engine's own `.plyknit` writer (a current-version
+- `<name>.plyknit`: the pattern, written by the engine's own `.plyknit` writer (a current-version
   envelope). The tests require that re-saving it gives the same bytes.
 - `<name>.expect.json`: the oracle. Construction, chart width, the cast-on and its written line when
   the chart states one (absent = not stated), and for every row (row 1 first) the written instruction, the stitches it consumes and produces, how many times its to-end repeat is
@@ -111,3 +114,4 @@ dumped from the code under test) and a record. Every fixture is three files with
 | Folder | Contents | Tests |
 |---|---|---|
 | `knitting/repeats/` | Authored horizontal repeats: a simple fixed repeat (`seed-stitch-round`), edge stitches and RS/WS mirroring (`rib-edges-flat`), to-end repeats with an exact remainder (`rib-to-end-flat`), an invalid remainder (`rib-to-end-remainder-flat`), an unknown first-row count (`rib-cast-on-unknown-flat`) and the same chart counted from a stated cast-on (`rib-cast-on-flat`), lace balance and count growth (`eyelet-lace-round`), a cable inside and across a repeat edge (`cable-repeat-round`), and every refused repeat shape (`rejected-spans-round`). | `rust/ply-knit/tests/repeat_fixtures.rs`; `app/test/native_format_test.dart` |
+| `knitting/sections/` | The construction layer (sections and the stitch ledger) on flat pieces: a shoulder sloped with wrap-and-turn short rows and then held (`shoulder-short-rows-flat`), a front neckline worked on held stitches with both sides and the neck edge returned to the needle and bound off (`neckline-hold-flat`), and a list of impossible or unfinished steps the ledger must name in plain words (`ledger-problems-flat`). Each oracle gives the written instructions, every ledger line with its count (on the needle, still to work, waiting past a turn, wraps pending, each group on hold, bound off, side) and the validation issues. | `rust/ply-knit/tests/section_fixtures.rs`; `app/test/knit_sections_fixture_test.dart`, `app/test/knit_sections_state_test.dart`, `app/test/knit_sections_screen_test.dart` |

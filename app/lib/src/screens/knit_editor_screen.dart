@@ -21,10 +21,11 @@ import '../widgets/knit_settings_sheet.dart';
 import '../widgets/name_input_dialog.dart';
 import '../widgets/rgb_color_picker.dart';
 import '../widgets/unsaved_changes_guard.dart';
+import 'knit_sections_screen.dart';
 import 'knit_written_screen.dart';
 
 /// The knit editor's overflow-menu actions.
-enum _EditorMenu { zoomIn, zoomOut, written, pdf, legend, planning, settings }
+enum _EditorMenu { zoomIn, zoomOut, written, sections, pdf, legend, planning, settings }
 
 /// The knitting chart editor (M5): paint a chart of stitch symbols, resize the grid, undo/redo, see
 /// live stitch-count validation, and save to the on-device knit library. The knit analog of the
@@ -125,7 +126,9 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     // Capture ONCE: this exact instance is what gets written AND what becomes the saved baseline, so
     // an edit landing during the write's async gap still reads as unsaved afterwards.
     final pattern = ref.read(knitEditorProvider).pattern;
-    if (pattern.chart.width == 0 || pattern.chart.rows.isEmpty) {
+    // A pattern needs something to knit: chart cells, or sections (a construction can be written
+    // without a chart, for example a shoulder in short rows).
+    if ((pattern.chart.width == 0 || pattern.chart.rows.isEmpty) && pattern.sections.isEmpty) {
       _snack('Add some rows and stitches before saving.');
       return false;
     }
@@ -315,6 +318,9 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                 _EditorMenu.written => Navigator.of(context).push(
                     MaterialPageRoute<void>(builder: (_) => KnitWrittenScreen(patternName: _name)),
                   ),
+                _EditorMenu.sections => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => const KnitSectionsScreen()),
+                  ),
                 _EditorMenu.pdf => printOrShareKnitPdf(context, ref, name: _name),
                 _EditorMenu.legend => showKnitLegendSheet(context),
                 _EditorMenu.planning => showKnitPlanningSheet(context),
@@ -343,6 +349,17 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                   child: ListTile(
                     leading: Icon(Icons.format_list_numbered),
                     title: Text('Written instructions'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                // Sections are edited on the pattern loaded here; not while loading or after a failed
+                // open (the provider may still hold a PREVIOUS session's pattern).
+                PopupMenuItem(
+                  value: _EditorMenu.sections,
+                  enabled: !_loading && _error == null,
+                  child: const ListTile(
+                    leading: Icon(Icons.view_agenda_outlined),
+                    title: Text('Sections'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),

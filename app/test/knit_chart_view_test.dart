@@ -47,6 +47,7 @@ KnitPatternDto grid(int w, int h) => KnitPatternDto(
         ),
       ),
       notes: '',
+      sections: const [],
     );
 
 /// [grid] with per-row repeats: [repeats] maps a row index to its spans.
@@ -67,6 +68,7 @@ KnitPatternDto gridWithRepeats(int w, int h, Map<int, List<RepeatSpanDto>> repea
       ],
     ),
     notes: g.notes,
+    sections: const [],
   );
 }
 

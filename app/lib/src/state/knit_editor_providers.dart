@@ -147,6 +147,23 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
     return state.pattern.legend.stitches.length - 1;
   }
 
+  // Section edits (see [KnitEditorState.addSection] and the rest): one undo entry each. The screen
+  // uses the position-based forms; the id-based ones act on the first item with that id.
+  void addSection(String name) => state = state.addSection(name);
+  void renameSectionAt(int si, String name) => state = state.renameSectionAt(si, name);
+  void setSectionNotesAt(int si, String notes) => state = state.setSectionNotesAt(si, notes);
+  void removeSectionAt(int si) => state = state.removeSectionAt(si);
+  void moveSectionAt(int si, int delta) => state = state.moveSectionAt(si, delta);
+  void addStepAt(int si, KnitStepActionDto action, {int? index}) =>
+      state = state.addStepAt(si, action, index: index);
+  void replaceStepAt(int si, int ti, KnitStepActionDto action) =>
+      state = state.replaceStepAt(si, ti, action);
+  void removeStepAt(int si, int ti) => state = state.removeStepAt(si, ti);
+  void moveStepAt(int si, int ti, int delta) => state = state.moveStepAt(si, ti, delta);
+  void renameSection(String id, String name) => state = state.renameSection(id, name);
+  void addStep(String sectionId, KnitStepActionDto action, {int? index}) =>
+      state = state.addStep(sectionId, action, index: index);
+
   void undo() => state = state.undoEdit();
   void redo() => state = state.redoEdit();
 }
@@ -232,5 +249,31 @@ class KnitWrittenController extends AutoDisposeAsyncNotifier<List<String>> {
       return Completer<List<String>>().future;
     }
     return lines;
+  }
+}
+
+/// The live worked construction (sections, their stitch ledger and problems) of the editor pattern;
+/// the sections screen watches this. Same latest-wins shape as [knitValidationProvider].
+final knitConstructionProvider =
+    AutoDisposeAsyncNotifierProvider<KnitConstructionController, KnitConstructionDto>(
+        KnitConstructionController.new);
+
+class KnitConstructionController extends AutoDisposeAsyncNotifier<KnitConstructionDto> {
+  int _seq = 0;
+
+  @override
+  Future<KnitConstructionDto> build() async {
+    final repo = ref.watch(knitRepositoryProvider);
+    final pattern = ref.watch(knitEditorProvider.select((s) => s.pattern));
+    final mySeq = ++_seq;
+    var disposed = false;
+    ref.onDispose(() => disposed = true);
+
+    final construction = await repo.construction(pattern);
+
+    if (disposed || mySeq != _seq) {
+      return Completer<KnitConstructionDto>().future;
+    }
+    return construction;
   }
 }

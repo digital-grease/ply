@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 3,
+  "schema_version": 4,
   "document": {
     "name": "Repeats Ply refuses",
     "construction": "InTheRound",
@@ -434,6 +434,7 @@
         }
       ]
     },
-    "notes": "One refused repeat shape per round."
+    "notes": "One refused repeat shape per round.",
+    "sections": []
   }
 }

@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 3,
+  "schema_version": 4,
   "document": {
     "name": "Eyelet lace in the round",
     "construction": "InTheRound",
@@ -409,6 +409,7 @@
         }
       ]
     },
-    "notes": "A balanced eyelet motif, an increase round, and a round that forgets a decrease."
+    "notes": "A balanced eyelet motif, an increase round, and a round that forgets a decrease.",
+    "sections": []
   }
 }

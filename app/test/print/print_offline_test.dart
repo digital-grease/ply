@@ -88,6 +88,7 @@ void main() {
             RowDto(cells: [CellDto(stitch: 1), CellDto(stitch: 1)], repeats: []),
           ]),
           notes: '',
+          sections: [],
         ),
       );
       outputs.add(await buildPrintPdf(buildKnitPrintDocument(knit, withProblemsBox: false),

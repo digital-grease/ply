@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/knit_repository.dart';
+import '../models/knit_sections.dart';
 import '../models/knit_stitches.dart';
 import '../rust/dto.dart' show ColorDto, SeverityKind, UnitKind;
 import '../rust/knit_dto.dart';
@@ -28,6 +29,7 @@ class KnitPrintSource {
     required this.chart,
     required this.glyphs,
     required this.printedAt,
+    this.construction,
   });
 
   /// The pattern's display name.
@@ -47,6 +49,10 @@ class KnitPrintSource {
   /// cable's span), for the stitch key.
   final Map<int, PrintRaster> glyphs;
   final DateTime printedAt;
+
+  /// The engine's worked construction (sections and their stitch ledger), when the pattern has
+  /// sections; null for a chart-only pattern. Places each section problem in the Problems table.
+  final KnitConstructionDto? construction;
 }
 
 /// The biggest and smallest raster pixels per chart cell, and the pixel budget between them: a
@@ -124,6 +130,7 @@ Future<KnitPrintSource> gatherKnitPrint(
 }) async {
   final issues = await repo.validate(pattern);
   final written = await repo.written(pattern);
+  final construction = pattern.sections.isEmpty ? null : await repo.construction(pattern);
   final cols = pattern.chart.width, rows = pattern.chart.rows.length;
   PrintRaster? chart;
   if (cols > 0 && rows > 0) {
@@ -149,6 +156,7 @@ Future<KnitPrintSource> gatherKnitPrint(
         ], repeats: const []),
       ]),
       notes: '',
+      sections: const [],
     );
     final px = await repo.renderPixels(one, cellPx: kPrintCellPxMax);
     if (px.width > 0 && px.height > 0) {
@@ -163,6 +171,7 @@ Future<KnitPrintSource> gatherKnitPrint(
     chart: chart,
     glyphs: glyphs,
     printedAt: now ?? DateTime.now(),
+    construction: construction,
   );
 }
 
@@ -298,10 +307,12 @@ PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProbl
   }
 
   // --- problems ---
+  final places = _sectionPlaces(s);
   final issueRows = [
-    for (final i in s.issues.where((i) => i.severity == SeverityKind.error)) _issue(i),
-    for (final i in s.issues.where((i) => i.severity != SeverityKind.error)) _issue(i),
+    for (final i in s.issues.where((i) => i.severity == SeverityKind.error)) _issue(i, places),
+    for (final i in s.issues.where((i) => i.severity != SeverityKind.error)) _issue(i, places),
   ];
+  final hasSections = p.sections.isNotEmpty;
   final mentionsColumns = s.issues.any((i) => RegExp(r'\bcols? \d').hasMatch(i.message));
 
   return PrintDocument(
@@ -340,6 +351,11 @@ PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProbl
                 ? 'Right side (every round)'
                 : (p.firstRowSide == SideKind.rs ? 'Right side (RS)' : 'Wrong side (WS)'),
           ),
+          if (hasSections)
+            PrintFact(
+              'Sections',
+              [for (var i = 0; i < p.sections.length; i++) knitSectionTitle(p, i)].join(', '),
+            ),
           PrintFact('Colors',
               labels == null ? 'One color' : '${labels.length} colors, see the color key'),
         ]),
@@ -359,7 +375,18 @@ PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProbl
       PrintSection('Written instructions', [
         if (s.written.isEmpty)
           const PrintParagraph('There are no written instructions yet: the chart has no rows.')
-        else ...[
+        else if (hasSections) ...[
+          PrintParagraph(
+            'Worked section by section, in order. RS is the right side, WS the wrong side. The '
+            'count in brackets after each step is what is on the needle once the step is done, '
+            'with any stitches on hold and bound off. "Waiting past a turn" counts the stitches a '
+            'short row has left unworked. A step marked "Not checked by Ply" is in the pattern\'s '
+            'own words and Ply did not check it.'
+            '${labels == null ? '' : ' MC is the main color and CC a contrast color (see the color key).'}',
+            style: PrintTextStyle.muted,
+          ),
+          ..._sectionBlocks(s.written),
+        ] else ...[
           PrintParagraph(
             '${flat ? 'Worked from the cast-on edge up. RS is the right side, WS the wrong side.' : 'Worked from the cast-on edge up; every round is a right-side round.'}'
             '${labels == null ? '' : ' MC is the main color and CC a contrast color (see the color key).'}',
@@ -394,15 +421,72 @@ PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProbl
 String knitGaugeText(GaugeDto g) =>
     '${_num(g.sts)} sts and ${_num(g.rows)} rows = ${g.unit == UnitKind.centimeters ? '10 cm' : '4 in'}';
 
-final _labelledLine = RegExp(r'^(Row \d+ \((?:RS|WS)\)|Round \d+): (.*)$', dotAll: true);
+final _labelledLine = RegExp(
+    r'^(Row \d+ \((?:RS|WS)\)|Round \d+|Short row \d+(?: \((?:RS|WS)\))?|Next row(?: \((?:RS|WS)\))?'
+    r'|Not checked by Ply): (.*)$',
+    dotAll: true);
 
-/// One written-instructions line split into its bold label ("Row 1 (RS)") and the stitches; a row
-/// the engine could not write as authored ("(repeats need fixing: ...)") is flagged.
+/// The count a section step's line ends with when the step could not be counted.
+const String _notCounted = '(not counted: see the problems)';
+
+/// One written-instructions line split into its bold label ("Row 1 (RS)", "Short row 2 (WS)",
+/// "Not checked by Ply") and the rest; a row the engine could not write as authored ("(repeats need
+/// fixing: ...)") or a section step it could not count is flagged.
 PrintLine knitWrittenLine(String line) {
+  final flagged = line.endsWith(_notCounted);
   final m = _labelledLine.firstMatch(line);
-  if (m == null) return PrintLine(line);
+  if (m == null) return PrintLine(line, flagged: flagged);
   final body = m.group(2)!;
-  return PrintLine(body, label: m.group(1), flagged: body.startsWith('(repeats need fixing'));
+  return PrintLine(body,
+      label: m.group(1), flagged: flagged || body.startsWith('(repeats need fixing'));
+}
+
+/// The written instructions of a pattern with sections as print blocks: the cast-on line, then each
+/// section's heading, its notes and its steps.
+List<PrintBlock> _sectionBlocks(List<String> written) {
+  final blocks = <PrintBlock>[];
+  var lines = <PrintLine>[];
+  void flush() {
+    if (lines.isNotEmpty) blocks.add(PrintLines(lines));
+    lines = <PrintLine>[];
+  }
+
+  for (final l in written) {
+    if (isKnitSectionHeading(l)) {
+      flush();
+      blocks.add(PrintParagraph(l, style: PrintTextStyle.strong));
+    } else if (l.startsWith('Notes: ')) {
+      flush();
+      blocks.add(PrintParagraph(l.substring('Notes: '.length), style: PrintTextStyle.muted));
+    } else {
+      lines.add(knitWrittenLine(l));
+    }
+  }
+  flush();
+  return blocks;
+}
+
+/// For each section problem (by its full message), where it is ("Back, step 3", "Back, step 2,
+/// chart row 5", "Back", "Whole pattern") and its text without the place.
+Map<String, (String, String)> _sectionPlaces(KnitPrintSource s) {
+  final c = s.construction;
+  if (c == null) return const {};
+  final p = s.pattern;
+  final out = <String, (String, String)>{};
+  for (final i in c.issues) {
+    // By position: ids can repeat in a hand-edited file, positions cannot.
+    final si = i.sectionIndex ?? -1;
+    if (si < 0 || si >= p.sections.length) {
+      out[i.message] = ('Whole pattern', i.message);
+      continue;
+    }
+    var where = knitSectionTitle(p, si);
+    final ti = i.stepIndex ?? -1;
+    if (ti >= 0) where += ', step ${ti + 1}';
+    if (i.chartRow != null) where += ', chart row ${i.chartRow}';
+    out[i.message] = (where, i.text);
+  }
+  return out;
 }
 
 /// The local date as YYYY-MM-DD.
@@ -435,16 +519,17 @@ Future<void> printOrShareKnitPdf(BuildContext context, WidgetRef ref, {required 
 
 // --- helpers ---------------------------------------------------------------------------------------
 
-PrintIssue _issue(KnitIssueDto i) {
+PrintIssue _issue(KnitIssueDto i, Map<String, (String, String)> places) {
   final row = RegExp(r'^row (\d+)\b').firstMatch(i.message);
+  final place = places[i.message];
   return PrintIssue(
     severity: switch (i.severity) {
       SeverityKind.error => PrintIssueSeverity.error,
       SeverityKind.warning => PrintIssueSeverity.warning,
       SeverityKind.info => PrintIssueSeverity.note,
     },
-    where: row == null ? 'Whole pattern' : 'Row ${row.group(1)}',
-    message: knitIssueText(i),
+    where: place?.$1 ?? (row == null ? 'Whole pattern' : 'Row ${row.group(1)}'),
+    message: place == null ? knitIssueText(i) : _sentence(place.$2),
   );
 }
 

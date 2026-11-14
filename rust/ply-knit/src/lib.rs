@@ -1,4 +1,4 @@
-//! Ply knitting engine (M5, in progress).
+//! Ply knitting engine.
 //!
 //! Pure Rust: the knitting pattern model (a chart over an open stitch legend) and — in later phases —
 //! chart rendering, validation, gauge/yardage calculators, and the native JSON format. **No Flutter,
@@ -15,6 +15,7 @@ pub mod instruction;
 pub mod native;
 pub mod pattern;
 pub mod render;
+pub mod sections;
 pub mod validate;
 pub mod written;
 
@@ -27,5 +28,9 @@ pub use pattern::{
     RepeatSpan, Row, Side, StitchDef, StitchId, StitchLegend,
 };
 pub use render::{render_rgba, RgbaImage};
+pub use sections::{
+    ledger, HeldCount, Ledger, LedgerLine, LineCount, NeedleCount, Section, SectionIssue, Step,
+    StepAction, TurnAt, TurnMethod, WorkStitch, WorkTo,
+};
 pub use validate::{validate, KnitIssue, Severity};
 pub use written::to_written;

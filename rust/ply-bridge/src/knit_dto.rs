@@ -14,6 +14,10 @@ use ply_knit::pattern::{
     CableDef, Cell, Chart, Construction, Cross, Gauge, KnitPattern, Repeat, RepeatSpan, Row, Side,
     StitchDef, StitchLegend,
 };
+use ply_knit::sections::{
+    HeldCount, Ledger, LedgerLine, LineCount, NeedleCount, Section, SectionIssue, Step, StepAction,
+    TurnAt, TurnMethod, WorkStitch, WorkTo,
+};
 use ply_knit::validate::{KnitIssue, Severity};
 use ply_knit::KnitError;
 
@@ -57,7 +61,160 @@ pub enum RepeatDto {
     ToEnd,
 }
 
+/// The plain stitch a section's work step or short row is worked in.
+pub enum WorkStitchKind {
+    Knit,
+    Purl,
+    InPattern,
+}
+
+/// How a short row turns.
+pub enum TurnMethodKind {
+    WrapAndTurn,
+    German,
+    Unspecified,
+}
+
+/// How far a section's work step goes along the row (data-carrying: a freezed union in Dart).
+pub enum WorkToDto {
+    End,
+    Last { count: u32 },
+    Count { count: u32 },
+}
+
+/// Where a short row turns (data-carrying: a freezed union in Dart).
+pub enum TurnAtDto {
+    Last { count: u32 },
+    Count { count: u32 },
+}
+
+/// What a section step does; mirrors `ply_knit::sections::StepAction` (a freezed union in Dart).
+/// `stitch_change` is an `i32` here (the engine keeps `i64`, which frb would make a `BigInt` on the
+/// web): `parse_knit` refuses a file whose change is past `MAX_LIVE_STITCHES` (1,000,000), so every
+/// value that opens crosses exactly.
+pub enum KnitStepActionDto {
+    ChartRows {
+        first: u32,
+        last: u32,
+    },
+    Work {
+        stitch: WorkStitchKind,
+        to: WorkToDto,
+        resolve_turns: bool,
+    },
+    ShortRow {
+        stitch: WorkStitchKind,
+        to: TurnAtDto,
+        method: TurnMethodKind,
+        resolve_turns: bool,
+    },
+    CastOn {
+        count: u32,
+    },
+    BindOff {
+        count: Option<u32>,
+        resolve_turns: bool,
+    },
+    Hold {
+        count: Option<u32>,
+        name: String,
+    },
+    Resume {
+        hold: String,
+        facing: Option<SideKind>,
+    },
+    Opaque {
+        text: String,
+        stitch_change: Option<i32>,
+    },
+}
+
 // --- structs ---------------------------------------------------------------------------------------
+
+/// One step of a section: a stable id (unique in the pattern) and what it does.
+pub struct KnitStepDto {
+    pub id: String,
+    pub action: KnitStepActionDto,
+}
+
+/// A named section of the pattern's construction (see `ply_knit::sections`).
+pub struct KnitSectionDto {
+    pub id: String,
+    pub name: String,
+    pub notes: String,
+    pub steps: Vec<KnitStepDto>,
+}
+
+/// A group of stitches on hold, as the ledger counts it. `hold` is the hold step's id.
+pub struct KnitHeldCountDto {
+    pub hold: String,
+    pub name: String,
+    pub count: u32,
+}
+
+/// What the stitch ledger knows after a line. The engine counts in `u64`, but its ledger never
+/// holds more than `MAX_LIVE_STITCHES` (1,000,000) on the needle and on hold, and its lines are
+/// capped, so these `u32`s never saturate in practice (they would, rather than wrap).
+pub struct KnitNeedleCountDto {
+    pub on_needle: u32,
+    pub to_work: u32,
+    pub mid_row: bool,
+    pub past_turns: u32,
+    pub pending_turns: u32,
+    pub held: Vec<KnitHeldCountDto>,
+    pub bound_off: u32,
+    pub side: Option<SideKind>,
+}
+
+/// Whether a ledger line was counted, could not be known, or was refused.
+pub enum KnitLineCountKind {
+    Counted,
+    Unknown,
+    NotCounted,
+}
+
+/// One line of the worked construction: a step, or one chart row of a chart-rows step.
+pub struct KnitLedgerLineDto {
+    pub section_id: String,
+    pub step_id: String,
+    /// 0-based positions of the section and the step.
+    pub section_index: u32,
+    pub step_index: u32,
+    /// The chart row (1-based) a chart-rows line works.
+    pub chart_row: Option<u32>,
+    pub label: Option<String>,
+    pub text: String,
+    pub opaque: bool,
+    pub count_kind: KnitLineCountKind,
+    pub count: Option<KnitNeedleCountDto>,
+    /// The count in words, without brackets (`24 sts on the needle, 6 waiting past a turn`).
+    pub count_text: String,
+    /// The whole line as the written instructions give it.
+    pub written: String,
+}
+
+/// A problem the ledger found, located by section and step id when it is about one.
+pub struct KnitSectionIssueDto {
+    pub severity: SeverityKind,
+    pub section_id: Option<String>,
+    pub step_id: Option<String>,
+    /// 0-based positions of the section and step (ids can repeat in a hand-edited file; the
+    /// positions never do).
+    pub section_index: Option<u32>,
+    pub step_index: Option<u32>,
+    /// 1-based chart row, for a chart-rows step.
+    pub chart_row: Option<u32>,
+    /// Without its place, for showing beside the step.
+    pub text: String,
+    /// With its place (`Back, step 3: ...`), as validation reports it.
+    pub message: String,
+}
+
+/// The pattern's worked construction: every ledger line and every problem, in one call.
+pub struct KnitConstructionDto {
+    pub lines: Vec<KnitLedgerLineDto>,
+    pub issues: Vec<KnitSectionIssueDto>,
+}
 
 /// Stitches AND rows per gauge window (4 in / 10 cm, per `unit`).
 pub struct GaugeDto {
@@ -122,6 +279,8 @@ pub struct KnitPatternDto {
     pub legend: StitchLegendDto,
     pub chart: ChartDto,
     pub notes: String,
+    /// The construction sections; empty for a chart-only pattern. See `KnitPattern::sections`.
+    pub sections: Vec<KnitSectionDto>,
 }
 
 /// One validation problem, severity preserved (reuses the weave `SeverityKind`).
@@ -439,6 +598,7 @@ impl From<&KnitPattern> for KnitPatternDto {
             legend: StitchLegendDto::from(&p.legend),
             chart: ChartDto::from(&p.chart),
             notes: p.notes.clone(),
+            sections: p.sections.iter().map(KnitSectionDto::from).collect(),
         }
     }
 }
@@ -454,6 +614,298 @@ impl From<KnitPatternDto> for KnitPattern {
             legend: p.legend.into(),
             chart: p.chart.into(),
             notes: p.notes,
+            sections: p.sections.into_iter().map(Section::from).collect(),
+        }
+    }
+}
+
+impl From<WorkStitch> for WorkStitchKind {
+    fn from(s: WorkStitch) -> Self {
+        match s {
+            WorkStitch::Knit => Self::Knit,
+            WorkStitch::Purl => Self::Purl,
+            WorkStitch::InPattern => Self::InPattern,
+        }
+    }
+}
+impl From<WorkStitchKind> for WorkStitch {
+    fn from(s: WorkStitchKind) -> Self {
+        match s {
+            WorkStitchKind::Knit => Self::Knit,
+            WorkStitchKind::Purl => Self::Purl,
+            WorkStitchKind::InPattern => Self::InPattern,
+        }
+    }
+}
+
+impl From<TurnMethod> for TurnMethodKind {
+    fn from(m: TurnMethod) -> Self {
+        match m {
+            TurnMethod::WrapAndTurn => Self::WrapAndTurn,
+            TurnMethod::German => Self::German,
+            TurnMethod::Unspecified => Self::Unspecified,
+        }
+    }
+}
+impl From<TurnMethodKind> for TurnMethod {
+    fn from(m: TurnMethodKind) -> Self {
+        match m {
+            TurnMethodKind::WrapAndTurn => Self::WrapAndTurn,
+            TurnMethodKind::German => Self::German,
+            TurnMethodKind::Unspecified => Self::Unspecified,
+        }
+    }
+}
+
+impl From<WorkTo> for WorkToDto {
+    fn from(t: WorkTo) -> Self {
+        match t {
+            WorkTo::End => Self::End,
+            WorkTo::Last(count) => Self::Last { count },
+            WorkTo::Count(count) => Self::Count { count },
+        }
+    }
+}
+impl From<WorkToDto> for WorkTo {
+    fn from(t: WorkToDto) -> Self {
+        match t {
+            WorkToDto::End => Self::End,
+            WorkToDto::Last { count } => Self::Last(count),
+            WorkToDto::Count { count } => Self::Count(count),
+        }
+    }
+}
+
+impl From<TurnAt> for TurnAtDto {
+    fn from(t: TurnAt) -> Self {
+        match t {
+            TurnAt::Last(count) => Self::Last { count },
+            TurnAt::Count(count) => Self::Count { count },
+        }
+    }
+}
+impl From<TurnAtDto> for TurnAt {
+    fn from(t: TurnAtDto) -> Self {
+        match t {
+            TurnAtDto::Last { count } => Self::Last(count),
+            TurnAtDto::Count { count } => Self::Count(count),
+        }
+    }
+}
+
+impl From<&StepAction> for KnitStepActionDto {
+    fn from(a: &StepAction) -> Self {
+        match a.clone() {
+            StepAction::ChartRows { first, last } => Self::ChartRows { first, last },
+            StepAction::Work {
+                stitch,
+                to,
+                resolve_turns,
+            } => Self::Work {
+                stitch: stitch.into(),
+                to: to.into(),
+                resolve_turns,
+            },
+            StepAction::ShortRow {
+                stitch,
+                to,
+                method,
+                resolve_turns,
+            } => Self::ShortRow {
+                stitch: stitch.into(),
+                to: to.into(),
+                method: method.into(),
+                resolve_turns,
+            },
+            StepAction::CastOn { count } => Self::CastOn { count },
+            StepAction::BindOff {
+                count,
+                resolve_turns,
+            } => Self::BindOff {
+                count,
+                resolve_turns,
+            },
+            StepAction::Hold { count, name } => Self::Hold { count, name },
+            StepAction::Resume { hold, facing } => Self::Resume {
+                hold,
+                facing: facing.map(SideKind::from),
+            },
+            StepAction::Opaque {
+                text,
+                stitch_change,
+            } => Self::Opaque {
+                text,
+                // `parse_knit` refuses a change past the ledger's cap (well inside i32), so this is
+                // exact for every file that opens; the clamp only guards a pattern built in Rust.
+                stitch_change: stitch_change
+                    .map(|d| d.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32),
+            },
+        }
+    }
+}
+impl From<KnitStepActionDto> for StepAction {
+    fn from(a: KnitStepActionDto) -> Self {
+        match a {
+            KnitStepActionDto::ChartRows { first, last } => Self::ChartRows { first, last },
+            KnitStepActionDto::Work {
+                stitch,
+                to,
+                resolve_turns,
+            } => Self::Work {
+                stitch: stitch.into(),
+                to: to.into(),
+                resolve_turns,
+            },
+            KnitStepActionDto::ShortRow {
+                stitch,
+                to,
+                method,
+                resolve_turns,
+            } => Self::ShortRow {
+                stitch: stitch.into(),
+                to: to.into(),
+                method: method.into(),
+                resolve_turns,
+            },
+            KnitStepActionDto::CastOn { count } => Self::CastOn { count },
+            KnitStepActionDto::BindOff {
+                count,
+                resolve_turns,
+            } => Self::BindOff {
+                count,
+                resolve_turns,
+            },
+            KnitStepActionDto::Hold { count, name } => Self::Hold { count, name },
+            KnitStepActionDto::Resume { hold, facing } => Self::Resume {
+                hold,
+                facing: facing.map(Side::from),
+            },
+            KnitStepActionDto::Opaque {
+                text,
+                stitch_change,
+            } => Self::Opaque {
+                text,
+                stitch_change: stitch_change.map(i64::from),
+            },
+        }
+    }
+}
+
+impl From<&Section> for KnitSectionDto {
+    fn from(s: &Section) -> Self {
+        KnitSectionDto {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            notes: s.notes.clone(),
+            steps: s
+                .steps
+                .iter()
+                .map(|st| KnitStepDto {
+                    id: st.id.clone(),
+                    action: KnitStepActionDto::from(&st.action),
+                })
+                .collect(),
+        }
+    }
+}
+impl From<KnitSectionDto> for Section {
+    fn from(s: KnitSectionDto) -> Self {
+        Section {
+            id: s.id,
+            name: s.name,
+            notes: s.notes,
+            steps: s
+                .steps
+                .into_iter()
+                .map(|st| Step {
+                    id: st.id,
+                    action: st.action.into(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// `u64` engine counts cross as `u32`, saturating.
+fn sat(n: u64) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+impl From<&NeedleCount> for KnitNeedleCountDto {
+    fn from(c: &NeedleCount) -> Self {
+        KnitNeedleCountDto {
+            on_needle: sat(c.on_needle),
+            to_work: sat(c.to_work),
+            mid_row: c.mid_row,
+            past_turns: sat(c.past_turns),
+            pending_turns: sat(c.pending_turns),
+            held: c
+                .held
+                .iter()
+                .map(|h: &HeldCount| KnitHeldCountDto {
+                    hold: h.hold.clone(),
+                    name: h.name.clone(),
+                    count: sat(h.count),
+                })
+                .collect(),
+            bound_off: sat(c.bound_off),
+            side: c.side.map(SideKind::from),
+        }
+    }
+}
+
+fn severity_to_dto(s: Severity) -> SeverityKind {
+    match s {
+        Severity::Error => SeverityKind::Error,
+        Severity::Warning => SeverityKind::Warning,
+    }
+}
+
+impl KnitConstructionDto {
+    /// The ledger of `pattern`, with every section and step named by its stable id.
+    pub fn of(pattern: &KnitPattern, ledger: &Ledger) -> Self {
+        let section_id = |i: usize| pattern.sections.get(i).map(|s| s.id.clone());
+        let step_id = |i: usize, j: usize| {
+            pattern
+                .sections
+                .get(i)
+                .and_then(|s| s.steps.get(j))
+                .map(|st| st.id.clone())
+        };
+        let line = |l: &LedgerLine| KnitLedgerLineDto {
+            section_id: section_id(l.section).unwrap_or_default(),
+            step_id: step_id(l.section, l.step).unwrap_or_default(),
+            section_index: sat(l.section as u64),
+            step_index: sat(l.step as u64),
+            chart_row: l.chart_row.map(|r| sat(r as u64 + 1)),
+            label: l.label.clone(),
+            text: l.text.clone(),
+            opaque: l.opaque,
+            count_kind: match l.count {
+                LineCount::Counted(_) => KnitLineCountKind::Counted,
+                LineCount::Unknown => KnitLineCountKind::Unknown,
+                LineCount::NotCounted => KnitLineCountKind::NotCounted,
+            },
+            count: l.count.counted().map(KnitNeedleCountDto::from),
+            count_text: l.count.text(),
+            written: l.written(),
+        };
+        let issue = |i: &SectionIssue| KnitSectionIssueDto {
+            severity: severity_to_dto(i.severity),
+            section_id: i.section.and_then(section_id),
+            step_id: match (i.section, i.step) {
+                (Some(s), Some(t)) => step_id(s, t),
+                _ => None,
+            },
+            section_index: i.section.map(|s| sat(s as u64)),
+            step_index: i.step.map(|t| sat(t as u64)),
+            chart_row: i.chart_row.map(|r| sat(r as u64 + 1)),
+            text: i.text.clone(),
+            message: i.message.clone(),
+        };
+        KnitConstructionDto {
+            lines: ledger.lines.iter().map(line).collect(),
+            issues: ledger.issues.iter().map(issue).collect(),
         }
     }
 }
@@ -461,10 +913,7 @@ impl From<KnitPatternDto> for KnitPattern {
 impl From<&KnitIssue> for KnitIssueDto {
     fn from(i: &KnitIssue) -> Self {
         KnitIssueDto {
-            severity: match i.severity {
-                Severity::Error => SeverityKind::Error,
-                Severity::Warning => SeverityKind::Warning,
-            },
+            severity: severity_to_dto(i.severity),
             message: i.message.clone(),
         }
     }
@@ -533,9 +982,240 @@ mod tests {
                 ],
             },
             notes: "n".into(),
+            sections: every_step_kind(),
         };
         let back = KnitPattern::from(KnitPatternDto::from(&p));
         assert_eq!(back, p);
+    }
+
+    /// One section holding every step kind, with every option set somewhere.
+    fn every_step_kind() -> Vec<Section> {
+        let step = |id: &str, action: StepAction| Step {
+            id: id.into(),
+            action,
+        };
+        vec![
+            Section {
+                id: "section-1".into(),
+                name: "Shoulder".into(),
+                notes: "n".into(),
+                steps: vec![
+                    step("a", StepAction::ChartRows { first: 1, last: 2 }),
+                    step(
+                        "b",
+                        StepAction::Work {
+                            stitch: WorkStitch::InPattern,
+                            to: WorkTo::Last(3),
+                            resolve_turns: true,
+                        },
+                    ),
+                    step(
+                        "c",
+                        StepAction::Work {
+                            stitch: WorkStitch::Purl,
+                            to: WorkTo::End,
+                            resolve_turns: false,
+                        },
+                    ),
+                    step(
+                        "d",
+                        StepAction::ShortRow {
+                            stitch: WorkStitch::Knit,
+                            to: TurnAt::Count(4),
+                            method: TurnMethod::German,
+                            resolve_turns: true,
+                        },
+                    ),
+                    step(
+                        "e",
+                        StepAction::ShortRow {
+                            stitch: WorkStitch::Purl,
+                            to: TurnAt::Last(2),
+                            method: TurnMethod::Unspecified,
+                            resolve_turns: false,
+                        },
+                    ),
+                    step("f", StepAction::CastOn { count: 3 }),
+                    step(
+                        "g",
+                        StepAction::BindOff {
+                            count: Some(2),
+                            resolve_turns: false,
+                        },
+                    ),
+                    step(
+                        "h",
+                        StepAction::Hold {
+                            count: None,
+                            name: "neck".into(),
+                        },
+                    ),
+                    step(
+                        "i",
+                        StepAction::Resume {
+                            hold: "h".into(),
+                            facing: Some(Side::Ws),
+                        },
+                    ),
+                    step(
+                        "j",
+                        StepAction::Resume {
+                            hold: "h".into(),
+                            facing: None,
+                        },
+                    ),
+                    step(
+                        "k",
+                        StepAction::Opaque {
+                            text: "t".into(),
+                            stitch_change: Some(-3),
+                        },
+                    ),
+                    step(
+                        "l",
+                        StepAction::Opaque {
+                            text: String::new(),
+                            stitch_change: None,
+                        },
+                    ),
+                ],
+            },
+            Section {
+                id: "section-2".into(),
+                name: String::new(),
+                notes: String::new(),
+                steps: Vec::new(),
+            },
+        ]
+    }
+
+    /// The construction call names every line and issue by section and step id, and its text and
+    /// counts are the engine ledger's.
+    #[test]
+    fn construction_crosses_with_ids_counts_and_issues() {
+        let mut pattern = KnitPattern::from(crate::api::knit_blank_pattern());
+        pattern.cast_on = Some(10);
+        pattern.sections = vec![Section {
+            id: "section-1".into(),
+            name: "Shoulder".into(),
+            notes: String::new(),
+            steps: vec![
+                Step {
+                    id: "step-1".into(),
+                    action: StepAction::ShortRow {
+                        stitch: WorkStitch::Knit,
+                        to: TurnAt::Last(4),
+                        method: TurnMethod::WrapAndTurn,
+                        resolve_turns: false,
+                    },
+                },
+                Step {
+                    id: "step-2".into(),
+                    action: StepAction::BindOff {
+                        count: Some(30),
+                        resolve_turns: false,
+                    },
+                },
+            ],
+        }];
+        let c = crate::api::knit_construction(KnitPatternDto::from(&pattern));
+        assert_eq!(c.lines.len(), 2);
+        let first = &c.lines[0];
+        assert_eq!(
+            (first.section_id.as_str(), first.step_id.as_str()),
+            ("section-1", "step-1")
+        );
+        assert_eq!(first.label.as_deref(), Some("Short row 1 (RS)"));
+        assert_eq!(
+            first.written,
+            "Short row 1 (RS): knit to last 4 sts, wrap and turn. (10 sts on the needle, 4 waiting past a turn)"
+        );
+        let count = first.count.as_ref().unwrap();
+        assert_eq!(
+            (count.on_needle, count.to_work, count.past_turns),
+            (10, 6, 4)
+        );
+        assert!(matches!(count.side, Some(SideKind::Ws)));
+        assert!(matches!(
+            c.lines[1].count_kind,
+            KnitLineCountKind::NotCounted
+        ));
+        assert!(c.lines[1].count.is_none());
+        let issue = c
+            .issues
+            .iter()
+            .find(|i| i.step_id.as_deref() == Some("step-2"))
+            .unwrap();
+        assert!(matches!(issue.severity, SeverityKind::Error));
+        assert_eq!(
+            issue.text,
+            "binds off 30 stitches, but only 6 stitches are left to work in this row"
+        );
+        assert!(issue.message.starts_with("Shoulder, step 2: "));
+        // The same problems reach the editor's validation band.
+        let messages: Vec<String> = crate::api::validate_knit(KnitPatternDto::from(&pattern))
+            .into_iter()
+            .map(|i| i.message)
+            .collect();
+        assert!(messages.contains(&issue.message));
+        // A chart-only pattern has no construction.
+        let blank = crate::api::knit_construction(crate::api::knit_blank_pattern());
+        assert!(blank.lines.is_empty() && blank.issues.is_empty());
+    }
+
+    /// A file past the section limits is refused as unreadable instead of loaded; one at them opens.
+    #[test]
+    fn oversized_sections_are_refused_on_load() {
+        let mut pattern = KnitPattern::from(crate::api::knit_blank_pattern());
+        pattern.sections = vec![Section {
+            id: "s".into(),
+            name: "x".repeat(ply_knit::sections::MAX_TEXT_BYTES + 1),
+            notes: String::new(),
+            steps: Vec::new(),
+        }];
+        let Err(err) = crate::api::parse_knit(pattern.to_json().unwrap()) else {
+            panic!("an oversized name must be refused");
+        };
+        assert_eq!(err.kind, KnitFormatFailureKind::Unreadable);
+        assert!(err.message.contains("too large to open"), "{}", err.message);
+        pattern.sections[0].name = "x".repeat(ply_knit::sections::MAX_TEXT_BYTES);
+        pattern.sections[0].steps.push(Step {
+            id: "a".into(),
+            action: StepAction::Opaque {
+                text: "t".into(),
+                stitch_change: Some(-1_000_000),
+            },
+        });
+        let dto = crate::api::parse_knit(pattern.to_json().unwrap()).unwrap();
+        let back = KnitPattern::from(dto);
+        assert_eq!(back, pattern, "a change at the cap crosses exactly");
+        pattern.sections[0].steps[0].action = StepAction::Opaque {
+            text: "t".into(),
+            stitch_change: Some(i64::MAX),
+        };
+        assert!(crate::api::parse_knit(pattern.to_json().unwrap()).is_err());
+    }
+
+    /// The real version-3 bytes open through the bridge with no sections, and saving writes the
+    /// current version; sections added in the app survive the next save and open.
+    #[test]
+    fn a_v3_file_opens_without_sections_and_saves_as_current() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/migrations/plyknit/schema-v3/rib-cast-on-flat.plyknit"
+        );
+        let dto = crate::api::parse_knit(std::fs::read_to_string(path).unwrap()).unwrap();
+        assert!(dto.sections.is_empty());
+        assert_eq!(dto.cast_on, Some(26));
+        let mut dto = crate::api::parse_knit(crate::api::write_knit(dto).unwrap()).unwrap();
+        dto.sections = every_step_kind().iter().map(KnitSectionDto::from).collect();
+        let saved = crate::api::write_knit(dto).unwrap();
+        assert_eq!(
+            ply_knit::native::schema_version(&saved).unwrap(),
+            ply_knit::KNIT_SCHEMA_VERSION
+        );
+        let back = KnitPattern::from(crate::api::parse_knit(saved).unwrap());
+        assert_eq!(back.sections, every_step_kind());
     }
 
     /// Authored repeats cross the boundary intact and mean the same thing behind it: the written
@@ -572,6 +1252,7 @@ mod tests {
                 ],
             },
             notes: String::new(),
+            sections: Vec::new(),
         };
         assert_eq!(
             crate::api::knit_written(KnitPatternDto::from(&pattern)),
@@ -592,7 +1273,7 @@ mod tests {
         let kind =
             |text: &str| KnitFormatFailure::from(KnitPattern::from_json(text).unwrap_err()).kind;
         assert_eq!(
-            kind(r#"{"format":"ply.knit","schema_version":4,"document":{}}"#),
+            kind(r#"{"format":"ply.knit","schema_version":5,"document":{}}"#),
             KnitFormatFailureKind::NewerVersion
         );
         assert_eq!(
@@ -600,7 +1281,7 @@ mod tests {
             KnitFormatFailureKind::WrongFormat
         );
         assert_eq!(kind("{not json"), KnitFormatFailureKind::Unreadable);
-        for current_or_older in [2, 3] {
+        for current_or_older in [2, 3, 4] {
             assert_eq!(
                 kind(&format!(
                     r#"{{"format":"ply.knit","schema_version":{current_or_older},"document":{{}}}}"#

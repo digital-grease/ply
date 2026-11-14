@@ -1,3 +1,4 @@
+import '../models/knit_sections.dart';
 import '../models/knit_stitches.dart';
 import '../rust/dto.dart' show ColorDto, UnitKind; // shared with the weave bridge
 import '../rust/knit_dto.dart';
@@ -36,6 +37,7 @@ class KnitEditorState {
     legend: StitchLegendDto(stitches: []),
     chart: ChartDto(width: 0, rows: []),
     notes: '',
+    sections: [],
   );
 
   bool get canUndo => undo.isNotEmpty;
@@ -264,6 +266,129 @@ class KnitEditorState {
     return _commit(_withLegend(pattern, [...pattern.legend.stitches, def]));
   }
 
+  // --- sections (the construction layer; see `ply_knit::sections`) ---------------------------------
+
+  /// Append a new, empty section called [name] (trimmed) and return the new state. Its id is the
+  /// next free `section-N`, so it never clashes with an existing one.
+  KnitEditorState addSection(String name) => _commit(_withSections(pattern, [
+        ...pattern.sections,
+        KnitSectionDto(id: nextSectionId(pattern), name: name.trim(), notes: '', steps: const []),
+      ]));
+
+  // Every edit below works on POSITIONS (the section's index, the step's index in it): ids can
+  // repeat in a hand-edited file (the engine reports it), and an edit must change exactly the item
+  // the knitter chose. The id-based forms resolve to the FIRST item with that id.
+
+  /// Rename the section at [si]. Out of range or no change is a no-op.
+  KnitEditorState renameSectionAt(int si, String name) =>
+      _editSectionAt(si, (s) => s.name == name.trim() ? null : _section(s, name: name.trim()));
+
+  /// Replace the notes of the section at [si]. Out of range or no change is a no-op.
+  KnitEditorState setSectionNotesAt(int si, String notes) =>
+      _editSectionAt(si, (s) => s.notes == notes ? null : _section(s, notes: notes));
+
+  /// Remove the section at [si] and its steps. A step elsewhere that returns stitches put on hold
+  /// here is left as it is; the engine reports it, and Undo restores the section.
+  KnitEditorState removeSectionAt(int si) {
+    if (si < 0 || si >= pattern.sections.length) return this;
+    return _commit(_withSections(pattern, [...pattern.sections]..removeAt(si)));
+  }
+
+  /// Move the section at [si] by [delta] places (negative = earlier), clamped. A move that changes
+  /// nothing is a no-op.
+  KnitEditorState moveSectionAt(int si, int delta) {
+    final list = [...pattern.sections];
+    if (si < 0 || si >= list.length) return this;
+    final to = (si + delta).clamp(0, list.length - 1);
+    if (to == si) return this;
+    final moved = list.removeAt(si);
+    list.insert(to, moved);
+    return _commit(_withSections(pattern, list));
+  }
+
+  /// Add a step doing [action] to the section at [si], at [index] (end when null), with the next
+  /// free `step-N` id. Out of range is a no-op.
+  KnitEditorState addStepAt(int si, KnitStepActionDto action, {int? index}) {
+    final id = nextStepId(pattern);
+    return _editSectionAt(si, (s) {
+      final steps = [...s.steps];
+      final at = (index ?? steps.length).clamp(0, steps.length);
+      steps.insert(at, KnitStepDto(id: id, action: action));
+      return _section(s, steps: steps);
+    });
+  }
+
+  /// Replace what step [ti] of section [si] does, keeping its id (so a step returning stitches it
+  /// put on hold still finds them). Out of range or no change is a no-op.
+  KnitEditorState replaceStepAt(int si, int ti, KnitStepActionDto action) =>
+      _editSectionAt(si, (s) {
+        if (ti < 0 || ti >= s.steps.length || s.steps[ti].action == action) return null;
+        return _section(s,
+            steps: [...s.steps]..[ti] = KnitStepDto(id: s.steps[ti].id, action: action));
+      });
+
+  /// Remove step [ti] of section [si]. Out of range is a no-op.
+  KnitEditorState removeStepAt(int si, int ti) => _editSectionAt(si, (s) {
+        if (ti < 0 || ti >= s.steps.length) return null;
+        return _section(s, steps: [...s.steps]..removeAt(ti));
+      });
+
+  /// Move step [ti] of section [si] by [delta] places within the section (negative = earlier),
+  /// clamped. A move that changes nothing is a no-op.
+  KnitEditorState moveStepAt(int si, int ti, int delta) => _editSectionAt(si, (s) {
+        if (ti < 0 || ti >= s.steps.length) return null;
+        final to = (ti + delta).clamp(0, s.steps.length - 1);
+        if (to == ti) return null;
+        final steps = [...s.steps];
+        final moved = steps.removeAt(ti);
+        steps.insert(to, moved);
+        return _section(s, steps: steps);
+      });
+
+  /// The id-based forms: the first section, or the first step, with that id.
+  KnitEditorState renameSection(String sectionId, String name) =>
+      renameSectionAt(_sectionIndex(sectionId), name);
+  KnitEditorState setSectionNotes(String sectionId, String notes) =>
+      setSectionNotesAt(_sectionIndex(sectionId), notes);
+  KnitEditorState removeSection(String sectionId) => removeSectionAt(_sectionIndex(sectionId));
+  KnitEditorState moveSection(String sectionId, int delta) =>
+      moveSectionAt(_sectionIndex(sectionId), delta);
+  KnitEditorState addStep(String sectionId, KnitStepActionDto action, {int? index}) =>
+      addStepAt(_sectionIndex(sectionId), action, index: index);
+  KnitEditorState replaceStep(String stepId, KnitStepActionDto action) {
+    final (si, ti) = _stepIndex(stepId);
+    return replaceStepAt(si, ti, action);
+  }
+
+  KnitEditorState removeStep(String stepId) {
+    final (si, ti) = _stepIndex(stepId);
+    return removeStepAt(si, ti);
+  }
+
+  KnitEditorState moveStep(String stepId, int delta) {
+    final (si, ti) = _stepIndex(stepId);
+    return moveStepAt(si, ti, delta);
+  }
+
+  int _sectionIndex(String id) => pattern.sections.indexWhere((s) => s.id == id);
+
+  /// The (section, step) position of the first step with id [id], or (-1, -1).
+  (int, int) _stepIndex(String id) {
+    for (var si = 0; si < pattern.sections.length; si++) {
+      final ti = pattern.sections[si].steps.indexWhere((st) => st.id == id);
+      if (ti >= 0) return (si, ti);
+    }
+    return (-1, -1);
+  }
+
+  /// Apply [edit] to the section at [si]; a null result (or an index out of range) is a no-op.
+  KnitEditorState _editSectionAt(int si, KnitSectionDto? Function(KnitSectionDto) edit) {
+    if (si < 0 || si >= pattern.sections.length) return this;
+    final next = edit(pattern.sections[si]);
+    if (next == null) return this;
+    return _commit(_withSections(pattern, [...pattern.sections]..[si] = next));
+  }
+
   KnitEditorState undoEdit() {
     if (undo.isEmpty) return this;
     return KnitEditorState(
@@ -287,17 +412,36 @@ class KnitEditorState {
 
 // --- pure DTO reconstruction helpers ---------------------------------------------------------------
 
-KnitPatternDto _withChart(KnitPatternDto p, ChartDto chart) => KnitPatternDto(
+/// [p] with the given fields replaced. The one place a pattern is rebuilt field by field, so no edit
+/// can drop a field it does not touch (the sections included). A field left out keeps its value; the
+/// nullable cast-on is replaced only when [replaceCastOn] is set.
+KnitPatternDto _copy(
+  KnitPatternDto p, {
+  ConstructionKind? construction,
+  SideKind? firstRowSide,
+  bool replaceCastOn = false,
+  int? castOn,
+  GaugeDto? gauge,
+  List<ColorDto>? palette,
+  StitchLegendDto? legend,
+  ChartDto? chart,
+  String? notes,
+  List<KnitSectionDto>? sections,
+}) =>
+    KnitPatternDto(
       name: p.name,
-      construction: p.construction,
-      firstRowSide: p.firstRowSide,
-      castOn: p.castOn,
-      gauge: p.gauge,
-      palette: p.palette,
-      legend: p.legend,
-      chart: chart,
-      notes: p.notes,
+      construction: construction ?? p.construction,
+      firstRowSide: firstRowSide ?? p.firstRowSide,
+      castOn: replaceCastOn ? castOn : p.castOn,
+      gauge: gauge ?? p.gauge,
+      palette: palette ?? p.palette,
+      legend: legend ?? p.legend,
+      chart: chart ?? p.chart,
+      notes: notes ?? p.notes,
+      sections: sections ?? p.sections,
     );
+
+KnitPatternDto _withChart(KnitPatternDto p, ChartDto chart) => _copy(p, chart: chart);
 
 KnitPatternDto _withMeta(
   KnitPatternDto p, {
@@ -305,65 +449,20 @@ KnitPatternDto _withMeta(
   SideKind? firstRowSide,
   String? notes,
 }) =>
-    KnitPatternDto(
-      name: p.name,
-      construction: construction ?? p.construction,
-      firstRowSide: firstRowSide ?? p.firstRowSide,
-      castOn: p.castOn,
-      gauge: p.gauge,
-      palette: p.palette,
-      legend: p.legend,
-      chart: p.chart,
-      notes: notes ?? p.notes,
-    );
+    _copy(p, construction: construction, firstRowSide: firstRowSide, notes: notes);
 
-KnitPatternDto _withCastOn(KnitPatternDto p, int? castOn) => KnitPatternDto(
-      name: p.name,
-      construction: p.construction,
-      firstRowSide: p.firstRowSide,
-      castOn: castOn,
-      gauge: p.gauge,
-      palette: p.palette,
-      legend: p.legend,
-      chart: p.chart,
-      notes: p.notes,
-    );
+KnitPatternDto _withCastOn(KnitPatternDto p, int? castOn) =>
+    _copy(p, replaceCastOn: true, castOn: castOn);
 
-KnitPatternDto _withGauge(KnitPatternDto p, GaugeDto gauge) => KnitPatternDto(
-      name: p.name,
-      construction: p.construction,
-      firstRowSide: p.firstRowSide,
-      castOn: p.castOn,
-      gauge: gauge,
-      palette: p.palette,
-      legend: p.legend,
-      chart: p.chart,
-      notes: p.notes,
-    );
+KnitPatternDto _withGauge(KnitPatternDto p, GaugeDto gauge) => _copy(p, gauge: gauge);
 
-KnitPatternDto _withPalette(KnitPatternDto p, List<ColorDto> palette) => KnitPatternDto(
-      name: p.name,
-      construction: p.construction,
-      firstRowSide: p.firstRowSide,
-      castOn: p.castOn,
-      gauge: p.gauge,
-      palette: palette,
-      legend: p.legend,
-      chart: p.chart,
-      notes: p.notes,
-    );
+KnitPatternDto _withPalette(KnitPatternDto p, List<ColorDto> palette) => _copy(p, palette: palette);
 
-KnitPatternDto _withLegend(KnitPatternDto p, List<StitchDefDto> stitches) => KnitPatternDto(
-      name: p.name,
-      construction: p.construction,
-      firstRowSide: p.firstRowSide,
-      castOn: p.castOn,
-      gauge: p.gauge,
-      palette: p.palette,
-      legend: StitchLegendDto(stitches: stitches),
-      chart: p.chart,
-      notes: p.notes,
-    );
+KnitPatternDto _withLegend(KnitPatternDto p, List<StitchDefDto> stitches) =>
+    _copy(p, legend: StitchLegendDto(stitches: stitches));
+
+KnitPatternDto _withSections(KnitPatternDto p, List<KnitSectionDto> sections) =>
+    _copy(p, sections: sections);
 
 /// The span (front + back) of the cable at legend id [stitch], or null if [stitch] is out of range
 /// or not a cable. The one place "is this brush a cable, and how wide?" is answered.
@@ -534,3 +633,13 @@ bool _sameRepeats(List<RepeatSpanDto> a, List<RepeatSpanDto> b) {
   }
   return true;
 }
+
+/// [s] with the given fields replaced.
+KnitSectionDto _section(KnitSectionDto s,
+        {String? name, String? notes, List<KnitStepDto>? steps}) =>
+    KnitSectionDto(
+      id: s.id,
+      name: name ?? s.name,
+      notes: notes ?? s.notes,
+      steps: steps ?? s.steps,
+    );

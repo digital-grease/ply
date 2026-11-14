@@ -1,0 +1,33 @@
+# Fixture record for shoulder-short-rows-flat (see fixtures/README.md).
+
+id = "knitting/sections/shoulder-short-rows-flat"
+title = "Shoulder slope in wrap-and-turn short rows"
+technique = "short rows (wrap and turn), held stitches"
+files = ["shoulder-short-rows-flat.plyknit", "shoulder-short-rows-flat.expect.json"]
+created = "2026-11-13"
+license = "original"
+provenance = """
+Written for Ply's tests through the engine's own .plyknit writer (schema version 4). The shoulder is a generic three-step slope over 24 stitches, the shape any shoulder shaping has; no published pattern, chart or text was copied."""
+
+[sources]
+# Conventions the oracle's written text and ledger follow (cited, nothing reproduced).
+references = [
+  "Jimmy Beans Wool, \"Wrap Stitches for Short Rows Knitting Tutorial\", https://jimmybeanswool.com/blogs/tutorials/wrap-stitches-for-short-rows-knitting-tutorial (what is wrapped at the turn).",
+  "Jimmy Beans Wool, \"Picking Up Wraps on Wrap-and-Turn Short Rows Knitting Tutorial\", https://jimmybeanswool.com/blogs/tutorials/picking-up-wraps-on-wrap-and-turn-short-rows-knitting-tutorial (working a wrap together with its stitch).",
+  "Knotions, \"German Short Rows Tutorial\", https://knotions.com/techniques/german-short-rows-tutorial/ (the double stitch, worked as one stitch).",
+  "Tin Can Knits, \"Placing sts on hold\", https://blog.tincanknits.com/2013/12/24/placing-sts-on-hold/ (holding and returning live stitches).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/section_fixtures.rs (section_fixtures_match_their_oracles): the file parses as \
+a current .plyknit envelope and re-saves to the same bytes; the written instructions equal the \
+oracle line for line; every ledger line (one per step, one per chart row of a chart-rows step) has \
+the oracle's text, place and count (on the needle, still to work, waiting past a turn, wraps and \
+double stitches pending, each group on hold, bound off, side); validation reports exactly the \
+oracle's issues. app/test/knit_sections_fixture_test.dart reads the same files (schema version 4, \
+the sections' shape, and the PDF and screen text built from the oracle)."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Seven rows: three wrap-and-turn short rows with their return rows, then one full row. Gauge, yarn and the three-needle bind-off that would follow are not part of the fixture; the opaque length step is not checked by design."

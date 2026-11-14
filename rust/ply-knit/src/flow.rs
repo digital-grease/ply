@@ -59,20 +59,34 @@ impl RowFlow {
     }
 }
 
+/// Chart row `r` (0-based) as an instruction, and its counts when worked over `available` stitches
+/// (`None` = unknown), with every problem found in its repeats or counts. No continuity check: the
+/// caller compares the row's consumption with what it has on the needle. [`stitch_flow`] walks the
+/// chart with it; the section ledger ([`crate::sections`]) works a chart row from the stitches the
+/// ledger has waiting.
+pub fn chart_row_count(
+    pattern: &KnitPattern,
+    r: usize,
+    available: Option<u64>,
+) -> (RowInstruction, Option<RowCount>, Vec<RowProblem>) {
+    let instruction = row_instruction(pattern, r);
+    let mut problems = Vec::new();
+    let count = match &instruction {
+        RowInstruction::Unsupported(found) => {
+            problems.extend(found.iter().cloned());
+            None
+        }
+        RowInstruction::Sequence(items) => count_row(items, available, r, &mut problems),
+    };
+    (instruction, count, problems)
+}
+
 /// Walk every chart row, bottom to top, and work out its counts.
 pub fn stitch_flow(pattern: &KnitPattern) -> Vec<RowFlow> {
     let mut out = Vec::with_capacity(pattern.chart.rows.len());
     let mut available: Option<u64> = pattern.cast_on.map(u64::from);
     for r in 0..pattern.chart.rows.len() {
-        let instruction = row_instruction(pattern, r);
-        let mut problems = Vec::new();
-        let count = match &instruction {
-            RowInstruction::Unsupported(found) => {
-                problems.extend(found.iter().cloned());
-                None
-            }
-            RowInstruction::Sequence(items) => count_row(items, available, r, &mut problems),
-        };
+        let (instruction, count, mut problems) = chart_row_count(pattern, r, available);
         // Continuity: the row must take exactly what the row below left, and row 1 exactly the
         // cast-on. (A to-end row takes all of it by construction; an unknown count below cannot be
         // checked.)
@@ -212,6 +226,7 @@ mod tests {
             legend: StitchLegend::builtin(),
             chart: Chart { width, rows },
             notes: String::new(),
+            sections: Vec::new(),
         }
     }
 

@@ -78,7 +78,7 @@ pub struct KnitPattern {
     pub legend: StitchLegend,           // OPEN vocabulary: symbol id -> semantics (see below)
     pub chart: Chart,                   // THE canonical source; written/machine are derived
     pub notes: String,
-    pub retained: Vec<RetainedSection>, // forward-compat for an external format we don't model yet
+    pub sections: Vec<Section>,         // optional construction layer (empty = chart only); see below
 }
 
 pub enum Construction { Flat, InTheRound }
@@ -122,6 +122,20 @@ pub struct CableDef { pub front: u8, pub back: u8, pub direction: Cross, pub fro
 pub enum Cross { Right, Left }
 ```
 
+**Sections (the optional construction layer, `sections.rs`, `.plyknit` schema version 4).** A
+pattern may add named sections, each an ordered list of steps with stable ids: work a range of the
+chart's rows, knit or purl across (to the end, to the last N stitches, or N stitches), a short row
+(wrap and turn, German, or an unspecified turn), cast on, bind off, put stitches on hold as a named
+group, return a group (by the id of the step that held it, with the side facing the knitter), and a
+written step in the pattern's own words that Ply does not check. A stitch ledger walks the steps on
+a model of the needle (the stitches in order, where the work is, and which way the row travels) and
+gives the count after every step: on the needle, still to work in the row, waiting past a short-row
+turn, each group on hold, bound off. A step that asks for more stitches than there are is reported
+and not applied; an unknown count stays unknown. With sections, the written instructions follow
+them step by step with the count after each, and chart rows are checked where a section works them.
+A pattern with no sections is the chart exactly as before. Flat work only so far; working in the
+round, picking up stitches and joining pieces are later steps.
+
 What the research forced (vs the first draft): **repeats are first-class** (`RepeatSpan`/`Repeat`),
 the **vocabulary is an open `StitchLegend`** not a closed enum, **cables are spanning cells**
 (`Cell.span` + `CableDef`), **`ws_variant`** captures RS/WS, **`macro_rows`** flags bobble/cast-on, and
@@ -137,6 +151,7 @@ the **vocabulary is an open `StitchLegend`** not a closed enum, **cables are spa
 | `calc.rs` | `calc.rs` | gauge → dimensions/cast-on; yardage estimate (formulas below) |
 | `validate.rs` | `validate.rs` | **stitch-count consistency**: row deltas balance, decreases don't underflow, cable spans fit, repeats divide evenly |
 | `wif.rs` | `io.rs` | the custom native format (versioned JSON) + optional `knitout.rs` **export** |
+| (none) | `sections.rs` | the optional construction layer: sections, the stitch ledger, their written form |
 | `profile.rs` | `motifs.rs` (later) | generators: ribbing, seed, basic lace/cable repeats |
 
 `validate.rs` is knitting's most bug-prone area (the `raised_shafts` analog): contain all stitch
