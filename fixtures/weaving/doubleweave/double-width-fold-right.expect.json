@@ -1,0 +1,49 @@
+{
+  "description": "Plain-weave double width on 4 shafts with the fold on the right: one shuttle, top, bottom, bottom, top, starting from the left (the open selvedges).",
+  "generator": { "function": "structure::double_weave", "ends": 12, "picks": 8, "construction": "double-width, fold right" },
+  "ends": 12,
+  "picks": 8,
+  "shafts": 4,
+  "treadles": 4,
+  "shed": "rising",
+  "tieup": [[1],[1,2,3],[3],[1,3,4]],
+  "threading": [1,2,3,4,1,2,3,4,1,2,3,4],
+  "treadling": [1,2,4,3,1,2,4,3],
+  "roles_legend": "T = top layer, B = bottom layer, one letter per pick, pick 1 first",
+  "roles": "TBBTTBBT",
+  "shuttles": [1,1,1,1,1,1,1,1],
+  "shuttle_starts": { "1": "left" },
+  "construction": "double-width, fold right",
+  "pass_directions_legend": "one arrow per pick, pick 1 first: \u2190 right to left, \u2192 left to right (left and right as the weaver sits at the front of the loom)",
+  "pass_directions": "→←→←→←→←",
+  "turns_legend": "one entry per shuttle turn: <pick>-<that shuttle's next pick> <edge where the pass ended> <joins = the next pick is on the other layer, open = the same layer>",
+  "turns": [
+    "1-2 right joins",
+    "2-3 left open",
+    "3-4 right joins",
+    "4-5 left open",
+    "5-6 right joins",
+    "6-7 left open",
+    "7-8 right joins"
+  ],
+  "edges": { "left": "open", "right": "joined" },
+  "matrix_orientation": "One string per pick, pick 1 first. Character k is end k + 1, so end 1 is at the LEFT (the editor draws end 1 at the right and shows the mirror image).",
+  "interlacement_legend": "X = warp over weft (rising shed), . = weft over warp. Every intersection of both layers: this is not the face of the cloth.",
+  "interlacement": [
+    "X...X...X...",
+    "XXX.XXX.XXX.",
+    "X.XXX.XXX.XX",
+    "..X...X...X.",
+    "X...X...X...",
+    "XXX.XXX.XXX.",
+    "X.XXX.XXX.XX",
+    "..X...X...X."
+  ],
+  "unfolded_face_legend": "The cloth opened out at the fold, seen from the top layer's side: the top layer from the open edge to the fold, then the bottom layer (turned over) from the fold back to the open edge. One row per weft thread across the full width (a top pick and the bottom pick it turns into at the fold). # = warp shows, . = weft shows. It must be plain weave.",
+  "unfolded_face": [
+    ".#.#.#.#.#.#",
+    "#.#.#.#.#.#.",
+    ".#.#.#.#.#.#",
+    "#.#.#.#.#.#."
+  ]
+}

@@ -729,7 +729,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final railWidth = (MediaQuery.sizeOf(context).width * 0.30).clamp(280.0, 360.0);
       return Row(
         children: [
-          const Expanded(child: IntegratedDraftView()),
+          const Expanded(
+            child: Column(
+              children: [
+                LayeredDrawdownNote(),
+                Expanded(child: IntegratedDraftView()),
+              ],
+            ),
+          ),
           const VerticalDivider(width: 1),
           SizedBox(
             width: railWidth,
@@ -770,6 +777,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               c.maxHeight * 0.45;
       return Column(
         children: [
+          const LayeredDrawdownNote(),
           const Flexible(child: IntegratedDraftView()),
           const ValidationPanel(),
           const DimensionsBar(),
@@ -777,5 +785,34 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ],
       );
     });
+  }
+}
+
+/// Over the drawdown of a double weave (any pick marked top or bottom layer): a one-line caption that
+/// the drawdown is every intersection of both layers, not the face of the cloth (audit R-11). Nothing
+/// for any other draft.
+class LayeredDrawdownNote extends ConsumerWidget {
+  const LayeredDrawdownNote({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final layered = ref.watch(draftEditorProvider.select((s) => hasLayerRoles(s.draft)));
+    if (!layered) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+      child: Row(
+        children: [
+          Icon(Icons.layers_outlined, size: 16, color: cs.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              kLayeredDrawdownNote,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

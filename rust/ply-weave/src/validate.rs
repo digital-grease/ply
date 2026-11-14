@@ -205,6 +205,12 @@ pub fn validate(draft: &Draft) -> Vec<ValidationIssue> {
 
     weft_work_issues(draft, &mut issues);
 
+    // A declared double-weave construction (ADR 0010) that the derived edges do not bear out: the
+    // label is the weaver's, so a mismatch is a Warning naming what disagrees, never a silent relabel.
+    for message in crate::construction::construction_issues(draft) {
+        push(&mut issues, Severity::Warning, message);
+    }
+
     // A shaft that is THREADED but never RAISED by any pick floats the whole cloth length on the
     // back. Every such shaft is in range, so nothing above catches it, yet the cloth is structurally
     // broken — e.g. a satin whose move number shares a factor with the shaft count. `raised_shafts`

@@ -1,0 +1,43 @@
+# Fixture record for independent-layers (see fixtures/README.md).
+
+id = "weaving/doubleweave/independent-layers"
+title = "Two independent plain-weave layers, two shuttles"
+technique = "two independent layers"
+files = ["independent-layers.wif", "independent-layers.expect.json"]
+created = "2026-11-12"
+license = "original recreation"
+provenance = """
+An original draft, written by Ply's double-weave generator (structure::double_weave) from the \
+parameters recorded in independent-layers.expect.json. No published draft was copied: the file applies the \
+published rules cited below, as summarized in the double-weave research note. Top picks (treadles 1 and 3) on shuttle 1, bottom picks (treadles 2 and 4) on shuttle 2, both shuttles from the right. Every turn of each shuttle stays in its own layer, so both edges are open: four selvedges. Crossing the two wefts at the selvedges would lock the layers together there; that is a working action the draft does not record."""
+
+[structure]
+ends = 12
+picks = 8
+shafts = 4
+treadles = 4
+shed = "rising"
+threading = "straight 1-2-3-4; top layer on shafts 1 and 3, bottom layer on 2 and 4"
+tieup = "treadle 1 = 1 (top a), 2 = 1,2,3 (bottom a), 3 = 3 (top b), 4 = 1,3,4 (bottom b)"
+working_data = "pick roles, shuttles, starting sides and the declared construction in [PRIVATE PLY PICKS] Version=2"
+
+[sources]
+# Bibliographic references for the rules this fixture applies. Nothing from them is reproduced.
+references = [
+  "Linda Ligon, \"An Introduction to Doubleweave\", Handwoven, May/June 1983, pp. 64-66; same eBook pp. 1-3 (a different shuttle for each layer; one shuttle continuously weaves a tube; the order of the layers is what makes double width).",
+  "Paul O'Connor, \"A Workshop Program: Step by Step through Double Weave with 4 and 8 Shaft Looms\" (2000), https://www2.cs.arizona.edu/patterns/weaving/webdocs/opr_4s.pdf (two shuttle weave, two cloth layers; one shuttle weave, tubular weave; an odd number of total ends for a tube; double width woven together at one selvage).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/double_weave.rs (tracked_fixtures_load_and_match_their_oracles): the file \
+parses; it is exactly what the generator writes for the recorded parameters (line endings aside); \
+its threading, tie-up, treadling, roles, shuttles, starting sides, construction, pass directions, \
+turns, edges and interlacement equal the oracle in independent-layers.expect.json; both edges open (every turn stays in its layer); the cloth is identical to the double-weave generator's output before constructions existed. The turns and edges \
+in the oracle were derived by hand from the research worked examples and by a separate program, not \
+by the engine's construction module; an independent weft-path check in the test confirms them; \
+validation reports nothing."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Structure, working order and edges only. Sett, sleying at the edges or the fold, extra or floating ends, interlocked wefts, and yarns are not part of the fixture. The interlacement matrix is every intersection of both layers, not the face of the cloth."

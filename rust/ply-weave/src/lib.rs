@@ -8,6 +8,7 @@
 //! how the model maps to the WIF interchange format.
 
 pub mod calc;
+pub mod construction;
 pub mod draft;
 pub mod drawdown;
 pub mod error;
@@ -17,6 +18,7 @@ pub mod structure;
 pub mod validate;
 pub mod wif;
 
+pub use construction::{derive_edges, Construction, EdgeBehavior, Edges, MissingEdgeData, Turn};
 pub use draft::{
     Draft, Drive, Liftplan, PickRole, ShaftId, ShedType, ShotGroup, ShuttleId, Side, TabbyRule,
     Threading, TieUp, TreadleId, Treadling, WeftWork, MAX_SHUTTLES, MAX_STRANDS,

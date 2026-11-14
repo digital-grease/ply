@@ -15,6 +15,7 @@
 
 use ply_common::{Color, Unit};
 use ply_weave::calc::{WarpPlan, WeftEstimate, WeftPlan, YarnEstimate};
+use ply_weave::construction::Construction;
 use ply_weave::draft::{
     ColorPlan, Draft, Drive, Liftplan, PickRole, RetainedSection, ShaftId, ShedType, ShotGroup,
     ShuttleId, Side, Threading, TieUp, TreadleId, Treadling, WeftWork,
@@ -96,6 +97,50 @@ pub struct ShotGroupDto {
 pub struct ShuttleStartDto {
     pub shuttle: u8,
     pub side: ShuttleSideKind,
+}
+
+/// The declared double-weave construction, mirroring `Option<construction::Construction>` as one flat
+/// C-like enum (frb mirrors it as a plain Dart enum, no freezed union). `None` = not declared, which is
+/// every third-party WIF; a construction is never inferred (ADR 0010).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerConstructionKind {
+    None,
+    TwoLayers,
+    Tube,
+    DoubleWidthFoldLeft,
+    DoubleWidthFoldRight,
+}
+
+impl From<Option<Construction>> for LayerConstructionKind {
+    fn from(c: Option<Construction>) -> Self {
+        match c {
+            None => LayerConstructionKind::None,
+            Some(Construction::TwoLayers) => LayerConstructionKind::TwoLayers,
+            Some(Construction::Tube) => LayerConstructionKind::Tube,
+            Some(Construction::DoubleWidth { fold: Side::Left }) => {
+                LayerConstructionKind::DoubleWidthFoldLeft
+            }
+            Some(Construction::DoubleWidth { fold: Side::Right }) => {
+                LayerConstructionKind::DoubleWidthFoldRight
+            }
+        }
+    }
+}
+
+impl From<LayerConstructionKind> for Option<Construction> {
+    fn from(k: LayerConstructionKind) -> Self {
+        match k {
+            LayerConstructionKind::None => None,
+            LayerConstructionKind::TwoLayers => Some(Construction::TwoLayers),
+            LayerConstructionKind::Tube => Some(Construction::Tube),
+            LayerConstructionKind::DoubleWidthFoldLeft => {
+                Some(Construction::DoubleWidth { fold: Side::Left })
+            }
+            LayerConstructionKind::DoubleWidthFoldRight => {
+                Some(Construction::DoubleWidth { fold: Side::Right })
+            }
+        }
+    }
 }
 
 /// Measurement unit for the draft's lengths.
@@ -474,6 +519,8 @@ pub struct DraftDto {
     pub shot_groups: Vec<ShotGroupDto>,
     /// Each shuttle's starting side, ascending by shuttle; a shuttle not listed has none recorded.
     pub shuttle_starts: Vec<ShuttleStartDto>,
+    /// The declared double-weave construction (`None` when not declared).
+    pub construction: LayerConstructionKind,
 }
 
 // ---------------------------------------------------------------------------
@@ -597,6 +644,7 @@ impl From<&Draft> for DraftDto {
                     },
                 })
                 .collect(),
+            construction: d.weft_work.construction.into(),
         }
     }
 }
@@ -674,6 +722,7 @@ impl TryFrom<DraftDto> for Draft {
                         picks: g.picks as usize,
                     })
                     .collect(),
+                construction: dto.construction.into(),
             },
         })
     }
@@ -752,6 +801,7 @@ mod tests {
                 .collect(),
             strands: vec![1, 2, 3, 4, 1, 1],
             shot_groups: vec![ShotGroup { start: 2, picks: 2 }],
+            construction: None,
         };
         assert_roundtrip(&d);
         let dto = DraftDto::from(&d);

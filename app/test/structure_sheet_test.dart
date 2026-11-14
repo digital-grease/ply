@@ -29,6 +29,7 @@ class FakeStructureRepo extends DraftRepository {
     bool applyTreadling,
     int endStart,
     int pickStart,
+    LayerConstruction construction,
   })? args;
 
   DraftDoc returnDoc =
@@ -46,6 +47,7 @@ class FakeStructureRepo extends DraftRepository {
     required int ends,
     required int picks,
     int block = 4,
+    LayerConstruction construction = LayerConstruction.twoLayers,
     bool applyThreading = true,
     bool applyTieup = true,
     bool applyTreadling = true,
@@ -67,6 +69,7 @@ class FakeStructureRepo extends DraftRepository {
       applyTreadling: applyTreadling,
       endStart: endStart,
       pickStart: pickStart,
+      construction: construction,
     );
     return returnDoc;
   }
@@ -513,5 +516,82 @@ void main() {
     await t.tap(find.text('Generate'));
     await t.pumpAndSettle();
     expect(repo.args!.applyTreadling, isFalse, reason: 'component choice restored');
+  });
+
+  group('double weave construction (M8-09)', () {
+    Future<void> chooseDoubleWeave(WidgetTester t) async {
+      await t.tap(find.text('Twill'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Double weave').last);
+      await t.pumpAndSettle();
+    }
+
+    String help(WidgetTester t) =>
+        t.widget<Text>(find.byKey(const Key('double-weave-construction-help'))).data!;
+
+    testWidgets('two independent layers is the default and passes through', (t) async {
+      final repo = FakeStructureRepo();
+      await openSheet(t, repo);
+      await chooseDoubleWeave(t);
+      expect(find.text('Construction'), findsOneWidget);
+      expect(find.text('Fold'), findsNothing, reason: 'the fold side belongs to double width only');
+      expect(
+          help(t),
+          'Two shuttles, one for each layer, both starting from the right. Top and bottom picks '
+          'alternate; each layer has its own selvedges.');
+      await t.tap(find.text('Generate'));
+      await t.pumpAndSettle();
+      expect(repo.args!.family, StructureFamily.doubleWeave);
+      expect(repo.args!.construction, LayerConstruction.twoLayers);
+    });
+
+    testWidgets('a tube says it needs an odd number of ends and passes tube', (t) async {
+      final repo = FakeStructureRepo();
+      await openSheet(t, repo);
+      await chooseDoubleWeave(t);
+      await t.tap(find.text('Tube'));
+      await t.pumpAndSettle();
+      expect(
+          help(t),
+          'One shuttle starting from the left. Top and bottom picks alternate, so the layers join at '
+          'both edges. A tube needs an odd number of warp ends to weave without a fault at an edge.');
+      expect(find.text('This tube will have 15 warp ends.'), findsOneWidget, reason: '16 requested');
+      await t.enterText(find.widgetWithText(TextFormField, 'Warp ends'), '21');
+      await t.pump();
+      expect(find.byKey(const Key('double-weave-tube-ends')), findsNothing, reason: 'already odd');
+      await t.tap(find.text('Generate'));
+      await t.pumpAndSettle();
+      expect(repo.args!.construction, LayerConstruction.tube);
+      expect(repo.args!.ends, 21);
+    });
+
+    testWidgets('double width chooses its fold side, and the choice is remembered', (t) async {
+      final repo = FakeStructureRepo();
+      await openSheet(t, repo);
+      await chooseDoubleWeave(t);
+      await t.tap(find.text('Double width'));
+      await t.pumpAndSettle();
+      expect(find.text('Fold'), findsOneWidget);
+      expect(
+          help(t),
+          'One shuttle: top, bottom, bottom, top, starting from the left. The layers join at the fold '
+          'on the right; the left edge has the two open selvedges.');
+      await t.tap(find.text('Left'));
+      await t.pumpAndSettle();
+      expect(
+          help(t),
+          'One shuttle: top, bottom, bottom, top, starting from the right. The layers join at the '
+          'fold on the left; the right edge has the two open selvedges.');
+      await t.tap(find.text('Generate'));
+      await t.pumpAndSettle();
+      expect(repo.args!.construction, LayerConstruction.doubleWidthFoldLeft);
+
+      await t.tap(find.text('open'));
+      await t.pumpAndSettle();
+      expect(find.text('Fold'), findsOneWidget, reason: 'double width restored');
+      await t.tap(find.text('Generate'));
+      await t.pumpAndSettle();
+      expect(repo.args!.construction, LayerConstruction.doubleWidthFoldLeft);
+    });
   });
 }

@@ -27,6 +27,17 @@ int maxLayerShaft(DraftDoc doc) =>
 bool supportsLayerView(DraftDoc doc) =>
     doc.ends > 0 && doc.picks > 0 && maxLayerShaft(doc) >= 4;
 
+/// True when any pick of [doc] is marked as weaving the top or bottom layer of a double weave. The
+/// editor's drawdown of such a draft is every intersection of BOTH layers, not the face of the cloth,
+/// and says so.
+bool hasLayerRoles(DraftDoc doc) =>
+    doc.pickRoles.any((r) => r == PickRole.topLayer || r == PickRole.bottomLayer);
+
+/// The caption the editor shows over the drawdown of a draft with layer roles ([hasLayerRoles]).
+const String kLayeredDrawdownNote =
+    'This drawdown shows every intersection of both layers, not the face of the cloth. Open Layers '
+    'to see each layer.';
+
 /// The default TOP-layer shafts: the odd shafts (matching the `double_weave` generator). The user can
 /// reassign any shaft to top or bottom in the layer inspector.
 Set<int> defaultTopShafts(DraftDoc doc) {

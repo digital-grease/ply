@@ -2,6 +2,7 @@
 //! arbitrary valid drafts, and `parse` never panics on arbitrary input (the documented leniency).
 
 use ply_common::{Color, Unit};
+use ply_weave::construction::Construction;
 use ply_weave::draft::*;
 use ply_weave::wif::{parse, write};
 use proptest::prelude::*;
@@ -50,6 +51,9 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                     prop::collection::vec((1u8..=3, any::<bool>()), 0..=3),
                     prop::collection::vec(1u8..=4, picks),
                     prop::collection::vec((0usize..10, 2usize..=3), 0..=3),
+                    // The declared double-weave construction: 0 = none, then two layers, tube,
+                    // double width with the fold on the left, on the right (ADR 0010).
+                    0u8..5,
                 ),
             )
                 .prop_map(
@@ -65,7 +69,7 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                         weft,
                         retained,
                         roles,
-                        (shuttles, starts, strands, groups),
+                        (shuttles, starts, strands, groups, construction),
                     )| {
                         let mut d = Draft {
                             name,
@@ -164,6 +168,13 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                                     .into_iter()
                                     .map(|(start, picks)| ShotGroup { start, picks })
                                     .collect(),
+                                construction: match construction {
+                                    1 => Some(Construction::TwoLayers),
+                                    2 => Some(Construction::Tube),
+                                    3 => Some(Construction::DoubleWidth { fold: Side::Left }),
+                                    4 => Some(Construction::DoubleWidth { fold: Side::Right }),
+                                    _ => None,
+                                },
                             },
                         };
                         // Only sound groups (inside the picks, one shed, no overlap) are what Ply writes.

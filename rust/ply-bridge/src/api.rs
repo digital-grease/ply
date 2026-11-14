@@ -27,11 +27,12 @@ use ply_weave::{self as weave, Draft};
 // M2 editor DTOs (transparent, non-opaque). Re-exported into `crate::api` so frb discovers
 // them while scanning this module. See `dto.rs` for why an editor needs these.
 pub use crate::dto::{
-    ColorDto, DraftDto, DrawdownRegionDto, DriveDto, PickRoleKind, RenderFailure,
-    RenderFailureKind, RenderOptionsDto, RetainedEntryDto, RetainedSectionDto, SeverityKind,
-    ShadowBlockDto, ShadowLayoutKind, ShadowParamsDto, ShadowSystemKind, ShedKind, ShotGroupDto,
-    ShuttleSideKind, ShuttleStartDto, StructureFamily, ThreadingKind, TwillDirectionKind, UnitKind,
-    ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPhaseKind, WeftPlanDto, YarnEstimateDto,
+    ColorDto, DraftDto, DrawdownRegionDto, DriveDto, LayerConstructionKind, PickRoleKind,
+    RenderFailure, RenderFailureKind, RenderOptionsDto, RetainedEntryDto, RetainedSectionDto,
+    SeverityKind, ShadowBlockDto, ShadowLayoutKind, ShadowParamsDto, ShadowSystemKind, ShedKind,
+    ShotGroupDto, ShuttleSideKind, ShuttleStartDto, StructureFamily, ThreadingKind,
+    TwillDirectionKind, UnitKind, ValidationIssueDto, WarpPlanDto, WeftEstimateDto, WeftPhaseKind,
+    WeftPlanDto, YarnEstimateDto,
 };
 
 /// Most shafts a structure generator will build a tie-up for. Real looms stop far below this (the
@@ -356,7 +357,11 @@ pub fn generate_structure_dto(
     let b = (block as usize).max(2);
     let draft = match family {
         StructureFamily::Overshot => weave::structure::overshot(e, p, b),
-        StructureFamily::DoubleWeave => weave::structure::double_weave(e, p),
+        // Two independent layers, the cloth this call has always made; the other constructions
+        // have their own call (`generate_double_weave_dto`).
+        StructureFamily::DoubleWeave => {
+            weave::structure::double_weave(e, p, weave::Construction::TwoLayers)
+        }
         StructureFamily::ShadowWeave => {
             return Err(
                 "ShadowWeave takes its own parameters; generate it with generate_shadow_weave_dto"
@@ -372,6 +377,29 @@ pub fn generate_structure_dto(
         }
     };
     Ok(DraftDto::from(&draft))
+}
+
+/// Generate a four-shaft plain-weave double weave in a chosen construction (roadmap M8-09, ADR 0010):
+/// two independent layers (two shuttles; the same cloth as `generate_structure_dto(DoubleWeave)`), a
+/// tube (one shuttle, top and bottom alternating; an odd number of ends, so an even request weaves
+/// one end fewer), or double width with the fold on the left or right (one shuttle, top, bottom,
+/// bottom, top, starting from the open side). The draft records the pick roles, shuttles, starting
+/// sides, and the declared construction. `Err` for `LayerConstructionKind::None` (there is nothing to
+/// generate) or a size past the per-axis document cap.
+pub fn generate_double_weave_dto(
+    ends: u32,
+    picks: u32,
+    construction: LayerConstructionKind,
+) -> Result<DraftDto, String> {
+    let (e, p) = check_threads(ends, picks)?;
+    let Some(construction) = Option::<weave::Construction>::from(construction) else {
+        return Err("choose a construction to generate a double weave".to_string());
+    };
+    Ok(DraftDto::from(&weave::structure::double_weave(
+        e,
+        p,
+        construction,
+    )))
 }
 
 /// Generate an authentic shadow-weave draft (Atwater or Powell system) from typed parameters: the
@@ -844,6 +872,106 @@ mod tests {
         );
     }
 
+    /// The double-weave constructions cross the bridge with everything that makes them (roles,
+    /// shuttles, starting sides, the declared construction), validate clean, and keep the declared
+    /// construction through WIF, the liftplan convert, a resize, and the shed conversion.
+    #[test]
+    fn double_weave_constructions_cross_the_bridge() {
+        let cases = [
+            (
+                LayerConstructionKind::TwoLayers,
+                vec![1, 2, 1, 2],
+                vec![(1, ShuttleSideKind::Right), (2, ShuttleSideKind::Right)],
+            ),
+            (
+                LayerConstructionKind::Tube,
+                vec![1, 1, 1, 1],
+                vec![(1, ShuttleSideKind::Left)],
+            ),
+            (
+                LayerConstructionKind::DoubleWidthFoldLeft,
+                vec![1, 1, 1, 1],
+                vec![(1, ShuttleSideKind::Right)],
+            ),
+            (
+                LayerConstructionKind::DoubleWidthFoldRight,
+                vec![1, 1, 1, 1],
+                vec![(1, ShuttleSideKind::Left)],
+            ),
+        ];
+        for (kind, shuttles, starts) in cases {
+            let dto = generate_double_weave_dto(12, 8, kind).unwrap();
+            assert_eq!(dto.construction, kind);
+            assert_eq!(&dto.pick_shuttles[..4], &shuttles[..], "{kind:?}");
+            let got: Vec<(u8, ShuttleSideKind)> = dto
+                .shuttle_starts
+                .iter()
+                .map(|s| (s.shuttle, s.side))
+                .collect();
+            assert_eq!(got, starts, "{kind:?}");
+            assert!(
+                validate_draft(generate_double_weave_dto(12, 8, kind).unwrap())
+                    .unwrap()
+                    .is_empty()
+            );
+            let wif = write_wif(dto).unwrap();
+            assert!(wif.contains("Construction="), "{kind:?}");
+            assert_eq!(parse_wif_dto(wif).unwrap().construction, kind);
+            let lp = to_liftplan_dto(generate_double_weave_dto(12, 8, kind).unwrap()).unwrap();
+            assert_eq!(lp.construction, kind);
+            assert_eq!(resize_dto(lp, 12, 10, 4, 0).unwrap().construction, kind);
+            let sinking = draft_with_shed_dto(
+                generate_double_weave_dto(12, 8, kind).unwrap(),
+                ShedKind::Sinking,
+            )
+            .unwrap();
+            assert_eq!(sinking.construction, kind);
+        }
+        // The two-layer construction is the cloth the plain DoubleWeave call has always made.
+        let a = render_preview_dto(
+            generate_double_weave_dto(12, 8, LayerConstructionKind::TwoLayers).unwrap(),
+            4,
+            None,
+        )
+        .ok()
+        .unwrap();
+        let b = render_preview_dto(
+            generate_structure_dto(StructureFamily::DoubleWeave, 12, 8, 4).unwrap(),
+            4,
+            None,
+        )
+        .ok()
+        .unwrap();
+        assert_eq!(a.rgba, b.rgba);
+        // A tube weaves an odd number of ends.
+        assert_eq!(
+            generate_double_weave_dto(12, 8, LayerConstructionKind::Tube)
+                .unwrap()
+                .threading
+                .len(),
+            11
+        );
+        // Nothing to generate without a construction; an oversized request is refused.
+        assert!(generate_double_weave_dto(12, 8, LayerConstructionKind::None).is_err());
+        assert!(generate_double_weave_dto(u32::MAX, 8, LayerConstructionKind::Tube).is_err());
+    }
+
+    /// A declared construction that the edges contradict reaches the editor as a warning.
+    #[test]
+    fn a_construction_mismatch_is_a_validation_warning() {
+        let mut dto =
+            generate_double_weave_dto(12, 8, LayerConstructionKind::DoubleWidthFoldLeft).unwrap();
+        dto.construction = LayerConstructionKind::DoubleWidthFoldRight;
+        let issues = validate_draft(dto).unwrap();
+        assert_eq!(issues.len(), 2);
+        assert!(issues
+            .iter()
+            .all(|i| matches!(i.severity, SeverityKind::Warning)));
+        assert!(issues[0]
+            .message
+            .starts_with("The fold should be on the right, but the layers join on the left"));
+    }
+
     /// Roles survive the editor's FFI round trips: WIF write and parse, resize, and the liftplan
     /// convert; a resize that adds picks pads Unknown, and validation sees the roles.
     #[test]
@@ -989,6 +1117,7 @@ mod tests {
                 pick_strands: d.pick_strands.clone(),
                 shot_groups: d.shot_groups.clone(),
                 shuttle_starts: d.shuttle_starts.clone(),
+                construction: d.construction,
             })
             .unwrap(),
         )

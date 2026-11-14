@@ -16,9 +16,10 @@
 
 use ply_common::{Color, Unit};
 
+use crate::construction::Construction;
 use crate::draft::{
-    ColorIndex, ColorPlan, Draft, Drive, PickRole, ShaftId, ShedType, Threading, TieUp, TreadleId,
-    Treadling,
+    ColorIndex, ColorPlan, Draft, Drive, PickRole, ShaftId, ShedType, ShuttleId, Side, Threading,
+    TieUp, TreadleId, Treadling,
 };
 
 /// Two mid-contrast greys for color-and-weave; softer than pure black/white (which reads harsh),
@@ -147,36 +148,80 @@ pub fn overshot(ends: usize, picks: usize, block: usize) -> Draft {
     draft
 }
 
-/// DOUBLE WEAVE — two INDEPENDENT plain-weave layers woven at once on 4 shafts: the top layer on
-/// shafts {1,3}, the bottom on {2,4}, threaded straight (1,2,3,4 …). The textbook rising-shed
-/// (jack/liftplan) form: a TOP pick raises ONE top shaft and leaves the bottom layer DOWN (it sits
-/// below the top weft); a BOTTOM pick raises BOTH top shafts (lifting the whole top layer up out of
-/// the way) plus one bottom shaft, so the bottom weft passes under the top layer. This keeps the
-/// {1,3} (color 0) layer physically on top, matching the warp-colour legend — so the flat drawdown
-/// reads as the top layer's face rather than the inverted, muddled mix the both-bottom-shafts-up
-/// variant produces. Each layer reads cleanly on its own in the layer inspector. (Naively raising a
-/// layer's BOTH shafts together collapses to single-layer tabby.)
-pub fn double_weave(ends: usize, picks: usize) -> Draft {
+/// DOUBLE WEAVE: two plain-weave layers woven at once on 4 shafts, the top layer on shafts {1,3} and
+/// the bottom on {2,4}, threaded straight (1,2,3,4 ...). The textbook rising-shed form: a TOP pick
+/// raises ONE top shaft and leaves the bottom layer DOWN (it sits below the top weft); a BOTTOM pick
+/// raises BOTH top shafts (lifting the whole top layer out of the way) plus one bottom shaft, so the
+/// bottom weft passes under the top layer. (Naively raising a layer's BOTH shafts together collapses
+/// to single-layer tabby.) The flat drawdown is every intersection of BOTH layers, not the face of the
+/// cloth: a quarter of its cells are bottom-layer cells hidden under the top layer (audit R-11). The
+/// layer inspector shows each layer's own interlacement.
+///
+/// The threading, tie-up and sheds do not decide how the two layers connect; the weft path does
+/// (the double-weave research note). So the generator takes the [`Construction`] and records what makes
+/// it: the pick roles, the shuttles, each shuttle's starting side, and the declared construction.
+///
+/// - [`Construction::TwoLayers`]: treadles 1, 2, 3, 4 (top, bottom, top, bottom), shuttle 1 on the
+///   top picks and shuttle 2 on the bottom picks, both starting from the right. Every turn stays in its
+///   layer: both edges open. Top picks are weft color 0, bottom picks color 1.
+/// - [`Construction::Tube`]: the same treadling with ONE shuttle, so every turn changes layer and both
+///   edges are joined. A seamless plain-weave tube needs an ODD number of warp ends (with an even
+///   number, two ends weave alike at the edge the shuttle starts from), so an even `ends` weaves one
+///   end fewer. The shuttle starts from the left, which with treadles 1, 2, 3, 4 continues the plain
+///   weave around both edges of any odd straight-threaded warp.
+/// - [`Construction::DoubleWidth`]: ONE shuttle, top, bottom, bottom, top, starting from the edge
+///   opposite the fold (the open selvedges). The first turn changes layer, so the layers join at the
+///   fold. The two bottom sheds are ordered so that the plain weave continues across the fold: the
+///   first top pick and the bottom pick joined to it lift both or neither of the two warp ends that sit
+///   side by side at the fold once the cloth is unfolded.
+///
+/// One-shuttle constructions weave every pick in weft color 0 (one shuttle, one weft); the warp is
+/// colored by layer (top color 0, bottom color 1).
+pub fn double_weave(ends: usize, picks: usize, construction: Construction) -> Draft {
+    // A tube needs an odd number of ends (see above).
+    let ends = match construction {
+        Construction::Tube if ends > 0 && ends.is_multiple_of(2) => ends - 1,
+        _ => ends,
+    };
     let threading = Threading::straight(ends, 4);
-    // 4 distinct sheds (top,bottom,top,bottom): a top pick raises one top shaft (bottom stays down,
-    // below); a bottom pick raises BOTH top shafts + one bottom shaft (top lifted clear, above).
+    // 4 distinct sheds: 1 = top a, 2 = bottom a, 3 = top b, 4 = bottom b.
     let tieup = TieUp(vec![
         vec![ShaftId(1)], // top weft, top end on shaft 1 up; bottom down
         vec![ShaftId(1), ShaftId(2), ShaftId(3)], // bottom weft, top {1,3} lifted clear + shaft 2 up
         vec![ShaftId(3)],                         // top weft, top end on shaft 3 up; bottom down
         vec![ShaftId(1), ShaftId(3), ShaftId(4)], // bottom weft, top {1,3} lifted clear + shaft 4 up
     ]);
-    let treadling = Treadling(
-        (0..picks)
-            .map(|p| vec![TreadleId((p % 4) as u16 + 1)])
-            .collect(),
-    );
-    // Warp by layer parity (odd shafts = top = color 0, even shafts = bottom = color 1); weft by pick
-    // parity (top picks 0,2 = color 0; bottom picks 1,3 = color 1).
+    // One repeat of the treadling, the layer of each of its picks, and the shuttles' starting sides.
+    let (repeat, layers, starts): ([u16; 4], [PickRole; 4], Vec<(u8, Side)>) = {
+        use PickRole::{BottomLayer as B, TopLayer as T};
+        match construction {
+            Construction::TwoLayers => (
+                [1, 2, 3, 4],
+                [T, B, T, B],
+                vec![(1, Side::Right), (2, Side::Right)],
+            ),
+            Construction::Tube => ([1, 2, 3, 4], [T, B, T, B], vec![(1, Side::Left)]),
+            Construction::DoubleWidth { fold } => {
+                let (first, second) = fold_bottom_order(&threading, &tieup, fold);
+                ([1, first, second, 3], [T, B, B, T], vec![(1, fold.other())])
+            }
+        }
+    };
+    let treadling = Treadling((0..picks).map(|p| vec![TreadleId(repeat[p % 4])]).collect());
+    let two_shuttles = construction == Construction::TwoLayers;
+    // Warp by layer parity (odd shafts = top = color 0, even shafts = bottom = color 1). Weft: with two
+    // shuttles each layer has its own weft (top 0, bottom 1); with one shuttle there is one weft.
     let warp = (0..ends).map(|i| i % 2).collect();
-    let weft = (0..picks).map(|p| p % 2).collect();
+    let weft = (0..picks)
+        .map(|p| if two_shuttles { p % 2 } else { 0 })
+        .collect();
+    let name = match construction {
+        Construction::TwoLayers => "Double weave",
+        Construction::Tube => "Double weave tube",
+        Construction::DoubleWidth { .. } => "Double width",
+    };
     let mut draft = base_draft(
-        "Double weave",
+        name,
         4,
         4,
         threading,
@@ -197,18 +242,60 @@ pub fn double_weave(ends: usize, picks: usize) -> Draft {
         warp,
         weft,
     );
-    // Top picks (treadles 1 and 3, the even 0-based picks) weave the top layer; bottom picks the
-    // bottom layer. Recorded, not inferred: the generator built them that way.
-    draft.pick_roles = (0..picks)
+    // Recorded, not inferred: the generator built them that way.
+    draft.pick_roles = (0..picks).map(|p| layers[p % 4]).collect();
+    draft.weft_work.shuttles = (0..picks)
         .map(|p| {
-            if p % 2 == 0 {
-                PickRole::TopLayer
+            let shuttle = if two_shuttles && layers[p % 4] == PickRole::BottomLayer {
+                2
             } else {
-                PickRole::BottomLayer
-            }
+                1
+            };
+            Some(ShuttleId(shuttle))
         })
         .collect();
+    draft.weft_work.shuttle_starts = starts
+        .into_iter()
+        .map(|(s, side)| (ShuttleId(s), side))
+        .collect();
+    draft.weft_work.construction = Some(construction);
     draft
+}
+
+/// For double width with the fold on `fold`: the two bottom treadles (2 and 4) in the order that keeps
+/// the plain weave going across the fold. The first top pick (treadle 1) turns at the fold into the
+/// first bottom pick. Unfolded, the outermost top end and the outermost bottom end at the fold are
+/// neighbors, so they must weave opposite each other on the face, which (the bottom layer being
+/// turned over) means both are lifted or both stay down on those two picks. The second turn at the
+/// fold then follows, since both layers alternate their two sheds.
+fn fold_bottom_order(threading: &Threading, tieup: &TieUp, fold: Side) -> (u16, u16) {
+    // Straight threading: ends on odd shafts are the top layer, on even shafts the bottom. End 1 is at
+    // the RIGHT, so the right edge's outermost end of a layer is its first, the left edge's its last.
+    let shaft = |end: &Vec<ShaftId>| end.first().map(|s| s.0);
+    let layer_ends = |top: bool| {
+        threading
+            .0
+            .iter()
+            .filter_map(shaft)
+            .filter(move |s| (s % 2 == 1) == top)
+    };
+    let outer = |top: bool| match fold {
+        Side::Right => layer_ends(top).next(),
+        Side::Left => layer_ends(top).next_back(),
+    };
+    let (Some(top_end), Some(bottom_end)) = (outer(true), outer(false)) else {
+        return (2, 4);
+    };
+    let lifts = |treadle: u16, shaft: u16| {
+        tieup
+            .shafts_for(TreadleId(treadle))
+            .contains(&ShaftId(shaft))
+    };
+    if lifts(1, top_end) == lifts(2, bottom_end) {
+        (2, 4)
+    } else {
+        (4, 2)
+    }
 }
 
 /// Plain weave (tabby) as a whole draft — a straight draw on 2 shafts with the canonical plain
@@ -348,7 +435,7 @@ mod tests {
 
     #[test]
     fn double_weave_each_layer_plain_weaves_and_clears_the_other() {
-        let d = double_weave(8, 4);
+        let d = double_weave(8, 4, Construction::TwoLayers);
         if let Drive::Treadled { tieup, treadling } = &d.drive {
             let tu: Vec<Vec<u16>> = tieup
                 .0
@@ -410,7 +497,10 @@ mod tests {
 
     #[test]
     fn generators_size_to_request_and_validate() {
-        for d in [overshot(24, 12, 6), double_weave(12, 8)] {
+        for d in [
+            overshot(24, 12, 6),
+            double_weave(12, 8, Construction::TwoLayers),
+        ] {
             assert_eq!(d.ends(), d.threading.ends());
             assert!(
                 validate(&d).is_empty(),
@@ -449,7 +539,7 @@ mod tests {
 
     #[test]
     fn double_weave_assigns_layer_roles_and_others_stay_unknown() {
-        let d = double_weave(8, 6);
+        let d = double_weave(8, 6, Construction::TwoLayers);
         let want = [
             PickRole::TopLayer,
             PickRole::BottomLayer,
@@ -477,7 +567,10 @@ mod tests {
     #[test]
     fn generated_roles_survive_the_sinking_shed_conversion() {
         use crate::draft::ShedType;
-        for d in [overshot(16, 16, 4), double_weave(8, 8)] {
+        for d in [
+            overshot(16, 16, 4),
+            double_weave(8, 8, Construction::TwoLayers),
+        ] {
             let sinking = d.with_shed(ShedType::Sinking);
             assert_eq!(sinking.pick_roles, d.pick_roles, "{}", d.name);
             // And the tabby picks are still plain-weave sheds there (the check reads raised shafts).
@@ -504,7 +597,11 @@ mod tests {
     fn generators_weave_the_same_cloth_on_a_sinking_shed() {
         use crate::draft::ShedType;
         use crate::drawdown::compute;
-        let drafts = [plain_weave(12, 10), overshot(16, 16, 4), double_weave(8, 8)];
+        let drafts = [
+            plain_weave(12, 10),
+            overshot(16, 16, 4),
+            double_weave(8, 8, Construction::TwoLayers),
+        ];
         for d in drafts {
             assert_eq!(
                 d.shed,

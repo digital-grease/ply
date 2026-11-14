@@ -1,0 +1,44 @@
+# Fixture record for tube (see fixtures/README.md).
+
+id = "weaving/doubleweave/tube"
+title = "Plain-weave tube, one shuttle"
+technique = "tube"
+files = ["tube.wif", "tube.expect.json"]
+created = "2026-11-12"
+license = "original recreation"
+provenance = """
+An original draft, written by Ply's double-weave generator (structure::double_weave) from the \
+parameters recorded in tube.expect.json. No published draft was copied: the file applies the \
+published rules cited below, as summarized in the double-weave research note. The two-layer treadling (1, 2, 3, 4) woven with one shuttle starting from the left, so every turn passes from one layer to the other and both edges are joined. 11 ends: a seamless tube needs an odd number of ends, and with straight threading and this treadling a start from the left continues the plain weave around both edges."""
+
+[structure]
+ends = 11
+picks = 8
+shafts = 4
+treadles = 4
+shed = "rising"
+threading = "straight 1-2-3-4; top layer on shafts 1 and 3, bottom layer on 2 and 4"
+tieup = "treadle 1 = 1 (top a), 2 = 1,2,3 (bottom a), 3 = 3 (top b), 4 = 1,3,4 (bottom b)"
+working_data = "pick roles, shuttles, starting sides and the declared construction in [PRIVATE PLY PICKS] Version=2"
+
+[sources]
+# Bibliographic references for the rules this fixture applies. Nothing from them is reproduced.
+references = [
+  "Linda Ligon, \"An Introduction to Doubleweave\", Handwoven, May/June 1983, pp. 64-66; same eBook pp. 1-3 (a different shuttle for each layer; one shuttle continuously weaves a tube; the order of the layers is what makes double width).",
+  "Paul O'Connor, \"A Workshop Program: Step by Step through Double Weave with 4 and 8 Shaft Looms\" (2000), https://www2.cs.arizona.edu/patterns/weaving/webdocs/opr_4s.pdf (two shuttle weave, two cloth layers; one shuttle weave, tubular weave; an odd number of total ends for a tube; double width woven together at one selvage).",
+  "Cally Booker, \"Tubular double weave\", Weaving Space, 2026-02-12, https://weavingspace.co.uk/tubular-double-weave/ (an odd number of warp ends for a seamless tube; with an even number the doubled end appears at the starting edge).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/double_weave.rs (tracked_fixtures_load_and_match_their_oracles): the file \
+parses; it is exactly what the generator writes for the recorded parameters (line endings aside); \
+its threading, tie-up, treadling, roles, shuttles, starting sides, construction, pass directions, \
+turns, edges and interlacement equal the oracle in tube.expect.json; both edges joined; the weft path continues the plain weave around both edges (no two ends weave alike at an edge). The turns and edges \
+in the oracle were derived by hand from the research worked examples and by a separate program, not \
+by the engine's construction module; an independent weft-path check in the test confirms them; \
+validation reports nothing."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Structure, working order and edges only. Sett, sleying at the edges or the fold, extra or floating ends, interlocked wefts, and yarns are not part of the fixture. The interlacement matrix is every intersection of both layers, not the face of the cloth."

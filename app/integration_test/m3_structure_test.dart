@@ -62,6 +62,56 @@ void main() {
     expect(b.rgba, equals(a.rgba), reason: 'shadow weave: same cloth on a sinking shed');
   });
 
+  // Double weave constructions (M8-09) against the real engine: each comes back with its working data
+  // and declared construction, validates with no issue (the edges match), survives the sinking-shed
+  // conversion, and the two-layer construction is the cloth the double weave always made.
+  testWidgets('double weave constructions generate with their edges and validate clean',
+      (tester) async {
+    final repo = DraftRepository();
+    Future<DraftDoc> gen(LayerConstruction c, {Shed shed = Shed.rising}) =>
+        repo.generateStructureDoc(
+          DraftDoc.blank().copyWith(shed: shed),
+          family: StructureFamily.doubleWeave,
+          threading: ThreadingKind.straight,
+          shafts: 4,
+          over: 2,
+          under: 2,
+          counter: 2,
+          ends: 16,
+          picks: 16,
+          construction: c,
+        );
+    for (final c in [
+      LayerConstruction.twoLayers,
+      LayerConstruction.tube,
+      LayerConstruction.doubleWidthFoldLeft,
+      LayerConstruction.doubleWidthFoldRight,
+    ]) {
+      final doc = await gen(c);
+      expect(doc.construction, c);
+      expect(doc.pickShuttles, hasLength(16), reason: '$c records its shuttles');
+      expect(doc.shuttleStarts, isNotEmpty, reason: '$c records where each shuttle starts');
+      expect(await repo.validateDto(doc), isEmpty, reason: '$c: the edges match');
+      final sinking = await gen(c, shed: Shed.sinking);
+      expect(sinking.construction, c);
+      final a = await renderPreviewDto(dto: repo.toDto(doc), cellPx: 2);
+      final b = await renderPreviewDto(dto: repo.toDto(sinking), cellPx: 2);
+      expect(b.rgba, equals(a.rgba), reason: '$c: same cloth on a sinking shed');
+    }
+    expect((await gen(LayerConstruction.tube)).ends, 15, reason: 'a tube needs an odd warp');
+    final layers = await gen(LayerConstruction.twoLayers);
+    final legacy = await repo.generateStructureDoc(DraftDoc.blank(),
+        family: StructureFamily.doubleWeave,
+        threading: ThreadingKind.straight,
+        shafts: 4,
+        over: 2,
+        under: 2,
+        counter: 2,
+        ends: 16,
+        picks: 16);
+    expect(legacy, layers, reason: 'two independent layers is the default');
+  });
+
   // Authentic shadow weave against the real engine: the default design (Atwater, 4 shafts, a point of
   // A2 B2 C2 D2, 2 x 2 repeats, balanced) comes back at its stated size, treadled as drawn in, validates
   // clean, and its Powell form weaves the identical cloth.

@@ -32,6 +32,7 @@ import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/draft_repository.dart' show previewErrorMessage, regionPreviewErrorMessage;
+import '../models/double_weave_layers.dart' show hasLayerRoles;
 import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
@@ -250,6 +251,8 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
     bool pencil,
     DraftEditorNotifier notifier,
   ) {
+    // A double weave's drawdown is every intersection of both layers, so its image label says so.
+    final layered = ref.watch(draftEditorProvider.select((s) => hasLayerRoles(s.draft)));
     return SingleChildScrollView(
       controller: _vCtrl,
       scrollDirection: Axis.vertical,
@@ -278,7 +281,10 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
                   // on resize); per-cell semantics + screen-reader editing of the cloth is future
                   // work. The bitmap itself stays a single opaque RawImage.
                   child: Semantics(
-                    label: 'Drawdown, ${layout.ends} ends by ${layout.picks} picks',
+                    label: layered
+                        ? 'Drawdown of every intersection of both layers, not the face of the '
+                            'cloth, ${layout.ends} ends by ${layout.picks} picks'
+                        : 'Drawdown, ${layout.ends} ends by ${layout.picks} picks',
                     image: true,
                     child: RepaintBoundary(
                       child: _regionMode

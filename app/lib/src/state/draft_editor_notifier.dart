@@ -80,6 +80,12 @@ class DraftEditorNotifier extends Notifier<EditorState> {
   void setPickStrands(int start, int end, int strands) =>
       commitEdit(state.withPickStrands(start, end, strands).draft);
 
+  /// Declare the double-weave construction (or clear it with [LayerConstruction.none]) as one undo
+  /// entry. The layer inspector calls this only after the weaver confirms a construction the derived
+  /// edges match exactly (or asks to remove the label); it is never set on Ply's own initiative.
+  void setConstruction(LayerConstruction construction) =>
+      commitEdit(state.draft.copyWith(construction: construction));
+
   /// Run a Use tabby edit (see use_tabby.dart) on the live draft and commit the result as one undo
   /// entry. Returns null when it was committed, or the reason it was refused (nothing changes).
   String? applyUseTabbyEdit(UseTabbyEditResult Function(DraftDoc doc) edit) {

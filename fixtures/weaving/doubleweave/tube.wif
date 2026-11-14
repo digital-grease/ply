@@ -1,0 +1,110 @@
+[WIF]
+Version=1.1
+Developers=ply
+Source Program=Ply
+
+[TEXT]
+Title=Double weave tube
+
+[CONTENTS]
+TEXT=true
+COLOR PALETTE=true
+COLOR TABLE=true
+WEAVING=true
+WARP=true
+WEFT=true
+THREADING=true
+TIEUP=true
+TREADLING=true
+WARP COLORS=true
+WEFT COLORS=true
+PRIVATE PLY PICKS=true
+
+[WEAVING]
+Shafts=4
+Treadles=4
+Rising Shed=true
+
+[WARP]
+Threads=11
+Units=Inches
+
+[WEFT]
+Threads=8
+Units=Inches
+
+[COLOR PALETTE]
+Entries=2
+Form=RGB
+Range=255
+
+[COLOR TABLE]
+1=40,70,130
+2=205,130,60
+
+[THREADING]
+1=1
+2=2
+3=3
+4=4
+5=1
+6=2
+7=3
+8=4
+9=1
+10=2
+11=3
+
+[TIEUP]
+1=1
+2=1,2,3
+3=3
+4=1,3,4
+
+[TREADLING]
+1=1
+2=2
+3=3
+4=4
+5=1
+6=2
+7=3
+8=4
+
+[WARP COLORS]
+1=1
+2=2
+3=1
+4=2
+5=1
+6=2
+7=1
+8=2
+9=1
+10=2
+11=1
+
+[WEFT COLORS]
+1=1
+2=1
+3=1
+4=1
+5=1
+6=1
+7=1
+8=1
+
+[PRIVATE PLY PICKS]
+Version=2
+Picks=8
+Sheds=cf511ba825d0d425
+Construction=tube
+Shuttle 1 Start=left
+1=role top-layer, shuttle 1
+2=role bottom-layer, shuttle 1
+3=role top-layer, shuttle 1
+4=role bottom-layer, shuttle 1
+5=role top-layer, shuttle 1
+6=role bottom-layer, shuttle 1
+7=role top-layer, shuttle 1
+8=role bottom-layer, shuttle 1

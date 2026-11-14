@@ -206,6 +206,9 @@ class DraftRepository {
     required int ends,
     required int picks,
     int block = 4,
+    // Double weave only: the construction to weave (two independent layers, a tube, or double width
+    // with the fold on one side). Two independent layers is the cloth this call has always made.
+    LayerConstruction construction = LayerConstruction.twoLayers,
     // Composable application (basic families only): write only the chosen components, optionally at an
     // end/pick offset, OVER the existing draft (non-destructive). Defaults reproduce a whole-cloth
     // generate from a blank draft.
@@ -230,12 +233,21 @@ class DraftRepository {
       for (final (name, v) in [('ends', ends), ('picks', picks), ('block', block)]) {
         if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, name);
       }
-      final generated = await generateStructureDto(
-        family: family,
-        ends: ends,
-        picks: picks,
-        block: block,
-      );
+      if (family == StructureFamily.doubleWeave && construction == LayerConstruction.none) {
+        throw ArgumentError.value(construction, 'construction', 'Choose a construction to weave');
+      }
+      final generated = family == StructureFamily.doubleWeave
+          ? await generateDoubleWeaveDto(
+              ends: ends,
+              picks: picks,
+              construction: constructionKind(construction),
+            )
+          : await generateStructureDto(
+              family: family,
+              ends: ends,
+              picks: picks,
+              block: block,
+            );
       return _adoptGenerated(base, generated);
     }
 
@@ -878,8 +890,26 @@ class DraftRepository {
             side: e.value == ShuttleSide.left ? ShuttleSideKind.left : ShuttleSideKind.right,
           ),
       ],
+      construction: constructionKind(doc.construction),
     );
   }
+
+  /// The wire form of a declared construction.
+  static LayerConstructionKind constructionKind(LayerConstruction c) => switch (c) {
+        LayerConstruction.none => LayerConstructionKind.none,
+        LayerConstruction.twoLayers => LayerConstructionKind.twoLayers,
+        LayerConstruction.tube => LayerConstructionKind.tube,
+        LayerConstruction.doubleWidthFoldLeft => LayerConstructionKind.doubleWidthFoldLeft,
+        LayerConstruction.doubleWidthFoldRight => LayerConstructionKind.doubleWidthFoldRight,
+      };
+
+  static LayerConstruction _construction(LayerConstructionKind k) => switch (k) {
+        LayerConstructionKind.none => LayerConstruction.none,
+        LayerConstructionKind.twoLayers => LayerConstruction.twoLayers,
+        LayerConstructionKind.tube => LayerConstruction.tube,
+        LayerConstructionKind.doubleWidthFoldLeft => LayerConstruction.doubleWidthFoldLeft,
+        LayerConstructionKind.doubleWidthFoldRight => LayerConstruction.doubleWidthFoldRight,
+      };
 
   static int _checkU8(int v) {
     if (v < 0 || v > 0xFF) throw RangeError.range(v, 0, 0xFF, 'u8');
@@ -954,6 +984,7 @@ class DraftRepository {
         for (final s in dto.shuttleStarts)
           s.shuttle: s.side == ShuttleSideKind.left ? ShuttleSide.left : ShuttleSide.right,
       },
+      construction: _construction(dto.construction),
     );
   }
 

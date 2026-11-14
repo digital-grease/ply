@@ -88,6 +88,7 @@ hold it to and a record of where it came from. Every fixture is three files with
 | Folder | Contents | Tests |
 |---|---|---|
 | `weaving/shadow/` | Authentic shadow weave: `aw2-atwater-4-point` (Atwater, 4 shafts, point of A2 B1 C1 D2) and `pw2-powell-8-point` (Powell, 8 shafts, point of A1 to H1). Original designs written by the engine's shadow-weave generator, one repeat each way. | `rust/ply-weave/tests/shadow_weave.rs` |
+| `weaving/doubleweave/` | Four-shaft plain-weave double weave in each construction: `independent-layers` (two shuttles, both edges open), `tube` (one shuttle, both edges joined, 11 ends), `double-width-fold-left` and `double-width-fold-right` (one shuttle, top, bottom, bottom, top). Written by the engine's double-weave generator with their pick roles, shuttles, starting sides and declared construction. Their oracles add the pass directions, every shuttle turn, the derived edges, and for double width the unfolded face, which must be plain weave. | `rust/ply-weave/tests/double_weave.rs`; `app/test/double_weave_construction_test.dart` |
 
 A generated fixture is regenerated only on purpose: if the generator's output changes, the test
 fails, and the change has to be reviewed as a change to the cloth.

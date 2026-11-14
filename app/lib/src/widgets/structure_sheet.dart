@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/draft_doc.dart' show LayerConstruction;
 import '../models/shadow_weave_params.dart';
 import '../rust/dto.dart' show StructureFamily, ThreadingKind;
 import '../state/draft_editor_notifier.dart';
@@ -39,6 +40,7 @@ typedef _StructureParams = ({
   bool applyTreadling,
   String endStart,
   String pickStart,
+  LayerConstruction construction,
 });
 
 final _lastStructureParamsProvider = StateProvider<_StructureParams?>((ref) => null);
@@ -96,6 +98,10 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
 
   bool _generating = false;
 
+  // Double weave: how the layers connect (two independent layers, a tube, or double width with the
+  // fold on one side). It decides the shuttles, their starting sides and the order of the layers.
+  LayerConstruction _construction = LayerConstruction.twoLayers;
+
   /// Whole-draft structures: the engine builds the whole interdependent draft (threading + tie-up +
   /// treadling + warp/weft colors), so the family/threading/shaft params don't apply, only the
   /// structure's own knobs (overshot's block width and size; shadow weave's design and repeats).
@@ -124,6 +130,7 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
       _applyTreadling = last.applyTreadling;
       _endStart.text = last.endStart;
       _pickStart.text = last.pickStart;
+      _construction = last.construction;
     }
     // Seed ends/picks from the current draft when it already has a cloth (overridable, not remembered).
     final draft = ref.read(draftEditorProvider).draft;
@@ -345,6 +352,7 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
               ends: int.tryParse(_ends.text.trim()) ?? 16,
               picks: int.tryParse(_picks.text.trim()) ?? 16,
               block: int.tryParse(_block.text.trim()) ?? 4,
+              construction: _construction,
               applyThreading: _applyThreading,
               applyTieup: _applyTieup,
               applyTreadling: _applyTreadling,
@@ -378,6 +386,7 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
         applyTreadling: _applyTreadling,
         endStart: _endStart.text,
         pickStart: _pickStart.text,
+        construction: _construction,
       );
       navigator.pop();
     } catch (e) {
@@ -398,6 +407,7 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
     final isWhole = _wholeDraft.contains(_family);
     final isOvershot = _family == StructureFamily.overshot;
     final isShadow = _family == StructureFamily.shadowWeave;
+    final isDouble = _family == StructureFamily.doubleWeave;
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -452,6 +462,7 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
               if (isOvershot)
                 _numField(_block, 'Block width', _blockCount),
               if (isShadow) ..._shadowControls(context),
+              if (isDouble) ..._doubleWeaveControls(context),
 
               // Threading applies only to the tie-up families; the whole-draft structures fix theirs.
               if (!isWhole) ...[
@@ -471,7 +482,10 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
               if (!isShadow)
                 Row(
                   children: [
-                    Expanded(child: _numField(_ends, 'Warp ends', _threadCount)),
+                    // Rebuilds on typing so the tube's odd-ends note follows the field.
+                    Expanded(
+                        child: _numberField(_ends, 'Warp ends', _threadCount,
+                            onChanged: isDouble ? (_) => setState(() {}) : null)),
                     const SizedBox(width: 12),
                     Expanded(child: _numField(_picks, 'Picks', _threadCount)),
                   ],
@@ -526,6 +540,74 @@ class _StructureSheetState extends ConsumerState<StructureSheet> {
         ),
       ),
     );
+  }
+
+  /// The double-weave controls: the construction (two independent layers, a tube, or double width)
+  /// and, for double width, the side of the fold, with what each means for the working order.
+  List<Widget> _doubleWeaveControls(BuildContext context) {
+    final theme = Theme.of(context);
+    final text = theme.textTheme;
+    final muted = text.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final doubleWidth = _construction == LayerConstruction.doubleWidthFoldLeft ||
+        _construction == LayerConstruction.doubleWidthFoldRight;
+    final ends = int.tryParse(_ends.text.trim());
+    final String explain = switch (_construction) {
+      LayerConstruction.twoLayers =>
+        'Two shuttles, one for each layer, both starting from the right. Top and bottom picks '
+            'alternate; each layer has its own selvedges.',
+      LayerConstruction.tube =>
+        'One shuttle starting from the left. Top and bottom picks alternate, so the layers join at '
+            'both edges. A tube needs an odd number of warp ends to weave without a fault at an edge.',
+      LayerConstruction.doubleWidthFoldLeft =>
+        'One shuttle: top, bottom, bottom, top, starting from the right. The layers join at the '
+            'fold on the left; the right edge has the two open selvedges.',
+      LayerConstruction.doubleWidthFoldRight =>
+        'One shuttle: top, bottom, bottom, top, starting from the left. The layers join at the '
+            'fold on the right; the left edge has the two open selvedges.',
+      LayerConstruction.none => '',
+    };
+    return [
+      const SizedBox(height: 16),
+      Text('Construction', style: text.labelLarge),
+      const SizedBox(height: 8),
+      SegmentedButton<String>(
+        segments: const [
+          ButtonSegment(value: 'layers', label: Text('Two layers')),
+          ButtonSegment(value: 'tube', label: Text('Tube')),
+          ButtonSegment(value: 'width', label: Text('Double width')),
+        ],
+        selected: {
+          doubleWidth
+              ? 'width'
+              : _construction == LayerConstruction.tube
+                  ? 'tube'
+                  : 'layers'
+        },
+        onSelectionChanged: (s) => setState(() => _construction = switch (s.first) {
+              'tube' => LayerConstruction.tube,
+              'width' => doubleWidth ? _construction : LayerConstruction.doubleWidthFoldRight,
+              _ => LayerConstruction.twoLayers,
+            }),
+      ),
+      if (doubleWidth) ...[
+        const SizedBox(height: 12),
+        Text('Fold', style: text.labelLarge),
+        const SizedBox(height: 8),
+        SegmentedButton<LayerConstruction>(
+          segments: const [
+            ButtonSegment(value: LayerConstruction.doubleWidthFoldLeft, label: Text('Left')),
+            ButtonSegment(value: LayerConstruction.doubleWidthFoldRight, label: Text('Right')),
+          ],
+          selected: {_construction},
+          onSelectionChanged: (s) => setState(() => _construction = s.first),
+        ),
+      ],
+      const SizedBox(height: 4),
+      Text(explain, key: const Key('double-weave-construction-help'), style: muted),
+      if (_construction == LayerConstruction.tube && ends != null && ends > 1 && ends.isEven)
+        Text('This tube will have ${ends - 1} warp ends.',
+            key: const Key('double-weave-tube-ends'), style: muted),
+    ];
   }
 
   /// The shadow-weave controls: system, shafts, layout, one width per block, tie-up direction,

@@ -1,0 +1,45 @@
+# Fixture record for double-width-fold-right (see fixtures/README.md).
+
+id = "weaving/doubleweave/double-width-fold-right"
+title = "Plain-weave double width, fold on the right"
+technique = "double width"
+files = ["double-width-fold-right.wif", "double-width-fold-right.expect.json"]
+created = "2026-11-12"
+license = "original recreation"
+provenance = """
+An original draft, written by Ply's double-weave generator (structure::double_weave) from the \
+parameters recorded in double-width-fold-right.expect.json. No published draft was copied: the file applies the \
+published rules cited below, as summarized in the double-weave research note. One shuttle, top, bottom, bottom, top (treadles 1, 2, 4, 3), starting from the left. The first turn changes layer at the right, so the fold is on the right (the side of warp end 1) and the left edge has the two open selvedges."""
+
+[structure]
+ends = 12
+picks = 8
+shafts = 4
+treadles = 4
+shed = "rising"
+threading = "straight 1-2-3-4; top layer on shafts 1 and 3, bottom layer on 2 and 4"
+tieup = "treadle 1 = 1 (top a), 2 = 1,2,3 (bottom a), 3 = 3 (top b), 4 = 1,3,4 (bottom b)"
+working_data = "pick roles, shuttles, starting sides and the declared construction in [PRIVATE PLY PICKS] Version=2"
+
+[sources]
+# Bibliographic references for the rules this fixture applies. Nothing from them is reproduced.
+references = [
+  "Carol Strickler, \"'Folding' a Draft to Weave Doublewidth\", Handwoven, January/February 1989, pp. 41-42; reprinted in Best of Handwoven: Doubleweave, Doublewidth! (Interweave, 2009), pp. 3-4, https://www.datocms-assets.com/75077/1666021893-doubleweave_book.pdf (top, edge to fold; bottom, fold to edge; bottom, edge to fold; top, fold to edge; the fold on the edge opposite the start).",
+  "Madelyn van der Hoogt, \"Ask Madelyn: Weaving Double Wide\", Handwoven online, 2019-03-22, https://handwovenmagazine.com/weaving-double-wide/ (two selvedges on the side where the weft started, the fold on the opposite edge).",
+  "Jennifer Moore, \"Weaving a Good Fold\", Doubleweaver blog, October 2020, https://doubleweaver.com/blog/weaving-a-good-fold (top, bottom, bottom, top; the starting side is the open selvedge).",
+  "Susan E. Horton, \"Doublewidth Project? How to Avoid Weft Buildup on Doublewide Blankets\", Handwoven online, 2018-02-27, https://handwovenmagazine.com/doublewidth-project-avoid-weft-buildup-doublewide-blankets/ (top, bottom, bottom, top from the right with the fold on the left).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/double_weave.rs (tracked_fixtures_load_and_match_their_oracles): the file \
+parses; it is exactly what the generator writes for the recorded parameters (line endings aside); \
+its threading, tie-up, treadling, roles, shuttles, starting sides, construction, pass directions, \
+turns, edges and interlacement equal the oracle in double-width-fold-right.expect.json; right joined (the fold), left open; unfolded, the cloth is one plain weave 12 ends wide with no doubled end at the fold. The turns and edges \
+in the oracle were derived by hand from the research worked examples and by a separate program, not \
+by the engine's construction module; an independent weft-path check in the test confirms them; \
+validation reports nothing."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Structure, working order and edges only. Sett, sleying at the edges or the fold, extra or floating ends, interlocked wefts, and yarns are not part of the fixture. The interlacement matrix is every intersection of both layers, not the face of the cloth."

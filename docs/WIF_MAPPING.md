@@ -25,7 +25,7 @@ Implementation: `rust/ply-weave/src/wif.rs` (`parse` / `write`).
 | `[TEXT]` `Title` | `Draft.name` | ✅ (read/written) |
 | `[COLOR PALETTE]` `Range`, `Form` | palette range/format | ✅ (any `Range` scaled to 0..255; re-export normalizes to 255) |
 | `[WARP THICKNESS]`, `[WEFT THICKNESS]` | `Draft.warp_thickness` / `weft_thickness` | ✅ (modeled; drives variable-cell rendering) |
-| `[PRIVATE PLY PICKS]` (Ply's WIF 1.1 private section) | `Draft.pick_roles`, `Draft.weft_work` (shuttles, starting sides, strands, shot groups) | ✅ (written only when something is recorded; see below) |
+| `[PRIVATE PLY PICKS]` (Ply's WIF 1.1 private section) | `Draft.pick_roles`, `Draft.weft_work` (shuttles, starting sides, strands, shot groups, the declared double-weave construction) | ✅ (written only when something is recorded; see below) |
 | `[PRIVATE PLY PICK ROLES]` (the earlier roles-only layout) | `Draft.pick_roles` | read only (`Version=1`); the next save writes `[PRIVATE PLY PICKS]` |
 | other unmodeled sections (spacing, vendor, other programs' `[PRIVATE ...]`) | `Draft.retained` | ✅ (kept verbatim, re-emitted) |
 | `[NOTES]` | `Draft.notes` | ✅ |
@@ -59,6 +59,26 @@ Shot 5=2
 2=role tabby, shuttle 2
 ```
 
+A declared double-weave construction adds one key and raises the layout to `Version=2`:
+
+```
+[PRIVATE PLY PICKS]
+Version=2
+Picks=8
+Sheds=<fingerprint>
+Construction=double-width, fold left
+Shuttle 1 Start=right
+1=role top-layer, shuttle 1
+2=role bottom-layer, shuttle 1
+```
+
+`Construction` is `two-layers`, `tube`, `double-width, fold left` or `double-width, fold right`
+(read case-insensitively; anything else is no construction, never a guess). It is a label the weaver
+confirms or a generator sets; Ply checks it against the edges it derives from the roles, shuttles and
+starting sides, and never labels a WIF that does not carry it. A draft without one still writes
+`Version=1`, byte-identical to before; a `Version=1` section never carries a construction, and this
+build reads both.
+
 `Version` is the section layout (a higher one is kept verbatim and not read). Only picks with
 something recorded are listed, as comma-separated `name value` attributes: `role` (`pattern`,
 `tabby`, `top-layer`, `bottom-layer`), `shuttle` (1 to 8), `strands` (1 to 4; 1 is not written).
@@ -74,7 +94,7 @@ everything unknown; nothing is guessed (not shuttles from colors, not double sho
 treadles). A program that re-saves a Ply file may drop private sections (WIF does not require
 keeping them); the woven draft is unaffected (a double shot is two consecutive picks on one shed in
 any reader), only the working data is lost. The earlier `[PRIVATE PLY PICK ROLES]` layout (`Version=1`,
-`pick=role` lines) is still read for roles. Rationale: ADR 0008 and ADR 0009 (private).
+`pick=role` lines) is still read for roles. Rationale: ADR 0008, ADR 0009 and ADR 0010 (private).
 
 ## Known gaps / caveats
 

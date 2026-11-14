@@ -12,6 +12,7 @@
 //!  * Shed direction is handled in exactly one place — `Draft::raised_shafts` — which
 //!    yields the canonical "set of raised shafts per pick" the drawdown consumes.
 
+use crate::construction::Construction;
 use ply_common::{Color, Unit};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -352,6 +353,12 @@ pub struct WeftWork {
     pub strands: Vec<u8>,
     /// The shot groups, in pick order and not overlapping.
     pub shot_groups: Vec<ShotGroup>,
+    /// The double-weave construction the weaver declared (or a generator set): two independent
+    /// layers, a tube, or double width with a fold. A LABEL, checked against the edges derived from
+    /// the roles, shuttles and starting sides (see [`crate::construction`]); `None` = not declared,
+    /// which is every third-party WIF. Never inferred. It belongs to the draft, not to a pick, so every
+    /// pick edit keeps it (validation then says whether it still matches).
+    pub construction: Option<Construction>,
 }
 
 impl WeftWork {
@@ -362,6 +369,7 @@ impl WeftWork {
             && self.shuttle_starts.is_empty()
             && self.strands.iter().all(|&s| s == 1)
             && self.shot_groups.is_empty()
+            && self.construction.is_none()
     }
 }
 
@@ -886,6 +894,7 @@ impl Draft {
                 shuttle_starts: self.weft_work.shuttle_starts.clone(),
                 strands: resize_if_recorded(&self.weft_work.strands, picks, 1),
                 shot_groups: self.weft_work.shot_groups.clone(),
+                construction: self.weft_work.construction,
             },
         };
         // A shrink cuts the groups at the last pick, and pruned shafts or treadles can change sheds:
@@ -1752,6 +1761,7 @@ mod tests {
                 ShotGroup { start: 0, picks: 2 },
                 ShotGroup { start: 4, picks: 2 },
             ],
+            construction: None,
         };
         d
     }

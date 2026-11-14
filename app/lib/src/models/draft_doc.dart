@@ -74,6 +74,13 @@ enum PickRole { unknown, pattern, tabby, topLayer, bottomLayer }
 /// from the right makes its first pass right to left. A domain twin of the wire `ShuttleSideKind`.
 enum ShuttleSide { left, right }
 
+/// How a two-layer (double-weave) cloth is constructed, as the weaver declares it or a generator sets
+/// it (M8-09, ADR 0010): two independent layers, a tube, or double width with the fold on the left or
+/// right. A LABEL, checked against the edges derived from the pick roles, shuttles and starting sides;
+/// [none] (not declared) is every third-party WIF, and a construction is never inferred. A domain twin
+/// of the wire `LayerConstructionKind`.
+enum LayerConstruction { none, twoLayers, tube, doubleWidthFoldLeft, doubleWidthFoldRight }
+
 /// The most shuttles a draft can number (1..8), matching the engine's `MAX_SHUTTLES`.
 const int kMaxShuttles = 8;
 
@@ -374,6 +381,7 @@ class DraftDoc {
     List<int> pickStrands = const <int>[],
     List<ShotGroup> shotGroups = const <ShotGroup>[],
     Map<int, ShuttleSide> shuttleStarts = const <int, ShuttleSide>{},
+    this.construction = LayerConstruction.none,
   })  : threading = _sealRows(threading),
         palette = _sealList(palette),
         warpColors = _sealList(warpColors),
@@ -412,6 +420,7 @@ class DraftDoc {
     this.pickStrands = const <int>[],
     this.shotGroups = const <ShotGroup>[],
     this.shuttleStarts = const <int, ShuttleSide>{},
+    this.construction = LayerConstruction.none,
   });
 
   /// A blank, structurally-valid document to start editing from scratch, mirroring the
@@ -542,6 +551,11 @@ class DraftDoc {
   /// stored; they follow from this and [pickShuttles]. DEEPLY IMMUTABLE.
   final Map<int, ShuttleSide> shuttleStarts;
 
+  /// The declared double-weave construction ([LayerConstruction.none] when not declared). It belongs
+  /// to the draft, not to a pick, so pick edits keep it; validation says whether the derived edges
+  /// still bear it out. Stored with the per-pick data in Ply's WIF private section (ADR 0010).
+  final LayerConstruction construction;
+
   /// The shuttle of the 0-based [pick], or null when unknown.
   int? shuttleAt(int pick) => pick >= 0 && pick < pickShuttles.length ? pickShuttles[pick] : null;
 
@@ -556,12 +570,13 @@ class DraftDoc {
     return null;
   }
 
-  /// True when any shuttle, starting side, strand count, or shot group is recorded.
+  /// True when any shuttle, starting side, strand count, shot group, or construction is recorded.
   bool get hasWeftWork =>
       pickShuttles.isNotEmpty ||
       pickStrands.isNotEmpty ||
       shotGroups.isNotEmpty ||
-      shuttleStarts.isNotEmpty;
+      shuttleStarts.isNotEmpty ||
+      construction != LayerConstruction.none;
 
   /// Number of warp ends (= columns in the drawdown), defined by the threading length (the
   /// authoritative warp axis). Mirrors the engine's `ends()` so UI, reducers, and validation
@@ -607,6 +622,7 @@ class DraftDoc {
     List<int>? pickStrands,
     List<ShotGroup>? shotGroups,
     Map<int, ShuttleSide>? shuttleStarts,
+    LayerConstruction? construction,
   }) {
     return DraftDoc._sealed(
       name: name ?? this.name,
@@ -628,6 +644,7 @@ class DraftDoc {
       pickStrands: pickStrands == null ? this.pickStrands : _sealStrands(pickStrands),
       shotGroups: shotGroups == null ? this.shotGroups : _sealGroups(shotGroups),
       shuttleStarts: shuttleStarts == null ? this.shuttleStarts : _sealStarts(shuttleStarts),
+      construction: construction ?? this.construction,
     );
   }
 
@@ -658,7 +675,8 @@ class DraftDoc {
           _deepEq.equals(pickShuttles, other.pickShuttles) &&
           _deepEq.equals(pickStrands, other.pickStrands) &&
           _deepEq.equals(shotGroups, other.shotGroups) &&
-          _deepEq.equals(shuttleStarts, other.shuttleStarts);
+          _deepEq.equals(shuttleStarts, other.shuttleStarts) &&
+          construction == other.construction;
 
   /// `hashCode` consistent with `==`: scalars and enums by value, `drive` by its own deep hash,
   /// and every nested list by the SAME deep hash that backs `==`. This hashes the full deep
@@ -687,6 +705,7 @@ class DraftDoc {
         _deepEq.hash(pickStrands),
         _deepEq.hash(shotGroups),
         _deepEq.hash(shuttleStarts),
+        construction,
       );
 
   @override

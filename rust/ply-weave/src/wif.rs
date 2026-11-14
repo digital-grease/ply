@@ -14,6 +14,7 @@
 //! by a pick count and [`shed_fingerprint`] so a file whose picks another program changed reads back
 //! with all of it unknown (ADR 0008, ADR 0009). The earlier roles-only section is still read.
 
+use crate::construction::Construction;
 use crate::draft::*;
 use crate::error::{Result, WeaveError};
 use ply_common::{Color, Unit};
@@ -380,8 +381,15 @@ const MAX_FACTOR_TREADLES: usize = 40;
 /// ```
 pub const PICKS_SECTION: &str = "PRIVATE PLY PICKS";
 
-/// The layout version of [`PICKS_SECTION`] this build reads and writes.
-pub const PICKS_VERSION: u32 = 1;
+/// The highest layout version of [`PICKS_SECTION`] this build reads. Version 2 (ADR 0010) is version 1
+/// plus one key, `Construction=<two-layers | tube | double-width, fold left | double-width, fold right>`,
+/// the declared double-weave construction. This build writes version 1 when no construction is
+/// declared (byte-identical to an ADR 0009 build, which can read it) and version 2 only when one is,
+/// so an ADR 0009 build keeps such a section verbatim instead of silently dropping the construction.
+pub const PICKS_VERSION: u32 = 2;
+
+/// The layout version written when there is no declared construction (ADR 0009's layout).
+const PICKS_VERSION_WITHOUT_CONSTRUCTION: u32 = 1;
 
 /// The earlier roles-only private section (ADR 0008). This build still READS its `Version=1` form
 /// (roles only) but never writes it: its data moves into [`PICKS_SECTION`] on the next save.
@@ -392,7 +400,7 @@ const LEGACY_ROLES_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SectionVersion {
-    /// The version this build reads.
+    /// A version this build reads (for [`PICKS_SECTION`], 1 or 2).
     Current,
     /// A later Ply's layout: keep the section verbatim, read nothing from it.
     Newer,
@@ -408,7 +416,7 @@ fn section_version(section: &Section) -> SectionVersion {
         PICKS_VERSION
     };
     match section.get("Version").and_then(|v| v.parse::<u32>().ok()) {
-        Some(v) if v == current => SectionVersion::Current,
+        Some(v) if (1..=current).contains(&v) => SectionVersion::Current,
         Some(v) if v > current => SectionVersion::Newer,
         _ => SectionVersion::Unreadable,
     }
@@ -448,6 +456,38 @@ fn side_from_token(token: &str) -> Option<Side> {
     match token.trim().to_ascii_lowercase().as_str() {
         "left" => Some(Side::Left),
         "right" => Some(Side::Right),
+        _ => None,
+    }
+}
+
+/// The value a declared construction is written as (read case-insensitively, spaces around the comma
+/// ignored).
+fn construction_token(c: Construction) -> &'static str {
+    match c {
+        Construction::TwoLayers => "two-layers",
+        Construction::Tube => "tube",
+        Construction::DoubleWidth { fold: Side::Left } => "double-width, fold left",
+        Construction::DoubleWidth { fold: Side::Right } => "double-width, fold right",
+    }
+}
+
+/// The construction a value names. Anything else (an unknown kind, double width without a valid fold
+/// side) is `None`: never a guess.
+fn construction_from_token(token: &str) -> Option<Construction> {
+    let parts: Vec<String> = token
+        .split(',')
+        .map(|p| {
+            p.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_ascii_lowercase()
+        })
+        .collect();
+    match parts.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        ["two-layers"] => Some(Construction::TwoLayers),
+        ["tube"] => Some(Construction::Tube),
+        ["double-width", "fold left"] => Some(Construction::DoubleWidth { fold: Side::Left }),
+        ["double-width", "fold right"] => Some(Construction::DoubleWidth { fold: Side::Right }),
         _ => None,
     }
 }
@@ -518,7 +558,8 @@ fn none_known<T: PartialEq>(xs: Vec<T>, unknown: T) -> Vec<T> {
 /// or a key past the picks is ignored (never guessed). `Shuttle <n> Start=left|right` records a
 /// shuttle's starting side; `Shot <first pick>=<passes>` a shot group, kept only when it has at least
 /// two passes, lies inside the picks, and does not overlap an earlier group. (A group whose picks do
-/// not share one shed is kept so validation can report it; Ply never writes one.)
+/// not share one shed is kept so validation can report it; Ply never writes one.) From version 2,
+/// `Construction=<token>` is the declared double-weave construction (see [`construction_from_token`]).
 fn read_picks_section(section: &Section, draft: &Draft) -> (Vec<PickRole>, WeftWork) {
     let picks = draft.picks();
     let mut roles = vec![PickRole::Unknown; picks];
@@ -526,6 +567,12 @@ fn read_picks_section(section: &Section, draft: &Draft) -> (Vec<PickRole>, WeftW
     let mut strands = vec![1u8; picks];
     let mut starts = BTreeMap::new();
     let mut groups: Vec<ShotGroup> = Vec::new();
+    let mut construction = None;
+    // Version 1 has no construction key; one there is not something Ply wrote, so it is not read.
+    let version = section
+        .get("Version")
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0);
     for (key, value) in &section.entries {
         let lower = key.trim().to_ascii_lowercase();
         if let Some(p) = pick_key(key, picks) {
@@ -563,6 +610,8 @@ fn read_picks_section(section: &Section, draft: &Draft) -> (Vec<PickRole>, WeftW
                     starts.insert(ShuttleId(s), side);
                 }
             }
+        } else if lower == "construction" && version >= 2 {
+            construction = construction_from_token(value);
         } else if let Some(first) = lower.strip_prefix("shot ") {
             let first = pick_key(first, picks);
             let passes = value.trim().parse::<usize>().ok();
@@ -591,6 +640,7 @@ fn read_picks_section(section: &Section, draft: &Draft) -> (Vec<PickRole>, WeftW
             shuttle_starts: starts,
             strands: none_known(strands, 1),
             shot_groups,
+            construction,
         },
     )
 }
@@ -900,9 +950,20 @@ pub fn write(draft: &Draft) -> String {
     if write_picks {
         line!("");
         line!("[{}]", PICKS_SECTION);
-        line!("Version={}", PICKS_VERSION);
+        let construction = draft.weft_work.construction;
+        line!(
+            "Version={}",
+            if construction.is_some() {
+                PICKS_VERSION
+            } else {
+                PICKS_VERSION_WITHOUT_CONSTRUCTION
+            }
+        );
         line!("Picks={}", draft.picks());
         line!("Sheds={}", shed_fingerprint(draft));
+        if let Some(c) = construction {
+            line!("Construction={}", construction_token(c));
+        }
         for (shuttle, &side) in &draft.weft_work.shuttle_starts {
             line!("Shuttle {} Start={}", shuttle.0, side_token(side));
         }
@@ -1398,6 +1459,7 @@ Threads=4
                 .collect(),
             strands: (0..10).map(|p| if p % 2 == 0 { 2 } else { 1 }).collect(),
             shot_groups: vec![ShotGroup { start: 8, picks: 2 }],
+            construction: None,
         };
         d
     }
@@ -1581,21 +1643,21 @@ Threads=4
     #[test]
     fn newer_sections_are_kept_verbatim_and_unread() {
         let newer = format!(
-            "{SAMPLE}[PRIVATE PLY PICKS]\nVersion=2\nPicks=4\nWeft Plan=a,b\n1=role pattern\n"
+            "{SAMPLE}[PRIVATE PLY PICKS]\nVersion=3\nPicks=4\nWeft Plan=a,b\n1=role pattern\n"
         );
         let d = parse(&newer).unwrap();
-        assert!(d.pick_roles.is_empty(), "this build cannot read version 2");
+        assert!(d.pick_roles.is_empty(), "this build cannot read version 3");
         assert!(d.weft_work.is_empty());
         assert_eq!(d.retained.len(), 1, "kept so a re-save does not destroy it");
         let text = write(&d);
-        assert!(text.contains("Version=2") && text.contains("Weft Plan=a,b"));
+        assert!(text.contains("Version=3") && text.contains("Weft Plan=a,b"));
         // Once this build records data of its own, its section replaces the kept one.
         let mut d2 = d.clone();
         d2.pick_roles = vec![PickRole::Pattern; 4];
         let text2 = write(&d2);
         assert_eq!(text2.matches("[PRIVATE PLY PICKS]").count(), 1);
         assert_eq!(text2.matches("PRIVATE PLY PICKS=true").count(), 1);
-        assert!(text2.contains("Version=1") && !text2.contains("Version=2"));
+        assert!(text2.contains("Version=1") && !text2.contains("Version=3"));
         // A newer roles-only section is kept too, and dropped once this build writes its own record.
         let old_newer = format!("{SAMPLE}[PRIVATE PLY PICK ROLES]\nVersion=2\n1=pattern\n");
         let o = parse(&old_newer).unwrap();

@@ -1,0 +1,42 @@
+{
+  "description": "A plain-weave tube on 4 shafts: the same threading, tie-up and treadling as two layers, woven with one shuttle from the left, on an odd number of ends so the weave continues around both edges.",
+  "generator": { "function": "structure::double_weave", "ends": 11, "picks": 8, "construction": "tube" },
+  "ends": 11,
+  "picks": 8,
+  "shafts": 4,
+  "treadles": 4,
+  "shed": "rising",
+  "tieup": [[1],[1,2,3],[3],[1,3,4]],
+  "threading": [1,2,3,4,1,2,3,4,1,2,3],
+  "treadling": [1,2,3,4,1,2,3,4],
+  "roles_legend": "T = top layer, B = bottom layer, one letter per pick, pick 1 first",
+  "roles": "TBTBTBTB",
+  "shuttles": [1,1,1,1,1,1,1,1],
+  "shuttle_starts": { "1": "left" },
+  "construction": "tube",
+  "pass_directions_legend": "one arrow per pick, pick 1 first: \u2190 right to left, \u2192 left to right (left and right as the weaver sits at the front of the loom)",
+  "pass_directions": "→←→←→←→←",
+  "turns_legend": "one entry per shuttle turn: <pick>-<that shuttle's next pick> <edge where the pass ended> <joins = the next pick is on the other layer, open = the same layer>",
+  "turns": [
+    "1-2 right joins",
+    "2-3 left joins",
+    "3-4 right joins",
+    "4-5 left joins",
+    "5-6 right joins",
+    "6-7 left joins",
+    "7-8 right joins"
+  ],
+  "edges": { "left": "joined", "right": "joined" },
+  "matrix_orientation": "One string per pick, pick 1 first. Character k is end k + 1, so end 1 is at the LEFT (the editor draws end 1 at the right and shows the mirror image).",
+  "interlacement_legend": "X = warp over weft (rising shed), . = weft over warp. Every intersection of both layers: this is not the face of the cloth.",
+  "interlacement": [
+    "X...X...X..",
+    "XXX.XXX.XXX",
+    "..X...X...X",
+    "X.XXX.XXX.X",
+    "X...X...X..",
+    "XXX.XXX.XXX",
+    "..X...X...X",
+    "X.XXX.XXX.X"
+  ]
+}
