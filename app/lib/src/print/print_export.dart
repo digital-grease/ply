@@ -102,12 +102,15 @@ String pdfFileName(String name) {
 
 /// The full flow: ask Print or Share, [prepare] the job (behind a progress dialog), confirm a
 /// pattern with errors (cancel exports nothing; "anyway" prints the problems box), build, output.
-/// [noun] names the thing in the dialog ("pattern", "project").
+/// [noun] names the thing in the dialog ("pattern", "project", "draft"). [options] is shown in the
+/// Print / Share sheet above the two choices (a weaving draft's book layout); it holds its own state,
+/// which [prepare] reads after the sheet closes.
 Future<void> printOrSharePdf(
   BuildContext context,
   WidgetRef ref, {
   required String noun,
   required Future<PdfExportJob> Function() prepare,
+  Widget? options,
 }) async {
   // Everything that needs the widget or a provider is read before the first gap.
   final output = ref.read(pdfOutputProvider);
@@ -115,7 +118,7 @@ Future<void> printOrSharePdf(
   final fonts = ref.read(plyPdfFontsProvider.future);
   final messenger = ScaffoldMessenger.of(context);
 
-  final action = await choosePdfAction(context);
+  final action = await choosePdfAction(context, options: options);
   if (action == null || !context.mounted) return;
   try {
     final job = await showProgressWhile(context, PdfExportText.preparing, prepare);
@@ -151,9 +154,12 @@ Future<void> printOrSharePdf(
   }
 }
 
-/// The Print / Share choice, as a bottom sheet. Null when dismissed.
-Future<PdfAction?> choosePdfAction(BuildContext context) => showModalBottomSheet<PdfAction>(
+/// The Print / Share choice, as a bottom sheet, with [options] (if any) under its title. Null when
+/// dismissed.
+Future<PdfAction?> choosePdfAction(BuildContext context, {Widget? options}) =>
+    showModalBottomSheet<PdfAction>(
       context: context,
+      isScrollControlled: options != null,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -163,6 +169,7 @@ Future<PdfAction?> choosePdfAction(BuildContext context) => showModalBottomSheet
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
               child: Text(PdfExportText.action, style: Theme.of(ctx).textTheme.titleMedium),
             ),
+            if (options != null) options,
             ListTile(
               leading: const Icon(Icons.print_outlined),
               title: const Text(PdfExportText.print),

@@ -13,11 +13,13 @@ import 'package:pdf/widgets.dart' as pw;
 /// The loaded print fonts.
 class PlyPdfFonts {
   PlyPdfFonts._(ByteData regular, ByteData bold)
+      : this._parsed(regular, bold, TtfParser(regular), TtfParser(bold));
+
+  PlyPdfFonts._parsed(ByteData regular, ByteData bold, TtfParser r, TtfParser b)
       : regular = pw.TtfFont(regular),
         bold = pw.TtfFont(bold),
-        _supported = {
-          ...TtfParser(regular).charToGlyphIndexMap.keys,
-        }.intersection({...TtfParser(bold).charToGlyphIndexMap.keys});
+        _regularMetrics = r,
+        _supported = {...r.charToGlyphIndexMap.keys}.intersection({...b.charToGlyphIndexMap.keys});
 
   /// Build from the two font files' bytes (tests read them straight from `assets/fonts`).
   factory PlyPdfFonts.fromBytes({required ByteData regular, required ByteData bold}) =>
@@ -37,6 +39,20 @@ class PlyPdfFonts {
 
   /// Code points both weights can draw.
   final Set<int> _supported;
+
+  /// The regular weight's glyph metrics, for measuring text before a page exists.
+  final TtfParser _regularMetrics;
+
+  /// The advance width of [s] in points at [size] in the regular weight. Used to size the margins of
+  /// a weaving draft's grids at layout time (a character the font lacks counts as half an em).
+  double textWidth(String s, double size) {
+    var w = 0.0;
+    for (final r in s.runes) {
+      final g = _regularMetrics.charToGlyphIndexMap[r];
+      w += (g == null ? null : _regularMetrics.glyphInfoMap[g]?.advanceWidth) ?? 0.5;
+    }
+    return w * size;
+  }
 
   /// Whether [rune] prints as itself (white space and control characters always do: nothing is
   /// drawn for them).

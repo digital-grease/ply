@@ -6,6 +6,8 @@ import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
 import '../models/loom_type.dart';
+import '../print/print_export.dart' show PdfExportText;
+import '../print/weave_print.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../util/responsive.dart';
@@ -30,6 +32,7 @@ enum _OverflowAction {
   convert,
   viewLayers,
   bookView,
+  printPdf,
   toggleShed,
   toggleGridlines,
   toggleFloats,
@@ -600,6 +603,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _openLayers();
                       case _OverflowAction.bookView:
                         showBookViewSheet(context);
+                      case _OverflowAction.printPdf:
+                        printOrShareWeavePdf(context, ref,
+                            name: widget.title, credit: widget.meta?.author);
                       case _OverflowAction.toggleShed:
                         final cur = ref.read(draftEditorProvider).draft.shed;
                         notifier.setShed(
@@ -659,6 +665,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           dense: true,
                           leading: Icon(Icons.format_list_numbered),
                           title: Text(kBookViewTitle)),
+                    ),
+                    // A printable book draft of the draft as it is now, unsaved edits included. A
+                    // separate action from saving or exporting the WIF file.
+                    const PopupMenuItem(
+                      value: _OverflowAction.printPdf,
+                      child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.print_outlined),
+                          title: Text(PdfExportText.action)),
                     ),
                     // Shed direction: rising (jack/table/dobby) raises the tied shafts; sinking
                     // (counterbalance/countermarch) lowers them, so the engine raises the complement

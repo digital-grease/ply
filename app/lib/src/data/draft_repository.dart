@@ -146,6 +146,36 @@ class DraftRepository {
     return _decodePreview(preview);
   }
 
+  /// The raw RGBA pixels of [region] of [doc]'s drawdown, uniform cells, no overlays, undecoded: a
+  /// printed draft reads the engine's interlacement and colors from these one crossing at a time, so
+  /// they never round-trip through a [ui.Image]. Same bounds and failures as [renderRegion]; the
+  /// image's width over the region's ends is the pitch the engine actually used.
+  Future<PreviewImage> renderRegionPixels(
+    DraftDoc doc,
+    DrawdownRegion region, {
+    required int cellPx,
+  }) {
+    for (final (name, v) in [
+      ('endStart', region.endStart),
+      ('endCount', region.endCount),
+      ('pickStart', region.pickStart),
+      ('pickCount', region.pickCount),
+      ('cellPx', cellPx),
+    ]) {
+      if (v < 0 || v > 0xFFFFFFFF) throw RangeError.range(v, 0, 0xFFFFFFFF, name);
+    }
+    return renderRegionDto(
+      dto: toDto(doc),
+      region: DrawdownRegionDto(
+        endStart: region.endStart,
+        endCount: region.endCount,
+        pickStart: region.pickStart,
+        pickCount: region.pickCount,
+      ),
+      cellPx: cellPx,
+    );
+  }
+
   /// Parse WIF text straight into an editor [DraftDoc] (parse to the wire DTO, then map to the
   /// domain). The editor's entry point when opening a draft to edit.
   Future<DraftDoc> parseDoc(String wifText) async =>

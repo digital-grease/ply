@@ -1,6 +1,6 @@
 // The printable-document MODEL (M9-02): what a printed pattern says, independent of any craft and of
 // the PDF library. A craft builds a [PrintDocument] from its own data (knit_print.dart,
-// nalbind_print.dart; weaving next), and `pdf_builder.dart` lays it out on pages. Keeping the model
+// nalbind_print.dart, weave_print.dart), and `pdf_builder.dart` lays it out on pages. Keeping the model
 // plain data makes the content testable without parsing a PDF, and lets every craft share one
 // layout: title block, a problems box, sections, legends, notes, warnings, charts, drawings and
 // photos, with the same page numbering, page sizes and pagination rules.
@@ -132,9 +132,28 @@ class PrintColor {
   int get hashCode => Object.hash(r, g, b);
 }
 
-/// One row of a key: the symbol as it appears on the chart (a picture of it, or a color swatch), its
-/// [code] (the abbreviation the instructions use), a [name], and what it means. Text always rides
-/// with the symbol, so the key never depends on color alone.
+/// A small vector symbol a key draws when an entry has no picture or swatch: the marks of a weaving
+/// draft, drawn exactly as the draft's grids draw them.
+enum PrintMark {
+  /// A filled square inside its cell: a threading, tie-up, treadling or lift plan mark.
+  filled,
+
+  /// A cell filled to its edges: warp on top in a drawdown.
+  solid,
+
+  /// An empty square: weft on top in a drawdown.
+  empty,
+
+  /// A square with an X: a sinking-shed tie-up mark.
+  cross,
+
+  /// A bracket: a shot group.
+  bracket,
+}
+
+/// One row of a key: the symbol as it appears on the chart (a picture of it, a color swatch, or a
+/// vector mark), its [code] (the abbreviation the instructions use), a [name], and what it means.
+/// Text always rides with the symbol, so the key never depends on color alone.
 class PrintLegendEntry {
   const PrintLegendEntry({
     required this.code,
@@ -142,6 +161,7 @@ class PrintLegendEntry {
     required this.meaning,
     this.glyph,
     this.swatch,
+    this.mark,
     this.notes = const [],
   });
 
@@ -154,6 +174,9 @@ class PrintLegendEntry {
 
   /// For a color key: the color.
   final PrintColor? swatch;
+
+  /// A vector mark, used when there is no [glyph] or [swatch].
+  final PrintMark? mark;
 
   /// Extra lines (how a stitch is worked on wrong-side rows, a symbol shared with another stitch).
   final List<String> notes;
@@ -395,4 +418,179 @@ final class PrintPhoto extends PrintBlock {
 
   @override
   Iterable<String> get allText => [caption, unprintable];
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Weaving drafts
+// ---------------------------------------------------------------------------------------------------
+
+/// Where a printed book draft puts its tie-up. The other quadrants follow: each layout is Ply's
+/// editor layout ([topRight]) reflected left to right ([mirrorX]), top to bottom ([mirrorY]), or
+/// both, so every quadrant keeps sharing its axes with its neighbours (book_draft_layout.dart).
+enum BookCorner {
+  topRight,
+  topLeft,
+  bottomRight,
+  bottomLeft;
+
+  /// The tie-up is on the left: end 1 is at the left (the mirror image of Ply's editor).
+  bool get mirrorX => this == topLeft || this == bottomLeft;
+
+  /// The tie-up is at the bottom: the threading is under the drawdown and pick 1 at the bottom.
+  bool get mirrorY => this == bottomRight || this == bottomLeft;
+}
+
+/// Which way a pass of the weft goes, said relative to end 1 so it reads the same in every layout
+/// (the builder draws the arrow that matches the picture).
+enum PrintPassDirection {
+  /// Not known (no shuttle, no starting side, or after a pick with an unknown shuttle).
+  unknown,
+
+  /// The pass starts at the end 1 edge (on Ply's loom, from the right).
+  fromEndOne,
+
+  /// The pass ends at the end 1 edge (on Ply's loom, from the left).
+  towardEndOne,
+}
+
+/// One pick's shuttle and pass direction, printed beside the treadling. [shuttle] null = the shuttle
+/// is not recorded (printed "?").
+class PrintPass {
+  const PrintPass({this.shuttle, this.direction = PrintPassDirection.unknown});
+  final int? shuttle;
+  final PrintPassDirection direction;
+}
+
+/// A bracket beside the treadling over the book draft's rows [start, end) (0-based rows of the
+/// block), with a short [label] ("double shot").
+class PrintRowBracket {
+  const PrintRowBracket({required this.start, required this.end, required this.label});
+  final int start;
+  final int end;
+  final String label;
+}
+
+/// A four-quadrant BOOK DRAFT: threading, tie-up (none for a lift plan), treadling or lift plan, and
+/// the structural drawdown, on one shared cell pitch, with axis numbers on every part and the margin
+/// annotations beside the treadling (role letters, shuttle and pass, shot-group brackets) and the
+/// edge labels under the drawdown. Every quadrant is plain data: the builder only draws it. A draft
+/// too large for a page is split into page-sized parts, each repeating the threading for its ends, the
+/// treadling for its rows, the tie-up and the numbers; cells are never shrunk below a readable size.
+final class PrintBookDraft extends PrintBlock {
+  PrintBookDraft({
+    required this.ends,
+    required this.shafts,
+    required this.columns,
+    required this.threading,
+    required this.tieup,
+    this.tieupMark = PrintMark.filled,
+    required this.treadling,
+    required this.pickNumbers,
+    this.drawdown,
+    this.corner = BookCorner.topRight,
+    this.roles = const [],
+    this.passes = const [],
+    this.brackets = const [],
+    this.highEndEdge,
+    this.endOneEdge,
+    this.rowsNote,
+  })  : assert(threading.length == ends),
+        assert(tieup == null || tieup.length == columns),
+        assert(pickNumbers.length == treadling.length),
+        assert(drawdown == null || drawdown.length == ends * treadling.length),
+        assert(roles.isEmpty || roles.length == treadling.length),
+        assert(passes.isEmpty || passes.length == treadling.length);
+
+  /// Warp ends (threading and drawdown columns).
+  final int ends;
+
+  /// Shafts (threading and tie-up rows).
+  final int shafts;
+
+  /// Tie-up and treadling columns: treadles, or shafts for a lift plan.
+  final int columns;
+
+  /// Per end (index 0 = end 1), the 1-based shafts it is threaded on.
+  final List<List<int>> threading;
+
+  /// Per treadle (index 0 = treadle 1), the 1-based shafts it is tied to; null for a lift plan, whose
+  /// tie-up corner stays empty.
+  final List<List<int>>? tieup;
+
+  /// How a tie-up mark is drawn: [PrintMark.filled] (the shaft rises) or [PrintMark.cross] (sinks).
+  final PrintMark tieupMark;
+
+  /// Per row, the 1-based columns marked (treadles pressed, or shafts raised).
+  final List<List<int>> treadling;
+
+  /// Per row, the pick number printed beside it (a pattern-only grid skips the tabby picks' numbers).
+  final List<int> pickNumbers;
+
+  /// The interlacement from the engine: `rows * ends` entries, row-major, end index 0 first; 1 = the
+  /// warp is on top (drawn black). Null when it could not be drawn (the cells stay empty).
+  final Uint8List? drawdown;
+
+  final BookCorner corner;
+
+  /// Per row, a role letter ("" for none); empty = no role column.
+  final List<String> roles;
+
+  /// Per row, the shuttle and pass; empty = no shuttle column.
+  final List<PrintPass> passes;
+
+  final List<PrintRowBracket> brackets;
+
+  /// Labels for the drawdown's two edges: the edge at the highest end (on Ply's loom the weaver's
+  /// left) and the edge at end 1 (the weaver's right). Null = no label.
+  final String? highEndEdge;
+  final String? endOneEdge;
+
+  /// Added to every part's caption ("pattern picks only").
+  final String? rowsNote;
+
+  int get rows => treadling.length;
+  bool get isLiftplan => tieup == null;
+
+  @override
+  Iterable<String> get allText => [
+        ...roles,
+        for (final b in brackets) b.label,
+        if (highEndEdge != null) highEndEdge!,
+        if (endOneEdge != null) endOneEdge!,
+        if (rowsNote != null) rowsNote!,
+        if (passes.isNotEmpty) '?←→',
+      ];
+}
+
+/// The COLORED drawdown: every crossing in the color of the thread on top, as the engine draws it,
+/// with the warp colors in a band along the threading side and the weft colors along the treadling
+/// side. Every end and pick is one square (yarn thickness is not drawn). Split into page-sized parts
+/// like a book draft.
+final class PrintColorDrawdown extends PrintBlock {
+  PrintColorDrawdown({
+    required this.ends,
+    required this.picks,
+    required this.cells,
+    required this.warp,
+    required this.weft,
+    this.corner = BookCorner.topRight,
+  })  : assert(cells.length == ends * picks),
+        assert(warp.length == ends),
+        assert(weft.length == picks);
+
+  final int ends;
+  final int picks;
+
+  /// `picks * ends` colors as 0xRRGGBB, row-major, end index 0 first.
+  final Uint32List cells;
+
+  /// Per end and per pick, the band color.
+  final List<PrintColor> warp;
+  final List<PrintColor> weft;
+
+  /// The same layout as the book draft, so end 1 and pick 1 sit on the same sides.
+  final BookCorner corner;
+
+  @override
+  Iterable<String> get allText => const [];
 }

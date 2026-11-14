@@ -24,6 +24,14 @@ plain so it can double as user-facing help content.
   treadling/liftplan + color). Also the file you save.
 - **Drawdown** — the computed picture of the cloth: for each intersection, whether warp or
   weft is on top. Ply computes this from the draft.
+- **Book draft**: a draft printed as four parts that share their rows and columns: the threading,
+  the tie-up, the treadling (or a liftplan) and the drawdown. Books put the tie-up in different
+  corners and number from different sides, so a printed draft from Ply says where end 1, shaft 1,
+  treadle 1 and pick 1 are.
+- **Use tabby**: the traditional shorthand of an overshot draft. The treadling lists only the
+  pattern picks, and one instruction says to weave a tabby (plain-weave) pick after each, changing
+  between the two tabby sheds. Ply uses it only when the picks' roles make it give exactly the
+  draft's picks.
 - **Float** — a length of thread passing over two or more perpendicular threads without
   interlacing (e.g. the long floats of satin).
 - **Sett** — how densely the warp is spaced, in **ends per inch (EPI)** / ends per

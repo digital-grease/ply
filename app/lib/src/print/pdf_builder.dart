@@ -1,7 +1,8 @@
 // Lays a [PrintDocument] out as a PDF with the `pdf` package (Apache-2.0; owner decision
 // 2026-11-12): a title block, the problems box, headed sections, keys, facts, notices, instructions,
 // charts split into page-sized parts, vector drawings and photos, on A4 or US Letter with a
-// "Page 2 of 5" footer. Craft-agnostic: everything craft-specific is already in the document.
+// "Page 2 of 5" footer. Craft-agnostic: everything craft-specific is already in the document (the
+// weaving grids are drawn by the part file pdf_book_draft.dart).
 //
 // Offline by construction: the fonts are the bundled [PlyPdfFonts], images come from the document's
 // own bytes, and nothing here (or in the `pdf` package code it calls) opens a network connection.
@@ -12,10 +13,13 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import 'book_draft_layout.dart';
 import 'jpeg_metadata.dart';
 import 'pdf_fonts.dart';
 import 'print_document.dart';
 import 'print_layout.dart';
+
+part 'pdf_book_draft.dart';
 
 /// Ink colors, chosen to print well in black and white (meaning is always in the text too).
 const _ink = PdfColor.fromInt(0xFF1A1A1A);
@@ -180,7 +184,7 @@ class _Builder {
         PrintLines(:final lines) => lines.isEmpty || lines.first.text.length <= 1500,
         PrintNotice() || PrintPhoto() => true,
         // A chart part is sized to a whole page already; a heading on top would not fit.
-        PrintChart() => false,
+        PrintChart() || PrintBookDraft() || PrintColorDrawdown() => false,
         PrintDrawing(:final label) => label != null,
         PrintIssues(:final issues) => issues.isEmpty,
       };
@@ -193,6 +197,8 @@ class _Builder {
         PrintNotice() => [notice(b)],
         PrintIssues() => issues(b),
         PrintChart() => chart(b),
+        PrintBookDraft() => bookDraft(b),
+        PrintColorDrawdown() => colorDrawdown(b),
         PrintDrawing() => drawing(b),
         PrintPhoto() => photo(b),
       };
@@ -410,6 +416,8 @@ class _Builder {
         ),
       );
     }
+    final mark = e.mark;
+    if (mark != null) return _markSymbol(mark, _keyCell);
     return pw.SizedBox(width: _keyCell, height: _keyCell);
   }
 

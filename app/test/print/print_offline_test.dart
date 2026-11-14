@@ -9,17 +9,19 @@ import 'package:ply/src/print/nalbind_print.dart';
 import 'package:ply/src/print/pdf_builder.dart';
 import 'package:ply/src/print/pdf_fonts.dart';
 import 'package:ply/src/print/print_layout.dart';
+import 'package:ply/src/print/weave_print.dart';
 import 'package:ply/src/rust/dto.dart' show ColorDto, UnitKind;
 import 'package:ply/src/rust/knit_dto.dart';
 
 import 'knit_print_test.dart' show FakePrintRepo;
 import 'nalbind_print_test.dart' show FakeReadRepo;
 import 'print_test_support.dart';
+import 'weave_print_test_support.dart';
 
 // Ply is local-first: making a PDF never touches the network. Every way out (an HTTP client, a
-// socket, a listening socket) is trapped while a knitting and a nalbinding PDF are built from the
-// real bundled font assets; the print code is also scanned for the network-backed APIs of the PDF
-// packages (Google Fonts, network images).
+// socket, a listening socket) is trapped while a knitting, a nalbinding and a weaving PDF are built
+// from the real bundled font assets; the print code is also scanned for the network-backed APIs of
+// the PDF packages (Google Fonts, network images).
 
 /// Counts and refuses every attempt to reach the network inside [body].
 Future<int> _networkAttempts(Future<void> Function() body) async {
@@ -104,6 +106,19 @@ void main() {
     for (final o in outputs) {
       expect(String.fromCharCodes(o.take(5)), '%PDF-');
     }
+  });
+
+  test('building a weaving PDF never touches the network', () async {
+    Uint8List? out;
+    final attempts = await _networkAttempts(() async {
+      final fonts = await PlyPdfFonts.load();
+      final doc = overshotDoc();
+      final source = await gatherWeavePrint(FakeWeaveRepo(), name: 'Offline runner', doc: doc);
+      out = await buildPrintPdf(buildWeavePrintDocument(source, withProblemsBox: false),
+          page: PrintPageSetup.forUnit(MeasureUnit.centimeters), fonts: fonts);
+    });
+    expect(attempts, 0);
+    expect(String.fromCharCodes(out!.take(5)), '%PDF-');
   });
 
   test('the trap itself catches a connection attempt (so a zero above means none)', () async {
