@@ -303,7 +303,8 @@ pub fn parse(text: &str) -> Result<Draft> {
             name: s.name.clone(),
             entries: s.entries.clone(),
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let retained = with_source_credit(&ini, retained);
 
     if shafts == 0 && threading.ends() == 0 {
         return Err(WeaveError::WifParse(
@@ -397,6 +398,19 @@ pub const LEGACY_ROLES_SECTION: &str = "PRIVATE PLY PICK ROLES";
 
 /// The only [`LEGACY_ROLES_SECTION`] layout version that exists.
 const LEGACY_ROLES_VERSION: u32 = 1;
+
+/// The name under which the `[TEXT]` lines other than `Title` (Author, Address, EMail, Telephone,
+/// FAX, and any others) are kept in [`Draft::retained`]. `Title` is modeled (it is the draft's name);
+/// the rest is the file's credit, kept verbatim and written back into `[TEXT]` beside the Title, so
+/// a draft Ply re-saves still names its author.
+pub const TEXT_SECTION: &str = "TEXT";
+
+/// Ply's record of the program that first wrote a draft: `Source Program=` and, when the file gave
+/// one, `Source Version=`. A file Ply writes must name Ply as its `[WIF] Source Program`, so on
+/// reading a file another program wrote, its program is recorded here (kept in [`Draft::retained`]
+/// and written as this private section) and survives every later save. A file that already carries
+/// this section keeps it as it is: it names the earliest program, not the latest.
+pub const SOURCE_SECTION: &str = "PRIVATE PLY SOURCE";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SectionVersion {
@@ -786,11 +800,25 @@ pub fn write(draft: &Draft) -> String {
 
     // Embed the draft's name as the WIF Title so a written file is self-describing and the name
     // survives a write->parse round-trip (parse reads [TEXT] Title, defaulting to "Untitled").
-    // Skip an empty name rather than emit a blank Title. (Author/notes live in the app sidecar,
-    // not the engine Draft, so they are not written here.)
-    if !draft.name.is_empty() {
+    // Skip an empty name rather than emit a blank Title. The file's other [TEXT] lines (its author
+    // and credit, kept as `TEXT_SECTION` on read) are written back beside the Title, so a re-save
+    // keeps who made the draft.
+    let text_credit: Vec<&(String, String)> = draft
+        .retained
+        .iter()
+        .filter(|s| s.name.eq_ignore_ascii_case(TEXT_SECTION))
+        .flat_map(|s| s.entries.iter())
+        .filter(|(k, _)| !k.trim().eq_ignore_ascii_case("Title"))
+        .collect();
+    let write_text = !draft.name.is_empty() || !text_credit.is_empty();
+    if write_text {
         line!("[TEXT]");
-        line!("Title={}", draft.name);
+        if !draft.name.is_empty() {
+            line!("Title={}", draft.name);
+        }
+        for (k, v) in &text_credit {
+            line!("{}={}", k, v);
+        }
         line!("");
     }
 
@@ -805,7 +833,7 @@ pub fn write(draft: &Draft) -> String {
 
     // [CONTENTS] declares every section actually written, so a strict WIF reader knows what to find.
     line!("[CONTENTS]");
-    if !draft.name.is_empty() {
+    if write_text {
         line!("TEXT=true");
     }
     if !draft.notes.is_empty() {
@@ -843,6 +871,8 @@ pub fn write(draft: &Draft) -> String {
                 && (s.name.eq_ignore_ascii_case(PICKS_SECTION)
                     || s.name.eq_ignore_ascii_case(LEGACY_ROLES_SECTION)))
         })
+        // The kept [TEXT] credit is written inside [TEXT] above, not as a section of its own.
+        .filter(|s| !s.name.eq_ignore_ascii_case(TEXT_SECTION))
         .collect();
     // WIF 1.1 lists private sections in [CONTENTS] as `PRIVATE <SourceID> <SectionName>=true`.
     if write_picks {
@@ -991,6 +1021,49 @@ pub fn write(draft: &Draft) -> String {
     o
 }
 
+/// [`Draft::retained`] plus the file's credit: the `[TEXT]` lines other than `Title` (first, as
+/// [`TEXT_SECTION`]) and, for a file another program wrote, that program (last, as
+/// [`SOURCE_SECTION`]) unless the file already carries Ply's record of its origin.
+fn with_source_credit(ini: &Ini, mut retained: Vec<RetainedSection>) -> Vec<RetainedSection> {
+    if let Some(text) = ini.section("TEXT") {
+        let credit: Vec<(String, String)> = text
+            .entries
+            .iter()
+            .filter(|(k, _)| !k.trim().eq_ignore_ascii_case("Title"))
+            .cloned()
+            .collect();
+        if !credit.is_empty() {
+            retained.insert(
+                0,
+                RetainedSection {
+                    name: TEXT_SECTION.into(),
+                    entries: credit,
+                },
+            );
+        }
+    }
+    if ini.section(SOURCE_SECTION).is_none() {
+        let wif = ini.section("WIF");
+        let program = wif
+            .and_then(|w| w.get("Source Program"))
+            .filter(|p| !p.is_empty() && !p.eq_ignore_ascii_case("Ply"));
+        if let Some(program) = program {
+            let mut entries = vec![("Source Program".to_string(), program.to_string())];
+            if let Some(version) = wif
+                .and_then(|w| w.get("Source Version"))
+                .filter(|v| !v.is_empty())
+            {
+                entries.push(("Source Version".to_string(), version.to_string()));
+            }
+            retained.push(RetainedSection {
+                name: SOURCE_SECTION.into(),
+                entries,
+            });
+        }
+    }
+    retained
+}
+
 fn join_ids(it: impl Iterator<Item = u16>) -> String {
     it.map(|n| n.to_string()).collect::<Vec<_>>().join(",")
 }
@@ -1075,6 +1148,129 @@ Threads=4
         let mut d = parse(SAMPLE).unwrap();
         d.shed = ShedType::Sinking;
         assert!(matches!(parse(&write(&d)).unwrap().shed, ShedType::Sinking));
+    }
+
+    /// A file another program wrote, with its author and contact lines: `SAMPLE` with a [WIF] Source
+    /// Program and a [TEXT] section.
+    fn credited_sample() -> String {
+        SAMPLE.replace(
+            "[WIF]\nVersion=1.1\n",
+            "[WIF]\nVersion=1.1\nSource Program=Loomsmith\nSource Version=7.2\n\
+             [TEXT]\nTitle=Rosepath sampler\nAuthor=A. Weaver\nEMail=weaver@example.com\n",
+        )
+    }
+
+    fn section_text(text: &str, name: &str) -> String {
+        let start = text
+            .find(&format!("[{name}]"))
+            .unwrap_or_else(|| panic!("no [{name}] in:\n{text}"));
+        let rest = &text[start..];
+        let end = rest[1..].find("\r\n[").map_or(rest.len(), |i| i + 1);
+        rest[..end].to_string()
+    }
+
+    /// The [TEXT] credit and the program that wrote a file survive a re-save by Ply: [TEXT] keeps the
+    /// author and the other lines beside the Title, and the original program is recorded in Ply's
+    /// private source section while [WIF] truthfully names Ply as the file's writer.
+    #[test]
+    fn source_credit_survives_a_resave() {
+        let d = parse(&credited_sample()).unwrap();
+        assert_eq!(d.name, "Rosepath sampler");
+        assert_eq!(
+            d.retained.first().map(|s| s.name.as_str()),
+            Some(TEXT_SECTION)
+        );
+        assert_eq!(
+            d.retained[0].entries,
+            vec![
+                ("Author".to_string(), "A. Weaver".to_string()),
+                ("EMail".to_string(), "weaver@example.com".to_string()),
+            ],
+            "Title is modeled (the name), not kept twice"
+        );
+        let source = d.retained.last().unwrap();
+        assert_eq!(source.name, SOURCE_SECTION);
+        assert_eq!(
+            source.entries,
+            vec![
+                ("Source Program".to_string(), "Loomsmith".to_string()),
+                ("Source Version".to_string(), "7.2".to_string()),
+            ]
+        );
+
+        let text = write(&d);
+        let wif = section_text(&text, "WIF");
+        assert!(wif.contains("Source Program=Ply") && !wif.contains("Loomsmith"));
+        let credit = section_text(&text, "TEXT");
+        assert!(credit.contains("Title=Rosepath sampler"));
+        assert!(credit.contains("Author=A. Weaver"));
+        assert!(credit.contains("EMail=weaver@example.com"));
+        assert_eq!(text.matches("[TEXT]").count(), 1, "one [TEXT] section");
+        assert!(section_text(&text, SOURCE_SECTION).contains("Source Program=Loomsmith"));
+        let contents = section_text(&text, "CONTENTS");
+        assert!(contents.contains("TEXT=true"));
+        assert!(contents.contains(&format!("{SOURCE_SECTION}=true")));
+
+        // Stable: reading Ply's file gives the same draft, and writing it again the same bytes.
+        let again = parse(&text).unwrap();
+        assert_eq!(again, d);
+        assert_eq!(write(&again), text);
+    }
+
+    /// The origin names the EARLIEST program: a Ply file another program re-saved keeps Ply's record
+    /// (no second source section), and a file Ply wrote records no origin at all.
+    #[test]
+    fn the_recorded_origin_is_the_first_program() {
+        let first = write(&parse(&credited_sample()).unwrap());
+        let resaved_elsewhere = first.replace("Source Program=Ply", "Source Program=Other Loom");
+        let d = parse(&resaved_elsewhere).unwrap();
+        let sources: Vec<_> = d
+            .retained
+            .iter()
+            .filter(|s| s.name == SOURCE_SECTION)
+            .collect();
+        assert_eq!(sources.len(), 1);
+        assert!(sources[0]
+            .entries
+            .contains(&("Source Program".to_string(), "Loomsmith".to_string())));
+
+        let ply_only = write(&parse(SAMPLE).unwrap());
+        assert!(parse(&ply_only)
+            .unwrap()
+            .retained
+            .iter()
+            .all(|s| s.name != SOURCE_SECTION && s.name != TEXT_SECTION));
+    }
+
+    /// Renaming keeps the credit (the Title follows the name, the author stays); a draft with no name
+    /// still writes its credit, and a Title-only [TEXT] keeps nothing extra.
+    #[test]
+    fn credit_follows_renames_and_empty_names() {
+        let mut d = parse(&credited_sample()).unwrap();
+        d.name = "My rosepath".into();
+        let credit = section_text(&write(&d), "TEXT");
+        assert!(credit.contains("Title=My rosepath") && credit.contains("Author=A. Weaver"));
+
+        d.name.clear();
+        let text = write(&d);
+        let credit = section_text(&text, "TEXT");
+        assert!(!credit.contains("Title=") && credit.contains("Author=A. Weaver"));
+        assert!(section_text(&text, "CONTENTS").contains("TEXT=true"));
+        assert_eq!(parse(&text).unwrap().name, "Untitled");
+
+        let title_only = SAMPLE.replace(
+            "[WIF]\nVersion=1.1\n",
+            "[WIF]\nVersion=1.1\n[TEXT]\nTitle=Plain\n",
+        );
+        assert!(parse(&title_only).unwrap().retained.is_empty());
+    }
+
+    /// A resize keeps the credit: it is not per-thread data.
+    #[test]
+    fn resize_keeps_the_credit() {
+        let d = parse(&credited_sample()).unwrap();
+        let r = d.resized(6, 7, 4, 4);
+        assert_eq!(r.retained, d.retained);
     }
 
     /// Phase 5.2: a from-scratch draft's name (typed at the first-save prompt and propagated into

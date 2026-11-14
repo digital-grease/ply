@@ -23,6 +23,8 @@ Implementation: `rust/ply-weave/src/wif.rs` (`parse` / `write`).
 | `[WARP COLORS]` `end=index` | `ColorPlan.warp` | ✅ |
 | `[WEFT COLORS]` `pick=index` | `ColorPlan.weft` | ✅ |
 | `[TEXT]` `Title` | `Draft.name` | ✅ (read/written) |
+| `[TEXT]` other lines (`Author`, `Address`, `EMail`, `Telephone`, `FAX`, ...) | `Draft.retained` as `TEXT` | ✅ (kept verbatim and written back into `[TEXT]` beside the Title, so a re-save keeps the credit) |
+| `[WIF]` `Source Program`, `Source Version` of a file another program wrote | `Draft.retained` as `[PRIVATE PLY SOURCE]` | ✅ (Ply's written file names Ply as its `Source Program`; the first program is recorded in this private section and kept through every later save; a file that already has the section keeps it) |
 | `[COLOR PALETTE]` `Range`, `Form` | palette range/format | ✅ (any `Range` scaled to 0..255; re-export normalizes to 255) |
 | `[WARP THICKNESS]`, `[WEFT THICKNESS]` | `Draft.warp_thickness` / `weft_thickness` | ✅ (modeled; drives variable-cell rendering) |
 | `[PRIVATE PLY PICKS]` (Ply's WIF 1.1 private section) | `Draft.pick_roles`, `Draft.weft_work` (shuttles, starting sides, strands, shot groups, the declared double-weave construction) | ✅ (written only when something is recorded; see below) |

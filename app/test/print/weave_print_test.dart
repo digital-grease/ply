@@ -226,6 +226,50 @@ void main() {
       expect((fixture.title, fixture.author, fixture.program),
           ('Shadow weave (Atwater)', null, 'Ply'));
     });
+
+    test('a draft Ply re-saved still credits its author and the program that first wrote it',
+        () async {
+      // What the engine keeps on reading another program's file and writes back on every save: the
+      // [TEXT] lines beyond the Title, and the first program in Ply's private source section. The
+      // file the editor opened is now Ply's own (its [WIF] names Ply, its [TEXT] has the Title and
+      // the kept lines).
+      const resaved = '[WIF]\nVersion=1.1\nSource Program=Ply\n'
+          '[TEXT]\nTitle=Snail Trail\nAuthor=A. Weaver\nEMail=a@example.org\n'
+          '[PRIVATE PLY SOURCE]\nSource Program=Loomcraft\nSource Version=4.2\n';
+      final doc = aw2Doc().copyWith(retained: [
+        RetainedSection(kWifTextSection, const [
+          RetainedEntry('Author', 'A. Weaver'),
+          RetainedEntry('EMail', 'a@example.org'),
+        ]),
+        RetainedSection('PRIVATE PLY SOURCE', const [
+          RetainedEntry('Source Program', 'Loomcraft'),
+          RetainedEntry('Source Version', '4.2'),
+        ]),
+      ]);
+      expect(readWifAttribution(resaved).program, 'Loomcraft 4.2',
+          reason: "Ply's record of the first program, not the latest writer");
+      final d = await _doc(doc, wif: resaved);
+      final source = _section(d, 'Source')!;
+      expect([for (final f in _all<PrintFacts>(source).single.facts) '${f.label}: ${f.value}'],
+          ['Title in the file: Snail Trail', 'Author: A. Weaver', 'Written by: Loomcraft 4.2']);
+      expect(_all<PrintParagraph>(source).single.text,
+          'The file also lists contact details, which Ply does not print.');
+      expect(_text(d), isNot(contains('a@example.org')));
+      // The credit is printed under Source, so it is not listed as data Ply does not print.
+      expect(_text(d), isNot(contains('keeps but does not print')));
+
+      // The draft alone (no file: generated, or the file is gone) still carries its credit.
+      final a = weaveAttribution(doc);
+      expect(
+          (a.title, a.author, a.program, a.hasContact), (null, 'A. Weaver', 'Loomcraft 4.2', true));
+      // Any other kept section is still named.
+      final vendor = doc.copyWith(retained: [
+        ...doc.retained,
+        RetainedSection('LOOMCRAFT EXTRAS', const [RetainedEntry('Bobbins', '3')]),
+      ]);
+      expect(_text(await _doc(vendor)),
+          contains('The file holds data Ply keeps but does not print: LOOMCRAFT EXTRAS.'));
+    });
   });
 
   group('materials', () {

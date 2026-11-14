@@ -524,9 +524,9 @@ class DraftRepository {
         for (final g in base.shotGroups)
           if (replaced == null || g.end <= replaced.$1 || g.start >= replaced.$2) g,
       ],
-      // Per-thread retained WARP/WEFT sections desync if a dimension changed; drop them then, else
-      // keep (passing null leaves base.retained untouched).
-      retained: (newEnds != base.ends || newPicks != base.picks) ? const <RetainedSection>[] : null,
+      // A per-thread retained WARP/WEFT section desyncs when its axis changes, so it is dropped then;
+      // the file's credit and every other kept section stay (null leaves base.retained untouched).
+      retained: retainedForSize(base, ends: newEnds, picks: newPicks),
     );
     return withSoundShotGroups(out);
   }

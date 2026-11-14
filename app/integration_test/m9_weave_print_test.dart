@@ -18,6 +18,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/models/draft_doc.dart';
+import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/models/use_tabby.dart';
 import 'package:ply/src/print/pdf_builder.dart';
 import 'package:ply/src/print/pdf_fonts.dart';
@@ -447,5 +448,38 @@ void main() {
     final mirrored = await pdf(
         buildWeavePrintDocument(source, withProblemsBox: false, corner: BookCorner.topLeft));
     expect(mirrored.text, contains('U L L U U L L U 1 → 1 ← 1 → 1 ← 1 → 1 ← 1 → 1 ←'));
+  });
+
+  testWidgets('a draft from another program keeps its author and origin through a save and reopen',
+      (tester) async {
+    // The AW-2 draft as another program would have written it: its own Source Program, an author
+    // and a contact line in [TEXT].
+    final foreign = kAw2Wif
+        .replaceFirst(
+            RegExp(r'Source Program=[^\r\n]*'), 'Source Program=Loomcraft\nSource Version=4.2')
+        .replaceFirst('[TEXT]', '[TEXT]\nAuthor=A. Weaver\nEMail=a@example.org');
+    expect(foreign, contains('Source Program=Loomcraft'));
+    expect(foreign, contains('Author=A. Weaver'));
+    final repo = DraftRepository();
+    final doc = await repo.parseDoc(foreign);
+    final meta = DraftMeta(name: doc.name, savedAt: DateTime.now(), lastOpened: DateTime.now());
+    final id = await repo.saveDto(doc, meta: meta);
+    addTearDown(() => repo.delete(id));
+    final saved = await repo.readWif(id);
+    expect(saved, contains('Source Program=Ply'), reason: 'the file names its real writer');
+    expect(saved, contains('Author=A. Weaver'));
+    expect(saved, contains('[PRIVATE PLY SOURCE]'));
+    final reopened = await repo.parseDoc(saved);
+    // An edit that changes the size keeps the credit (only per-thread data on a changed axis goes).
+    final grown = await repo.resizeDoc(reopened, ends: 24, picks: 24, shafts: 4, treadles: 4);
+    for (final draft in [reopened, grown]) {
+      final source = await gatherWeavePrint(repo, name: draft.name, doc: draft, sourceWif: saved);
+      expect((source.attribution.author, source.attribution.program, source.attribution.hasContact),
+          ('A. Weaver', 'Loomcraft 4.2', true));
+      final r = await pdf(buildWeavePrintDocument(source, withProblemsBox: false));
+      expect(r.text, contains('Author A. Weaver'));
+      expect(r.text, contains('Written by Loomcraft 4.2'));
+      expect(r.text, isNot(contains('a@example.org')));
+    }
   });
 }

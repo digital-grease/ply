@@ -80,9 +80,9 @@ void checkWeavePrintSize(DraftDoc doc) {
 // Source attribution
 // ---------------------------------------------------------------------------------------------------
 
-/// What a WIF file says about where it came from: its [title] and [author] (`[TEXT]`) and the
-/// [program] that wrote it (`[WIF]` Source Program and Version). [hasContact] when `[TEXT]` also
-/// lists contact details (address, email, telephone, fax), which Ply never prints.
+/// Where a draft came from: its [title] and [author] (`[TEXT]`) and the [program] that first wrote
+/// it. [hasContact] when `[TEXT]` also lists contact details (address, email, telephone, fax), which
+/// Ply never prints.
 class WeaveAttribution {
   const WeaveAttribution({this.title, this.author, this.program, this.hasContact = false});
   final String? title;
@@ -91,14 +91,28 @@ class WeaveAttribution {
   final bool hasContact;
 }
 
-/// Read [WeaveAttribution] from WIF text (the editor's source file). Only those keys are read; every
-/// value is trimmed, stripped of control characters and cut to 120 characters. An absent or
-/// unreadable file gives an empty attribution.
+const _contactKeys = ['address', 'email', 'e-mail', 'telephone', 'phone', 'fax'];
+
+/// [raw] trimmed, stripped of control characters and cut to 120 characters; null when empty.
+String? _creditValue(String raw) {
+  var value = raw.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
+  if (value.runes.length > 120) value = '${String.fromCharCodes(value.runes.take(119))}…';
+  return value.isEmpty ? null : value;
+}
+
+String? _programText(String? program, String? version) =>
+    program == null ? null : (version == null ? program : '$program $version');
+
+/// Read [WeaveAttribution] from WIF text (the editor's source file): `[TEXT]` Title and Author, and
+/// the program from Ply's record of the first program that wrote the file (`[PRIVATE PLY SOURCE]`)
+/// or else `[WIF]` Source Program and Version. Only those keys are read; every value is cleaned as
+/// [_creditValue] says. An absent or unreadable file gives an empty attribution.
 WeaveAttribution readWifAttribution(String? wif) {
   if (wif == null || wif.isEmpty) return const WeaveAttribution();
   String? section;
   final text = <String, String>{};
   final head = <String, String>{};
+  final origin = <String, String>{};
   for (final raw in wif.split(RegExp(r'\r\n|\r|\n'))) {
     final line = raw.trim();
     if (line.isEmpty || line.startsWith(';')) continue;
@@ -110,20 +124,40 @@ WeaveAttribution readWifAttribution(String? wif) {
     final eq = line.indexOf('=');
     if (eq <= 0) continue;
     final key = line.substring(0, eq).trim().toLowerCase();
-    var value = line.substring(eq + 1).replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
-    if (value.runes.length > 120) value = '${String.fromCharCodes(value.runes.take(119))}…';
-    if (value.isEmpty) continue;
-    if (section == 'TEXT') text[key] = value;
+    final value = _creditValue(line.substring(eq + 1));
+    if (value == null) continue;
+    if (section == kWifTextSection) text[key] = value;
     if (section == 'WIF') head[key] = value;
+    if (section == kWifSourceSection) origin[key] = value;
   }
-  final program = head['source program'];
-  final version = head['source version'];
   return WeaveAttribution(
     title: text['title'],
     author: text['author'],
-    program: program == null ? null : (version == null ? program : '$program $version'),
-    hasContact:
-        const ['address', 'email', 'e-mail', 'telephone', 'phone', 'fax'].any(text.containsKey),
+    program: _programText(origin['source program'], origin['source version']) ??
+        _programText(head['source program'], head['source version']),
+    hasContact: _contactKeys.any(text.containsKey),
+  );
+}
+
+/// Where [doc] came from. The draft carries its file's credit itself (the engine keeps the `[TEXT]`
+/// lines beyond the Title and the first program that wrote it, through every edit and save), so that
+/// comes first; [sourceWif], the file the editor opened, adds the Title it had and anything the
+/// draft does not carry. A draft made in Ply has no attribution.
+WeaveAttribution weaveAttribution(DraftDoc doc, {String? sourceWif}) {
+  final file = readWifAttribution(sourceWif);
+  Map<String, String> kept(String name) => {
+        for (final s in doc.retained)
+          if (s.name.toUpperCase() == name)
+            for (final e in s.entries)
+              if (_creditValue(e.value) case final v?) e.key.trim().toLowerCase(): v,
+      };
+  final text = kept(kWifTextSection);
+  final origin = kept(kWifSourceSection);
+  return WeaveAttribution(
+    title: file.title,
+    author: text['author'] ?? file.author,
+    program: _programText(origin['source program'], origin['source version']) ?? file.program,
+    hasContact: file.hasContact || _contactKeys.any(text.containsKey),
   );
 }
 
@@ -275,7 +309,7 @@ Future<WeavePrintSource> gatherWeavePrint(
     drawdownError: drawdownError,
     colors: colors,
     colorsError: colorsError,
-    attribution: readWifAttribution(sourceWif),
+    attribution: weaveAttribution(doc, sourceWif: sourceWif),
     credit: trimmed == null || trimmed.isEmpty ? null : trimmed,
     printedAt: now ?? DateTime.now(),
   );
@@ -752,9 +786,14 @@ PrintDocument buildWeavePrintDocument(
     printNotes.add('The drawdowns show every intersection of both layers, not the face of the '
         'cloth.');
   }
-  if (doc.retained.isNotEmpty) {
-    printNotes.add('The file holds data Ply keeps but does not print: '
-        '${_and([for (final r in doc.retained) r.name])}.');
+  // The file's credit is printed under Source; any other kept section is named here.
+  final unprinted = [
+    for (final r in doc.retained)
+      if (r.name.toUpperCase() != kWifTextSection && r.name.toUpperCase() != kWifSourceSection)
+        r.name,
+  ];
+  if (unprinted.isNotEmpty) {
+    printNotes.add('The file holds data Ply keeps but does not print: ${_and(unprinted)}.');
   }
 
   // --- problems ------------------------------------------------------------------------------------

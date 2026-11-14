@@ -305,6 +305,16 @@ final class DraftLiftplan extends DraftDrive {
   String toString() => 'DraftLiftplan(${liftplan.length} picks)';
 }
 
+/// The retained section holding a file's `[TEXT]` lines other than the Title (its author, contact
+/// lines and other credit): the engine keeps them on reading and writes them back into `[TEXT]`, so a
+/// draft Ply re-saves still names who made it. Mirrors `ply_weave::wif::TEXT_SECTION`.
+const String kWifTextSection = 'TEXT';
+
+/// The retained private section recording the program that first wrote a draft (`Source Program`,
+/// `Source Version`), kept through every save since a file Ply writes names Ply as its writer.
+/// Mirrors `ply_weave::wif::SOURCE_SECTION`.
+const String kWifSourceSection = 'PRIVATE PLY SOURCE';
+
 /// One `key=value` line of a retained (unmodeled) WIF section. Immutable, value-equal.
 class RetainedEntry {
   const RetainedEntry(this.key, this.value);
@@ -718,11 +728,21 @@ class DraftDoc {
 /// `WEFT ...` section (spacing, say) is dropped because its one-row-per-pick data would no longer
 /// line up, and everything else is kept. The same rule the engine's resize applies. Null (leave
 /// unchanged) when the pick count does not change.
-List<RetainedSection>? retainedForPickCount(DraftDoc doc, int picks) {
-  if (picks == doc.picks) return null;
+List<RetainedSection>? retainedForPickCount(DraftDoc doc, int picks) =>
+    retainedForSize(doc, ends: doc.ends, picks: picks);
+
+/// The retained WIF sections to keep after an edit resizes [doc] to [ends] by [picks]: a per-thread
+/// section on an axis whose count changes (`WARP ...` for ends, `WEFT ...` for picks) is dropped,
+/// because its one-row-per-thread data would no longer line up; everything else (the file's credit,
+/// vendor sections, Ply's private sections) is kept. The same rule as the engine's
+/// `Draft::resized`. Null (leave unchanged) when neither count changes.
+List<RetainedSection>? retainedForSize(DraftDoc doc, {required int ends, required int picks}) {
+  if (ends == doc.ends && picks == doc.picks) return null;
   return [
     for (final s in doc.retained)
-      if (!s.name.toUpperCase().startsWith('WEFT ')) s,
+      if (!(s.name.toUpperCase().startsWith('WARP ') && ends != doc.ends) &&
+          !(s.name.toUpperCase().startsWith('WEFT ') && picks != doc.picks))
+        s,
   ];
 }
 
