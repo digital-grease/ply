@@ -1,21 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../print/knit_print.dart';
+import '../print/print_export.dart' show PdfExportText;
 import '../state/knit_editor_providers.dart';
 
 /// The knit chart rendered as readable, row-by-row written instructions — the textual companion to
 /// the visual chart. Watches [knitWrittenProvider], so it tracks live edits if the chart changes
 /// underneath. Rows are listed cast-on edge first (the order a knitter works them), after the cast-on
 /// line ("Cast on 26 sts.") when the pattern states one, and each line is [SelectableText] so the
-/// pattern can be copied out.
+/// pattern can be copied out. The app bar's print action makes the whole printable pattern (key,
+/// chart, these instructions, problems) as a PDF to print or share.
 class KnitWrittenScreen extends ConsumerWidget {
-  const KnitWrittenScreen({super.key});
+  const KnitWrittenScreen({this.patternName = 'Knitting pattern', super.key});
+
+  /// The open pattern's name, for the PDF's title.
+  final String patternName;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncLines = ref.watch(knitWrittenProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Written instructions')),
+      appBar: AppBar(
+        title: const Text('Written instructions'),
+        actions: [
+          IconButton(
+            tooltip: PdfExportText.action,
+            icon: const Icon(Icons.print_outlined),
+            onPressed: () => printOrShareKnitPdf(context, ref, name: patternName),
+          ),
+        ],
+      ),
       body: asyncLines.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(

@@ -24,6 +24,8 @@ dependencies:
   dynamic_color: ^1.7.0 # M4: Material You dynamic color from the device palette (with seed fallback)
   http: ^1.2.2 # OPTIONAL Ravelry connector only (the rest of the app is fully offline)
   flutter_secure_storage: ^9.2.2 # store the user's own Ravelry key in the platform keystore
+  pdf: ^3.13.1 # M9-02: build printable pattern PDFs on-device (Apache-2.0)
+  printing: ^5.15.1 # M9-02: hand a PDF to the system print and share dialogs (Apache-2.0)
   rust_lib_ply:
     path: rust_builder
 
@@ -39,3 +41,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # M9-02: the printable-PDF font (Fira Sans 4.301, SIL OFL 1.1; the license sits beside it). Bundled
+  # so a PDF never needs a font download; read with rootBundle by lib/src/print/pdf_fonts.dart.
+  assets:
+    - assets/fonts/FiraSans-Regular.ttf
+    - assets/fonts/FiraSans-Bold.ttf
+    - assets/fonts/OFL.txt

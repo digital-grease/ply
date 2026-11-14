@@ -5,6 +5,8 @@ import '../models/draft_doc.dart' show DraftColor;
 import '../models/draft_meta.dart';
 import '../models/knit_stitches.dart';
 import '../models/native_format.dart';
+import '../print/knit_print.dart';
+import '../print/print_export.dart' show PdfExportText;
 import '../rust/dto.dart' show ColorDto, SeverityKind;
 import '../rust/knit_dto.dart' show KnitIssueDto, KnitPatternDto, RepeatDto;
 import '../state/knit_editor_providers.dart';
@@ -22,7 +24,7 @@ import '../widgets/unsaved_changes_guard.dart';
 import 'knit_written_screen.dart';
 
 /// The knit editor's overflow-menu actions.
-enum _EditorMenu { zoomIn, zoomOut, written, legend, planning, settings }
+enum _EditorMenu { zoomIn, zoomOut, written, pdf, legend, planning, settings }
 
 /// The knitting chart editor (M5): paint a chart of stitch symbols, resize the grid, undo/redo, see
 /// live stitch-count validation, and save to the on-device knit library. The knit analog of the
@@ -313,14 +315,15 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
               _EditorMenu.zoomIn => _zoom(kKnitZoomStep),
               _EditorMenu.zoomOut => _zoom(-kKnitZoomStep),
               _EditorMenu.written => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const KnitWrittenScreen()),
+                  MaterialPageRoute<void>(builder: (_) => KnitWrittenScreen(patternName: _name)),
                 ),
+              _EditorMenu.pdf => printOrShareKnitPdf(context, ref, name: _name),
               _EditorMenu.legend => showKnitLegendSheet(context),
               _EditorMenu.planning => showKnitPlanningSheet(context),
               _EditorMenu.settings => showKnitSettingsSheet(context),
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
+            itemBuilder: (_) => [
+              const PopupMenuItem(
                 value: _EditorMenu.zoomIn,
                 child: ListTile(
                   leading: Icon(Icons.zoom_in),
@@ -328,7 +331,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: _EditorMenu.zoomOut,
                 child: ListTile(
                   leading: Icon(Icons.zoom_out),
@@ -336,8 +339,8 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              PopupMenuDivider(),
-              PopupMenuItem(
+              const PopupMenuDivider(),
+              const PopupMenuItem(
                 value: _EditorMenu.written,
                 child: ListTile(
                   leading: Icon(Icons.format_list_numbered),
@@ -345,7 +348,18 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
+              // Nothing to print while loading or after a failed open (the provider may still hold
+              // a PREVIOUS session's pattern).
               PopupMenuItem(
+                value: _EditorMenu.pdf,
+                enabled: !_loading && _error == null,
+                child: const ListTile(
+                  leading: Icon(Icons.print_outlined),
+                  title: Text(PdfExportText.action),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
                 value: _EditorMenu.legend,
                 child: ListTile(
                   leading: Icon(Icons.menu_book_outlined),
@@ -353,7 +367,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: _EditorMenu.planning,
                 child: ListTile(
                   leading: Icon(Icons.calculate_outlined),
@@ -361,7 +375,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: _EditorMenu.settings,
                 child: ListTile(
                   leading: Icon(Icons.tune),

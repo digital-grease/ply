@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/nalbind_repository.dart';
 import '../models/nalbind_project.dart';
 import '../models/native_format.dart';
+import '../print/nalbind_print.dart';
+import '../print/print_export.dart' show PdfExportText;
 import '../state/nalbind_providers.dart';
 import '../widgets/nalbind_diagram_view.dart';
 import '../widgets/notation_feedback.dart';
@@ -220,6 +222,14 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
       appBar: AppBar(
         title: Text(widget.openId == null ? 'New project' : 'Project'),
         actions: [
+          // Prints what the form holds now (saved or not); photos come with a saved project.
+          IconButton(
+            tooltip: PdfExportText.action,
+            icon: const Icon(Icons.print_outlined),
+            onPressed: _loading
+                ? null
+                : () => printOrShareNalbindPdf(context, ref, project: _compose(), id: _id),
+          ),
           IconButton(
             tooltip: 'Save',
             icon: const Icon(Icons.save_outlined),

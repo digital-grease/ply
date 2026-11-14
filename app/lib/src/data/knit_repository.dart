@@ -33,6 +33,12 @@ class KnitRepository {
     return _decodePreview(preview);
   }
 
+  /// The chart's raw RGBA raster at [cellPx] pixels per cell, undecoded (a printed chart is
+  /// embedded in a PDF from these pixels, so it never round-trips through a [ui.Image]). An empty
+  /// chart is a 0x0 raster.
+  Future<PreviewImage> renderPixels(KnitPatternDto pattern, {required int cellPx}) =>
+      renderKnitPreview(dto: pattern, cellPx: cellPx);
+
   /// Structural + full stitch-count validation of the chart; empty list = clean.
   Future<List<KnitIssueDto>> validate(KnitPatternDto pattern) =>
       validateKnit(dto: pattern);
