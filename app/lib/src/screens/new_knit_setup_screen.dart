@@ -274,7 +274,8 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text('$_ribKnit×$_ribPurl rib',
-                  style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                  style: text.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ),
           ],
           if (_starter != KnitStarter.stockinette) ...[
@@ -282,8 +283,10 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
             _numField(_bandRows, 'Starter rows (blank = all)'),
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('Limit the pattern to the first N rows (e.g. a ribbed cuff), then stockinette.',
-                  style: text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              child: Text(
+                  'Limit the pattern to the first N rows (e.g. a ribbed cuff), then stockinette.',
+                  style: text.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ),
           ],
           const SizedBox(height: 28),

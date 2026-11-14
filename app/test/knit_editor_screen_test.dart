@@ -118,15 +118,15 @@ class FakeSavingRepo extends FakeEditorRepo {
   Future<KnitEntry> openKnit(String id) async {
     openCount++;
     return KnitEntry(
-        id: id,
-        meta: DraftMeta(
-          name: 'Saved hat',
-          craft: 'Knitting',
-          savedAt: DateTime.utc(2020),
-          lastOpened: DateTime.utc(2020),
-        ),
-        patternPath: '/tmp/$id.plyknit',
-      );
+      id: id,
+      meta: DraftMeta(
+        name: 'Saved hat',
+        craft: 'Knitting',
+        savedAt: DateTime.utc(2020),
+        lastOpened: DateTime.utc(2020),
+      ),
+      patternPath: '/tmp/$id.plyknit',
+    );
   }
 }
 
@@ -189,7 +189,8 @@ Future<ProviderContainer> pumpEditor(WidgetTester tester, FakeEditorRepo repo) a
 }
 
 void main() {
-  testWidgets('opening with an initialPattern (the New flow) loads without a build-phase provider error',
+  testWidgets(
+      'opening with an initialPattern (the New flow) loads without a build-phase provider error',
       (tester) async {
     final c =
         ProviderContainer(overrides: [knitRepositoryProvider.overrideWithValue(FakeEditorRepo())]);
@@ -200,7 +201,8 @@ void main() {
         // The New pattern setup screen hands the editor a freshly-built pattern via initialPattern;
         // this branch must defer its provider write off the build frame (Riverpod forbids mutating
         // during initState/build).
-        child: const MaterialApp(home: KnitEditorScreen(initialPattern: KnitEditorState.placeholder)),
+        child:
+            const MaterialApp(home: KnitEditorScreen(initialPattern: KnitEditorState.placeholder)),
       ),
     );
     await tester.pumpAndSettle();
@@ -279,7 +281,8 @@ void main() {
       return c;
     }
 
-    testWidgets('Mark repeat marks the selection a number of times, as one undo entry', (tester) async {
+    testWidgets('Mark repeat marks the selection a number of times, as one undo entry',
+        (tester) async {
       final c = await selectFor(tester, const KnitSelection(0, 1, 1, 2));
       expect(find.byTooltip('Mark repeat'), findsOneWidget);
       await tester.tap(find.byTooltip('Mark repeat'));
@@ -301,7 +304,8 @@ void main() {
       expect(rows[2].repeats, isEmpty);
       expect(c.read(knitEditorProvider).undo, hasLength(1));
       expect(c.read(knitSelectionProvider), isNull, reason: 'the selection clears');
-      expect(find.bySemanticsLabel('Repeats: stitches 2 to 3, rows 1 to 2, 3 times'), findsOneWidget,
+      expect(
+          find.bySemanticsLabel('Repeats: stitches 2 to 3, rows 1 to 2, 3 times'), findsOneWidget,
           reason: 'the chart shows the bracket');
     });
 
@@ -312,7 +316,8 @@ void main() {
       await tester.tap(find.text('To end'));
       await tester.pumpAndSettle();
       expect(find.text('Number of times'), findsNothing);
-      expect(find.text('Repeated across the row as many times as the stitches allow.'), findsOneWidget);
+      expect(find.text('Repeated across the row as many times as the stitches allow.'),
+          findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, 'Mark repeat'));
       await tester.pumpAndSettle();
       expect(c.read(knitEditorProvider).pattern.chart.rows[2].repeats,
@@ -337,7 +342,8 @@ void main() {
       await tester.tap(find.text('Remove repeat'));
       await tester.pumpAndSettle();
       expect(c.read(knitEditorProvider).pattern.chart.rows[0].repeats, isEmpty);
-      expect(find.bySemanticsLabel(RegExp('^Repeats:')), findsNothing, reason: 'the bracket is gone');
+      expect(find.bySemanticsLabel(RegExp('^Repeats:')), findsNothing,
+          reason: 'the bracket is gone');
     });
 
     testWidgets('selecting an existing repeat preselects its count', (tester) async {
@@ -359,7 +365,8 @@ void main() {
 
       await tester.tap(find.byTooltip('Fewer Sts'));
       await tester.pump();
-      expect(find.text('1 repeat was shortened to fit the chart. Undo to restore.'), findsOneWidget);
+      expect(
+          find.text('1 repeat was shortened to fit the chart. Undo to restore.'), findsOneWidget);
       expect(c.read(knitEditorProvider).pattern.chart.rows[0].repeats,
           const [RepeatSpanDto(start: 2, end: 3, count: RepeatDto.toEnd())]);
 
@@ -373,7 +380,8 @@ void main() {
       expect(find.textContaining('Undo to restore'), findsNothing);
     });
 
-    testWidgets('with a selection, the app bar fits Fill and Mark repeat at phone width', (tester) async {
+    testWidgets('with a selection, the app bar fits Fill and Mark repeat at phone width',
+        (tester) async {
       tester.view.physicalSize = const Size(360, 740);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -394,12 +402,14 @@ void main() {
         FakeEditorRepo(issues: const [
           KnitIssueDto(
             severity: SeverityKind.error,
-            message: 'row 2: the repeat over cols 2-5 cannot be worked to the end: row 1 produced 7 '
+            message:
+                'row 2: the repeat over cols 2-5 cannot be worked to the end: row 1 produced 7 '
                 'stitches, the rest of the row uses 2, and the 5 left are not a multiple of 4',
           ),
           KnitIssueDto(
             severity: SeverityKind.warning,
-            message: 'row 1: the repeat over cols 2-5 is worked to the end of the row, but the pattern '
+            message:
+                'row 1: the repeat over cols 2-5 is worked to the end of the row, but the pattern '
                 'has no cast-on count, so Ply cannot count this row (it needs a multiple of 4 '
                 'stitches plus 2); set the cast-on in the pattern settings',
           ),
@@ -584,13 +594,15 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Save'));
       await tester.pumpAndSettle();
-      expect(find.text('Name this pattern'), findsOneWidget, reason: 'the normal save flow names it');
+      expect(find.text('Name this pattern'), findsOneWidget,
+          reason: 'the normal save flow names it');
       await tester.enterText(find.widgetWithText(TextField, 'Pattern name'), 'Cabled hat');
       await tester.tap(find.widgetWithText(FilledButton, 'Save'));
       await tester.pumpAndSettle();
       expect(repo.saveCount, 1);
       expect(repo.savedMeta!.name, 'Cabled hat');
-      expect(identical(repo.savedPattern, edited), isTrue, reason: 'the edited chart is what saved');
+      expect(identical(repo.savedPattern, edited), isTrue,
+          reason: 'the edited chart is what saved');
       expect(find.byType(KnitEditorScreen), findsNothing, reason: 'a successful save exits');
       expect(find.text('open'), findsOneWidget);
     });
@@ -612,7 +624,8 @@ void main() {
       expect(c.read(knitEditorProvider).isDirty, isTrue, reason: 'the edit is still there');
     });
 
-    testWidgets('Save on an opened pattern saves in place (no naming), then leaves', (tester) async {
+    testWidgets('Save on an opened pattern saves in place (no naming), then leaves',
+        (tester) async {
       final repo = FakeSavingRepo();
       final c = await pumpHostedEditor(tester, repo, openId: 'k1');
       editChart(c);
@@ -670,7 +683,8 @@ void main() {
       await tester.tap(find.byTooltip('Save'));
       await tester.pumpAndSettle();
       expect(repo.saveCount, 1);
-      expect(find.byType(KnitEditorScreen), findsOneWidget, reason: 'the knit editor saves in place');
+      expect(find.byType(KnitEditorScreen), findsOneWidget,
+          reason: 'the knit editor saves in place');
       expect(c.read(knitEditorProvider).isDirty, isFalse);
 
       editChart(c, row: 2, col: 2);
@@ -703,7 +717,8 @@ void main() {
 
       await tester.tap(find.byType(BackButton));
       await pumpFrames(tester);
-      expect(find.text(_leaveTitle), findsOneWidget, reason: 'a back mid-save still offers the choice');
+      expect(find.text(_leaveTitle), findsOneWidget,
+          reason: 'a back mid-save still offers the choice');
 
       await tester.tap(find.widgetWithText(TextButton, 'Discard'));
       await tester.pump(); // the discard pop begins its exit transition
@@ -788,7 +803,8 @@ void main() {
     IconButton saveButton(WidgetTester tester) =>
         tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.save_outlined));
 
-    testWidgets('a pattern saved by a newer Ply opens to a plain message and can never be saved over',
+    testWidgets(
+        'a pattern saved by a newer Ply opens to a plain message and can never be saved over',
         (tester) async {
       final repo = FakeSavingRepo()
         ..readError = const NativeFormatException(NativeFormatProblem.newerVersion,
@@ -832,8 +848,8 @@ void main() {
       expect(repo.saveCount, 1);
       expect(find.textContaining('from a newer version of Ply, so it was not replaced'),
           findsOneWidget);
-      expect(find.textContaining('Save again to keep your changes as a new pattern'),
-          findsOneWidget);
+      expect(
+          find.textContaining('Save again to keep your changes as a new pattern'), findsOneWidget);
       expect(c.read(knitEditorProvider).isDirty, isTrue, reason: 'the edits are kept');
 
       await tester.tap(find.byTooltip('Save'));

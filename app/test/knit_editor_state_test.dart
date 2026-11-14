@@ -57,7 +57,8 @@ void main() {
     expect(colored.pattern.chart.rows[0].cells[0].color, 1);
 
     final withSymbol = colored.paintCell(0, 0, KnitStitch.purl, null, keepColor: true);
-    expect(withSymbol.pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl, reason: 'symbol added');
+    expect(withSymbol.pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl,
+        reason: 'symbol added');
     expect(withSymbol.pattern.chart.rows[0].cells[0].color, 1, reason: 'colorwork kept');
   });
 
@@ -85,7 +86,8 @@ void main() {
     final filled = s.fillRegion(0, 0, 1, 2, KnitStitch.knit, 1, keepStitch: true);
     expect(filled.pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl, reason: 'symbol kept');
     expect(filled.pattern.chart.rows[0].cells[0].color, 1, reason: 'color applied');
-    expect(filled.pattern.chart.rows[0].cells[1].stitch, KnitStitch.knit, reason: 'others keep knit');
+    expect(filled.pattern.chart.rows[0].cells[1].stitch, KnitStitch.knit,
+        reason: 'others keep knit');
     expect(filled.pattern.chart.rows[0].cells[1].color, 1);
   });
 
@@ -95,15 +97,18 @@ void main() {
         .paintCell(0, 0, KnitStitch.knit, 1); // (knit, blue) at 0,0
     final filled = s.fillRegion(0, 0, 1, 1, KnitStitch.purl, null, keepColor: true);
     expect(filled.pattern.chart.rows[0].cells[0].stitch, KnitStitch.purl);
-    expect(filled.pattern.chart.rows[0].cells[0].color, 1, reason: 'the colored cell keeps its color');
-    expect(filled.pattern.chart.rows[1].cells[1].color, isNull, reason: 'an uncolored cell stays so');
+    expect(filled.pattern.chart.rows[0].cells[0].color, 1,
+        reason: 'the colored cell keeps its color');
+    expect(filled.pattern.chart.rows[1].cells[1].color, isNull,
+        reason: 'an uncolored cell stays so');
   });
 
   test('fillRegion fills a rectangle as one undo entry; cells outside are untouched', () {
     final s = KnitEditorState(pattern: pattern(4, 4)).fillRegion(1, 1, 2, 2, KnitStitch.purl, null);
     for (final r in [1, 2]) {
       for (final c in [1, 2]) {
-        expect(s.pattern.chart.rows[r].cells[c].stitch, KnitStitch.purl, reason: 'cell $r,$c filled');
+        expect(s.pattern.chart.rows[r].cells[c].stitch, KnitStitch.purl,
+            reason: 'cell $r,$c filled');
       }
     }
     expect(s.pattern.chart.rows[0].cells[0].stitch, KnitStitch.knit, reason: 'outside the rect');
@@ -116,7 +121,8 @@ void main() {
     final s = KnitEditorState(pattern: pattern(3, 3)).fillRegion(2, 9, 0, 1, KnitStitch.purl, null);
     expect(s.pattern.chart.rows[0].cells[1].stitch, KnitStitch.purl);
     expect(s.pattern.chart.rows[2].cells[2].stitch, KnitStitch.purl, reason: 'col 9 clamped to 2');
-    expect(s.pattern.chart.rows[0].cells[0].stitch, KnitStitch.knit, reason: 'col 0 outside the rect');
+    expect(s.pattern.chart.rows[0].cells[0].stitch, KnitStitch.knit,
+        reason: 'col 0 outside the rect');
   });
 
   test('fillRegion with a cable brush is a no-op (cables span columns)', () {
@@ -221,7 +227,8 @@ void main() {
 
   group('repeats on resize (clipped, never silently dropped)', () {
     test('a shrink clips a repeat that still starts inside the chart, and says so', () {
-      final p = withRepeats(4, 1, const [RepeatSpanDto(start: 1, end: 4, count: RepeatDto.toEnd())]);
+      final p =
+          withRepeats(4, 1, const [RepeatSpanDto(start: 1, end: 4, count: RepeatDto.toEnd())]);
       expect(repeatCutsMessage(repeatCutsOnResize(p, 2, 1)),
           '1 repeat was shortened to fit the chart. Undo to restore.');
       final shrunk = KnitEditorState(pattern: p).resizeChart(2, 1);
@@ -233,7 +240,8 @@ void main() {
     });
 
     test('a repeat wholly past the new edge is removed, with a notice', () {
-      final p = withRepeats(6, 1, const [RepeatSpanDto(start: 4, end: 6, count: RepeatDto.times(count: 2))]);
+      final p = withRepeats(
+          6, 1, const [RepeatSpanDto(start: 4, end: 6, count: RepeatDto.times(count: 2))]);
       final cuts = repeatCutsOnResize(p, 3, 1);
       expect((cuts.clipped, cuts.removed), (0, 1));
       expect(repeatCutsMessage(cuts),
@@ -260,9 +268,11 @@ void main() {
     });
 
     test('a resize that leaves every repeat whole says nothing and keeps them', () {
-      final p = withRepeats(4, 2, const [RepeatSpanDto(start: 0, end: 2, count: RepeatDto.times(count: 2))]);
+      final p = withRepeats(
+          4, 2, const [RepeatSpanDto(start: 0, end: 2, count: RepeatDto.times(count: 2))]);
       expect(repeatCutsOnResize(p, 6, 3).isEmpty, isTrue);
-      expect(repeatCutsMessage(repeatCutsOnResize(p, 2, 2)), isNull, reason: 'ends exactly at the edge');
+      expect(repeatCutsMessage(repeatCutsOnResize(p, 2, 2)), isNull,
+          reason: 'ends exactly at the edge');
       final grown = KnitEditorState(pattern: p).resizeChart(6, 3).pattern.chart.rows;
       expect(grown[0].repeats, p.chart.rows[0].repeats);
       expect(grown[2].repeats, isEmpty, reason: 'a new row has no repeat');
@@ -295,7 +305,8 @@ void main() {
     });
 
     test('marking the same repeat again, or a count below 1, is a no-op', () {
-      final once = KnitEditorState(pattern: pattern(4, 1)).markRepeat(0, 0, 0, 1, const RepeatDto.toEnd());
+      final once =
+          KnitEditorState(pattern: pattern(4, 1)).markRepeat(0, 0, 0, 1, const RepeatDto.toEnd());
       expect(identical(once.markRepeat(0, 0, 0, 1, const RepeatDto.toEnd()), once), isTrue);
       expect(identical(once.markRepeat(0, 2, 0, 3, const RepeatDto.times(count: 0)), once), isTrue,
           reason: 'a repeat worked 0 times is never created by the editor');
@@ -312,7 +323,8 @@ void main() {
           const [RepeatSpanDto(start: 0, end: 2, count: RepeatDto.times(count: 2))]);
       expect(cleared.pattern.chart.rows[0].repeats, hasLength(2), reason: 'row 0 was not selected');
       expect(cleared.undo.length, s.undo.length + 1);
-      expect(identical(cleared.clearRepeats(1, 5, 1, 5), cleared), isTrue, reason: 'nothing left to clear');
+      expect(identical(cleared.clearRepeats(1, 5, 1, 5), cleared), isTrue,
+          reason: 'nothing left to clear');
     });
 
     test('painting keeps a row\'s repeats', () {
@@ -405,7 +417,8 @@ void main() {
         'fillRegion': (s) => s.fillRegion(0, 0, 1, 1, KnitStitch.purl, null),
         'resizeChart': (s) => s.resizeChart(6, 3),
         'markRepeat': (s) => s.markRepeat(0, 0, 0, 1, const RepeatDto.toEnd()),
-        'clearRepeats': (s) => s.markRepeat(0, 0, 0, 1, const RepeatDto.toEnd()).clearRepeats(0, 0, 0, 1),
+        'clearRepeats': (s) =>
+            s.markRepeat(0, 0, 0, 1, const RepeatDto.toEnd()).clearRepeats(0, 0, 0, 1),
         'setGauge': (s) => s.setGauge(const GaugeDto(sts: 20, rows: 28, unit: UnitKind.inches)),
         'setConstruction': (s) => s.setConstruction(ConstructionKind.inTheRound),
         'setFirstRowSide': (s) => s.setFirstRowSide(SideKind.ws),
@@ -419,7 +432,8 @@ void main() {
       };
       for (final MapEntry(key: name, value: edit) in edits.entries) {
         final next = edit(base);
-        expect(identical(next.pattern, base.pattern), isFalse, reason: '$name must change something');
+        expect(identical(next.pattern, base.pattern), isFalse,
+            reason: '$name must change something');
         expect(next.pattern.castOn, 26, reason: '$name keeps the cast-on');
       }
     });
@@ -471,8 +485,8 @@ void main() {
   test('placing a cable over an existing cable clears the old one', () {
     var s = KnitEditorState(pattern: cablePattern(6)).addCable(cable22, '2/2RC'); // id 2, span 4
     s = s.paintCell(0, 0, 2, null); // cable A at cols 0..3
-    const cable11 =
-        CableDefDto(front: 1, back: 1, direction: CrossKind.left, frontPurl: false, backPurl: false);
+    const cable11 = CableDefDto(
+        front: 1, back: 1, direction: CrossKind.left, frontPurl: false, backPurl: false);
     s = s.addCable(cable11, '1/1LC'); // id 3, span 2
     final cells = s.paintCell(0, 2, 3, null).pattern.chart.rows[0].cells; // cable B at 2..3
     expect(cells[0].stitch, KnitStitch.knit, reason: 'old cable A anchor cleared');

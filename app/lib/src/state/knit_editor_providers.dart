@@ -104,7 +104,8 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
 
   void paintCell(int row, int col, int stitch, int? color,
           {bool keepColor = false, bool keepStitch = false}) =>
-      state = state.paintCell(row, col, stitch, color, keepColor: keepColor, keepStitch: keepStitch);
+      state =
+          state.paintCell(row, col, stitch, color, keepColor: keepColor, keepStitch: keepStitch);
 
   void fillRegion(int r0, int c0, int r1, int c1, int stitch, int? color,
           {bool keepColor = false, bool keepStitch = false}) =>
@@ -122,8 +123,7 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
   void markRepeat(int r0, int c0, int r1, int c1, RepeatDto count) =>
       state = state.markRepeat(r0, c0, r1, c1, count);
 
-  void clearRepeats(int r0, int c0, int r1, int c1) =>
-      state = state.clearRepeats(r0, c0, r1, c1);
+  void clearRepeats(int r0, int c0, int r1, int c1) => state = state.clearRepeats(r0, c0, r1, c1);
 
   void setGauge(GaugeDto gauge) => state = state.setGauge(gauge);
 
@@ -212,8 +212,8 @@ class KnitValidationController extends AutoDisposeAsyncNotifier<List<KnitIssueDt
 /// The live written-instructions rendering of the editor pattern (RS/WS aware, run-length collapsed,
 /// cast-on edge first). The written-instructions screen watches this. Same latest-wins shape as
 /// [knitValidationProvider].
-final knitWrittenProvider =
-    AutoDisposeAsyncNotifierProvider<KnitWrittenController, List<String>>(KnitWrittenController.new);
+final knitWrittenProvider = AutoDisposeAsyncNotifierProvider<KnitWrittenController, List<String>>(
+    KnitWrittenController.new);
 
 class KnitWrittenController extends AutoDisposeAsyncNotifier<List<String>> {
   int _seq = 0;

@@ -52,8 +52,7 @@ const _pattern = KnitPatternDto(
   notes: '',
 );
 
-List<int> fixtureBytes(String rel) =>
-    File('../fixtures/migrations/$rel').readAsBytesSync();
+List<int> fixtureBytes(String rel) => File('../fixtures/migrations/$rel').readAsBytesSync();
 
 void main() {
   late Directory dir;
@@ -129,7 +128,8 @@ void main() {
       await repo.saveKnit(pattern: _pattern, meta: meta('Sampler'), id: 'k1');
       final backup = f('k1.plyknit.v1.bak');
       expect(backup.readAsBytesSync(), original, reason: 'the released bytes, untouched');
-      expect(f('k1.plyknit').readAsStringSync(), _current, reason: 'upgraded to the current format');
+      expect(f('k1.plyknit').readAsStringSync(), _current,
+          reason: 'upgraded to the current format');
       expect(plyknitSchemaVersion(f('k1.plyknit').readAsStringSync()), 3);
 
       // The file is current now: later saves neither add nor replace a backup.
@@ -183,8 +183,8 @@ void main() {
     test('a new pattern is written with its meta as given and no backup', () async {
       final id = await repo.saveKnit(pattern: _pattern, meta: meta('Fresh'));
       expect(namesIn(dir), ['$id.json', '$id.plyknit']);
-      final saved = DraftMeta.fromJson(
-          jsonDecode(f('$id.json').readAsStringSync()) as Map<String, dynamic>);
+      final saved =
+          DraftMeta.fromJson(jsonDecode(f('$id.json').readAsStringSync()) as Map<String, dynamic>);
       expect(saved.name, 'Fresh');
       expect(saved.craft, 'Knitting');
     });

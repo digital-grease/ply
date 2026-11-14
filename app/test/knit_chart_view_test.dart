@@ -62,14 +62,16 @@ KnitPatternDto gridWithRepeats(int w, int h, Map<int, List<RepeatSpanDto>> repea
     chart: ChartDto(
       width: w,
       rows: [
-        for (var r = 0; r < h; r++) RowDto(cells: g.chart.rows[r].cells, repeats: repeats[r] ?? const []),
+        for (var r = 0; r < h; r++)
+          RowDto(cells: g.chart.rows[r].cells, repeats: repeats[r] ?? const []),
       ],
     ),
     notes: g.notes,
   );
 }
 
-Future<ProviderContainer> pump(WidgetTester tester, {int cell = 20, KnitPatternDto? pattern}) async {
+Future<ProviderContainer> pump(WidgetTester tester,
+    {int cell = 20, KnitPatternDto? pattern}) async {
   final c = ProviderContainer(
     overrides: [knitRepositoryProvider.overrideWithValue(FakeKnitRepo())],
   );
@@ -108,7 +110,8 @@ void main() {
         reason: 'the bottom row is untouched');
   });
 
-  testWidgets('in SELECT mode a single tap still PAINTS the cell (not just selects)', (tester) async {
+  testWidgets('in SELECT mode a single tap still PAINTS the cell (not just selects)',
+      (tester) async {
     final c = await pump(tester);
     c.read(knitToolProvider.notifier).state = KnitTool.select;
     await tester.pump();
@@ -140,7 +143,8 @@ void main() {
     const times3 = RepeatSpanDto(start: 1, end: 5, count: RepeatDto.times(count: 3));
     const toEnd = RepeatSpanDto(start: 1, end: 5, count: RepeatDto.toEnd());
 
-    test('consecutive rows with the same repeat share one box; a different count starts another', () {
+    test('consecutive rows with the same repeat share one box; a different count starts another',
+        () {
       final chart = gridWithRepeats(6, 4, {
         0: [times3],
         1: [times3],
@@ -169,14 +173,21 @@ void main() {
     test('labels and descriptions read as the chart is numbered', () {
       expect(repeatLabel(const RepeatDto.times(count: 3)), '×3');
       expect(repeatLabel(const RepeatDto.toEnd()), 'to end');
-      const box = RepeatBox(colStart: 1, colEnd: 5, rowLo: 0, rowHi: 3, count: RepeatDto.times(count: 3));
+      const box =
+          RepeatBox(colStart: 1, colEnd: 5, rowLo: 0, rowHi: 3, count: RepeatDto.times(count: 3));
       // Width 6: storage cols 1..4 are axis stitches 5..2 (numbered right to left).
       expect(describeRepeatBox(box, 6), 'stitches 2 to 5, rows 1 to 4, 3 times');
     });
 
-    testWidgets('the chart shows a bracket for each repeat, and taps inside it still paint', (tester) async {
-      final c = await pump(tester, pattern: gridWithRepeats(8, 8, {0: [times3], 1: [times3]}));
-      expect(find.bySemanticsLabel('Repeats: stitches 4 to 7, rows 1 to 2, 3 times'), findsOneWidget);
+    testWidgets('the chart shows a bracket for each repeat, and taps inside it still paint',
+        (tester) async {
+      final c = await pump(tester,
+          pattern: gridWithRepeats(8, 8, {
+            0: [times3],
+            1: [times3]
+          }));
+      expect(
+          find.bySemanticsLabel('Repeats: stitches 4 to 7, rows 1 to 2, 3 times'), findsOneWidget);
       // Tap col 2 of row 0 (inside the bracket): the overlay must not swallow the paint.
       final origin = tester.getTopLeft(find.byType(KnitChartView));
       await tester.tapAt(origin + const Offset(50, 150));
@@ -195,7 +206,8 @@ void main() {
       final c = await pump(tester);
       c.read(knitEditorProvider.notifier).markRepeat(2, 0, 2, 3, const RepeatDto.toEnd());
       await tester.pump();
-      expect(find.bySemanticsLabel('Repeats: stitches 5 to 8, row 3, to the end of the row'), findsOneWidget);
+      expect(find.bySemanticsLabel('Repeats: stitches 5 to 8, row 3, to the end of the row'),
+          findsOneWidget);
     });
   });
 }

@@ -119,7 +119,9 @@ class KnitEditorState {
     for (var row = rLo; row <= rHi; row++) {
       final r = newRows[row];
       // Don't disturb cables when only colors are changing.
-      final cells = keepStitch ? [...r.cells] : _clearCablesOverlapping(pattern.legend, r.cells, cLo, cHi + 1);
+      final cells = keepStitch
+          ? [...r.cells]
+          : _clearCablesOverlapping(pattern.legend, r.cells, cLo, cHi + 1);
       for (var c = cLo; c <= cHi && c < cells.length; c++) {
         cells[c] = CellDto(
           stitch: keepStitch ? cells[c].stitch : stitch,

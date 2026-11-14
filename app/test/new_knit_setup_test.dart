@@ -147,7 +147,8 @@ void main() {
         expect(find.text('Cast on 20 stitches'), findsOneWidget, reason: 'the default size');
         await tester.enterText(stitches, '26');
         await tester.pump();
-        expect(find.text('Cast on 26 stitches'), findsOneWidget, reason: 'it names the typed count');
+        expect(find.text('Cast on 26 stitches'), findsOneWidget,
+            reason: 'it names the typed count');
         expect(tester.widget<SwitchListTile>(castOnSwitch).value, isTrue);
       });
       expect(p, isNotNull);

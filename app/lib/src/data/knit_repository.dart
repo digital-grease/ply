@@ -40,8 +40,7 @@ class KnitRepository {
       renderKnitPreview(dto: pattern, cellPx: cellPx);
 
   /// Structural + full stitch-count validation of the chart; empty list = clean.
-  Future<List<KnitIssueDto>> validate(KnitPatternDto pattern) =>
-      validateKnit(dto: pattern);
+  Future<List<KnitIssueDto>> validate(KnitPatternDto pattern) => validateKnit(dto: pattern);
 
   /// Parse a native `.plyknit` file (any supported schema version; a legacy one is migrated in
   /// memory, never rewritten) into an editor [KnitPatternDto]. A file this build must not open (saved

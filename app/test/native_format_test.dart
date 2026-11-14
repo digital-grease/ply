@@ -65,7 +65,8 @@ void main() {
     test('an envelope reports its own version', () {
       expect(plyknitSchemaVersion(envelope(2)), 2);
       expect(plyknitSchemaVersion(envelope(3)), 3);
-      expect(plyknitSchemaVersion(envelope(4)), 4, reason: 'newer versions are reported, not hidden');
+      expect(plyknitSchemaVersion(envelope(4)), 4,
+          reason: 'newer versions are reported, not hidden');
     });
 
     test('anything that is not a .plyknit is null', () {
@@ -98,7 +99,8 @@ void main() {
           'The saved copy of this pattern is from a newer version of Ply, so it was not replaced.');
       const u = NativeFormatException(NativeFormatProblem.unreadable,
           document: NativeDocument.nalbindProject, whileSaving: true);
-      expect(u.message, 'The saved copy of this project could not be read, so it was not replaced.');
+      expect(
+          u.message, 'The saved copy of this project could not be read, so it was not replaced.');
     });
 
     test('wrong format and unreadable messages', () {

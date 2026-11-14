@@ -93,9 +93,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e is NativeFormatException
-            ? e.message
-            : 'Could not open the knitting pattern: $e';
+        _error = e is NativeFormatException ? e.message : 'Could not open the knitting pattern: $e';
         _loading = false;
       });
     }
@@ -117,8 +115,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
   /// a failed open (the provider may still hold a PREVIOUS session's pattern until this one loads);
   /// otherwise it is the editor state's identity-based [KnitEditorState.isDirty].
   @override
-  bool get hasUnsavedChanges =>
-      !_loading && _error == null && ref.read(knitEditorProvider).isDirty;
+  bool get hasUnsavedChanges => !_loading && _error == null && ref.read(knitEditorProvider).isDirty;
 
   /// The normal save flow (the Save button and the leave prompt's Save both run it, via
   /// [guardedSave], which also makes a second request join an in-flight one). Saves in place: the
@@ -149,7 +146,8 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     try {
       final repo = ref.read(knitRepositoryProvider);
       final now = DateTime.now();
-      final meta = DraftMeta(name: name, craft: 'Knitting', savedAt: _savedAt ?? now, lastOpened: now);
+      final meta =
+          DraftMeta(name: name, craft: 'Knitting', savedAt: _savedAt ?? now, lastOpened: now);
       final id = await repo.saveKnit(pattern: pattern, meta: meta, id: _id);
       // Written. If the editor was discarded while the write was in flight, stop here: `ref` is
       // unusable once disposed, and the next session's load resets the baseline anyway.
@@ -258,136 +256,136 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
       canPop: _loading || _error != null || !edited,
       onPopInvokedWithResult: onLeaveRequested,
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(_name),
-        actions: [
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: select ? 'Selecting (tap to draw)' : 'Drawing (tap to select)',
-            isSelected: select,
-            icon: Icon(select ? Icons.select_all : Icons.edit_outlined),
-            onPressed: () {
-              final next = select ? KnitTool.paint : KnitTool.select;
-              ref.read(knitToolProvider.notifier).state = next;
-              if (next == KnitTool.paint) ref.read(knitSelectionProvider.notifier).state = null;
-            },
-          ),
-          if (select && selection != null) ...[
+        appBar: AppBar(
+          title: Text(_name),
+          actions: [
             IconButton(
               visualDensity: VisualDensity.compact,
-              tooltip: 'Fill selection',
-              icon: const Icon(Icons.format_color_fill),
-              onPressed: _fillSelection,
+              tooltip: select ? 'Selecting (tap to draw)' : 'Drawing (tap to select)',
+              isSelected: select,
+              icon: Icon(select ? Icons.select_all : Icons.edit_outlined),
+              onPressed: () {
+                final next = select ? KnitTool.paint : KnitTool.select;
+                ref.read(knitToolProvider.notifier).state = next;
+                if (next == KnitTool.paint) ref.read(knitSelectionProvider.notifier).state = null;
+              },
             ),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Mark repeat',
-              icon: const Icon(Icons.repeat),
-              onPressed: _repeatSelection,
-            ),
-          ],
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Save',
-            icon: _saving
-                ? const SizedBox(
-                    width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.save_outlined),
-            // Nothing to save while loading or after a failed open (the provider may still hold a
-            // PREVIOUS session's pattern).
-            onPressed: _saving || _loading || _error != null ? null : guardedSave,
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Undo',
-            icon: const Icon(Icons.undo),
-            onPressed: canUndo ? () => ref.read(knitEditorProvider.notifier).undo() : null,
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Redo',
-            icon: const Icon(Icons.redo),
-            onPressed: canRedo ? () => ref.read(knitEditorProvider.notifier).redo() : null,
-          ),
-          PopupMenuButton<_EditorMenu>(
-            tooltip: 'More',
-            onSelected: (m) => switch (m) {
-              _EditorMenu.zoomIn => _zoom(kKnitZoomStep),
-              _EditorMenu.zoomOut => _zoom(-kKnitZoomStep),
-              _EditorMenu.written => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => KnitWrittenScreen(patternName: _name)),
-                ),
-              _EditorMenu.pdf => printOrShareKnitPdf(context, ref, name: _name),
-              _EditorMenu.legend => showKnitLegendSheet(context),
-              _EditorMenu.planning => showKnitPlanningSheet(context),
-              _EditorMenu.settings => showKnitSettingsSheet(context),
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: _EditorMenu.zoomIn,
-                child: ListTile(
-                  leading: Icon(Icons.zoom_in),
-                  title: Text('Zoom in'),
-                  contentPadding: EdgeInsets.zero,
-                ),
+            if (select && selection != null) ...[
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Fill selection',
+                icon: const Icon(Icons.format_color_fill),
+                onPressed: _fillSelection,
               ),
-              const PopupMenuItem(
-                value: _EditorMenu.zoomOut,
-                child: ListTile(
-                  leading: Icon(Icons.zoom_out),
-                  title: Text('Zoom out'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: _EditorMenu.written,
-                child: ListTile(
-                  leading: Icon(Icons.format_list_numbered),
-                  title: Text('Written instructions'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              // Nothing to print while loading or after a failed open (the provider may still hold
-              // a PREVIOUS session's pattern).
-              PopupMenuItem(
-                value: _EditorMenu.pdf,
-                enabled: !_loading && _error == null,
-                child: const ListTile(
-                  leading: Icon(Icons.print_outlined),
-                  title: Text(PdfExportText.action),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: _EditorMenu.legend,
-                child: ListTile(
-                  leading: Icon(Icons.menu_book_outlined),
-                  title: Text('Stitch key'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: _EditorMenu.planning,
-                child: ListTile(
-                  leading: Icon(Icons.calculate_outlined),
-                  title: Text('Gauge & yardage'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: _EditorMenu.settings,
-                child: ListTile(
-                  leading: Icon(Icons.tune),
-                  title: Text('Pattern settings'),
-                  contentPadding: EdgeInsets.zero,
-                ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Mark repeat',
+                icon: const Icon(Icons.repeat),
+                onPressed: _repeatSelection,
               ),
             ],
-          ),
-        ],
-      ),
-      body: _buildBody(),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Save',
+              icon: _saving
+                  ? const SizedBox(
+                      width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.save_outlined),
+              // Nothing to save while loading or after a failed open (the provider may still hold a
+              // PREVIOUS session's pattern).
+              onPressed: _saving || _loading || _error != null ? null : guardedSave,
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Undo',
+              icon: const Icon(Icons.undo),
+              onPressed: canUndo ? () => ref.read(knitEditorProvider.notifier).undo() : null,
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Redo',
+              icon: const Icon(Icons.redo),
+              onPressed: canRedo ? () => ref.read(knitEditorProvider.notifier).redo() : null,
+            ),
+            PopupMenuButton<_EditorMenu>(
+              tooltip: 'More',
+              onSelected: (m) => switch (m) {
+                _EditorMenu.zoomIn => _zoom(kKnitZoomStep),
+                _EditorMenu.zoomOut => _zoom(-kKnitZoomStep),
+                _EditorMenu.written => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => KnitWrittenScreen(patternName: _name)),
+                  ),
+                _EditorMenu.pdf => printOrShareKnitPdf(context, ref, name: _name),
+                _EditorMenu.legend => showKnitLegendSheet(context),
+                _EditorMenu.planning => showKnitPlanningSheet(context),
+                _EditorMenu.settings => showKnitSettingsSheet(context),
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: _EditorMenu.zoomIn,
+                  child: ListTile(
+                    leading: Icon(Icons.zoom_in),
+                    title: Text('Zoom in'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: _EditorMenu.zoomOut,
+                  child: ListTile(
+                    leading: Icon(Icons.zoom_out),
+                    title: Text('Zoom out'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: _EditorMenu.written,
+                  child: ListTile(
+                    leading: Icon(Icons.format_list_numbered),
+                    title: Text('Written instructions'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                // Nothing to print while loading or after a failed open (the provider may still hold
+                // a PREVIOUS session's pattern).
+                PopupMenuItem(
+                  value: _EditorMenu.pdf,
+                  enabled: !_loading && _error == null,
+                  child: const ListTile(
+                    leading: Icon(Icons.print_outlined),
+                    title: Text(PdfExportText.action),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: _EditorMenu.legend,
+                  child: ListTile(
+                    leading: Icon(Icons.menu_book_outlined),
+                    title: Text('Stitch key'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: _EditorMenu.planning,
+                  child: ListTile(
+                    leading: Icon(Icons.calculate_outlined),
+                    title: Text('Gauge & yardage'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: _EditorMenu.settings,
+                  child: ListTile(
+                    leading: Icon(Icons.tune),
+                    title: Text('Pattern settings'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        body: _buildBody(),
       ),
     );
   }
@@ -396,7 +394,8 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
-        child: Padding(padding: const EdgeInsets.all(32), child: Text(_error!, textAlign: TextAlign.center)),
+        child: Padding(
+            padding: const EdgeInsets.all(32), child: Text(_error!, textAlign: TextAlign.center)),
       );
     }
     return const Column(
@@ -448,8 +447,7 @@ class _KnitValidationBar extends ConsumerWidget {
             button: true,
             label: _summary(errors, warnings),
             child: InkWell(
-              onTap: () =>
-                  ref.read(knitIssuesExpandedProvider.notifier).state = !expanded,
+              onTap: () => ref.read(knitIssuesExpandedProvider.notifier).state = !expanded,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
@@ -522,8 +520,8 @@ class _KnitToolBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dims = ref.watch(knitEditorProvider
-        .select((s) => (s.pattern.chart.width, s.pattern.chart.rows.length)));
+    final dims = ref.watch(
+        knitEditorProvider.select((s) => (s.pattern.chart.width, s.pattern.chart.rows.length)));
     final active = ref.watch(activeKnitStitchProvider);
     // Watch the legend so custom cable brushes appear/select live. The legend object identity only
     // changes when a cable is added (other edits reuse it), so this rebuilds rarely.
@@ -542,9 +540,11 @@ class _KnitToolBar extends ConsumerWidget {
           children: [
             Row(
               children: [
-                _Stepper(label: 'Sts', value: cols, onChanged: (v) => _resize(context, ref, v, rows)),
+                _Stepper(
+                    label: 'Sts', value: cols, onChanged: (v) => _resize(context, ref, v, rows)),
                 const SizedBox(width: 16),
-                _Stepper(label: 'Rows', value: rows, onChanged: (v) => _resize(context, ref, cols, v)),
+                _Stepper(
+                    label: 'Rows', value: rows, onChanged: (v) => _resize(context, ref, cols, v)),
               ],
             ),
             const SizedBox(height: 6),
@@ -559,8 +559,7 @@ class _KnitToolBar extends ConsumerWidget {
                   ChoiceChip(
                     label: Text(_categoryLabel(cat)),
                     selected: category == cat,
-                    onSelected: (_) =>
-                        ref.read(knitBrushCategoryProvider.notifier).state = cat,
+                    onSelected: (_) => ref.read(knitBrushCategoryProvider.notifier).state = cat,
                   ),
               ],
             ),
@@ -708,8 +707,8 @@ class _KnitColorRow extends ConsumerWidget {
                   selected: active == knitColorNone,
                   tooltip: 'No color (clear the cell colorwork)',
                   onTap: () => _selectColor(ref, knitColorNone),
-                  child: Icon(Icons.format_color_reset_outlined,
-                      size: 16, color: cs.onSurfaceVariant),
+                  child:
+                      Icon(Icons.format_color_reset_outlined, size: 16, color: cs.onSurfaceVariant),
                 ),
                 for (var i = 0; i < palette.length; i++)
                   _Swatch(
@@ -722,7 +721,8 @@ class _KnitColorRow extends ConsumerWidget {
                       final picked = await showRgbColorPicker(context,
                           initial: DraftColor(r: c.r, g: c.g, b: c.b), title: 'Edit color');
                       if (picked != null) {
-                        notifier.setPaletteColor(i, ColorDto(r: picked.r, g: picked.g, b: picked.b));
+                        notifier.setPaletteColor(
+                            i, ColorDto(r: picked.r, g: picked.g, b: picked.b));
                       }
                     },
                   ),
