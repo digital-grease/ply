@@ -80,7 +80,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Where are my patterns stored?",
-      "Your patterns are plain files saved on your device, not in any cloud or proprietary container. Weaving drafts save as standard .wif files (with a small JSON sidecar for app notes), and knitting patterns save as .plyknit JSON alongside a preview image.",
+      "Your patterns are plain files saved on your device, not in any cloud or proprietary container. Weaving drafts save as standard .wif files (with a small JSON sidecar for app notes), knitting patterns save as .plyknit JSON alongside a preview image, and nalbinding projects save as .plynal files with their photos.",
     ),
     FaqEntry(
       "What platforms does Ply run on?",
@@ -106,7 +106,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "How do I export or share a draft as a WIF file?",
-      "Right now there is no dedicated export or share button to send a .wif out to another app or folder. Your drafts are saved on-device in the library as real .wif files (with a JSON sidecar and a PNG thumbnail), so the WIF lives on your device, but a one-tap export/share flow is not built yet.",
+      "There is no one-tap WIF export yet. Your drafts are saved on your device as real .wif files (with a JSON sidecar and a PNG thumbnail). Export in a draft's library menu makes a .plybackup file, which Ply restores with \"Restore from backup\"; it is not a WIF file for other weaving programs. To give someone a draft they can read and weave from, use Print or share PDF in the editor's overflow menu.",
     ),
     FaqEntry(
       "What does the draft editor screen actually look like?",
@@ -122,7 +122,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Can the app generate a weave structure for me?",
-      "Yes. The Generate structure sheet lays down a complete plain, twill, or satin tie-up paired with a straight or point threading, sized to the warp ends and picks you enter, and commits it as a single undoable edit. It validates your inputs, for example warning that satin needs at least 5 shafts and a valid counter, so the generated cloth is always sound.",
+      "Yes. The Generate structure sheet offers plain weave, twill, satin, overshot, shadow weave, and double weave. Plain weave, twill, and satin lay down a complete tie-up with a straight or point threading, sized to the warp ends and picks you enter; shadow weave is the Atwater or Powell block weave on 4 or 8 shafts; overshot and double weave are simpler starting points (a two-block overshot with its tabby picks marked, and double weave as two layers, a tube, or double width). Each is committed as a single undoable edit, and the sheet checks your inputs first, for example warning that satin needs at least 5 shafts and a valid counter.",
     ),
     FaqEntry(
       "Will the app tell me if my draft has problems?",
@@ -171,6 +171,10 @@ const List<FaqSection> kFaq = [
     FaqEntry(
       "How do I back up my patterns, or move them to a new phone?",
       "Open Settings and choose \"Back up library\". Ply saves all your projects (weaving, knitting, and nalbinding, with their photos) into one .plybackup file wherever you choose, such as your Downloads folder or a cloud drive app. To bring them back, use \"Restore from backup\": Ply checks the file, shows you what is new, what you already have, and what differs, and only then adds the projects. Nothing in your library is replaced; a project that differs is added as a copy. The backup can also hold your app settings (theme, colors, and units; ticked by default when you back up), and a restore offers them separately, unticked, so your current settings stay unless you choose them. To share or move just one project, use Export in its menu in the library; the file it saves is restored the same way, with \"Restore from backup\".",
+    ),
+    FaqEntry(
+      "Can I print a pattern or share it as a PDF?",
+      "Yes, for every craft, and it works offline. In the weaving editor's overflow menu, the knitting editor's More menu (or the written instructions screen), or a nalbinding project's top bar, choose Print or share PDF. Print sends it to a printer, or saves it as a PDF from the print dialog; Share PDF sends it to another app. The paper follows your units setting: A4 for metric, US Letter for imperial. A weaving PDF has a book draft (threading, tie-up, treadling, and drawdown on one grid, with the tie-up in the corner you choose), the colored drawdown, a key for every mark, and written directions that work without the grids; when the picks are marked pattern and tabby, it also prints the traditional Use tabby shorthand. A knitting PDF has the gauge, the stitch key, the chart, and the written instructions; a nalbinding PDF has the notation, the loop diagram, your notes, and your photos (with their location data removed). If a pattern has errors, Ply asks first, and the PDF says so at the top. A PDF is for reading and printing; Ply does not open it again as a pattern.",
     ),
     FaqEntry(
       "What is that colored band in the editor telling me?",
