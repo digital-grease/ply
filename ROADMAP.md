@@ -3,7 +3,7 @@
 Milestones are roughly ordered. The guiding principle: **make one craft excellent end to
 end (weaving) to harden the shared shell before fanning out.**
 
-## Current state (verified 2026-11-12)
+## Current state (verified 2026-11-13)
 
 M0 to M6 have shipped. Status words: **Verified** (works in the current checkout), **Partial**
 (exists, but important behavior is missing), **Not built**.
@@ -13,16 +13,16 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 | Weaving editor, drawdown, WIF import/export, calculators, validation | Verified | Rendering is bounded to a phone memory budget; large drafts render only the visible part of the drawdown at the current zoom, so even drafts over 4 million intersections can be viewed and edited |
 | Variable thread thickness | Verified | The editor is a strict structural draft (uniform cells, ignores thickness, every cell aligned); thickness shows in the yarn previews, labelled as an approximate look, not a fabric model |
 | Structure generators | Partial | Plain/twill/satin accurate (plain weave on an odd shaft count requires a point draw); shadow weave is the authentic Atwater/Powell block weave on 4 or 8 shafts (straight or point layout, treadled as drawn in, sized in whole repeats), checked against original reference fixtures that still await a practitioner weave-check; overshot and double weave are simplified examples. Generated structures weave the same cloth on rising and sinking (counterbalance/countermarch) sheds |
-| Overshot book treadling, pick roles, shot groups, shuttles | Verified | Picks can be marked pattern, tabby, top or bottom layer; runs in one shed can be grouped as double or triple shots; each pick can carry a shuttle (pass direction is worked out from each shuttle's rhythm) and a strand count. All of it travels in a WIF private section other programs skip. The Book view shows exact, editable "Use tabby" shorthand when pattern and tabby picks alternate, and says why when they do not. Double-weave fold edges and layer joins are not built |
+| Overshot book treadling, pick roles, shot groups, shuttles | Verified | Picks can be marked pattern, tabby, top or bottom layer; runs in one shed can be grouped as double or triple shots; each pick can carry a shuttle (pass direction is worked out from each shuttle's rhythm) and a strand count. All of it travels in a WIF private section other programs skip. The Book view shows exact, editable "Use tabby" shorthand when pattern and tabby picks alternate, and says why when they do not |
 | Double weave: layers and construction | Verified | Each pick is shown in exactly one layer or listed with the reason it weaves neither. Ply works out each edge (open, or layers joined at a fold or closed edge) from the layer roles, shuttles and starting sides; a construction (two independent layers, tube, double width with the fold left or right) is labelled only when you confirm it and is checked against those edges. A top-face view is shown only when it is unambiguous. Layer exchange, pockets and stitched cloth are not built |
 | Profile drafts | Partial | Engine helper only, not exposed in the app |
-| Knitting chart editor, written instructions, validation | Verified | Repeats (worked N times or to the end of the row) drive written instructions, stitch counts and validation; an optional cast-on count checks row 1 and opens the written instructions; save does not validate |
+| Knitting chart editor, written instructions, validation | Verified | Every built-in stitch has its own chart symbol. Repeats (worked N times or to the end of the row) drive written instructions, stitch counts and validation; an optional cast-on count checks row 1 and opens the written instructions; save does not validate |
 | Nalbinding reference, notation playground, loop diagram | Partial | Notation is read strictly or leniently with every problem listed at its position, and nothing is dropped silently; the loop diagram is labelled as a one-stitch sketch and marked approximate when the notation was not read exactly. Multi-round and fabric views are not built |
 | Nalbinding projects (notation, notes, photos) | Verified | Notation is checked strictly as you type and problems stay listed, but saving is still allowed (a project is a draft); no structured recipe model yet |
 | Native file formats | Verified | `.plyknit` and `.plynal` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead); no general backup/restore yet |
 | Library backup and restore | Verified | Settings saves every project (with photos, and optionally app settings) to one `.plybackup` file wherever you choose; any single project can be exported the same way. Restore checks every file first, previews new, identical and differing projects, adds differing ones as copies without replacing anything, and restores settings only if ticked |
-| Printable patterns (PDF) | Partial | Knitting patterns (gauge, cast-on, stitch key, chart with numbers and repeat boxes, written instructions, problems) and nalbinding projects (notation, loop diagram, findings, notes, photos) print or share as PDF, offline, A4 or US Letter by your units; a pattern with errors asks first and says so in the PDF. Weaving PDFs are next |
-| Engineering gates | Verified | 431 Rust + 1050 Flutter host tests and 51 device integration tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings`. The Android build uses Gradle 9 and AGP 9, so it runs on current JDKs |
+| Printable patterns (PDF) | Partial | Weaving drafts (a four-quadrant book draft with the tie-up in any corner, split into numbered parts when large; the colored drawdown; Use tabby when exact; role letters, shot groups, shuttles and pass directions, fold and open edges; written directions), knitting patterns (gauge, cast-on, stitch key, chart with numbers and repeat boxes, written instructions, problems) and nalbinding projects (notation, loop diagram, findings, notes, photos) print or share as PDF, offline, A4 or US Letter by your units; a pattern with errors asks first and says so in the PDF. Printed weaving drafts still await a weaver's comparison with reference patterns; threading repeats and profile blocks are not printed because drafts do not record them |
+| Engineering gates | Verified | 433 Rust + 1108 Flutter host tests and 54 device integration tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings`. The Android build uses Gradle 9 and AGP 9, so it runs on current JDKs |
 
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
@@ -154,8 +154,13 @@ M9 garment construction and print, M10 tablet weaving, M11 crochet.
   labels checked against them, a generator for two layers, tube and double width, an edge legend and
   an honest top-face view.
 - ✅ Printable patterns, first slice (M9-02): PDF infrastructure plus knitting and nalbinding PDFs.
-- ⬜ Next: weaving PDFs (four-quadrant book draft with Use tabby, shuttles and construction labels);
-  a weaver's check of the shadow-weave and double-weave fixtures.
+- ✅ Printable weaving drafts (M9-02, second slice): a four-quadrant book draft in any of four
+  layouts, the colored drawdown, Use tabby, working annotations and written directions.
+- ✅ Every built-in knitting stitch has its own chart symbol (eight shaping stitches used to share
+  the custom-stitch square).
+- ⬜ Next: a weaver's check of the printed drafts and of the shadow-weave and double-weave
+  fixtures; then the remaining P1 work (knitting sections and live stitches, loom profiles,
+  materials and planning, nalbinding recipes).
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.
