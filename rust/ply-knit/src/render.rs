@@ -204,10 +204,79 @@ fn draw_cell(
             draw_line(px, w, h, cx, top, cx, bottom, sym);
             draw_line(px, w, h, left, bottom, right, top, sym);
         }
+        // The appended shaping stitches (ids 12..=19) extend the same families: a double decrease
+        // leans like its single decrease with a second leg converging on the same corner, a purl-side
+        // stitch is its knit-side shape plus the purl dot (as p2tog is k2tog's "/" plus a dot), and a
+        // mirrored stitch is its partner's shape mirrored or turned.
+        builtin::K3TOG => {
+            // a right-leaning fan: k2tog's "/" plus a second leg from the bottom center, both
+            // meeting at the top right (three stitches into one, leaning right).
+            draw_line(px, w, h, left, bottom, right, top, sym);
+            draw_line(px, w, h, cx, bottom, right, top, sym);
+        }
+        builtin::SK2PO => {
+            // the left-leaning fan: ssk's "\" plus a second leg, both meeting at the top left.
+            draw_line(px, w, h, right, bottom, left, top, sym);
+            draw_line(px, w, h, cx, bottom, left, top, sym);
+        }
+        builtin::SSP => {
+            // ssk's "\" with a purl dot (p2tog's mirror).
+            draw_line(px, w, h, left, top, right, bottom, sym);
+            draw_disc(px, w, h, cx, top, (s / 10).max(1), sym);
+        }
+        builtin::KBF => {
+            // kfb's "+" turned a quarter: an "x" of two unbroken diagonals in one cell (a cable is
+            // always several cells wide, and its under strand is broken).
+            draw_line(px, w, h, left, top, right, bottom, sym);
+            draw_line(px, w, h, left, bottom, right, top, sym);
+        }
+        builtin::PFB => {
+            // kfb's "+" with a purl dot in the upper left quarter.
+            draw_line(px, w, h, left, cy, right, cy, sym);
+            draw_line(px, w, h, cx, top, cx, bottom, sym);
+            draw_disc(
+                px,
+                w,
+                h,
+                halfway(left, cx),
+                halfway(top, cy),
+                (s / 10).max(1),
+                sym,
+            );
+        }
+        builtin::M1P => {
+            // a make-one with no lean: an upward caret "^" with a purl dot under its point.
+            draw_line(px, w, h, left, bottom, cx, top, sym);
+            draw_line(px, w, h, cx, top, right, bottom, sym);
+            draw_disc(px, w, h, cx, (cy + bottom) / 2, (s / 10).max(1), sym);
+        }
+        builtin::M1LP => {
+            // m1l's "<" with a purl dot in the open right half.
+            draw_line(px, w, h, cx, top, left, cy, sym);
+            draw_line(px, w, h, left, cy, cx, bottom, sym);
+            draw_disc(px, w, h, halfway(right, cx), cy, (s / 10).max(1), sym);
+        }
+        builtin::M1RP => {
+            // m1r's ">" with a purl dot in the open left half.
+            draw_line(px, w, h, cx, top, right, cy, sym);
+            draw_line(px, w, h, right, cy, cx, bottom, sym);
+            draw_disc(px, w, h, halfway(left, cx), cy, (s / 10).max(1), sym);
+        }
         _ => {
             // Unknown / custom stitch: a hollow square placeholder.
             draw_rect_outline(px, w, h, left, top, right, bottom, sym);
         }
+    }
+}
+
+/// The point halfway from `from` toward `to`, rounded toward `from`, in either direction (so a dot
+/// placed halfway from the left edge mirrors one placed halfway from the right edge), without
+/// underflowing on a cell too small for its margins.
+fn halfway(from: usize, to: usize) -> usize {
+    if to >= from {
+        from + (to - from) / 2
+    } else {
+        from - (from - to) / 2
     }
 }
 
@@ -505,17 +574,17 @@ mod tests {
 
     #[test]
     fn tiny_cell_px_does_not_panic() {
-        // cell_px 1/2 must not underflow the inset math (a glyph cell with margins).
-        let p = pat(
-            2,
-            vec![Row::plain(vec![
-                Cell::of(builtin::KNIT),
-                Cell::of(builtin::YO),
-            ])],
-            vec![Color::WHITE],
-        );
-        let _ = render_rgba(&p, 1);
-        let _ = render_rgba(&p, 2);
+        // Tiny cells must not underflow the inset math (a glyph cell with margins), for every
+        // built-in symbol (pfb's dot once underflowed at 1 px) and the custom-stitch square.
+        let mut legend = StitchLegend::builtin();
+        legend.stitches.push(StitchDef::simple("bobble", None));
+        let cells: Vec<Cell> = (0..legend.stitches.len()).map(Cell::of).collect();
+        let mut p = pat(cells.len(), vec![Row::plain(cells)], vec![Color::WHITE]);
+        p.legend = legend;
+        for cell_px in 1..=6 {
+            let img = render_rgba(&p, cell_px);
+            assert_eq!(img.height, cell_px);
+        }
     }
 
     #[test]
@@ -594,5 +663,94 @@ mod tests {
             rc.pixels, lc.pixels,
             "a right cross must not look identical to a left cross"
         );
+    }
+
+    /// One cell of `stitch` on `ground` (palette index 1 when given), as the chart and the stitch
+    /// key draw it.
+    fn glyph(stitch: StitchId, ground: Option<Color>, cell_px: u32) -> RgbaImage {
+        let cell = match ground {
+            Some(_) => Cell::colored(stitch, 1),
+            None => Cell::of(stitch),
+        };
+        let mut legend = StitchLegend::builtin();
+        legend.stitches.push(StitchDef::simple("bobble", None)); // a custom stitch
+        let mut p = pat(
+            1,
+            vec![Row::plain(vec![cell])],
+            vec![Color::WHITE, ground.unwrap_or(Color::WHITE)],
+        );
+        p.legend = legend;
+        render_rgba(&p, cell_px)
+    }
+
+    #[test]
+    fn every_builtin_stitch_has_its_own_symbol() {
+        // The chart is the knitter's only cue to which stitch a cell is, so no two built-ins may draw
+        // alike, and none may look like the custom-stitch placeholder (the hollow square). Checked at
+        // the editor's and the PDF's cell sizes, on the cream ground and on a dark colorwork ground
+        // (where the symbol is drawn light).
+        let custom = StitchLegend::builtin().stitches.len();
+        let ids: Vec<StitchId> = (builtin::KNIT..=builtin::KTBL).chain([custom]).collect();
+        for cell_px in [12, 16, 24, 32] {
+            for ground in [None, Some(Color::rgb(30, 40, 90))] {
+                let images: Vec<(StitchId, RgbaImage)> = ids
+                    .iter()
+                    .map(|&id| (id, glyph(id, ground, cell_px)))
+                    .collect();
+                for (i, (a, ia)) in images.iter().enumerate() {
+                    for (b, ib) in &images[i + 1..] {
+                        assert!(
+                            ia.pixels != ib.pixels,
+                            "stitches {a} and {b} draw alike at {cell_px} px on {ground:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn appended_shaping_stitches_follow_their_families() {
+        // ssp mirrors p2tog: each is a single diagonal with the purl dot at the top center, so the
+        // mirrored image of one is the other.
+        let mirror = |img: &RgbaImage| -> Vec<u8> {
+            let (w, h) = (img.width as usize, img.height as usize);
+            let mut out = Vec::with_capacity(img.pixels.len());
+            for y in 0..h {
+                for x in (0..w).rev() {
+                    let o = (y * w + x) * 4;
+                    out.extend_from_slice(&img.pixels[o..o + 4]);
+                }
+            }
+            out
+        };
+        // A cell whose margins are symmetric (odd size: the center column is the middle column).
+        let s = 25;
+        assert!(
+            mirror(&glyph(builtin::K3TOG, None, s)) == glyph(builtin::SK2PO, None, s).pixels,
+            "sk2po is k3tog mirrored"
+        );
+        assert!(
+            mirror(&glyph(builtin::M1LP, None, s)) == glyph(builtin::M1RP, None, s).pixels,
+            "m1rp is m1lp mirrored"
+        );
+        // A purl-side stitch keeps its knit-side strokes and adds the dot: every dark pixel of the
+        // knit-side shape is dark in the purl-side one too.
+        let dark = [SYMBOL_DARK.r, SYMBOL_DARK.g, SYMBOL_DARK.b];
+        for (knit, purl) in [
+            (builtin::SSK, builtin::SSP),
+            (builtin::KFB, builtin::PFB),
+            (builtin::M1L, builtin::M1LP),
+            (builtin::M1R, builtin::M1RP),
+        ] {
+            let (k, p) = (glyph(knit, None, 24), glyph(purl, None, 24));
+            for y in 0..24 {
+                for x in 0..24 {
+                    if px_at(&k, x, y) == dark {
+                        assert_eq!(px_at(&p, x, y), dark, "{purl} keeps {knit}'s strokes");
+                    }
+                }
+            }
+        }
     }
 }
