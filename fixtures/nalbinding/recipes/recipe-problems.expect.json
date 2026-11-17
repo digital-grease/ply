@@ -1,0 +1,249 @@
+{
+  "note": "Hand-derived oracle for recipe-problems.plynal: every recipe check a saved recipe can give (step 22's notation is 207 characters, past the 200 Ply reads) except empty-recipe (recipe-empty) and too-large (a file past the limits is refused as unreadable; unit tests cover it). The quoted notation messages are the notation reader's own words (rust/ply-nalbind/src/notation.rs); everything else is derived by hand from the rules. Part 1 is steps 2 to 7, Part 2 steps 9 to 18, Part 3 steps 19 to 25; refused steps leave the count where it was (10 in Part 2).",
+  "project_notation": "UO/UOO F1+1",
+  "fit": ["Hand around: not measured yet"],
+  "segments": [
+    {
+      "index": 0, "id": "segment-1", "kind": "rounds", "phase": "body", "part": null,
+      "stitch": {"source": "project", "notation": "UO/UOO F1+1", "reading": "strict", "accepted": false},
+      "count": "not-applicable",
+      "written": "Work in a spiral for 3 rounds.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 1, "id": "segment-2", "kind": "foundationChain", "phase": "start", "part": 1,
+      "stitch": {"source": "own", "notation": "UO/UOO F2", "reading": "strict", "accepted": true},
+      "count": "refused",
+      "written": "Make a foundation chain of 0 stitches and join it into a ring.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 2, "id": "segment-3", "kind": "rounds", "phase": "body", "part": 1,
+      "stitch": {"source": "own", "notation": "UO/UOO", "reading": "strict", "accepted": true},
+      "count": "unknown",
+      "written": "Work in rounds for 4 rounds.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 3, "id": "", "kind": "rows", "phase": "body", "part": 1,
+      "stitch": {"source": "own", "notation": "UO/UOO F2", "reading": "strict", "accepted": true},
+      "count": "unknown",
+      "written": "Work back and forth in rows until there are 10 stitches.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 4, "id": "segment-1", "kind": "increase", "phase": "shaping", "part": 1,
+      "stitch": {"source": "own", "notation": "UO/UOO F1+1", "reading": "lenient", "accepted": false},
+      "count": "unknown",
+      "written": "Increase 2 stitches in each round for 3 rounds.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 5, "id": "segment-6", "kind": "decrease", "phase": "shaping", "part": 1,
+      "stitch": {"source": "own", "notation": "UO/UOO F999", "reading": "strict", "accepted": false},
+      "count": "refused",
+      "written": "Decrease 0 stitches in each round for 2 rounds.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 6, "id": "segment-7", "kind": "finish", "phase": "finish", "part": 1,
+      "stitch": null,
+      "count": "unknown",
+      "written": "Finish.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 7, "id": "segment-8", "kind": "shortRows", "phase": "shaping", "part": null,
+      "stitch": {"source": "project", "notation": "UO/UOO F1+1", "reading": "strict", "accepted": false},
+      "count": "not-applicable",
+      "written": "Work 2 short rows back and forth over part of the round.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 8, "id": "segment-9", "kind": "centreStart", "phase": "start", "part": 2,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 10,
+      "written": "Start in the round at the centre with 10 stitches.",
+      "target": "Across: 4 (no unit)", "checked": true
+    },
+    {
+      "index": 9, "id": "segment-10", "kind": "decrease", "phase": "shaping", "part": 2,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": "refused",
+      "written": "Decrease 3 stitches in each round, skipping a loop of the previous round, for 4 rounds.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 10, "id": "segment-11", "kind": "decrease", "phase": "shaping", "part": 2,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": "refused",
+      "written": "Decrease 1 stitch in each round until 12 stitches remain.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 11, "id": "segment-12", "kind": "increase", "phase": "shaping", "part": 2,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": "refused",
+      "written": "Increase until there are 10 stitches.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 12, "id": "segment-13", "kind": "increase", "phase": "shaping", "part": 2,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": "refused",
+      "written": "Increase 1,000,001 stitches in each round for 1 round.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 13, "id": "segment-14", "kind": "opening", "phase": "shaping", "part": 2,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": "refused",
+      "written": "Leave an opening: skip 10 loops of the previous round and work 4 stitches across the gap without connecting them.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 14, "id": "segment-15", "kind": "opening", "phase": "shaping", "part": 2,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 10,
+      "written": "Leave an opening: skip 2 loops of the previous round and work 2 stitches across the gap without connecting them.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 15, "id": "segment-16", "kind": "join", "phase": "shaping", "part": 2,
+      "stitch": null,
+      "count": 10,
+      "written": "Join the edges of an opening to close it.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 16, "id": "segment-17", "kind": "join", "phase": "shaping", "part": 2,
+      "stitch": null,
+      "count": 10,
+      "written": "Join the edges of the opening in step 15 (Gap) to close it.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 17, "id": "segment-18", "kind": "opening", "phase": "shaping", "part": 2,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": "unknown",
+      "written": "Leave an opening.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 18, "id": "segment-19", "kind": "pickUp", "phase": "start", "part": 3,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": "unknown",
+      "written": "Pick up loops around the opening in step 15 (Gap) to start this part.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 19, "id": "segment-20", "kind": "join", "phase": "shaping", "part": 3,
+      "stitch": null,
+      "count": "unknown",
+      "written": "Join the edges of an opening to close it.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 20, "id": "segment-21", "kind": "join", "phase": "shaping", "part": 3,
+      "stitch": null,
+      "count": "unknown",
+      "written": "Join the edges of an opening to close it.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 21, "id": "segment-22", "kind": "rounds", "phase": "body", "part": 3,
+      "stitch": {"source": "own", "notation": "UOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUOUO/UOO F1", "reading": "strict", "accepted": false, "read": false},
+      "count": "unknown",
+      "written": "Work in joined rounds until a point the recipe does not state.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 22, "id": "segment-23", "kind": "rows", "phase": "body", "part": 3,
+      "stitch": {"source": "own", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": "unknown",
+      "written": "Work back and forth in rows until it measures -3 cm (from the pick-up).",
+      "target": null, "checked": true
+    },
+    {
+      "index": 23, "id": "segment-24", "kind": "freeform", "phase": "shaping", "part": 3,
+      "stitch": null,
+      "count": "unknown",
+      "written": "",
+      "target": null, "checked": false
+    },
+    {
+      "index": 24, "id": "segment-25", "kind": "rounds", "phase": "body", "part": 3,
+      "stitch": null,
+      "count": "unknown",
+      "written": "Work in rounds for 2 rounds.",
+      "target": null, "checked": true
+    }
+  ],
+  "issues": [
+    {"code": "before-start", "severity": "error", "segment": 0, "fit": null,
+     "text": "Step 1 (Too early): comes before any start: begin the recipe with a start (a foundation chain, a centre start, or loops picked up from earlier work)"},
+    {"code": "count-not-positive", "severity": "error", "segment": 1, "fit": null,
+     "text": "Step 2 (Ring): makes a foundation chain of 0 stitches: a count must be at least 1"},
+    {"code": "no-connection", "severity": "warning", "segment": 2, "fit": null,
+     "text": "Step 3 (Cuff): the stitch has no connection to the previous round (such as F1 or B1), so the recipe does not say how this step joins the round before"},
+    {"code": "missing-id", "severity": "error", "segment": 3, "fit": null,
+     "text": "Step 4 (No id): has no id, so no other step can name it"},
+    {"code": "extent-not-for-kind", "severity": "error", "segment": 3, "fit": null,
+     "text": "Step 4 (No id): works until a number of stitches, but only an increase or a decrease changes the stitch count"},
+    {"code": "duplicate-id", "severity": "error", "segment": 4, "fit": null,
+     "text": "Step 5 (Twin): has the same id (segment-1) as step 1 (Too early), so a step that names it is ambiguous"},
+    {"code": "notation-problem", "severity": "warning", "segment": 4, "fit": null,
+     "text": "Step 5 (Twin): the stitch notation has a problem at \"+1\": `+1` uses the `+` dialect (as in `F1+1`, or the `a+b` thumb-loop alias), which is not Hansen notation and is not interpreted; kept verbatim in the extra text of connection `F1`"},
+    {"code": "notation-problem", "severity": "error", "segment": 5, "fit": null,
+     "text": "Step 6 (Bad notation): the stitch notation has a problem at \"F999\": connection count 999 is out of range (0 to 255); the structure holds 255 and the written count is kept only in the source text"},
+    {"code": "count-not-positive", "severity": "error", "segment": 5, "fit": null,
+     "text": "Step 6 (Bad notation): decreases by 0 stitches: a count must be at least 1"},
+    {"code": "before-start", "severity": "error", "segment": 7, "fit": null,
+     "text": "Step 8 (After the end): comes after Part 1 was finished in step 7 (Edge): begin the next part with a start (a foundation chain, a centre start, or loops picked up from earlier work)"},
+    {"code": "measurement-no-unit", "severity": "error", "segment": 8, "fit": null,
+     "text": "Step 9 (Second part): the target measurement gives 4 with no unit: choose mm, cm or in"},
+    {"code": "decrease-too-many", "severity": "error", "segment": 9, "fit": null,
+     "text": "Step 10 (Too many off): removes 12 stitches (3 in each of 4 rounds), but the round has only 10"},
+    {"code": "decrease-to-more", "severity": "error", "segment": 10, "fit": null,
+     "text": "Step 11 (Down to more): decreases until there are 12 stitches, but the round has only 10"},
+    {"code": "increase-to-fewer", "severity": "error", "segment": 11, "fit": null,
+     "text": "Step 12 (Up to fewer): increases until there are 10 stitches, but the round already has 10"},
+    {"code": "count-too-large", "severity": "error", "segment": 12, "fit": null,
+     "text": "Step 13 (Huge): increases by 1,000,001 stitches, more than Ply counts (1,000,000)"},
+    {"code": "opening-too-wide", "severity": "error", "segment": 13, "fit": null,
+     "text": "Step 14 (Wide gap): skips 10 loops of the previous round, but the round has only 10: an opening must leave part of the round connected"},
+    {"code": "opening-not-used", "severity": "warning", "segment": 13, "fit": null,
+     "text": "Step 14 (Wide gap): this opening is never worked or closed: add a pick-up that starts from it, or a join that closes it"},
+    {"code": "opening-later", "severity": "error", "segment": 15, "fit": null,
+     "text": "Step 16 (Close early): closes the opening in step 18 (Vague gap), which comes later: an opening can only be worked or closed after the step that makes it"},
+    {"code": "count-unknown", "severity": "info", "segment": 17, "fit": null,
+     "text": "Step 18 (Vague gap): this step does not say both how many loops it skips and how many stitches it works across the gap, so the stitches after it cannot be counted; later counts are not checked"},
+    {"code": "part-not-finished", "severity": "warning", "segment": 17, "fit": null,
+     "text": "Step 18 (Vague gap): Part 2 ends here without a finish: add a finish step after this one"},
+    {"code": "opening-not-used", "severity": "warning", "segment": 17, "fit": null,
+     "text": "Step 18 (Vague gap): this opening is never worked or closed: add a pick-up that starts from it, or a join that closes it"},
+    {"code": "opening-already-used", "severity": "error", "segment": 18, "fit": null,
+     "text": "Step 19 (Third part): starts from the opening in step 15 (Gap), but step 17 (Close the gap) already closed it"},
+    {"code": "not-an-opening", "severity": "error", "segment": 19, "fit": null,
+     "text": "Step 20 (Not a gap): closes step 9 (Second part), which is not an opening"},
+    {"code": "unknown-step", "severity": "error", "segment": 20, "fit": null,
+     "text": "Step 21 (Lost): closes a step that is not in the recipe (segment-99)"},
+    {"code": "notation-too-long", "severity": "error", "segment": 21, "fit": null,
+     "text": "Step 22 (Until when): the stitch notation is longer than 200 characters, so Ply does not read it"},
+    {"code": "until-not-stated", "severity": "warning", "segment": 21, "fit": null,
+     "text": "Step 22 (Until when): works until a point the recipe does not state: name a landmark (such as the base of the thumb) or give a measurement"},
+    {"code": "measurement-not-positive", "severity": "error", "segment": 22, "fit": null,
+     "text": "Step 23 (Negative): the measurement it works until is -3 cm, but a length must be more than 0"},
+    {"code": "empty-freeform", "severity": "warning", "segment": 23, "fit": null,
+     "text": "Step 24 (Blank): has no text"},
+    {"code": "no-stitch", "severity": "warning", "segment": 24, "fit": null,
+     "text": "Step 25 (Which stitch): is set to its own stitch, but no notation is given"},
+    {"code": "part-not-finished", "severity": "warning", "segment": 24, "fit": null,
+     "text": "Step 25 (Which stitch): Part 3 ends here without a finish: add a finish step after this one"},
+    {"code": "measurement-no-value", "severity": "warning", "segment": null, "fit": 0,
+     "text": "Fit 1 (Hand around): this measurement has no value yet"},
+    {"code": "project-notation-problem", "severity": "error", "segment": null, "fit": null,
+     "text": "The project's stitch notation has 1 problem, and steps 1 and 8 are worked in it: see the project's Stitch field."}
+  ],
+  "done": []
+}

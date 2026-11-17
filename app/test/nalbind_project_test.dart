@@ -64,9 +64,10 @@ void main() {
       final json = mittens.toJson();
       expect(json['format'], 'ply.nalbind');
       expect(json['schemaVersion'], NalbindProject.currentSchemaVersion);
-      expect(NalbindProject.currentSchemaVersion, 2);
+      expect(NalbindProject.currentSchemaVersion, 3);
       final text = jsonEncode(json);
-      expect(NalbindProject.schemaVersionOf(jsonDecode(text) as Map<String, dynamic>), 2);
+      expect(NalbindProject.schemaVersionOf(jsonDecode(text) as Map<String, dynamic>), 3);
+      expect(json.containsKey('recipe'), isFalse, reason: 'a note-only project writes no recipe');
       expect(NalbindProject.decode(text), mittens);
     });
 
@@ -89,7 +90,7 @@ void main() {
     });
 
     test('a newer version is refused with a plain explanation', () {
-      final newer = jsonEncode({...mittens.toJson(), 'schemaVersion': 3, 'pieces': <Object>[]});
+      final newer = jsonEncode({...mittens.toJson(), 'schemaVersion': 4, 'pieces': <Object>[]});
       expect(
         () => NalbindProject.decode(newer),
         throwsA(isA<NativeFormatException>()
@@ -183,12 +184,12 @@ void main() {
 
       await repo.saveProject(read, id: 'p1');
       final saved = jsonDecode(File('${dir.path}/p1.plynal').readAsStringSync()) as Map<String, dynamic>;
-      expect(saved['schemaVersion'], 2);
+      expect(saved['schemaVersion'], 3);
       expect(NalbindProject.fromJson(saved), read);
     });
 
     test('a project saved by a newer Ply is never overwritten', () async {
-      const newer = '{"format":"ply.nalbind","schemaVersion":3,"name":"Future","pieces":[1]}';
+      const newer = '{"format":"ply.nalbind","schemaVersion":4,"name":"Future","pieces":[1]}';
       File('${dir.path}/p1.plynal').writeAsStringSync(newer);
       await expectLater(repo.readProject('p1'), throwsA(isA<NativeFormatException>()));
       await expectLater(

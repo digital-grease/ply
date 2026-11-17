@@ -1,0 +1,13 @@
+{
+  "note": "Hand-derived oracle for recipe-empty.plynal: a recipe that was added but has no steps yet. The one check a recipe with steps can never give.",
+  "project_notation": "UO/UOO F1",
+  "fit": [],
+  "segments": [],
+  "issues": [
+    {
+      "code": "empty-recipe", "severity": "warning", "segment": null, "fit": null,
+      "text": "The recipe has no steps yet."
+    }
+  ],
+  "done": []
+}

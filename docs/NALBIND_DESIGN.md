@@ -8,6 +8,11 @@
 > below. Defaults confirmed: native JSON `.plynal`, a "Nalbinding" tab in the unified home, glossary
 > gains nalbinding terms, no gauge/yardage calculator. This doc is the design rationale of record; it
 > is research-backed (sources at the end).
+>
+> **Update (2026-11-16, M8-04): structured RECIPES built.** A project may now carry an optional recipe
+> of ordered segments (start, body, shaping, finish, and free text), checked by the engine and
+> followed one step at a time; see "Project recipes (built)" below. Note-only projects are
+> unchanged.
 
 ## Goal & constraints
 
@@ -120,6 +125,9 @@ pub struct StitchType {
 }
 ```
 
+The project strawman below was the starting point; the built model is described in "Project
+recipes (built)" after it.
+
 ```rust
 // ply-nalbind/src/project.rs  — an optional PROJECT model (a worked piece), IF in M6 v1 scope
 
@@ -147,6 +155,49 @@ pub struct Project {
 A Hansen **parser/printer** (`U/O/(/):/-` + `F/B/M`+number → `Vec<Pass>` + `Connection`, and back) is
 the one piece of "real engine logic" here, round-trippable and proptest-hardened like the WIF and
 `.plyknit` parsers.
+
+## Project recipes (built, M8-04)
+
+The `.plynal` project (name, stitch, notes, photos) gained an optional `recipe` in schema version 3.
+The document stays app-owned JSON; the engine module `ply_nalbind::recipe` mirrors the recipe's
+shape and owns the checks and the written words (`check(recipe, project_notation)`, one bridge call,
+`check_nalbind_recipe`).
+
+- **Segments, in working order, with stable ids** (`segment-N`, never changed by an edit or a move).
+  Kinds: start (`foundationChain` with its stitches and ring or flat, `centreStart`, `pickUp` from
+  an earlier opening), body (`rounds` in a spiral or joined, `rows`), shaping (`increase`,
+  `decrease`, `shortRows`, `opening` with the loops skipped and the stitches worked across the gap,
+  `join` that may close an opening), `finish` (draw the last loops together, or taper at an open
+  edge), and `freeform`: the maker's own words with a role, never interpreted. The candidate names of
+  the roadmap (FoundationChain, CentreStart, Disc, Tube, ShortRow, ...) map onto these; garments are
+  sequences of PARTS (the hand, then the thumb from its opening), not one spiral.
+- **Each segment** may carry its own stitch (Hansen notation kept exactly as typed, read strictly
+  or leniently with the existing reader; otherwise the project's stitch), how far it goes (a number
+  of rounds or rows, until a stitch count, or until a landmark or a measurement), a target, notes and
+  a caution. The connection to the previous round is the notation's own (`F1`, `B1`, `M1`); the
+  increase and decrease methods record the other connection choices (into one loop twice, through
+  two loops at once, skipping a loop).
+- **What is checked, and what is only recorded.** Checked: the notation, the order of the parts (a
+  start before rounds, a finish at the end of each part), references (an opening is later worked or
+  closed; a pick-up names an earlier opening), positive counts, measurements with a unit, and the
+  arithmetic of the recipe's own numbers (a decrease cannot remove more stitches than the round
+  has; a step that cannot be worked is not applied). Recorded only: methods, fit targets, notes,
+  cautions, free text. The fabric is never simulated, and every screen and the PDF say so.
+- **Fit** is a list of measurements with units (a hand around the knuckles, a head around the
+  forehead). Gauge stays with swatches (shared materials and swatch records), not the recipe; Ply
+  never turns a measurement into a stitch count.
+- **Follow view:** one step at a time with its instruction, stitch, count, notes and checks, and a
+  Done tick stored in the recipe (written alone to the saved file, never an unsaved change).
+- **Compatibility:** version 1 and 2 files open as note-only projects with the same fields; a
+  version 3 file with an unknown segment kind or value is refused, never loaded with a segment
+  dropped or overwritten, while keys it does not know inside the recipe are kept verbatim and
+  written back. Ids are never given twice (the recipe keeps a counter), so a tick or a reference
+  cannot move to another step.
+- **Limits:** a notation is read up to 200 characters, a text up to 10,000 and a whole recipe up to
+  200,000, counted as the app counts them; each stitch reports at most 10 notation problems and a
+  count of the rest, so a hostile file gives a small report.
+- **Fixtures:** `fixtures/nalbinding/recipes/` (a cuff-up mitten with a thumb, a crown-down hat,
+  every check, an empty recipe), with hand-derived oracles and a pending practitioner check.
 
 ## Visualization options (the genuinely hard part)
 

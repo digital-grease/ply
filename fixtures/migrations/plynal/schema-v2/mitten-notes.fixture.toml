@@ -1,0 +1,31 @@
+# Fixture record for migrations/plynal/schema-v2/mitten-notes (see fixtures/README.md).
+
+id = "migrations/plynal/schema-v2/mitten-notes"
+title = "Mitten notes with a stitch name, newlines and quotes"
+format = "ply.nalbind"
+schema_version = 2
+files = ["mitten-notes.plynal"]
+created = "2026-11-16"
+license = "original"
+immutable = true
+provenance = """
+Schema version 2 bytes exactly as the app wrote them before schema version 3 existed: the model \
+files at commit 2a23bae (app/lib/src/models/nalbind_project.dart and native_format.dart, extracted \
+with git show into a scratch Dart package) wrote these values through their own \
+NalbindProject.toJson and jsonEncode, as the repository's save does. Schema version 2 was never in \
+a tagged release (v0.1.7 wrote version 1); development builds from the inline version keys to the \
+recipe wrote it. Kept so the version 2 to 3 migration is always tested against real \
+bytes. Never edit or regenerate this file."""
+shape = "Name, the Oslo stitch from the builtins, and multi-line notes with a quoted word."
+
+[expected_after_migration]
+source_version = 2
+document = "No recipe (null); name, notation, stitchName and notes unchanged; a re-save writes schemaVersion 3 and no recipe key"
+behavior = "The project screen shows it exactly as before, with an Add a recipe button and nothing else new."
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+app/test/nalbind_recipe_model_test.dart (schema version 2 files): reads as version 2, opens with \
+the same fields and no recipe, and re-saves as version 3 with exactly the same fields. \
+app/test/nalbind_recipe_screen_test.dart opens one in the project screen, unchanged."""

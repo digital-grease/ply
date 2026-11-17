@@ -1,0 +1,63 @@
+{
+  "note": "Hand-derived oracle for hat-centre-start.plynal, from the recipe checks (rust/ply-nalbind/src/recipe/check.rs). The crown starts with 8 and increases 8 a round for 4 rounds (8 + 32 = 40); the slower increases go until the crown measures 17 cm across, which the recipe does not turn into a number, so every later count is unknown (one Info). The care note after the finish is not a step of the work.",
+  "project_notation": "UOO/UUOO F2",
+  "fit": ["Head around the forehead: 56 cm"],
+  "segments": [
+    {
+      "index": 0, "id": "segment-1", "kind": "centreStart", "phase": "start", "part": 1,
+      "stitch": {"source": "project", "notation": "UOO/UUOO F2", "reading": "strict", "accepted": true},
+      "count": 8,
+      "written": "Start in the round at the centre with 8 stitches.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 1, "id": "segment-2", "kind": "increase", "phase": "shaping", "part": 1,
+      "stitch": {"source": "project", "notation": "UOO/UUOO F2", "reading": "strict", "accepted": true},
+      "count": 40,
+      "written": "Increase 8 stitches in each round, working two stitches into the same loop of the previous round, for 4 rounds.",
+      "target": "Across the crown: 10 cm", "checked": true
+    },
+    {
+      "index": 2, "id": "segment-3", "kind": "increase", "phase": "shaping", "part": 1,
+      "stitch": {"source": "project", "notation": "UOO/UUOO F2", "reading": "strict", "accepted": true},
+      "count": "unknown",
+      "written": "Increase 4 stitches in each round, working two stitches into the same loop of the previous round, until it measures 17 cm (across the crown).",
+      "target": null, "checked": true
+    },
+    {
+      "index": 3, "id": "segment-4", "kind": "rounds", "phase": "body", "part": 1,
+      "stitch": {"source": "project", "notation": "UOO/UUOO F2", "reading": "strict", "accepted": true},
+      "count": "unknown",
+      "written": "Work in a spiral until it measures 14 cm (from the crown edge).",
+      "target": null, "checked": true
+    },
+    {
+      "index": 4, "id": "segment-5", "kind": "rounds", "phase": "body", "part": 1,
+      "stitch": {"source": "own", "notation": "UOO/UUOO F1", "reading": "strict", "accepted": true},
+      "count": "unknown",
+      "written": "Work in a spiral for 4 rounds.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 5, "id": "segment-6", "kind": "finish", "phase": "finish", "part": 1,
+      "stitch": null,
+      "count": "unknown",
+      "written": "Finish at the open edge, tapering the last stitches to smooth the step.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 6, "id": "segment-7", "kind": "freeform", "phase": "other", "part": null,
+      "stitch": null,
+      "count": "not-applicable",
+      "written": "Wash gently and dry flat over a bowl to shape the crown.",
+      "target": null, "checked": false
+    }
+  ],
+  "issues": [
+    {
+      "code": "count-unknown", "severity": "info", "segment": 2, "fit": null,
+      "text": "Step 3 (Crown, slower): this step does not say how many stitches it adds in all, so the stitches after it cannot be counted; later counts are not checked"
+    }
+  ],
+  "done": ["segment-1", "segment-2"]
+}

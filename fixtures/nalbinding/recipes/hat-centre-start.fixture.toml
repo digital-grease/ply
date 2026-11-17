@@ -1,0 +1,33 @@
+# Fixture record for nalbinding/recipes/hat-centre-start (see fixtures/README.md).
+
+id = "nalbinding/recipes/hat-centre-start"
+title = "A hat worked from a centre start at the crown"
+technique = "centre start, increase rounds, straight spiral rounds, a brim with another connection, an edge tapered at the end"
+files = ["hat-centre-start.plynal", "hat-centre-start.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written for Ply's tests through the app's own .plynal writer (schema version 3) on 2026-11-16, and re-written by it the same day when the recipe gained its \
+id counter (lastSegmentNumber); nothing else changed. A \
+generic crown-down hat in Mammen stitch; the counts and lengths are chosen for the test, not taken \
+from any published pattern. Two steps are ticked done, so the follow view's ticks are part of the \
+fixture. The oracle was derived by hand from the rules of the recipe checks in rust/ply-nalbind/src/recipe/check.rs: 8 + 8 x 4 = 40 stitches, then \
+"until it measures 17 cm across" gives no number, so every later count is unknown (one Info)."""
+shape = "One part: a centre start of 8, 4 increase rounds of 8, slower increases until the crown measures 17 cm across, straight rounds until 14 cm from the crown edge, 4 brim rounds in its own F1 connection, a tapered finish, then a care note that is not a step of the work."
+
+[sources]
+references = [
+  "Nalbinding course slides (Google Slides), https://docs.google.com/presentation/d/1Byi8M1FnqOF3Z-bImq5cKVrbYi5toLSAB0yJYKJqJls/htmlpresent (a top-down start in the round for a hat, increasing by connecting twice into the same loop, adjusting when the work ruffles or cones, tapering a sloped edge).",
+  "AllFiberArts, \"Noro nalbinding hat\", https://allfiberarts.com/noro-nalbinding-hat/ (a hat worked in rounds; round counts depend on the maker's thumb and loop size).",
+  "Nalbinding Handbook, \"Notation systems\", https://nalbinding.net/about-nalbinding/notation-systems/ (the F, B and M connection to the previous row).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-nalbind/tests/recipe_fixtures.rs: every segment report and the one Info equal the oracle. \
+app/test/nalbind_recipe_model_test.dart decodes and re-encodes it byte for byte, ticks included; \
+app/test/nalbind_recipe_fixture_test.dart prints it and follows it from the oracle."""
+practitioner_nalbind_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "A hat is sized by trying it on; the recipe records the head measurement and the crown target but Ply does not turn them into stitch counts."

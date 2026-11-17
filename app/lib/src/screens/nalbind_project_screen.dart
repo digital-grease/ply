@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/library_backup.dart' show BackupCraft;
 import '../data/nalbind_repository.dart';
 import '../models/nalbind_project.dart';
+import '../models/nalbind_recipe.dart';
 import '../models/native_format.dart';
 import '../print/nalbind_print.dart';
 import '../print/print_export.dart' show PdfExportText;
@@ -13,6 +14,8 @@ import '../widgets/notation_feedback.dart';
 import '../widgets/project_materials_sheet.dart';
 import '../widgets/project_photos.dart';
 import '../widgets/unsaved_changes_guard.dart';
+import 'nalbind_follow_screen.dart';
+import 'nalbind_recipe_screen.dart';
 
 /// The nalbinding PROJECT editor (M6 write path): name the project, pick a stitch (tap a builtin chip
 /// or type a Hansen string), and keep free-text working notes — the way the craft is shared, since
@@ -42,6 +45,9 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
   late final Listenable _fields = Listenable.merge([_name, _notation, _notes]);
 
   String _stitchName = ''; // the chosen builtin's display name, '' once the notation is hand-edited
+
+  /// The structured recipe (ADR 0017), or null for a note-only project.
+  NalbindRecipe? _recipe;
   String? _id;
   bool _loading = true;
   bool _saving = false;
@@ -78,6 +84,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
       _notation.text = project.notation;
       _notes.text = project.notes;
       _stitchName = project.stitchName;
+      _recipe = project.recipe;
       setState(() {
         _loading = false;
         _baseline = _compose();
@@ -108,6 +115,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
         notation: _notation.text.trim(),
         stitchName: _stitchName,
         notes: _notes.text,
+        recipe: _recipe,
       );
 
   /// Dirty-on-exit guard input (see [UnsavedChangesGuard]): the form differs from what it held when
@@ -202,6 +210,136 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// A follow-view tick (ADR 0017). It is progress, not an edit. When the step on screen is the same
+  /// step the project was saved with, the clean baseline takes the tick too (so it never reads as
+  /// unsaved) and ONLY the tick is written to disk at once (other unsaved edits stay unsaved).
+  /// Otherwise (a step added or changed since the last save) the tick stays on screen, is saved with
+  /// the project, and the maker is told so. Resolves to that message, or null when it was written.
+  Future<String?> _tick(String segmentId, bool done) async {
+    final current = _recipe?.segments.where((s) => s.id == segmentId).firstOrNull;
+    final base = _baseline?.recipe;
+    final saved = base?.segments.where((s) => s.id == segmentId).firstOrNull;
+    final same = current != null && saved != null && current == saved;
+    void tickBaseline(bool value) {
+      final b = _baseline?.recipe;
+      if (b != null) _baseline = _baseline!.withRecipe(b.withDone(segmentId, value));
+    }
+
+    setState(() {
+      _recipe = _recipe?.withDone(segmentId, done);
+      if (same) tickBaseline(done);
+    });
+    final id = _id;
+    if (id == null) return 'Save the project to keep your ticks.';
+    if (current == null) return null;
+    if (!same) {
+      return saved == null
+          ? 'This step is not saved yet: its tick will be saved with the project.'
+          : 'This step has changed since the last save: its tick will be saved with the project.';
+    }
+    try {
+      final written = await ref
+          .read(nalbindRepositoryProvider)
+          .setSegmentDone(id, segmentId, done: done, expected: current);
+      if (written) return null;
+      // The saved step is not this one after all: keep the tick on screen, unsaved.
+      if (mounted) setState(() => tickBaseline(!done));
+      return 'This step has changed since the last save: its tick will be saved with the project.';
+    } catch (_) {
+      // Not on disk: take the tick back here too, so it is never taken for saved.
+      if (mounted) {
+        setState(() {
+          _recipe = _recipe?.withDone(segmentId, !done);
+          tickBaseline(!done);
+        });
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _openRecipe() async {
+    final added = _recipe == null;
+    final recipe = _recipe ?? const NalbindRecipe();
+    if (added) setState(() => _recipe = recipe);
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => NalbindRecipeScreen(
+        initial: recipe,
+        projectNotation: _notation.text.trim(),
+        projectStitchName: _stitchName,
+        onChanged: (r) {
+          if (mounted) setState(() => _recipe = r);
+        },
+        onTick: _tick,
+        onSave: guardedSave,
+      ),
+    ));
+    // "Add a recipe" and straight back with nothing in it: the project stays note-only.
+    final now = _recipe;
+    if (added &&
+        mounted &&
+        _baseline?.recipe == null &&
+        now != null &&
+        now.segments.isEmpty &&
+        now.fit.isEmpty) {
+      setState(() => _recipe = null);
+    }
+  }
+
+  Future<void> _followRecipe() async {
+    final recipe = _recipe;
+    if (recipe == null) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => NalbindFollowScreen(
+        recipe: recipe,
+        projectNotation: _notation.text.trim(),
+        projectStitchName: _stitchName,
+        onTick: _tick,
+      ),
+    ));
+  }
+
+  /// The Recipe section: optional, so a note-only project shows only how to add one.
+  List<Widget> _recipeSection(TextTheme text, ColorScheme cs) {
+    final recipe = _recipe;
+    final steps = recipe?.segments.length ?? 0;
+    final done = recipe?.doneInOrder.length ?? 0;
+    return [
+      const SizedBox(height: 20),
+      Text('Recipe', style: text.titleSmall),
+      const SizedBox(height: 8),
+      Text(
+        recipe == null
+            ? 'Optional: write the piece as steps in working order (start, body, shaping, '
+                'finish) that Ply checks and you can follow one at a time. Your notes stay as '
+                'they are.'
+            : steps == 0
+                ? 'The recipe has no steps yet.'
+                : '$steps ${steps == 1 ? 'step' : 'steps'}, $done done.',
+        style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          FilledButton.tonalIcon(
+            key: const ValueKey('project-recipe'),
+            onPressed: _openRecipe,
+            icon: Icon(recipe == null ? Icons.add : Icons.edit_note),
+            label: Text(recipe == null ? 'Add a recipe' : 'Edit the recipe'),
+          ),
+          if (steps > 0)
+            OutlinedButton.icon(
+              key: const ValueKey('project-follow'),
+              onPressed: _followRecipe,
+              icon: const Icon(Icons.playlist_play),
+              label: const Text('Follow'),
+            ),
+        ],
+      ),
+    ];
   }
 
   @override
@@ -329,6 +467,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
                     alignLabelWithHint: true,
                   ),
                 ),
+                ..._recipeSection(text, cs),
                 const SizedBox(height: 20),
                 Text('Photos', style: text.titleSmall),
                 const SizedBox(height: 8),

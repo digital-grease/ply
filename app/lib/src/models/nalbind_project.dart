@@ -13,22 +13,28 @@
 // an enveloped file as an EMPTY project that a later save would write over the real one. With inline
 // keys they load a current file correctly instead. A file without a `format` key is legacy version 1
 // (what those releases wrote); version 2 only adds the two keys, so the v1 -> v2 migration is the
-// identity on the fields. A file whose version is newer than [NalbindProject.currentSchemaVersion] is
-// refused (never loaded with fields dropped, never overwritten). `format` and `schemaVersion` are
-// reserved: no document field may use those names.
+// identity on the fields. Version 3 (M8-04, ADR 0017) adds an optional `recipe` object (a structured
+// recipe of ordered segments; see NalbindRecipe), written only when the project has one, so the
+// v2 -> v3 migration is the identity too and a note-only project keeps exactly its fields. A file
+// whose version is newer than [NalbindProject.currentSchemaVersion] is refused (never loaded with
+// fields dropped, never overwritten); so is a version 3 recipe this build cannot read (an unknown
+// segment kind, say). `format` and `schemaVersion` are reserved: no document field may use those
+// names.
 
 import 'dart:convert';
 
+import 'nalbind_recipe.dart';
 import 'native_format.dart';
 
 /// One saved nalbinding project: a name, the chosen stitch (its Hansen [notation] + display
-/// [stitchName]), and free-text [notes].
+/// [stitchName]), free-text [notes], and optionally a structured [recipe].
 class NalbindProject {
   const NalbindProject({
     this.name = '',
     this.notation = '',
     this.stitchName = '',
     this.notes = '',
+    this.recipe,
   });
 
   /// Display name of the project (the on-disk filename is an opaque uuid, never this).
@@ -43,19 +49,32 @@ class NalbindProject {
   /// Free-form working notes — the heart of the feature.
   final String notes;
 
+  /// The structured recipe, or null for a note-only project (every project before version 3).
+  final NalbindRecipe? recipe;
+
   NalbindProject copyWith({String? name, String? notation, String? stitchName, String? notes}) =>
       NalbindProject(
         name: name ?? this.name,
         notation: notation ?? this.notation,
         stitchName: stitchName ?? this.stitchName,
         notes: notes ?? this.notes,
+        recipe: recipe,
+      );
+
+  /// This project with [recipe] (null removes it, making the project note-only again).
+  NalbindProject withRecipe(NalbindRecipe? recipe) => NalbindProject(
+        name: name,
+        notation: notation,
+        stitchName: stitchName,
+        notes: notes,
+        recipe: recipe,
       );
 
   /// The `format` value of every `.plynal` file.
   static const String formatId = 'ply.nalbind';
 
   /// The `.plynal` schema version this build writes, and the newest it can read.
-  static const int currentSchemaVersion = 2;
+  static const int currentSchemaVersion = 3;
 
   /// The current on-disk form: the version keys, then the document fields (see the file header).
   Map<String, dynamic> toJson() => {
@@ -65,6 +84,7 @@ class NalbindProject {
         'notation': notation,
         'stitchName': stitchName,
         'notes': notes,
+        if (recipe != null) 'recipe': recipe!.toJson(),
       };
 
   /// The schema version of a decoded `.plynal` object, by the deterministic rule: no `format` key is
@@ -91,15 +111,21 @@ class NalbindProject {
   }
 
   /// Decode a `.plynal` object of any supported version. Reads the fields tolerantly (a missing one
-  /// becomes empty) so a partially-written or older file still loads. Version 1 to 2 needs no field
-  /// change. Throws a [NativeFormatException] per [schemaVersionOf].
+  /// becomes empty) so a partially-written or older file still loads. Version 1 to 2 and 2 to 3
+  /// need no field change: a version 1 or 2 file has no recipe (a stray `recipe` key in one, which
+  /// no writer produced, is ignored). A version 3 `recipe` is read strictly (see NalbindRecipe):
+  /// anything it cannot read throws a [FormatException], which [decode] reports as unreadable.
+  /// Throws a [NativeFormatException] per [schemaVersionOf].
   factory NalbindProject.fromJson(Map<String, dynamic> json) {
-    schemaVersionOf(json); // refuses a foreign / newer file before any field is read
+    final version =
+        schemaVersionOf(json); // refuses a foreign / newer file before any field is read
+    final recipe = json['recipe'];
     return NalbindProject(
       name: (json['name'] as String?) ?? '',
       notation: (json['notation'] as String?) ?? '',
       stitchName: (json['stitchName'] as String?) ?? '',
       notes: (json['notes'] as String?) ?? '',
+      recipe: version >= 3 && recipe != null ? NalbindRecipe.fromJson(recipe) : null,
     );
   }
 
@@ -130,10 +156,11 @@ class NalbindProject {
           name == other.name &&
           notation == other.notation &&
           stitchName == other.stitchName &&
-          notes == other.notes;
+          notes == other.notes &&
+          recipe == other.recipe;
 
   @override
-  int get hashCode => Object.hash(name, notation, stitchName, notes);
+  int get hashCode => Object.hash(name, notation, stitchName, notes, recipe);
 }
 
 /// An in-memory pairing of a saved project's sidecar metadata with its on-disk path — the nalbind

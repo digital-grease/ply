@@ -1,0 +1,39 @@
+# Fixture record for nalbinding/recipes/mitten-cuff-up (see fixtures/README.md).
+
+id = "nalbinding/recipes/mitten-cuff-up"
+title = "A mitten worked from the cuff, with a thumb opening and a thumb"
+technique = "foundation chain joined into a ring, spiral rounds, a thumb opening, decreases to close the top, a thumb picked up around the opening"
+files = ["mitten-cuff-up.plynal", "mitten-cuff-up.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written for Ply's tests through the app's own .plynal writer (NalbindProject.toJson and jsonEncode, \
+schema version 3) on 2026-11-16, and re-written by it the same day when the recipe gained its \
+id counter (lastSegmentNumber); nothing else changed. A generic cuff-up mitten in Oslo stitch: the stitch counts, \
+lengths and the 7 loops skipped / 9 stitches across the thumb opening are chosen for the test, not \
+taken from any published pattern. The oracle was derived by hand from the rules of the recipe checks in rust/ply-nalbind/src/recipe/check.rs (the \
+counts are the recipe's own arithmetic: 36, then 36 - 7 + 9 = 38, then until 10 remain; the thumb \
+picks up 18 and decreases until 6 remain), not dumped from the code under test."""
+shape = "Two parts: the hand (foundation chain of 36 in a ring, 8 cuff rounds with an F2 connection, rounds in the project's F1 stitch until 7 cm from the cuff edge, the thumb opening, rounds to the little finger, decreases until 10 stitches remain, a closed tip) and the thumb (18 loops picked up around the opening, rounds, decreases until 6 remain, a closed tip). No problems."
+
+[sources]
+# Conventions the recipe follows (cited, nothing reproduced).
+references = [
+  "Neulakintaat (en.neulakintaat.fi), \"How to make nalbound mittens\", https://www.en.neulakintaat.fi/58 (starting chain, spiral work, increases at the sides, a thumb opening of stitches left unconnected to the previous row, tapering the end).",
+  "Neulakintaat, thumbs, https://en.neulakintaat.fi/61 (starting the thumb at a corner of the opening, extra loops at the corners, decreasing and drawing the last loops together).",
+  "Neulakintaat, outline patterns for mittens, https://www.en.neulakintaat.fi/66 (measuring around the hand, trying on as you go).",
+  "AllFiberArts, \"Nalbinding handwarmers\", https://allfiberarts.com/nalbinding-handwarmers-pattern/ (a thumb loop made as a chain over skipped stitches, then picked up and decreased).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-nalbind/tests/recipe_fixtures.rs (recipe_fixtures_match_their_oracles, \
+the_worked_objects_are_clean_where_they_should_be): the engine reads the app's recipe, and every \
+segment's part, phase, stitch, count, written instruction and checked status, and every issue, \
+equal the oracle. app/test/nalbind_recipe_model_test.dart decodes it and re-encodes it to the same \
+bytes; app/test/nalbind_recipe_fixture_test.dart prints it through the PDF from the oracle; \
+app/test/nalbind_recipe_backup_test.dart backs it up and restores it."""
+practitioner_nalbind_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "No yarn joins, no left or right mitten difference, and the thumb opening method (how the stitches across the gap are made) is in the notes only. The counts are the recipe's arithmetic, not a measured mitten."

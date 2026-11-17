@@ -7,9 +7,13 @@ import 'package:uuid/uuid.dart';
 
 import '../models/draft_meta.dart';
 import '../models/nalbind_project.dart';
+import '../models/nalbind_recipe.dart';
+import '../models/nalbind_recipe_view.dart';
 import '../models/native_format.dart';
 import '../rust/api.dart';
 import '../rust/nalbind_dto.dart';
+import '../rust/nalbind_recipe_dto.dart';
+import 'sidecar_writes.dart';
 
 /// One reading of a Hansen-notation string: the parse with its diagnostics, the loop diagram of its
 /// best-effort stitch, and the stitch's validation issues (empty unless the parse is exact).
@@ -76,6 +80,11 @@ class NalbindRepository {
   Future<({NalbindStitchDto stitch, DiagramDto diagram})> withDiagram(NalbindStitchDto s) async =>
       (stitch: s, diagram: await diagram(s));
 
+  /// Check a recipe (ADR 0017): one report per segment and every issue, in one engine call.
+  /// [projectNotation] is the project's stitch, which a segment without its own is worked in.
+  Future<RecipeReportDto> checkRecipe(NalbindRecipe recipe, {required String projectNotation}) =>
+      checkNalbindRecipe(recipe: recipeToDto(recipe), projectNotation: projectNotation);
+
   // ---------------------------------------------------------------------------
   // Persistence: <documents>/nalbinds/<id>.{plynal,json} (mirrors KnitRepository, no thumb/native).
   // ---------------------------------------------------------------------------
@@ -112,6 +121,29 @@ class NalbindRepository {
   /// Whether this repository instance (one per app run) has already swept orphaned photo folders.
   bool _sweptOrphanedPhotos = false;
 
+  /// The last write queued for each project id. Every write to a project's files (a save, a
+  /// follow-view tick, a touch, a delete) waits for the one before it, so two never share the same
+  /// temp file and a tick never reads the file while a save is replacing it.
+  ///
+  /// The sidecar is also written by the materials sheet (its links, ADR 0016), outside this
+  /// repository, so every read-modify-write of the sidecar here also takes the app-wide sidecar lock
+  /// ([SidecarWrites]), always INSIDE this project lock: the project lock first, then the sidecar
+  /// lock. Nothing takes them the other way round (the links write takes the sidecar lock alone), so
+  /// the two can never wait on each other.
+  final Map<String, Future<void>> _writes = {};
+
+  /// Run [body] after every earlier write to project [id] has finished.
+  Future<T> _exclusive<T>(String id, Future<T> Function() body) {
+    final before = _writes[id] ?? Future<void>.value();
+    final run = before.then((_) => body());
+    final done = run.then<void>((_) {}, onError: (Object _) {});
+    _writes[id] = done;
+    done.whenComplete(() {
+      if (identical(_writes[id], done)) _writes.remove(id);
+    });
+    return run;
+  }
+
   /// Save a project as the `<id>.{plynal,json}` pair, returning its id. The project body is written
   /// FIRST and the sidecar LAST, so [listProjects] never sees a `.json` without its `.plynal`.
   ///
@@ -122,34 +154,43 @@ class NalbindRepository {
   /// The sidecar is MERGED into an existing one (keeping its savedAt, author and every key this build
   /// does not know); only the name, craft, notes and lastOpened are set from this save.
   Future<String> saveProject(NalbindProject project, {String? id}) async {
-    final dir = await _dir();
     final projectId = id ?? _uuid.v4();
+    return _exclusive(projectId, () => _save(project, projectId, existing: id != null));
+  }
+
+  Future<String> _save(NalbindProject project, String projectId, {required bool existing}) async {
+    final dir = await _dir();
+    final id = existing ? projectId : null;
     final now = DateTime.now();
     try {
       final body = File(_projectPath(dir, projectId));
       await _refuseUnreadable(body);
       await _atomicWrite(body, jsonEncode(project.toJson()));
       final name = project.name.isEmpty ? 'Untitled' : project.name;
-      DraftMeta? existing;
-      if (id != null) {
-        try {
-          existing = await _readSidecar(dir, id);
-        } catch (_) {/* first save / missing or unreadable sidecar: write a fresh one */}
-      }
-      final meta = existing?.copyWith(
-            name: name,
-            craft: 'Nalbinding',
-            notes: project.notes,
-            lastOpened: now,
-          ) ??
-          DraftMeta(
-            name: name,
-            craft: 'Nalbinding',
-            notes: project.notes,
-            savedAt: now,
-            lastOpened: now,
-          );
-      await _atomicWrite(File(_jsonPath(dir, projectId)), jsonEncode(meta.toJson()));
+      // The sidecar's read-modify-write under the sidecar lock (inside this project's lock), so a
+      // link the materials sheet writes meanwhile is merged, never lost.
+      await SidecarWrites.run(_jsonPath(dir, projectId), () async {
+        DraftMeta? existing;
+        if (id != null) {
+          try {
+            existing = await _readSidecar(dir, id);
+          } catch (_) {/* first save / missing or unreadable sidecar: write a fresh one */}
+        }
+        final meta = existing?.copyWith(
+              name: name,
+              craft: 'Nalbinding',
+              notes: project.notes,
+              lastOpened: now,
+            ) ??
+            DraftMeta(
+              name: name,
+              craft: 'Nalbinding',
+              notes: project.notes,
+              savedAt: now,
+              lastOpened: now,
+            );
+        await _atomicWrite(File(_jsonPath(dir, projectId)), jsonEncode(meta.toJson()));
+      });
       return projectId;
     } on FileSystemException catch (e) {
       throw Exception('Could not save the project: ${e.message}');
@@ -214,29 +255,78 @@ class NalbindRepository {
     return NalbindProject.decode(text);
   }
 
-  /// Mark a project opened (bumps `lastOpened`, rewrites the sidecar).
-  Future<void> touchOpened(String id) async {
+  /// Tick recipe segment [segmentId] of saved project [id] done (or not) in the follow view, writing
+  /// ONLY that tick into the `.plynal` on disk (any unsaved edits on screen stay unsaved). [expected]
+  /// is the step as the screen shows it: the tick is written only when the saved step with that id
+  /// is the same step. Returns false, writing nothing, when it is not (added or changed since the
+  /// last save). A file this build must not replace throws a [NativeFormatException], as a save
+  /// would.
+  Future<bool> setSegmentDone(String id, String segmentId,
+          {required bool done, required RecipeSegment expected}) =>
+      _exclusive(id, () => _setDone(id, segmentId, done: done, expected: expected));
+
+  Future<bool> _setDone(String id, String segmentId,
+      {required bool done, required RecipeSegment expected}) async {
     final dir = await _dir();
-    final meta = await _readSidecar(dir, id);
-    await _atomicWrite(File(_jsonPath(dir, id)), jsonEncode(meta.copyWith(lastOpened: DateTime.now()).toJson()));
+    final body = File(_projectPath(dir, id));
+    final NalbindProject saved;
+    try {
+      saved = NalbindProject.decode(await body.readAsString());
+    } on NativeFormatException catch (e) {
+      throw NativeFormatException(e.problem,
+          document: NativeDocument.nalbindProject, whileSaving: true, detail: e.detail);
+    } on FileSystemException catch (e) {
+      throw Exception('Could not save the tick: ${e.message}');
+    }
+    final recipe = saved.recipe;
+    final onDisk = recipe?.segments.where((s) => s.id == segmentId).firstOrNull;
+    if (recipe == null || onDisk == null || onDisk != expected) return false;
+    if (recipe.done.contains(segmentId) == done) return true;
+    try {
+      await _atomicWrite(
+          body, jsonEncode(saved.withRecipe(recipe.withDone(segmentId, done)).toJson()));
+    } on FileSystemException catch (e) {
+      throw Exception('Could not save the tick: ${e.message}');
+    }
+    return true;
+  }
+
+  /// Mark a project opened (bumps `lastOpened`, rewrites the sidecar).
+  Future<void> touchOpened(String id) => _exclusive(id, () => _touch(id));
+
+  Future<void> _touch(String id) async {
+    final dir = await _dir();
+    await SidecarWrites.run(_jsonPath(dir, id), () async {
+      final meta = await _readSidecar(dir, id);
+      await _atomicWrite(File(_jsonPath(dir, id)), jsonEncode(meta.copyWith(lastOpened: DateTime.now()).toJson()));
+    });
   }
 
   /// Delete EVERYTHING a project owns: the sidecar FIRST (so [listProjects] drops it atomically), then
   /// the `.plynal` body, any `.tmp` a save interrupted mid-write left behind, and finally the
   /// `<id>.photos/` folder with every photo in it. The confirm dialog promises the project is
   /// "permanently removed", so no user content may survive it. Tolerant of already-missing files.
-  Future<void> deleteProject(String id) async {
+  Future<void> deleteProject(String id) => _exclusive(id, () => _delete(id));
+
+  Future<void> _delete(String id) async {
     final dir = await _dir();
     final json = _jsonPath(dir, id);
     final body = _projectPath(dir, id);
-    for (final path in [json, body, '$body.tmp', '$json.tmp']) {
-      final f = File(path);
-      if (await f.exists()) {
-        try {
-          await f.delete();
-        } catch (_) {/* tolerate races / permission quirks */}
+    Future<void> remove(List<String> paths) async {
+      for (final path in paths) {
+        final f = File(path);
+        if (await f.exists()) {
+          try {
+            await f.delete();
+          } catch (_) {/* tolerate races / permission quirks */}
+        }
       }
     }
+
+    // The sidecar first, under the sidecar lock, so a link being written cannot bring it back; with
+    // it the temp files of a save and of a links write (ADR 0016) that an interruption left.
+    await SidecarWrites.run(json, () => remove([json, '$json.tmp', '$json.links.tmp']));
+    await remove([body, '$body.tmp']);
     // Last, so the project has already left the listing. If this fails, the folder is an orphan
     // (neither file exists any more) and the next run's [sweepOrphanedPhotos] removes it.
     await _deletePhotosDir(Directory(_photosPath(dir, id)));

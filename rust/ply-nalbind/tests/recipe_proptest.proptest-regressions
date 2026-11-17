@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 63ed5d77cdee5c3ae8308fcea1ce6ecc95887e6bf4b8fd93e11d0b1d022c5f2b # shrinks to recipe = Recipe { fit: [], segments: [Segment { id: "segment-0", title: "", work: ShortRows { extent: Some(Until { measure: Measurement { label: "", value: Some(3.9391099794434132), unit: None } }) }, stitch: None, target: None, notes: "", caution: "" }], done: [] }

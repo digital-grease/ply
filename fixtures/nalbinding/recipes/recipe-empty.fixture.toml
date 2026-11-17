@@ -1,0 +1,23 @@
+# Fixture record for nalbinding/recipes/recipe-empty (see fixtures/README.md).
+
+id = "nalbinding/recipes/recipe-empty"
+title = "A recipe added with no steps yet"
+technique = "recipe checks: an empty recipe"
+files = ["recipe-empty.plynal", "recipe-empty.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written for Ply's tests through the app's own .plynal writer (schema version 3) on 2026-11-16, and re-written by it the same day when the recipe gained its \
+id counter (lastSegmentNumber); nothing else changed. The \
+one check a recipe with steps can never give (empty-recipe); the oracle was derived by hand."""
+shape = "A project with notes, the Oslo stitch and an empty recipe."
+
+[sources]
+references = ["Ply's recipe checks (rust/ply-nalbind/src/recipe/check.rs)."]
+
+[verification]
+automated_checks = "pass"
+automated_detail = "rust/ply-nalbind/tests/recipe_fixtures.rs; app/test/nalbind_recipe_model_test.dart."
+practitioner_nalbind_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "None beyond being empty."

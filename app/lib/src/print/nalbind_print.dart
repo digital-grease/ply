@@ -1,6 +1,8 @@
 // The printable NALBINDING project (M9-02): name, stitch (name and notation exactly as written), the
 // loop diagram as vector graphics from the same geometry the screen draws, the notation findings,
-// notes and photos. [gatherNalbindPrint] reads the notation and the photos once;
+// notes, the recipe when the project has one (ADR 0017: each step in working order with its stitch,
+// count, target, notes, caution and whether Ply checked it, then the recipe findings) and photos.
+// [gatherNalbindPrint] reads the notation, checks the recipe and loads the photos once;
 // [buildNalbindPrintDocument] is pure.
 
 import 'dart:io';
@@ -13,8 +15,11 @@ import '../data/nalbind_repository.dart';
 import '../data/photo_store.dart';
 import '../models/nalbind_diagram_shapes.dart';
 import '../models/nalbind_project.dart';
+import '../models/nalbind_recipe.dart';
+import '../models/nalbind_recipe_view.dart';
 import '../rust/dto.dart' show SeverityKind;
 import '../rust/nalbind_dto.dart';
+import '../rust/nalbind_recipe_dto.dart';
 import '../state/nalbind_providers.dart';
 import '../widgets/nalbind_diagram_view.dart';
 import 'knit_print.dart' show isoDate;
@@ -36,6 +41,7 @@ class NalbindPrintSource {
     required this.photos,
     required this.saved,
     required this.printedAt,
+    this.recipe,
   });
 
   /// The project as the form holds it (notation trimmed, as a save stores it).
@@ -50,6 +56,9 @@ class NalbindPrintSource {
   /// Whether the project has been saved (photos can only be attached after the first save).
   final bool saved;
   final DateTime printedAt;
+
+  /// The engine's check of the project's recipe, or null for a note-only project.
+  final RecipeReportDto? recipe;
 }
 
 /// Read [project]'s notation strictly (as the project screen does) and load the photos of the saved
@@ -63,6 +72,8 @@ Future<NalbindPrintSource> gatherNalbindPrint(
 }) async {
   final notation = project.notation.trim();
   final reading = notation.isEmpty ? null : await repo.read(notation, strict: true);
+  final recipe = project.recipe;
+  final report = recipe == null ? null : await repo.checkRecipe(recipe, projectNotation: notation);
   final photos = <PrintPhotoFile>[];
   if (id != null) {
     final files = await PhotoStore(subdir: 'nalbinds', id: id, docsOverride: docsOverride).list();
@@ -80,6 +91,7 @@ Future<NalbindPrintSource> gatherNalbindPrint(
     photos: photos,
     saved: id != null,
     printedAt: now ?? DateTime.now(),
+    recipe: report,
   );
 }
 
@@ -90,8 +102,13 @@ String nalbindFindingText(String level, String message, String quote) {
 }
 
 /// The errors that make the export ask before printing: in the strict (authoring) reading every
-/// notation problem is an error, plus the stitch's own validation errors.
-List<String> nalbindPrintErrors(NalbindPrintSource s) {
+/// notation problem is an error, plus the stitch's own validation errors, plus the recipe's errors.
+List<String> nalbindPrintErrors(NalbindPrintSource s) => [
+      ..._notationErrors(s),
+      for (final e in s.recipe?.errorTexts ?? const <String>[]) 'Recipe, $e',
+    ];
+
+List<String> _notationErrors(NalbindPrintSource s) {
   final r = s.reading;
   if (r == null) return const [];
   return [
@@ -100,6 +117,107 @@ List<String> nalbindPrintErrors(NalbindPrintSource s) {
     for (final i in r.issues)
       if (i.severity == SeverityKind.error) nalbindFindingText('Error', i.message, ''),
   ];
+}
+
+/// The problems box's opening sentence: what the errors are in, and what that means.
+String _problemsIntro(int notation, int recipe) {
+  final n = notation + recipe;
+  final errors = '$n ${n == 1 ? 'error' : 'errors'}';
+  if (recipe == 0) {
+    return 'Ply found $errors in the stitch notation, so the stitch and its sketch may not be '
+        'what you meant.';
+  }
+  if (notation == 0) {
+    return 'Ply found $errors in the recipe, so some steps may not be what you meant.';
+  }
+  return 'Ply found $errors in the stitch notation and the recipe, so the stitch, its sketch and '
+      'some steps may not be what you meant.';
+}
+
+/// The printed recipe: what Ply checks, the fit, then every step in working order (a heading for
+/// each part) with its written instruction and its facts.
+List<PrintBlock> nalbindRecipeBlocks(NalbindRecipe recipe, RecipeReportDto report,
+    {required String projectStitchName}) {
+  final blocks = <PrintBlock>[
+    const PrintParagraph(
+        '$kRecipeCheckedText Steps marked free text are the author\'s own '
+        'words, which Ply does not read.',
+        style: PrintTextStyle.muted),
+  ];
+  if (report.fit.isNotEmpty) {
+    blocks.add(PrintLines([for (final f in report.fit) PrintLine(f, label: 'Fit')]));
+  }
+  if (recipe.segments.isEmpty) {
+    blocks.add(const PrintParagraph('The recipe has no steps yet.'));
+    return blocks;
+  }
+  int? part;
+  final total = recipe.segments.length;
+  for (final (i, seg) in recipe.segments.indexed) {
+    final s = report.at(i);
+    if (s?.partNumber != null && s!.partNumber != part) {
+      part = s.partNumber;
+      final title = seg.title.trim();
+      blocks.add(PrintParagraph(
+          seg.phase == RecipePhase.start && title.isNotEmpty ? 'Part $part: $title' : 'Part $part',
+          style: PrintTextStyle.strong));
+    }
+    final errors =
+        report.issuesAt(i).where((x) => x.severity == RecipeSeverityKind.error).isNotEmpty;
+    blocks.add(PrintLines([
+      PrintLine(
+        recipeWrittenText(report, seg, i) ?? '',
+        label: recipeStepLabel(seg, i, total),
+        flagged: errors,
+      ),
+    ]));
+    final stitch =
+        s == null ? null : recipeStitchText(report, s, projectStitchName: projectStitchName);
+    final count = s == null ? null : recipeCountText(s);
+    blocks.add(PrintFacts([
+      if (stitch != null) PrintFact('Stitch', stitch),
+      if (count != null) PrintFact('Stitches after', count),
+      if (s?.target != null) PrintFact('Aim for', s!.target!),
+      if (seg.notes.trim().isNotEmpty) PrintFact('Notes', seg.notes.trim()),
+      if (seg.caution.trim().isNotEmpty) PrintFact('Watch out for', seg.caution.trim()),
+      PrintFact('Checked', recipeStatusText(report, i)),
+      if (recipe.done.contains(seg.id)) const PrintFact('Done', 'Ticked done'),
+    ]));
+  }
+  return blocks;
+}
+
+/// Every recipe finding, placed (`Step 3 (Cuff)`, `Fit 1`, `Whole recipe`).
+List<PrintIssue> nalbindRecipeIssues(NalbindRecipe recipe, RecipeReportDto report) => [
+      for (final sev in const [
+        RecipeSeverityKind.error,
+        RecipeSeverityKind.warning,
+        RecipeSeverityKind.info,
+      ])
+        for (final i in report.issues.where((x) => x.severity == sev))
+          PrintIssue(
+            severity: switch (sev) {
+              RecipeSeverityKind.error => PrintIssueSeverity.error,
+              RecipeSeverityKind.warning => PrintIssueSeverity.warning,
+              RecipeSeverityKind.info => PrintIssueSeverity.note,
+            },
+            where: _recipePlace(recipe, i),
+            message: i.message,
+          ),
+    ];
+
+String _recipePlace(NalbindRecipe recipe, RecipeIssueDto i) {
+  final seg = i.segment;
+  if (seg != null) {
+    final title = seg < recipe.segments.length ? recipe.segments[seg].title.trim() : '';
+    return title.isEmpty ? 'Step ${seg + 1}' : 'Step ${seg + 1} ($title)';
+  }
+  final fit = i.fit;
+  if (fit != null) {
+    final label = fit < recipe.fit.length ? recipe.fit[fit].label.trim() : '';
+    return label.isEmpty ? 'Fit ${fit + 1}' : 'Fit ${fit + 1} ($label)';
+  }
+  return 'Whole recipe';
 }
 
 /// Points per loop slot for the printed diagram: about 30 mm tall for a typical stitch.
@@ -147,6 +265,7 @@ PrintDocument buildNalbindPrintDocument(NalbindPrintSource s, {required bool wit
   final p = s.project;
   final r = s.reading;
   final errors = nalbindPrintErrors(s);
+  final notationErrors = _notationErrors(s).length;
   final notation = p.notation.trim();
 
   final stitchBlocks = <PrintBlock>[];
@@ -211,8 +330,7 @@ PrintDocument buildNalbindPrintDocument(NalbindPrintSource s, {required bool wit
         ? PrintNotice(
             level: PrintNoticeLevel.problem,
             title: 'This project has problems',
-            intro: 'Ply found ${errors.length} ${errors.length == 1 ? 'error' : 'errors'} in the '
-                'stitch notation, so the stitch and its sketch may not be what you meant.',
+            intro: _problemsIntro(notationErrors, errors.length - notationErrors),
             lines: errors,
           )
         : null,
@@ -226,6 +344,14 @@ PrintDocument buildNalbindPrintDocument(NalbindPrintSource s, {required bool wit
       ]),
       PrintSection(
           'Notes', [PrintParagraph(p.notes.trim().isEmpty ? 'No notes.' : p.notes.trim())]),
+      if (p.recipe != null && s.recipe != null) ...[
+        PrintSection(
+            'Recipe', nalbindRecipeBlocks(p.recipe!, s.recipe!, projectStitchName: p.stitchName)),
+        PrintSection('Recipe findings', [
+          PrintIssues(nalbindRecipeIssues(p.recipe!, s.recipe!),
+              emptyText: 'Ply found no problems in the recipe.'),
+        ]),
+      ],
       PrintSection('Photos', photoBlocks),
     ],
   );

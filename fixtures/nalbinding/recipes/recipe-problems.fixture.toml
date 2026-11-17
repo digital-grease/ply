@@ -1,0 +1,33 @@
+# Fixture record for nalbinding/recipes/recipe-problems (see fixtures/README.md).
+
+id = "nalbinding/recipes/recipe-problems"
+title = "Every recipe check, each on purpose"
+technique = "recipe checks: order, parts, references, counts, measurements, notation, free text"
+files = ["recipe-problems.plynal", "recipe-problems.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written for Ply's tests through the app's own .plynal writer (schema version 3) on 2026-11-16, and \
+re-written by it the same day when the recipe gained its id counter (lastSegmentNumber) and step \
+22 a notation past the 200 characters Ply reads. Not \
+a workable object: 25 steps built to trigger every recipe check a saved file can reach (all but \
+empty-recipe, see recipe-empty, and too-large, which a file the app opens cannot reach). The \
+oracle was derived by hand from the rules of the recipe checks in rust/ply-nalbind/src/recipe/check.rs; the two quoted notation messages \
+are the notation reader's own words (rust/ply-nalbind/src/notation.rs)."""
+shape = "A step before any start; a foundation chain of 0; a stitch with no connection; a missing and a duplicate id; until a stitch count on rows; a lenient and a strict notation problem; a decrease of 0; a step after a finish; a target with no unit; a decrease of more than the round, to more stitches, an increase to fewer, past the cap; an opening as wide as the round; references to a later opening, a used opening, a non-opening and a missing step; openings never worked; until nothing, worked in a notation too long to read (207 characters); a negative length; empty free text; an own stitch with no notation; unfinished parts; a fit with no value; the project's stitch with a problem."
+
+[sources]
+references = [
+  "Ply's recipe checks (rust/ply-nalbind/src/recipe/check.rs) and notation reader (rust/ply-nalbind/src/notation.rs).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-nalbind/tests/recipe_fixtures.rs (recipe_fixtures_match_their_oracles and \
+the_fixtures_give_every_code_a_file_can_reach): 32 issues with their codes, severities, places and \
+exact texts, and every segment's count (refused steps leave the count where it was). \
+app/test/nalbind_recipe_fixture_test.dart prints the findings from the oracle."""
+practitioner_nalbind_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Each check appears once or twice; combinations are covered by the property tests in rust/ply-nalbind/tests/recipe_proptest.rs."

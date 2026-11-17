@@ -241,3 +241,17 @@ plain so it can double as user-facing help content.
   "step" where one round meets the next.
 - **Increase / decrease** — shaping by eye: an increase works two stitches into one connection
   point, a decrease skips a loop, judged by the thumb-loop angle to the centre.
+- **Recipe (nalbinding)**: the optional step-by-step plan of a nalbinding project in Ply, in
+  working order: a start, the body, the shaping and a finish, for each part (a mitten's hand, then
+  its thumb). Ply checks the order, the numbers and each stitch's notation; it does not simulate
+  the fabric.
+- **Foundation chain** (starting chain): the first stitches of a piece, worked with no round
+  before them. Joined into a ring it starts a cuff or a brim; left open it is the first row of a
+  flat piece.
+- **Centre start**: a small ring of stitches pulled tight at the centre, worked outward in a
+  spiral: the crown of a hat, the tip of a mitten, the toe of a sock.
+- **Thumb opening**: a gap left in the round for a thumb: some loops of the previous round are
+  skipped and the stitches across the gap are not connected to them. The thumb is later worked
+  from the loops around it.
+- **Pick up loops**: start a new part from loops of earlier work, such as a thumb started at a
+  corner of the thumb opening, connecting into the loops along its edge.

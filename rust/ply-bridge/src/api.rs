@@ -649,6 +649,25 @@ pub fn validate_nalbind(dto: NalbindStitchDto) -> Vec<NalbindIssueDto> {
         .collect()
 }
 
+// M8-04 NALBINDING RECIPES (ADR 0017; DTOs in `nalbind_recipe_dto.rs`, flat enums only, so no
+// freezed rebuild). The app owns the `.plynal` document; the engine owns the recipe checks.
+
+pub use crate::nalbind_recipe_dto::{
+    RecipeChainJoinKind, RecipeCountKind, RecipeDecreaseKind, RecipeDto, RecipeExtentDto,
+    RecipeExtentKind, RecipeFinishKind, RecipeIncreaseKind, RecipeIssueDto, RecipeKindDto,
+    RecipeLengthUnitKind, RecipeMeasurementDto, RecipePhaseKind, RecipeReadingKind,
+    RecipeReportDto, RecipeRoundJoinKind, RecipeSegmentDto, RecipeSegmentReportDto,
+    RecipeSeverityKind, RecipeStitchDto, RecipeStitchReadingDto, RecipeStitchSourceKind,
+};
+
+/// Check a nalbinding recipe against the project's stitch `project_notation` (read strictly, as
+/// the project screen reads it): one report per segment (its stitch read with the notation reader,
+/// the stitch count its numbers give, its written instruction) and every issue with its stable
+/// code, in one call. Never fails; a recipe past the engine's limits is one `too-large` issue.
+pub fn check_nalbind_recipe(recipe: RecipeDto, project_notation: String) -> RecipeReportDto {
+    crate::nalbind_recipe_dto::check(recipe, &project_notation)
+}
+
 // ---------------------------------------------------------------------------
 // M8-02 LOOM PROFILES and loom feasibility (ADR 0014; DTOs in `loom_dto.rs`, flat enums only, so
 // no freezed rebuild). The app owns the `looms.json` file I/O; the engine owns its format and the

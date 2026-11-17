@@ -13,6 +13,13 @@ fixtures/
   knitting/<topic>/<name>.plyknit                # craft acceptance fixture: the chart itself
   knitting/<topic>/<name>.expect.json            # its oracle (written rows, counts, issues)
   knitting/<topic>/<name>.fixture.toml           # its record
+  nalbinding/recipes/<name>.plynal               # craft acceptance fixture: a project with a recipe
+  nalbinding/recipes/<name>.expect.json          # its oracle (each step's report, every issue)
+  nalbinding/recipes/<name>.fixture.toml         # its record
+  materials/materials.json                       # materials and swatches as Ply stores them
+  materials/materials.expect.json                # their oracle: figures, diagnostics, estimates
+  materials/diagnostics.json                     # records that cannot be true
+  materials/materials.fixture.toml               # their record
 ```
 
 More trees (adversarial inputs, other crafts) will be added under their own top-level folders as
@@ -47,6 +54,7 @@ later work needs them, following the same rules.
 | | `plyknit/schema-v3/` | `.plyknit` schema version 3 (the cast-on count), which no tagged release wrote either; development builds before version 4 (sections) did. Copies of `knitting/repeats/` fixtures the engine's own writer produced, taken before the version 4 writer existed, each with a `.fixture.toml` record. |
 | | `plyknit/schema-v4/` | `.plyknit` schema version 4 (sections), which no tagged release wrote either; development builds before version 5 (sections in the round) did. Copies of three `knitting/sections/` fixtures and one `knitting/repeats/` fixture the engine's own writer produced, taken before the version 5 writer existed, each with a `.fixture.toml` record. |
 | `.plynal` nalbinding project | `plynal/v0.1.7/` | `NalbindProject.toJson` + `jsonEncode` at `v0.1.7`, unchanged since `v0.1.0`. |
+| | `plynal/schema-v2/` | `.plynal` schema version 2 (the inline version keys), which no tagged release wrote; development builds before version 3 (the recipe) did. Written by the version 2 model files at commit `2a23bae`, extracted with `git show` into a scratch Dart package, through their own `toJson` and `jsonEncode`. Each has a `.fixture.toml` record. |
 | `<id>.json` sidecar (`DraftMeta`) | `sidecar/v0.1.7/` | `DraftMeta.toJson` + `jsonEncode` at `v0.1.7`, shaped as the weaving, knitting and nalbinding save paths of that release built it. |
 
 Each `.plyknit` folder has:

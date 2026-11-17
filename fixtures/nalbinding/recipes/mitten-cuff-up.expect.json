@@ -1,0 +1,86 @@
+{
+  "note": "Hand-derived oracle for mitten-cuff-up.plynal: what the recipe checks (rust/ply-nalbind/src/recipe/check.rs) must report. Counts come from the recipe's own numbers: chain 36; the opening skips 7 and works 9 across the gap (36 - 7 + 9 = 38); the top decreases until 10 remain; the thumb picks up 18 and decreases until 6 remain.",
+  "project_notation": "UO/UOO F1",
+  "fit": ["Hand around the knuckles: 19 cm", "Wrist to fingertip: 18 cm"],
+  "segments": [
+    {
+      "index": 0, "id": "segment-1", "kind": "foundationChain", "phase": "start", "part": 1,
+      "stitch": {"source": "own", "notation": "UO/UOO F2", "reading": "strict", "accepted": true},
+      "count": 36,
+      "written": "Make a foundation chain of 36 stitches and join it into a ring.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 1, "id": "segment-2", "kind": "rounds", "phase": "body", "part": 1,
+      "stitch": {"source": "own", "notation": "UO/UOO F2", "reading": "strict", "accepted": true},
+      "count": 36,
+      "written": "Work in a spiral for 8 rounds.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 2, "id": "segment-3", "kind": "rounds", "phase": "body", "part": 1,
+      "stitch": {"source": "project", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 36,
+      "written": "Work in a spiral until it measures 7 cm (from the cuff edge).",
+      "target": null, "checked": true
+    },
+    {
+      "index": 3, "id": "segment-4", "kind": "opening", "phase": "shaping", "part": 1,
+      "stitch": {"source": "project", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 38,
+      "written": "Leave an opening: skip 7 loops of the previous round and work 9 stitches across the gap without connecting them.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 4, "id": "segment-5", "kind": "rounds", "phase": "body", "part": 1,
+      "stitch": {"source": "project", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 38,
+      "written": "Work in a spiral until it reaches the tip of the little finger.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 5, "id": "segment-6", "kind": "decrease", "phase": "shaping", "part": 1,
+      "stitch": {"source": "project", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 10,
+      "written": "Decrease 4 stitches in each round, connecting through two loops of the previous round at once, until 10 stitches remain.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 6, "id": "segment-7", "kind": "finish", "phase": "finish", "part": 1,
+      "stitch": null,
+      "count": 10,
+      "written": "Finish by drawing the last loops together to close the tip.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 7, "id": "segment-8", "kind": "pickUp", "phase": "start", "part": 2,
+      "stitch": {"source": "project", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 18,
+      "written": "Pick up 18 loops around the opening in step 4 (Thumb opening) to start this part.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 8, "id": "segment-9", "kind": "rounds", "phase": "body", "part": 2,
+      "stitch": {"source": "project", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 18,
+      "written": "Work in a spiral until it covers half of the thumb nail.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 9, "id": "segment-10", "kind": "decrease", "phase": "shaping", "part": 2,
+      "stitch": {"source": "project", "notation": "UO/UOO F1", "reading": "strict", "accepted": true},
+      "count": 6,
+      "written": "Decrease 3 stitches in each round, connecting through two loops of the previous round at once, until 6 stitches remain.",
+      "target": null, "checked": true
+    },
+    {
+      "index": 10, "id": "segment-11", "kind": "finish", "phase": "finish", "part": 2,
+      "stitch": null,
+      "count": 6,
+      "written": "Finish by drawing the last loops together to close the tip.",
+      "target": null, "checked": true
+    }
+  ],
+  "issues": [],
+  "done": []
+}
