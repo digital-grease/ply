@@ -625,11 +625,14 @@ fn craft_in(k: SwatchCraftKind) -> CraftKind {
     }
 }
 
-fn craft_out(c: CraftKind) -> SwatchCraftKind {
+/// `None` for a craft that is not a swatch craft at this materials schema version (tablet weaving:
+/// `materials.json` never holds it, see `ply_common::materials`).
+fn craft_out(c: CraftKind) -> Option<SwatchCraftKind> {
     match c {
-        CraftKind::Weaving => SwatchCraftKind::Weaving,
-        CraftKind::Knitting => SwatchCraftKind::Knitting,
-        CraftKind::Nalbinding => SwatchCraftKind::Nalbinding,
+        CraftKind::Weaving => Some(SwatchCraftKind::Weaving),
+        CraftKind::Knitting => Some(SwatchCraftKind::Knitting),
+        CraftKind::Nalbinding => Some(SwatchCraftKind::Nalbinding),
+        CraftKind::TabletWeaving => None,
     }
 }
 
@@ -712,7 +715,7 @@ impl From<&Swatch> for SwatchDto {
         SwatchDto {
             id: s.id.clone(),
             name: s.name.clone(),
-            craft: s.craft.map(craft_out),
+            craft: s.craft.and_then(craft_out),
             technique: s.technique.clone(),
             date: s.date.clone(),
             yarns: s

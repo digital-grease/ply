@@ -166,8 +166,12 @@ void main() {
       await seedLibrary(docs);
       final s = service();
       final plan = await s.planBackup();
-      expect(plan.projectCounts,
-          {BackupCraft.weaving: 2, BackupCraft.knitting: 1, BackupCraft.nalbinding: 1});
+      expect(plan.projectCounts, {
+        BackupCraft.weaving: 2,
+        BackupCraft.knitting: 1,
+        BackupCraft.nalbinding: 1,
+        BackupCraft.tabletWeaving: 0,
+      });
       expect(plan.photoCount, 2);
       expect(plan.fileName, 'ply-library-2026-11-12.plybackup');
       final bytes = await s.buildBackup(plan);

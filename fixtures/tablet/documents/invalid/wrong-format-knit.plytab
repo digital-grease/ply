@@ -1,0 +1,7 @@
+{
+  "format": "ply.knit",
+  "schema_version": 6,
+  "document": {
+    "name": "x"
+  }
+}

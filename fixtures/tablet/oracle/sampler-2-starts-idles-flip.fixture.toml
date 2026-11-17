@@ -43,7 +43,10 @@ rust/ply-tablet/tests/oracle_fixtures.rs (oracle_bands_match_their_tables_cell_b
 sampler_2_release_flip_and_floats): for every pick and card the action, threading (card 4 becomes Z \
 at its flip), arrangement after the turn, top-face and back threads and colours (continued floats \
 and the ambiguous idle included), twining, reversal, twist, woven, release and flip equal the \
-oracle; every cell of the drawn top face equals the oracle grid (? for the ambiguous cell); \
+oracle; every cell of the drawn top face and back equals the oracle grids (? for the ambiguous \
+cell; the back grid, card 4 at the left, was derived by hand from the Back column of section 12's \
+tables at the M10-02 review); rust/ply-tablet/tests/render_fixtures.rs reads both faces off the \
+rendered raster; \
 validation lists exactly the six long floats, four reversal notes, the flip, the release (3 quarter \
 turns) and the ambiguous face, in order; the final state is as stated; picks 3 and 4 come from one \
 written pick worked twice."""

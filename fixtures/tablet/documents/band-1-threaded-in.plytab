@@ -1,0 +1,197 @@
+{
+  "format": "ply.tablet",
+  "schema_version": 1,
+  "document": {
+    "name": "Oracle band 1: threaded-in diagonals",
+    "notes": "An original band made for Ply's tests (ADR 0018 section 11): 8 cards, cards 1 to 4 S-threaded and 5 to 8 Z-threaded, all at Ply home; 4 forward turns, 4 backward, then the Left pack forward and the Right pack backward.",
+    "palette": [
+      "#1a1a1a",
+      "#f2efe6",
+      "#b3262e",
+      "#d4a017"
+    ],
+    "weft": 0,
+    "cards": [
+      {
+        "id": "card-1",
+        "threads": {
+          "A": 0,
+          "B": 0,
+          "C": 0,
+          "D": 0
+        },
+        "threading": "S",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      },
+      {
+        "id": "card-2",
+        "threads": {
+          "A": 1,
+          "B": 0,
+          "C": 0,
+          "D": 2
+        },
+        "threading": "S",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      },
+      {
+        "id": "card-3",
+        "threads": {
+          "A": 2,
+          "B": 1,
+          "C": 0,
+          "D": 0
+        },
+        "threading": "S",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      },
+      {
+        "id": "card-4",
+        "threads": {
+          "A": 0,
+          "B": 2,
+          "C": 1,
+          "D": 3
+        },
+        "threading": "S",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      },
+      {
+        "id": "card-5",
+        "threads": {
+          "A": 0,
+          "B": 2,
+          "C": 1,
+          "D": 3
+        },
+        "threading": "Z",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      },
+      {
+        "id": "card-6",
+        "threads": {
+          "A": 2,
+          "B": 1,
+          "C": 0,
+          "D": 0
+        },
+        "threading": "Z",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      },
+      {
+        "id": "card-7",
+        "threads": {
+          "A": 1,
+          "B": 0,
+          "C": 0,
+          "D": 2
+        },
+        "threading": "Z",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      },
+      {
+        "id": "card-8",
+        "threads": {
+          "A": 0,
+          "B": 0,
+          "C": 0,
+          "D": 0
+        },
+        "threading": "Z",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      }
+    ],
+    "packs": [
+      {
+        "id": "pack-1",
+        "name": "Left",
+        "cards": [
+          "card-1",
+          "card-2",
+          "card-3",
+          "card-4"
+        ]
+      },
+      {
+        "id": "pack-2",
+        "name": "Right",
+        "cards": [
+          "card-5",
+          "card-6",
+          "card-7",
+          "card-8"
+        ]
+      }
+    ],
+    "turning": [
+      {
+        "repeat": 4,
+        "picks": [
+          {
+            "turns": "FFFFFFFF"
+          }
+        ]
+      },
+      {
+        "repeat": 4,
+        "picks": [
+          {
+            "turns": "BBBBBBBB"
+          }
+        ]
+      },
+      {
+        "repeat": 4,
+        "picks": [
+          {
+            "turns": "FFFFBBBB"
+          }
+        ]
+      }
+    ],
+    "settings": {
+      "twist_warning_quarters": 32,
+      "float_warning_picks": 3
+    }
+  }
+}

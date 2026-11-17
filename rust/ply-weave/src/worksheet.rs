@@ -710,7 +710,12 @@ impl<'a> Work<'a> {
             notes: Vec::new(),
         };
         match req.swatch {
-            Some(s) if matches!(s.craft, Some(CraftKind::Knitting | CraftKind::Nalbinding)) => {
+            Some(s)
+                if matches!(
+                    s.craft,
+                    Some(CraftKind::Knitting | CraftKind::Nalbinding | CraftKind::TabletWeaving)
+                ) =>
+            {
                 w.issue(
                     "plan.swatch_not_weaving",
                     IssueKind::Invalid,

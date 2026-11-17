@@ -24,6 +24,9 @@ fixtures/
   tablet/oracle/<name>.fixture.toml              # its record
   tablet/invalid/<name>.band.json                # a band with one defect
   tablet/invalid/cases.expect.json               # the diagnostics each one must give
+  tablet/documents/<name>.plytab                 # a band as the app saves it (the oracle bands)
+  tablet/documents/invalid/<name>.plytab         # a .plytab document with one defect
+  tablet/documents/invalid/cases.expect.json     # how the reader must treat each one
   materials/materials.json                       # materials and swatches as Ply stores them
   materials/materials.expect.json                # their oracle: figures, diagnostics, estimates
   materials/diagnostics.json                     # records that cannot be true
@@ -187,8 +190,8 @@ files with the same name:
 Tablet (card) weaving fixtures for the `ply-tablet` engine, following the conventions of ADR 0018:
 cards numbered from the weaver's left, corners named NT, FT, FB and NB as seen from the weaver's
 right, a forward turn moving the top edge away from the weaver, S and Z by the thread's path, Z
-twining counted positive. There is no native tablet file yet (`.plytab` comes with the editor), so a
-band is stored in the engine's own band form: `<name>.band.json` is exactly what
+twining counted positive. The oracle and invalid bands are stored in the engine's own band form
+(the native `.plytab` documents are in `documents/`, below): `<name>.band.json` is exactly what
 `ply_tablet::TabletBand` reads and writes (palette as `#rrggbb`, each card's id, threads by hole
 with all four keys `A` to `D` present and `null` for an empty hole, threading, start by corner
 name; packs; the turning as segments of picks with one turn letter `F`, `B`, `I` or `?` per card,
@@ -213,11 +216,25 @@ refused.
   (with exactly which errors), simulates (with exactly which warnings), or cannot be read at all.
   Bands that would be large files (1,001 cards, 10,001 segments, oversized text, a pack listing more
   entries than a band can have cards) are built by the tests instead of stored.
+- `documents/<name>.plytab`: the three oracle bands as the app saves them (M10-02, ADR 0018 section
+  14): the envelope `{"format": "ply.tablet", "schema_version": 1, "document": {...}}` with the
+  band's name and notes, written by the engine's own `.plytab` writer
+  (`cargo test -p ply-tablet --test document_fixtures -- --ignored` rewrites them, on purpose
+  only). Each reads back to exactly its `oracle/<name>.band.json` band and writes back byte for byte.
+  They are development fixtures, not migration fixtures: the first released writer's bytes go under
+  `migrations/plytab/` when a release ships one.
+- `documents/invalid/<name>.plytab` and `documents/invalid/cases.expect.json`: one defect each,
+  written by hand from the reading rules, with how the reader must treat it: `newer` (refused from
+  the envelope alone, before the document is read), `wrong_format`, `malformed` (an unknown or
+  missing field, a repeated key, a value of the wrong kind, not an object), `too_large` (past a count
+  limit) or `opens` (a structural error that validation reports; the band opens and saves as a
+  draft). Documents past the card, pick and text limits are built by the tests.
 
 | Folder | Contents | Tests |
 |---|---|---|
 | `tablet/oracle/` | `band-1-threaded-in`: 8 cards (S and Z), all at home, 4 forward, 4 backward, then two packs turned opposite ways; twist +4 and -4, 0, then +4 on every card; the colour doubled at each reversal. `sampler-2-starts-idles-flip`: 4 cards with a start one quarter on, the printed-face-right lettering, an idle on pick 1 (ambiguous faces), idles that lengthen floats on both faces, a twist release and a flip that unwinds twist to 0. `sampler-3-flip-then-opposite`: 4 cards worked by hand from the rules, with a flip followed by the opposite direction (no reversal), an idle right after a flip, a twist release, and an empty hole that crosses both faces and is a candidate of an ambiguous idle. | `rust/ply-tablet/tests/oracle_fixtures.rs` |
-| `tablet/invalid/` | One case per structural error a small file can show: two diagonal holes on one edge, a repeated hole, a turn string one card short, an unknown letter, a `2` style half turn (pointed to `?`), `?` without words and words without `?`, words, a flip, a release or a pack naming an unknown card, one flip list naming a card twice, a colour past the palette, a segment repeated 0 times, repeats past the 200,000-pick cap and past `u32`, two cards with one id, a card id and a pack id outside the id grammar; a card in two packs and a card listed twice in one pack (warnings); an unknown field, a card without all four hole keys and an unknown threading letter (unreadable). | `rust/ply-tablet/tests/invalid_fixtures.rs` |
+| `tablet/invalid/` | One case per structural error a small file can show: two diagonal holes on one edge, a repeated hole, a turn string one card short, an unknown letter, a `2` style half turn (pointed to `?`), `?` without words and words without `?`, words, a flip, a release or a pack naming an unknown card, one flip list naming a card twice, a colour past the palette, a segment repeated 0 times, repeats past the 200,000-pick cap and past `u32`, two cards with one id, a card id and a pack id outside the id grammar; a card in two packs and a card listed twice in one pack (warnings); an unknown field, a card without all four hole keys, an unknown threading letter and a card's words given twice on one pick (unreadable). | `rust/ply-tablet/tests/invalid_fixtures.rs` |
+| `tablet/documents/` | The three oracle bands as `.plytab` documents (name, notes, the band), and `invalid/`: a newer version (refused before its document is read), much newer with a document of no shape, another format, a bare band without the envelope, schema version 0 or a string, no document, unknown envelope, document and card fields, an unknown threading letter and note kind, a hole key left out, notes left out, a repeated key, a card's words given twice on one pick, an array, not JSON, a turn string longer than any band can use, and an illegal start (opens). | `rust/ply-tablet/tests/document_fixtures.rs`; `rust/ply-bridge/src/tablet_dto.rs`; `app/test/tablet_band_test.dart`, `app/test/tablet_repository_test.dart`, `app/test/library_backup_tablet_test.dart` |
 
 ## Readiness fixtures (ADR 0021)
 

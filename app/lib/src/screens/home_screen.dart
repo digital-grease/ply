@@ -10,10 +10,12 @@ import 'library_screen.dart';
 import 'materials_screen.dart';
 import 'nalbind_reference_screen.dart';
 import 'settings_screen.dart';
+import 'tablet_library_screen.dart';
 
-/// The app home: one library with a tab per craft (Weaving, Knitting, Nalbinding). The shared chrome
-/// — the title and the Materials, Help and Settings actions — lives here; each tab hosts that craft's library (its
-/// grid + FABs) as an AppBar-less [Scaffold]. The Help ("?") action opens the FAQ + Glossary hub.
+/// The app home: one library with a tab per craft (Weaving, Knitting, Nalbinding, Tablet weaving).
+/// The shared chrome (the title and the Materials, Help and Settings actions) lives here; each tab
+/// hosts that craft's library (its grid + FABs) as an AppBar-less [Scaffold]. The Help ("?") action
+/// opens the FAQ + Glossary hub.
 ///
 /// The library tabs are keyed by [libraryRevisionProvider]: a library restore (in Settings) bumps it,
 /// so every tab is rebuilt and reloads its list.
@@ -28,7 +30,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final revision = ref.watch(libraryRevisionProvider);
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Ply'),
@@ -39,6 +41,8 @@ class HomeScreen extends ConsumerWidget {
               Tab(text: 'Weaving', icon: Icon(Icons.texture)),
               Tab(text: 'Knitting', icon: Icon(Icons.grid_on)),
               Tab(text: 'Nalbinding', icon: Icon(Icons.gesture)),
+              // Tablet (card) weaving, M10-02.
+              Tab(text: 'Tablet weaving', icon: Icon(Icons.view_week_outlined)),
               Tab(text: 'Calculators', icon: Icon(Icons.calculate_outlined)),
             ],
           ),
@@ -72,6 +76,7 @@ class HomeScreen extends ConsumerWidget {
             LibraryScreen(key: ValueKey('weaving-$revision'), repository: repository),
             KnitLibraryScreen(key: ValueKey('knitting-$revision')),
             NalbindReferenceScreen(key: ValueKey('nalbinding-$revision')),
+            TabletLibraryScreen(key: ValueKey('tablet-$revision')),
             const CalculatorsScreen(),
           ],
         ),

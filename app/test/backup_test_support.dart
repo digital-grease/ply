@@ -19,6 +19,10 @@ import 'package:ply/src/models/native_format.dart';
 /// build asks the engine.
 const int knitVersion = 2;
 
+/// Stands in for the engine's envelope-only `.plytab` version reader in host tests (no FFI). The
+/// fixture files are small, so reading them whole here is fine; the app never does this.
+Future<int?> testTabletVersion(String text) async => plytabSchemaVersion(text);
+
 late Directory docs;
 late Directory work;
 
@@ -27,7 +31,7 @@ late Directory work;
 LibraryBackup service({
   Directory? into,
   BackupLimits limits = const BackupLimits(),
-  NativeFileChecks checks = const NativeFileChecks(),
+  NativeFileChecks checks = const NativeFileChecks(tabletVersion: testTabletVersion),
   Future<void> Function(String target)? beforePlace,
   List<(BackupCraft, String)>? thumbnails,
   AppSettings? settings,

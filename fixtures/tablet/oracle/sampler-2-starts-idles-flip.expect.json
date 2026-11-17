@@ -1,5 +1,5 @@
 {
-  "description": "ADR 0018 section 12 (oracle sampler 2), transcribed from its per-card tables (arrangement after each pick, top-face and back threads with their colours, twining, reversal, twist and woven), its expected top face grid and its expected diagnostics. Faces: the hole whose thread crossed that edge; 'X continues' for an idle card whose float carries on; 'X or Y' for an ambiguous idle (top: the holes at NT then FT; back: FB then NB). Grid: one string per pick, pick 1 first, card 1 at the left, ? for an ambiguous cell.",
+  "description": "ADR 0018 section 12 (oracle sampler 2), transcribed from its per-card tables (arrangement after each pick, top-face and back threads with their colours, twining, reversal, twist and woven), its expected top face grid and its expected diagnostics. Faces: the hole whose thread crossed that edge; 'X continues' for an idle card whose float carries on; 'X or Y' for an ambiguous idle (top: the holes at NT then FT; back: FB then NB). Grid: one string per pick, pick 1 first, card 1 at the left, ? for an ambiguous cell. The back face grid (card 4 at the left, pick 1 first) was derived by hand from the Back column of each card's table in section 12 and added at the M10-02 review.",
   "palette_letters": [
     "K",
     "W",
@@ -76,6 +76,7 @@
     "R G W G",
     "R G K K"
   ],
+  "back_face": ["? K K K", "R G W G", "W G R G", "K K G G", "G W G R", "G W R R", "K K W G", "W G W K", "R R W K"],
   "diagnostics": [
     {"code": "tablet.long_float", "severity": "warning", "location": {"kind": "run", "card": 1, "hole": "B", "face": "top", "first_pick": 1, "last_pick": 4, "end": "ended"}},
     {"code": "tablet.long_float", "severity": "warning", "location": {"kind": "run", "card": 1, "hole": "C", "face": "top", "first_pick": 2, "last_pick": 6, "end": "ended"}},

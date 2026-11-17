@@ -84,7 +84,7 @@ fn weaving_swatch<'a>(swatch: Option<&'a Swatch>, what: &str) -> Result<&'a Swat
     let s = swatch.ok_or_else(|| problem(format!("Choose a swatch to take the {what} from.")))?;
     if matches!(
         s.craft,
-        Some(CraftKind::Knitting) | Some(CraftKind::Nalbinding)
+        Some(CraftKind::Knitting) | Some(CraftKind::Nalbinding) | Some(CraftKind::TabletWeaving)
     ) {
         return Err(problem(format!(
             "{} is not a weaving swatch, so it has no {what}.",

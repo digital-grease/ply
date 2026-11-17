@@ -15,6 +15,7 @@ import 'editor_providers.dart';
 import 'knit_editor_providers.dart';
 import 'loom_providers.dart';
 import 'material_providers.dart';
+import 'tablet_editor_providers.dart' show tabletRepositoryProvider;
 import 'theme_providers.dart';
 
 /// The system save dialog and file picker for backups. Tests override it.
@@ -28,10 +29,13 @@ final backupFileAccessProvider =
 /// go through the settings notifier (saved first, then applied). A full backup carries My looms
 /// (`looms.json`, read by the engine), and a restore adds a backup's looms in one write that a later
 /// failure undoes (ADR 0014), and the materials and swatches likewise (`materials.json` with the
-/// swatches' photos; ADR 0016). Tests override it with a service over a temp directory.
+/// swatches' photos; ADR 0016). Tablet weaving bands are checked like knitting patterns: against
+/// the `.plytab` version the engine writes, then by the engine's parser (ADR 0018). Tests override
+/// it with a service over a temp directory.
 final libraryBackupProvider = Provider<LibraryBackup>((ref) {
   final drafts = ref.watch(repositoryProvider);
   final knits = ref.watch(knitRepositoryProvider);
+  final tablets = ref.watch(tabletRepositoryProvider);
   final looms = ref.watch(loomRepositoryProvider);
   final materials = ref.watch(materialsRepositoryProvider);
   return LibraryBackup(
@@ -41,11 +45,14 @@ final libraryBackupProvider = Provider<LibraryBackup>((ref) {
       if (version == null) throw StateError('the engine wrote an unrecognized .plyknit');
       return version;
     },
+    currentTabletSchemaVersion: tablets.schemaVersion,
     appVersion: kPlyAppVersion,
     limits: BackupLimits.forThisDevice(),
     checks: NativeFileChecks(
       wif: (text) async => drafts.parseDoc(text),
       knit: (text) async => knits.parse(text),
+      tablet: (text) async => tablets.parse(text),
+      tabletVersion: tablets.documentVersion,
     ),
     rebuildThumbnail: (craft, id) async {
       switch (craft) {
@@ -57,6 +64,8 @@ final libraryBackupProvider = Provider<LibraryBackup>((ref) {
               knitsDir: Directory(p.join(docs.path, BackupCraft.knitting.directory)));
         case BackupCraft.nalbinding:
           break; // no thumbnails
+        case BackupCraft.tabletWeaving:
+          await tablets.rebuildThumbnail(id);
       }
     },
     currentSettings: () async => ref.read(appSettingsProvider),

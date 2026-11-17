@@ -16,13 +16,16 @@ pub mod quantity;
 // The severity vocabulary every craft shares and the "ready to make or share" report (ADR 0021).
 pub mod readiness;
 
-/// The three fiber crafts Ply targets. Present from day one so the multi-engine
-/// seam is visible even while only weaving is implemented.
+/// The fiber crafts Ply targets, one engine each. `Weaving` is shaft weaving; `TabletWeaving` (card
+/// weaving) has its own engine, `ply-tablet` (ADR 0018). Additive: a sidecar's `craft` is this
+/// enum's serde name ("TabletWeaving"), and builds before the arm was added do not list such a
+/// project (it lives in its own `tablets/` folder, which they never read).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CraftKind {
     Weaving,
     Knitting,
     Nalbinding,
+    TabletWeaving,
 }
 
 /// An sRGB color. WIF color palettes are RGB triples; we store the same.

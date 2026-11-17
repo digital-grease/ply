@@ -184,14 +184,49 @@ pub struct PickSpec {
     /// Cards flipped before this pick (applied after the releases, before the turns).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flip: Vec<CardId>,
-    /// The pattern's own words for each card marked `?`, by card id (exactly those cards).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    /// The pattern's own words for each card marked `?`, by card id (exactly those cards). A card id
+    /// given twice is refused when read, never silently reduced to its last words.
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "unique_words"
+    )]
     pub unsupported: BTreeMap<CardId, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<PickNote>,
     /// This pick's weft, when it differs from the band's (recorded, not drawn in v1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weft: Option<ColorIndex>,
+}
+
+/// The words map, refusing a repeated card id (serde's own map reading keeps the last value).
+fn unique_words<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<BTreeMap<CardId, String>, D::Error> {
+    struct V;
+    impl<'de> serde::de::Visitor<'de> for V {
+        type Value = BTreeMap<CardId, String>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("the words for each card marked ?, by card id")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut m: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut out = BTreeMap::new();
+            while let Some((id, words)) = m.next_entry::<CardId, String>()? {
+                if out.contains_key(&id) {
+                    return Err(serde::de::Error::custom(format!(
+                        "the words for card {:?} are given twice",
+                        crate::diagnostic::excerpt(id.as_str(), 40)
+                    )));
+                }
+                out.insert(id, words);
+            }
+            Ok(out)
+        }
+    }
+    d.deserialize_map(V)
 }
 
 impl PickSpec {
@@ -411,7 +446,7 @@ impl Default for TabletLimits {
 
 /// The palette as `#rrggbb` strings. The parser checks every byte before slicing, so no input can
 /// make it panic.
-mod hex_palette {
+pub(crate) mod hex_palette {
     use ply_common::Color;
     use serde::{Deserialize, Deserializer, Serializer};
 

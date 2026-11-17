@@ -1386,6 +1386,11 @@ mod weight_opt {
 }
 
 /// `Option<CraftKind>` in the file as `"weaving"`, `"knitting"`, `"nalbinding"` (or null).
+///
+/// Tablet weaving is not a swatch craft at schema version 1: a build before it would read the new
+/// value as unknown and set the whole file aside as unreadable (ADR 0016), so it waits for a
+/// `materials.json` version bump with its migration. Until then it is never read, and writing it is
+/// refused (no screen offers it) rather than producing a file older builds would set aside.
 mod craft_opt {
     use crate::CraftKind;
     use serde::{Deserialize, Deserializer, Serializer};
@@ -1396,6 +1401,9 @@ mod craft_opt {
             Some(CraftKind::Weaving) => s.serialize_some("weaving"),
             Some(CraftKind::Knitting) => s.serialize_some("knitting"),
             Some(CraftKind::Nalbinding) => s.serialize_some("nalbinding"),
+            Some(CraftKind::TabletWeaving) => Err(serde::ser::Error::custom(
+                "a tablet weaving swatch needs a newer materials file version",
+            )),
         }
     }
 

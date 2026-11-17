@@ -1,0 +1,113 @@
+{
+  "description": "One-defect .plytab documents, each with how the reader must treat it: 'newer' (refused as written by a newer Ply, from the envelope alone; schema_version is the version it reports), 'wrong_format' (not a tablet weaving band), 'malformed' (not readable as this version), 'too_large' (past a count limit) or 'opens' (readable; validation reports its errors). Written by hand from the reading rules of ADR 0018 section 14 and its M10-02 amendments.",
+  "cases": [
+    {
+      "file": "newer-version.plytab",
+      "tests": "schema version 2: refused as newer before its document (with a field this build does not know) is read",
+      "outcome": "newer",
+      "schema_version": 2,
+      "message_contains": "newer version of Ply"
+    },
+    {
+      "file": "much-newer-version.plytab",
+      "tests": "schema version 37 whose document is not an object at all: still refused as newer, not as unreadable",
+      "outcome": "newer",
+      "schema_version": 37
+    },
+    {
+      "file": "wrong-format-knit.plytab",
+      "tests": "another Ply format (a knitting pattern's envelope)",
+      "outcome": "wrong_format",
+      "message_contains": "ply.knit"
+    },
+    {
+      "file": "bare-band.plytab",
+      "tests": "the engine's band shape with no envelope: a .plytab has no legacy, unversioned form",
+      "outcome": "wrong_format"
+    },
+    {
+      "file": "version-zero.plytab",
+      "tests": "schema_version 0 is not a positive integer",
+      "outcome": "malformed",
+      "message_contains": "schema_version"
+    },
+    {
+      "file": "version-string.plytab",
+      "tests": "schema_version written as a string",
+      "outcome": "malformed"
+    },
+    {
+      "file": "no-document.plytab",
+      "tests": "an envelope without a document",
+      "outcome": "malformed"
+    },
+    {
+      "file": "unknown-envelope-field.plytab",
+      "tests": "an envelope key this version does not write",
+      "outcome": "malformed"
+    },
+    {
+      "file": "unknown-document-field.plytab",
+      "tests": "a document key this version does not write",
+      "outcome": "malformed"
+    },
+    {
+      "file": "unknown-card-field.plytab",
+      "tests": "a card key this version does not write (a tilt-named threading)",
+      "outcome": "malformed"
+    },
+    {
+      "file": "unknown-threading-letter.plytab",
+      "tests": "a threading that is neither S nor Z",
+      "outcome": "malformed"
+    },
+    {
+      "file": "missing-hole-key.plytab",
+      "tests": "a card whose hole D is left out (an empty hole is written as null, never left out)",
+      "outcome": "malformed"
+    },
+    {
+      "file": "missing-notes.plytab",
+      "tests": "a document without its notes (always written, empty or not)",
+      "outcome": "malformed"
+    },
+    {
+      "file": "duplicate-key.plytab",
+      "tests": "a key written twice",
+      "outcome": "malformed"
+    },
+    {
+      "file": "array-not-object.plytab",
+      "tests": "a JSON array around the envelope",
+      "outcome": "malformed",
+      "message_contains": "one JSON object"
+    },
+    {
+      "file": "not-json.plytab",
+      "tests": "not JSON at all",
+      "outcome": "malformed"
+    },
+    {
+      "file": "unknown-note-kind.plytab",
+      "tests": "a pick note kind that is neither brocade nor other",
+      "outcome": "malformed"
+    },
+    {
+      "file": "turns-past-card-limit.plytab",
+      "tests": "a turn string of 4,001 letters: longer than any band of at most 1,000 cards can use, refused before the editor holds it",
+      "outcome": "too_large",
+      "message_contains": "a pick's turns"
+    },
+    {
+      "file": "start-illegal-opens.plytab",
+      "tests": "a start with two diagonal holes on one edge: a structural error that validation reports, so the document opens (and saves as a draft)",
+      "outcome": "opens"
+    },
+    {
+      "file": "repeated-words-key.plytab",
+      "tests": "a pick giving the words for one card twice: refused, never reduced to the last words (a save would otherwise drop the first)",
+      "outcome": "malformed",
+      "message_contains": "given twice"
+    }
+  ]
+}

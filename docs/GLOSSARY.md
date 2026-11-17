@@ -311,3 +311,121 @@ plain so it can double as user-facing help content.
   such as a step in the pattern's own words, free text in a recipe, or a loom setting the loom
   profile does not record. Ply keeps it as written and says what it did not check, rather than
   guessing.
+
+### Tablet weaving
+- **Tablet weaving** (card weaving): weaving a narrow band in which every warp thread passes through
+  a hole in a small square card. Turning the cards opens each new shed and twists each card's
+  threads into a cord. It is not drafted with shafts, a tie-up and treadling: in Ply it is a craft
+  of its own, with its own tab in the library and its bands saved as .plytab files, and Ply does not
+  read or write WIF or other programs' files for it. Ply draws a tablet band with pick 1 at the
+  bottom and the newest pick at the top, as the band grows away from the weaver, unlike its shaft
+  drafts, which put pick 1 at the top. The rules Ply uses to work out a band's faces and twist await
+  a tablet weaver's review.
+- **Card** (tablet): a small square card with a hole at each corner; each hole carries one warp
+  thread or is left empty. Tablets and cards are the same thing, which is why tablet weaving is also
+  called card weaving. The cards stand on edge side by side, their faces to the weaver's left and
+  right, and are numbered from 1 at the weaver's left. Every card drawing in Ply is a side view from
+  the weaver's right, with the band and the weaver at the left of the drawing and the far end of the
+  warp at the right.
+- **Hole**: one of a card's four holes, lettered A, B, C and D in order round the card, so A and C
+  are diagonal, and so are B and D. Each hole is threaded with one color from the band's palette, or
+  left empty.
+- **Pack**: a named group of cards turned together, such as Left for cards 1 to 4, so an instruction
+  can say "turn the Left pack forward". A card is in at most one pack at a time. In Ply a pack is a
+  way to write and print the turning: what is saved is every card's own turn on every pick, because
+  cards move between packs and are often turned one by one.
+- **Near top and far top** (NT, FT): two of the four corners of a card held flat, named by where
+  they are rather than by a letter. The near top is the upper corner nearest the weaver and the far
+  top the upper corner toward the far end of the warp; below them are the near bottom and the far
+  bottom. The threads at the near top and far top make the upper layer of the shed, those at the
+  near bottom and far bottom the lower layer, and the weft passes between them.
+- **Home position**: the way a card is set at the start of a band. Ply's home has hole A at the near
+  top, D at the far top, C at the far bottom and B at the near bottom; seen from the weaver's right
+  the letters run A, B, C, D counterclockwise from the near top, so forward turns bring A, B, C and
+  D across the top in that order. Many commercial cards are lettered clockwise on their printed face
+  and set with the printed face to the right and D at the near top: the same card turned the other
+  way round. Ply offers both as presets, "A at the near top" and "printed face to the right, D at
+  the near top", and keeps each card's start with its printed letters, so nothing is converted or
+  lost.
+- **Forward and backward turn** (F, B): a forward turn rotates a card a quarter turn so that its top
+  edge moves away from the weaver; seen from the weaver's right it is clockwise, and from Ply home
+  it takes hole A from the near top to the far top. A backward turn is the reverse, the top edge
+  moving toward the weaver. On every pick each card turns forward, turns backward or stays idle. The
+  thread whose hole moves along the top edge during a turn is the one that shows on the band's top
+  face for that pick, and the one that moves along the bottom edge shows on the back. Ply's turning
+  chart writes F, B and I (and ? for a move Ply does not model), never slashes, which mean different
+  things in different sources; a few sources also use "forward" the other way round, so check what
+  a pattern means.
+- **S and Z threading**: which way the threads pass through a card. Seen from above, with the weaver
+  at the bottom and the warp running up the page, each thread of an S-threaded card crosses the card
+  like the middle stroke of an S, from upper left to lower right: on the band side it lies along the
+  card's face that points to the weaver's right, and on the far side along the face that points
+  left. A Z-threaded card is the mirror image. This is the thread-path meaning most weavers use
+  (Collingwood's); some sources name S and Z by the card's slant instead, which gives the opposite
+  letter. It does not depend on which face is printed, and it is a property of how the card faces
+  now, so a flip changes S to Z and Z to S.
+
+```text
+Top view of one card, the weaver at the bottom and the warp running up the page.
+":" is the card standing on edge; the slanted line is one warp thread.
+
++-------------------+-------------------+
+|    S-threaded     |    Z-threaded     |
+|        far        |        far        |
+|     \   :         |         :   /     |
+|      \  :         |         :  /      |
+|       \ :         |         : /       |
+|        \:         |         :/        |
+|         #  hole   |   hole  #         |
+|         :\        |        /:         |
+|         : \       |       / :         |
+|         :  \      |      /  :         |
+|         :   \     |     /   :         |
+|        near       |       near        |
++-------------------+-------------------+
+S: on the band (near) side the thread lies along the face to the weaver's right, on the far side
+along the face to the left. Z: the mirror, band side left and far side right.
+```
+
+- **Twining**: the cord twist woven into the band. On every pick a card turns, its threads twine a
+  quarter turn round one another: an S-threaded card turned forward, or a Z-threaded card turned
+  backward, weaves a Z-twined quarter, and an S-threaded card turned backward, or a Z-threaded card
+  turned forward, weaves an S-twined quarter; an idle card weaves none. Ply draws an S-twined stitch
+  slanted like \ and a Z-twined stitch slanted like /, the way the cord looks with the warp running
+  up the page.
+- **Twist**: the twist that builds up in the unwoven warp behind the cards. Ply counts it for each
+  card in quarter turns (four make a full turn), with Z twining counted as plus and S twining as
+  minus: each turn adds one for a Z-twined quarter or takes one away for an S-twined quarter, and
+  the warp behind the card holds that amount of the opposite hand (S twist behind the cards when the
+  count is plus). Turning back the other way undoes it turn by turn. A reversal or a flip never
+  resets it (a flip leaves it as it was, though later turns in the same direction then count the
+  other way); only a twist release the weaver records sets it back to 0. By default Ply warns when a
+  card holds more than 8 full turns. The count is computed, and Ply's tablet rules await a tablet
+  weaver's review.
+- **Twist release**: an event the weaver records before a pick, saying they took the twist out of
+  the warp behind some cards, for example by untying the far end and combing it out, or by letting
+  swivels spin. It sets those cards' twist count back to 0 and keeps the record of the twining woven
+  so far. Ply never assumes a release: nothing else resets the count.
+- **Reversal**: a pick on which a card twines the other way from its last turned pick (idle picks
+  are skipped over), because the card's turning direction changed, or because it was flipped and
+  turned on the same way. It leaves a visible line in the band where the stitch slant changes, shows
+  one thread's color on two picks in a row, and makes one thread float over three picks. Ply marks
+  it with a line between the two picks and a note in the checks; it never resets or changes the
+  twist count. Reversals are computed, and Ply's tablet rules await a tablet weaver's review.
+- **Idle**: a card left unturned for a pick (I in the turning chart). Nothing crosses the top or the
+  bottom edge, so the card weaves no twining, and its last top-face thread (and last back thread)
+  carries on as a longer float; Ply shows the same thread again and marks it as a continued float. A
+  card that idles before it has turned at all in the band, or before it has turned again since a
+  flip, has no last thread to carry on, so Ply shows both threads of that layer and says so instead
+  of guessing.
+- **Flip**: turning a card half way round on its vertical axis between picks, so its near and far
+  corners change places: from Ply home, D comes to the near top, A to the far top, B to the far
+  bottom and C to the near bottom. A flip changes the card from S to Z threading or from Z to S. It
+  leaves the twist count as it was, but later turns in the same direction then count the other way,
+  so flipping and turning on untwists. Until the card turns again, an idle is shown as ambiguous.
+- **Float (tablet weaving)**: in a tablet band, the run of picks a thread spends in the upper layer
+  of the shed (toward the top face) or the lower layer (toward the back) before turning takes it to
+  the other layer. Steady turning one way gives runs of 2 picks, a reversal 3, and each idle pick
+  adds 1. By default Ply warns about a run longer than 3 picks; double-face and 3/1 broken twill
+  float over 3 as a matter of course, so they raise no warning. Floats are computed, and Ply's
+  tablet rules await a tablet weaver's review.

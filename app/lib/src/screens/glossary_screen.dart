@@ -4,9 +4,9 @@ import '../data/glossary_data.g.dart';
 import '../models/glossary_term.dart';
 import '../theme/spacing.dart';
 
-/// A searchable, tap-to-expand reference of fiber-craft terms (weaving, knitting, nalbinding),
-/// reached from Help (the "?" action in the home AppBar opens [HelpScreen], whose Glossary tile
-/// pushes this).
+/// A searchable, tap-to-expand reference of fiber-craft terms (weaving, knitting, nalbinding, tablet
+/// weaving), reached from Help (the "?" action in the home AppBar opens [HelpScreen], whose Glossary
+/// tile pushes this).
 ///
 /// The content comes straight from [kGlossary] (generated from `docs/GLOSSARY.md`, the single
 /// source), so there is no FFI or async load here — just a client-side filter over a small const

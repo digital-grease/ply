@@ -581,3 +581,115 @@ proptest! {
         prop_assert_eq!(end.twist.woven, Some(0));
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+
+    /// Checkpoints (M10-02): a window resumed from the nearest checkpoint before it, directly or
+    /// after a trip through bytes, is exactly the window folded from pick 1, and so is the state
+    /// after any pick. A band with structural errors gets no checkpoints, as it gets no simulation.
+    #[test]
+    fn windows_resumed_from_checkpoints_equal_the_whole_fold(
+        band in arb_mostly_valid_band(),
+        every in 1u32..9,
+        at in 0u32..400,
+        len in 0u32..30,
+    ) {
+        use ply_tablet::{checkpoints, nearest_before, state_after_from, try_simulate_from, Checkpoint};
+        let limits = TabletLimits::DEFAULT;
+        let cps = match checkpoints(&band, every, &limits) {
+            Ok(cps) => cps,
+            Err(_) => {
+                prop_assert!(try_simulate_all(&band, &limits).is_err());
+                return Ok(());
+            }
+        };
+        let total = try_simulate_all(&band, &limits).unwrap().last_pick;
+        if total == 0 {
+            prop_assert!(cps.is_empty());
+            return Ok(());
+        }
+        prop_assert_eq!(cps.len() as u32, (total - 1) / every);
+        let first = 1 + at % total;
+        let last = (first + len).min(total);
+        let want = try_simulate(&band, first..=last, &limits).unwrap();
+        let from = nearest_before(&cps, &band, first);
+        prop_assert_eq!(&try_simulate_from(&band, from, first..=last, &limits).unwrap(), &want);
+        if let Some(cp) = from {
+            prop_assert!(cp.pick() < first);
+            let back = Checkpoint::decode(&cp.encode(), &band).unwrap();
+            prop_assert_eq!(&back, cp);
+            prop_assert_eq!(&try_simulate_from(&band, Some(&back), first..=last, &limits).unwrap(), &want);
+            prop_assert_eq!(back.state(), state_after(&band, cp.pick(), &limits).unwrap());
+        }
+        prop_assert_eq!(
+            state_after_from(&band, from, last, &limits).unwrap(),
+            state_after(&band, last, &limits).unwrap()
+        );
+    }
+}
+
+/// A long band paged through its checkpoints: 100 cards by 20,000 picks, every card turning, with
+/// flips and releases in a repeated block. Windows anywhere in it, resumed from the nearest
+/// checkpoint, equal the same rows folded from pick 1.
+#[test]
+fn a_long_band_pages_through_its_checkpoints() {
+    use ply_tablet::{checkpoint_interval, checkpoints, nearest_before, try_simulate_from};
+    let cards = 100;
+    let band = TabletBand {
+        palette: vec![Color::BLACK, Color::WHITE],
+        cards: (0..cards)
+            .map(|i| Tablet {
+                id: CardId::new(format!("c{i}")),
+                threads: HoleThreads::new(0, 1, 0, 1),
+                threading: if i % 3 == 0 {
+                    ThreadingDirection::Z
+                } else {
+                    ThreadingDirection::S
+                },
+                start: CardPosition::all()[i % 8].arrangement(),
+            })
+            .collect(),
+        turning: TurnSequence::new(vec![
+            Segment::new(
+                2_000,
+                vec![
+                    PickSpec::all(Turn::Forward, cards),
+                    PickSpec::all(Turn::Forward, cards),
+                    PickSpec::new("FBI".repeat(34)[..cards].to_string()).with_flip(&["c5", "c50"]),
+                    PickSpec::all(Turn::Backward, cards).with_release(&["c7"]),
+                ],
+            ),
+            Segment::new(
+                2_000,
+                vec![
+                    PickSpec::all(Turn::Idle, cards),
+                    PickSpec::all(Turn::Forward, cards),
+                ],
+            ),
+            Segment::new(8_000, vec![PickSpec::all(Turn::Backward, cards)]),
+        ]),
+        ..TabletBand::default()
+    };
+    let limits = TabletLimits::DEFAULT;
+    let total = 20_000;
+    let every = checkpoint_interval(cards, total);
+    let cps = checkpoints(&band, 0, &limits).unwrap();
+    assert_eq!(cps.len() as u32, (total - 1) / every);
+    for first in [
+        1, 255, 256, 257, 7_999, 8_000, 8_001, 11_999, 12_000, 19_950, 20_000,
+    ] {
+        let last = (first + 49).min(total);
+        let want = try_simulate(&band, first..=last, &limits).unwrap();
+        let from = nearest_before(&cps, &band, first);
+        assert_eq!(
+            from.map(|c| c.pick()),
+            (first > every).then(|| (first - 1) / every * every)
+        );
+        assert_eq!(
+            try_simulate_from(&band, from, first..=last, &limits).unwrap(),
+            want,
+            "{first}"
+        );
+    }
+}

@@ -6,6 +6,7 @@
 //   drafts/<id>.wif + drafts/<id>.json
 //   knits/<id>.plyknit + knits/<id>.json + knits/<id>.plyknit.v<n>.bak (format-upgrade backups)
 //   nalbinds/<id>.plynal + nalbinds/<id>.json + nalbinds/<id>.photos/<name>.<ext>
+//   tablets/<id>.plytab + tablets/<id>.json (tablet weaving bands; ADR 0018)
 //
 // A full backup may also carry `app_settings.json` (opt-in, the settings in effect), `looms.json`
 // (the weaver's loom profiles, whenever there are any; ADR 0014) and `materials.json` with every
@@ -57,11 +58,15 @@ part 'library_backup_materials.dart';
 
 const int _mib = 1024 * 1024;
 
-/// The three craft libraries a backup holds, with their folder and native file extension.
+/// The craft libraries a backup holds, with their folder and native file extension.
 enum BackupCraft {
   weaving('weaving', 'drafts', 'wif', 'Weaving'),
   knitting('knitting', 'knits', 'plyknit', 'Knitting'),
-  nalbinding('nalbinding', 'nalbinds', 'plynal', 'Nalbinding');
+  nalbinding('nalbinding', 'nalbinds', 'plynal', 'Nalbinding'),
+
+  /// Tablet weaving bands (ADR 0018). Added within manifest schema version 1: a build from before
+  /// it refuses a backup holding a band as containing files it cannot restore safely (fails closed).
+  tabletWeaving('tablet_weaving', 'tablets', 'plytab', 'Tablet weaving');
 
   const BackupCraft(this.manifestName, this.directory, this.nativeExtension, this.label);
 
@@ -85,7 +90,7 @@ enum BackupCraft {
 
 /// What one file is to its project.
 enum BackupFileRole {
-  /// The project's own document (`.wif`, `.plyknit`, `.plynal`).
+  /// The project's own document (`.wif`, `.plyknit`, `.plynal`, `.plytab`).
   native,
 
   /// The `<id>.json` sidecar the library lists. Always placed LAST on restore.
@@ -975,12 +980,22 @@ class RestoreResult {
 /// Engine checks of a native file, beyond the version probes (production passes the engine parsers;
 /// host tests have no native library). Each throws when the engine cannot read the text.
 class NativeFileChecks {
-  const NativeFileChecks({this.wif, this.knit});
+  const NativeFileChecks({this.wif, this.knit, this.tablet, this.tabletVersion});
 
   final Future<void> Function(String text)? wif;
 
   /// Throws a [NativeFormatException] (or anything else) when the engine cannot read the pattern.
   final Future<void> Function(String text)? knit;
+
+  /// Throws a [NativeFormatException] (or anything else) when the engine cannot read the tablet
+  /// weaving band (a `.plytab`; ADR 0018).
+  final Future<void> Function(String text)? tablet;
+
+  /// The schema version a `.plytab`'s envelope states, read by the engine from the envelope alone
+  /// (null when it is not a `.plytab` envelope). Never a decode of the whole file in Dart: a backup
+  /// entry can be tens of megabytes. Without it, a band cannot be checked and is refused as
+  /// unreadable (fails closed).
+  final Future<int?> Function(String text)? tabletVersion;
 }
 
 /// What a backup needs from My looms (ADR 0014). Production wires the loom repository and the
@@ -1012,6 +1027,7 @@ class LibraryBackup {
   LibraryBackup({
     required this.documentsDir,
     required this.currentKnitSchemaVersion,
+    Future<int> Function()? currentTabletSchemaVersion,
     required this.appVersion,
     this.limits = const BackupLimits(),
     this.checks = const NativeFileChecks(),
@@ -1022,21 +1038,30 @@ class LibraryBackup {
     this.materials,
     DateTime Function()? clock,
     @visibleForTesting this.beforePlace,
-  }) : _clock = clock ?? DateTime.now;
+  })  : _clock = clock ?? DateTime.now,
+        currentTabletSchemaVersion = currentTabletSchemaVersion ?? _firstTabletSchemaVersion;
 
-  /// The app documents directory, which holds the three craft folders.
+  /// The app documents directory, which holds the craft folders.
   final Future<Directory> Function() documentsDir;
 
   /// The `.plyknit` schema version this build writes (and the newest it reads). Production asks the
   /// engine, so a format bump never needs a change here.
   final Future<int> Function() currentKnitSchemaVersion;
 
+  /// The `.plytab` schema version this build writes (and the newest it reads; ADR 0018). Production
+  /// asks the engine (`TabletRepository.schemaVersion`); when it is not given (host tests, which
+  /// have no native library) it is version 1, the first `.plytab` version.
+  final Future<int> Function() currentTabletSchemaVersion;
+
+  static Future<int> _firstTabletSchemaVersion() async => 1;
+
   /// Recorded in the manifest.
   final String appVersion;
   final BackupLimits limits;
   final NativeFileChecks checks;
 
-  /// Rebuilds the thumbnail of a restored weaving or knitting project (best-effort).
+  /// Rebuilds the thumbnail of a restored weaving, knitting or tablet weaving project
+  /// (best-effort).
   final Future<void> Function(BackupCraft craft, String id)? rebuildThumbnail;
 
   /// The app settings in effect, offered for a full backup. Null: backups never carry settings.
@@ -1489,6 +1514,8 @@ class LibraryBackup {
     final swatchPhotos = <String, List<ArchivedSwatchPhoto>>{};
     int? knitVersion;
     Future<int> knit() async => knitVersion ??= await currentKnitSchemaVersion();
+    int? tabletVersion;
+    Future<int> tablet() async => tabletVersion ??= await currentTabletSchemaVersion();
     var entries = 1;
     try {
       while (true) {
@@ -1559,7 +1586,7 @@ class LibraryBackup {
             '${layout.craft.manifestName}/${layout.projectId}',
             () => _ProjectAccumulator(layout.craft, layout.projectId));
         acc.files.add(_ArchivedFile(layout, entry.size, entry.dataOffset, digest));
-        if (content != null) await _inspect(acc, layout, content, knit);
+        if (content != null) await _inspect(acc, layout, content, knit, tablet);
       }
     } on UstarFormatException catch (e) {
       throw BackupException(
@@ -1743,7 +1770,7 @@ class LibraryBackup {
 
   /// Check one file of a project with the format probes and record the verdict on [acc].
   Future<void> _inspect(_ProjectAccumulator acc, LibraryPath layout, Uint8List bytes,
-      Future<int> Function() knitVersion) async {
+      Future<int> Function() knitVersion, Future<int> Function() tabletVersion) async {
     final String text;
     try {
       text = utf8.decode(bytes);
@@ -1753,7 +1780,7 @@ class LibraryBackup {
     }
     final verdict = switch (layout.role) {
       BackupFileRole.sidecar => _checkSidecar(acc, text),
-      BackupFileRole.native => await _checkNative(acc.craft, text, knitVersion),
+      BackupFileRole.native => await _checkNative(acc.craft, text, knitVersion, tabletVersion),
       BackupFileRole.upgradeBackup =>
         _checkUpgradeBackup(layout.version!, text, await knitVersion()),
       BackupFileRole.photo => null,
@@ -1800,8 +1827,8 @@ class LibraryBackup {
     return null;
   }
 
-  Future<RestoreRefusal?> _checkNative(
-      BackupCraft craft, String text, Future<int> Function() knitVersion) async {
+  Future<RestoreRefusal?> _checkNative(BackupCraft craft, String text,
+      Future<int> Function() knitVersion, Future<int> Function() tabletVersion) async {
     switch (craft) {
       case BackupCraft.weaving:
         try {
@@ -1831,6 +1858,30 @@ class LibraryBackup {
           return e.problem == NativeFormatProblem.newerVersion
               ? RestoreRefusal.newerVersion
               : RestoreRefusal.unreadable;
+        }
+        return null;
+      case BackupCraft.tabletWeaving:
+        // ADR 0018: the envelope's version decides first (a newer band is refused before its
+        // document is read; there is no legacy form), then the engine's own parser. The version is
+        // read by the engine from the envelope alone, never by decoding the file here.
+        final probe = checks.tabletVersion;
+        if (probe == null) return RestoreRefusal.unreadable;
+        final int? version;
+        try {
+          version = await probe(text);
+        } catch (_) {
+          return RestoreRefusal.unreadable;
+        }
+        if (version == null) return RestoreRefusal.unreadable;
+        if (version > await tabletVersion()) return RestoreRefusal.newerVersion;
+        try {
+          await checks.tablet?.call(text);
+        } on NativeFormatException catch (e) {
+          return e.problem == NativeFormatProblem.newerVersion
+              ? RestoreRefusal.newerVersion
+              : RestoreRefusal.unreadable;
+        } catch (_) {
+          return RestoreRefusal.unreadable;
         }
         return null;
     }

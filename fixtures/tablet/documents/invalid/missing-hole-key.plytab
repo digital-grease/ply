@@ -1,0 +1,43 @@
+{
+  "format": "ply.tablet",
+  "schema_version": 1,
+  "document": {
+    "name": "One card",
+    "notes": "",
+    "palette": [
+      "#1a1a1a",
+      "#f2efe6"
+    ],
+    "cards": [
+      {
+        "id": "card-1",
+        "threads": {
+          "A": 0,
+          "B": 1,
+          "C": 0
+        },
+        "threading": "S",
+        "start": {
+          "near_top": "A",
+          "far_top": "D",
+          "far_bottom": "C",
+          "near_bottom": "B"
+        }
+      }
+    ],
+    "turning": [
+      {
+        "repeat": 2,
+        "picks": [
+          {
+            "turns": "F"
+          }
+        ]
+      }
+    ],
+    "settings": {
+      "twist_warning_quarters": 32,
+      "float_warning_picks": 3
+    }
+  }
+}

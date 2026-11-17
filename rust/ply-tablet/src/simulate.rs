@@ -268,6 +268,18 @@ fn simulate_window(
     last: u32,
     limits: &TabletLimits,
 ) -> Result<TabletWindow, TabletError> {
+    simulate_window_from(checked, None, first, last, limits)
+}
+
+/// A window folded from `from` (a checkpoint's cards and place, which must lie before `first`) or,
+/// without one, from pick 1. The window is checked and allocated before any pick is worked.
+pub(crate) fn simulate_window_from(
+    checked: &Checked<'_>,
+    from: Option<(Vec<CardSim>, Place)>,
+    first: u32,
+    last: u32,
+    limits: &TabletLimits,
+) -> Result<TabletWindow, TabletError> {
     let total = checked.total_picks;
     if first == 0 || first > last || last > total {
         return Err(TabletError::InvalidWindow {
@@ -300,7 +312,11 @@ fn simulate_window(
         rows: try_vec(rows as usize)?,
         cells: try_vec(cells)?,
     };
-    simulate_with(checked, last, &mut window);
+    let mut fold = match from {
+        Some((sims, place)) if place.done < first => Fold::resume(checked, sims, place),
+        _ => Fold::new(checked),
+    };
+    fold.advance(last, &mut window);
     Ok(TabletWindow {
         first_pick: first,
         last_pick: last,
@@ -428,25 +444,28 @@ impl Observer for WindowObserver {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Run {
-    upper: bool,
-    start: u32,
+/// The picks a hole has spent in one layer so far: since `start` (1-based), in the upper layer or
+/// the lower.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct Run {
+    pub upper: bool,
+    pub start: u32,
 }
 
-/// One card during simulation.
-#[derive(Debug, Clone)]
+/// One card during simulation: everything a later pick depends on (ADR 0018 M10-01 amendment 10
+/// lists it), so a checkpoint is a copy of these.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct CardSim {
-    position: Option<CardPosition>,
-    threading: Option<ThreadingDirection>,
-    twist: TwistState,
+    pub position: Option<CardPosition>,
+    pub threading: Option<ThreadingDirection>,
+    pub twist: TwistState,
     /// The holes that crossed the top and the bottom in the latest turn; `None` before the first
     /// turn, after a flip, or once unknown.
-    last_crossed: Option<(Hole, Hole)>,
+    pub last_crossed: Option<(Hole, Hole)>,
     /// The twining of the latest turned pick; `None` before the first turn or once unknown.
-    last_twining: Option<Twining>,
+    pub last_twining: Option<Twining>,
     /// The current run of each hole (by hole), while the position is known.
-    runs: [Option<Run>; 4],
+    pub runs: [Option<Run>; 4],
 }
 
 fn face_of(threads: &HoleThreads, hole: Hole, continued: bool) -> FaceThread {
@@ -479,7 +498,7 @@ impl CardSim {
         }
     }
 
-    fn state(&self) -> CardState {
+    pub(crate) fn state(&self) -> CardState {
         CardState {
             position: self.position,
             threading: self.threading,
@@ -655,88 +674,178 @@ impl CardSim {
     }
 }
 
-/// Fold the rules over picks 1 to `stop` (at most the band's length), telling `obs` about every
-/// pick and every run that ends. Returns each card's simulation state after `stop`.
-pub(crate) fn simulate_with<O: Observer>(c: &Checked<'_>, stop: u32, obs: &mut O) -> Vec<CardSim> {
-    let band = c.band;
-    let n = band.cards.len();
-    let mut sims: Vec<CardSim> = band
-        .cards
-        .iter()
-        .zip(&c.starts)
-        .map(|(card, &start)| CardSim::new(start, card.threading))
-        .collect();
-    let mut row: Vec<CardPick> = Vec::with_capacity(n);
-    let mut release = vec![false; n];
-    let mut flip = vec![false; n];
-    let mut pick: u32 = 0;
-    'band: for (s, seg) in band.turning.segments.iter().enumerate() {
-        if seg.picks.is_empty() {
-            continue; // nothing to repeat (and a huge repeat count must not spin)
+/// Where a fold stands in the written turning: the next pick to work is pick `done + 1`, which is
+/// written pick `step` of segment `segment`, in that segment's repeat `repeat` (all 0-based). Once
+/// every pick is done, `segment` is the number of segments (and `repeat` and `step` are 0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub(crate) struct Place {
+    pub segment: usize,
+    pub repeat: u32,
+    pub step: usize,
+    pub done: u32,
+}
+
+/// The rules folded over the picks of a checked band, from the start or from a checkpoint
+/// ([`crate::checkpoint`]), one pick at a time. Holds only O(cards) state.
+pub(crate) struct Fold<'c, 'a> {
+    c: &'c Checked<'a>,
+    pub sims: Vec<CardSim>,
+    pub place: Place,
+    row: Vec<CardPick>,
+    release: Vec<bool>,
+    flip: Vec<bool>,
+    /// The runs still open at the band's end have been reported (once).
+    closed: bool,
+}
+
+impl<'c, 'a> Fold<'c, 'a> {
+    /// Every card as set up, before pick 1.
+    pub fn new(c: &'c Checked<'a>) -> Fold<'c, 'a> {
+        let sims = c
+            .band
+            .cards
+            .iter()
+            .zip(&c.starts)
+            .map(|(card, &start)| CardSim::new(start, card.threading))
+            .collect();
+        Fold::resume(c, sims, Place::default())
+    }
+
+    /// Carry on from `sims` at `place` (a checkpoint's state: one sim per card, and the place of the
+    /// next pick, as [`Fold::advance`] left them).
+    pub fn resume(c: &'c Checked<'a>, sims: Vec<CardSim>, place: Place) -> Fold<'c, 'a> {
+        let n = c.band.cards.len();
+        let mut fold = Fold {
+            c,
+            sims,
+            place,
+            row: Vec::with_capacity(n),
+            release: vec![false; n],
+            flip: vec![false; n],
+            closed: false,
+        };
+        fold.skip_empty();
+        fold
+    }
+
+    /// Move past segments with no picks to work (nothing to repeat, and a huge repeat count must
+    /// not spin; a checked band has no repeat of 0, but one is skipped the same way).
+    fn skip_empty(&mut self) {
+        let segs = &self.c.band.turning.segments;
+        while let Some(seg) = segs.get(self.place.segment) {
+            if !seg.picks.is_empty() && seg.repeat > 0 && self.place.step < seg.picks.len() {
+                break;
+            }
+            self.place.segment += 1;
+            self.place.repeat = 0;
+            self.place.step = 0;
         }
-        let seg_refs = &c.steps[s];
-        for r in 0..seg.repeat {
-            for (k, spec) in seg.picks.iter().enumerate() {
-                if pick >= stop {
-                    break 'band;
+    }
+
+    /// Work picks until `stop` picks are done (or the band ends), telling `obs` about every pick and
+    /// every run that ends. When the band's last pick is done, the runs still open are reported as
+    /// ending with the band (once).
+    pub fn advance<O: Observer>(&mut self, stop: u32, obs: &mut O) {
+        let band = self.c.band;
+        let segs = &band.turning.segments;
+        while self.place.done < stop {
+            let Place {
+                segment: s,
+                repeat: r,
+                step: k,
+                done,
+            } = self.place;
+            let Some(seg) = segs.get(s) else {
+                break; // every pick is done
+            };
+            let spec = &seg.picks[k];
+            let pick = done + 1;
+            let refs = self.c.steps[s][k].as_deref();
+            if let Some(refs) = refs {
+                for &i in &refs.release {
+                    self.release[i] = true;
                 }
-                pick += 1;
-                let refs = seg_refs[k].as_deref();
-                if let Some(refs) = refs {
-                    for &i in &refs.release {
-                        release[i] = true;
-                    }
-                    for &i in &refs.flip {
-                        flip[i] = true;
-                    }
+                for &i in &refs.flip {
+                    self.flip[i] = true;
                 }
-                let letters = spec.turns.as_bytes();
-                row.clear();
-                for (i, sim) in sims.iter_mut().enumerate() {
-                    // Checked: one valid letter per card.
-                    let turn = letters
-                        .get(i)
-                        .and_then(|&b| Turn::from_byte(b))
-                        .unwrap_or(Turn::Idle);
-                    let cp = sim.step(
-                        &band.cards[i].threads,
-                        turn,
-                        release[i],
-                        flip[i],
-                        pick,
-                        i,
-                        obs,
-                    );
-                    if O::DETAIL {
-                        row.push(cp);
-                    }
-                }
-                if let Some(refs) = refs {
-                    for &i in refs.release.iter().chain(&refs.flip) {
-                        release[i] = false;
-                        flip[i] = false;
-                    }
-                }
+            }
+            let letters = spec.turns.as_bytes();
+            self.row.clear();
+            for (i, sim) in self.sims.iter_mut().enumerate() {
+                // Checked: one valid letter per card.
+                let turn = letters
+                    .get(i)
+                    .and_then(|&b| Turn::from_byte(b))
+                    .unwrap_or(Turn::Idle);
+                let cp = sim.step(
+                    &band.cards[i].threads,
+                    turn,
+                    self.release[i],
+                    self.flip[i],
+                    pick,
+                    i,
+                    obs,
+                );
                 if O::DETAIL {
-                    let ctx = PickContext {
-                        pick,
-                        segment: s,
-                        step: k,
-                        repeat: r,
-                        spec,
-                        refs,
-                    };
-                    obs.pick(&ctx, &row);
+                    self.row.push(cp);
                 }
+            }
+            if let Some(refs) = refs {
+                for &i in refs.release.iter().chain(&refs.flip) {
+                    self.release[i] = false;
+                    self.flip[i] = false;
+                }
+            }
+            if O::DETAIL {
+                let ctx = PickContext {
+                    pick,
+                    segment: s,
+                    step: k,
+                    repeat: r,
+                    spec,
+                    refs,
+                };
+                obs.pick(&ctx, &self.row);
+            }
+            // The place of the next pick.
+            let mut next = Place {
+                segment: s,
+                repeat: r,
+                step: k + 1,
+                done: pick,
+            };
+            if next.step == seg.picks.len() {
+                next.step = 0;
+                next.repeat += 1;
+                if next.repeat >= seg.repeat {
+                    next.repeat = 0;
+                    next.segment += 1;
+                }
+            }
+            self.place = next;
+            self.skip_empty();
+        }
+        if self.place.done == self.c.total_picks && !self.closed {
+            self.closed = true;
+            let done = self.place.done;
+            for (i, sim) in self.sims.iter_mut().enumerate() {
+                sim.close_runs(i, done, RunEnd::BandEnd, obs);
             }
         }
     }
-    if pick == c.total_picks {
-        for (i, sim) in sims.iter_mut().enumerate() {
-            sim.close_runs(i, pick, RunEnd::BandEnd, obs);
-        }
-    }
-    sims
+}
+
+/// An observer that keeps nothing but still has the fold keep every hole's run (checkpoints need
+/// the runs, which a bare fold to a state skips).
+pub(crate) struct RunsOnly;
+impl Observer for RunsOnly {}
+
+/// Fold the rules over picks 1 to `stop` (at most the band's length), telling `obs` about every
+/// pick and every run that ends. Returns each card's simulation state after `stop`.
+pub(crate) fn simulate_with<O: Observer>(c: &Checked<'_>, stop: u32, obs: &mut O) -> Vec<CardSim> {
+    let mut fold = Fold::new(c);
+    fold.advance(stop, obs);
+    fold.sims
 }
 
 /// Simulate a checked band to its end, pushing the warnings, unsupported markers and information of

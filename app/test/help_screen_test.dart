@@ -29,4 +29,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Warp'), findsWidgets, reason: 'the glossary screen lists weaving terms');
   });
+
+  test('the tablet weaving entry names card weaving and makes no WIF claim', () {
+    final section = kFaq.firstWhere((s) => s.title == 'Tablet weaving');
+    expect(section.entries, hasLength(1));
+    final entry = section.entries.single;
+    expect(entry.question, 'How do I draft a tablet weaving band?');
+    expect(entry.answer, contains('card weaving'));
+    expect(entry.answer, contains('.plytab'));
+    expect(entry.answer, contains('pick 1 at the bottom'));
+    expect(entry.answer, contains("await a tablet weaver's review"));
+    expect(entry.answer, contains('does not read or write WIF'));
+  });
 }

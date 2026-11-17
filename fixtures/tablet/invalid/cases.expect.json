@@ -24,6 +24,7 @@
     {"file": "pack-id-invalid.band.json", "tests": "a pack id starting with '-'", "outcome": "refused", "diagnostics": [{"code": "tablet.id_invalid", "severity": "error", "location": {"kind": "pack", "pack": 1}}]},
     {"file": "unknown-field.band.json", "tests": "an unknown field (refused by the strict band reader)", "outcome": "unreadable"},
     {"file": "missing-hole-key.band.json", "tests": "a card's threads without hole D (all four keys are required; null is an empty hole)", "outcome": "unreadable"},
-    {"file": "unknown-threading-letter.band.json", "tests": "an unknown threading letter (refused by the strict band reader)", "outcome": "unreadable"}
+    {"file": "unknown-threading-letter.band.json", "tests": "an unknown threading letter (refused by the strict band reader)", "outcome": "unreadable"},
+    {"file": "repeated-words-key.band.json", "tests": "the words for one card given twice on one pick (refused by the strict band reader, never reduced to the last words)", "outcome": "unreadable"}
   ]
 }

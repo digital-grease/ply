@@ -81,7 +81,9 @@ fn resolve_gauge(
             let s = swatch.ok_or_else(|| problem("Choose a swatch to take the gauge from."))?;
             if matches!(
                 s.craft,
-                Some(CraftKind::Weaving) | Some(CraftKind::Nalbinding)
+                Some(CraftKind::Weaving)
+                    | Some(CraftKind::Nalbinding)
+                    | Some(CraftKind::TabletWeaving)
             ) {
                 return Err(PlanProblem(format!(
                     "{} is not a knitting swatch, so it has no knitting gauge.",
@@ -375,7 +377,7 @@ fn weighed_inputs<'a>(req: &YardageRequest<'a>, notes: &mut Vec<String>) -> Opti
     let s = req.swatch?;
     if matches!(
         s.craft,
-        Some(CraftKind::Weaving) | Some(CraftKind::Nalbinding)
+        Some(CraftKind::Weaving) | Some(CraftKind::Nalbinding) | Some(CraftKind::TabletWeaving)
     ) {
         return None; // resolve_gauge refuses it with the reason
     }

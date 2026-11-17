@@ -76,4 +76,61 @@ void main() {
     final epiHits = kGlossary.where((t) => matches(t, 'epi')).map((t) => t.term);
     expect(epiHits, contains('Sett'), reason: 'EPI lives in Sett\'s definition body');
   });
+
+  test('the tablet weaving terms are present, findable as card weaving, and keep ADR 0018', () {
+    GlossaryTerm byName(String name) => kGlossary.firstWhere((t) => t.term == name);
+    const tablet = [
+      'Tablet weaving',
+      'Card',
+      'Hole',
+      'Pack',
+      'Near top and far top',
+      'Home position',
+      'Forward and backward turn',
+      'S and Z threading',
+      'Twining',
+      'Twist',
+      'Twist release',
+      'Reversal',
+      'Idle',
+      'Flip',
+      'Float (tablet weaving)',
+    ];
+    for (final name in tablet) {
+      expect(kGlossary.where((t) => t.term == name), hasLength(1), reason: '$name appears once');
+    }
+    // The shaft-weaving Float keeps its headword, so lookups by "Float" are unchanged.
+    expect(byName('Float').definition, contains('satin'));
+
+    // Mirrors the screen filter: case-insensitive over term + aka + definition.
+    bool matches(GlossaryTerm t, String q) =>
+        t.term.toLowerCase().contains(q) ||
+        (t.aka?.toLowerCase().contains(q) ?? false) ||
+        t.definition.toLowerCase().contains(q);
+    final hits = kGlossary.where((t) => matches(t, 'card weaving')).map((t) => t.term);
+    expect(hits, containsAll(['Tablet weaving', 'Card']));
+    expect(byName('Tablet weaving').aka, 'card weaving');
+    expect(byName('Card').aka, 'tablet');
+
+    // The conventions that must not drift.
+    expect(
+      byName('Home position').definition,
+      contains('A at the near top, D at the far top, C at the far bottom and B at the near bottom'),
+    );
+    expect(byName('Card').definition, contains("side view from the weaver's right"));
+    expect(
+      byName('Forward and backward turn').definition,
+      contains('top edge moves away from the weaver'),
+    );
+    expect(byName('Flip').definition, contains('from S to Z'));
+    expect(byName('Tablet weaving').definition, contains('pick 1 at the bottom'));
+    expect(byName('Tablet weaving').definition, contains('does not read or write WIF'));
+    for (final name in ['Twist', 'Reversal', 'Float (tablet weaving)']) {
+      expect(byName(name).definition, contains("await a tablet weaver's review"), reason: name);
+    }
+    // The S and Z diagram is a code block in the doc only; the parser leaves it out of the text.
+    final sz = byName('S and Z threading').definition;
+    expect(sz, endsWith('so a flip changes S to Z and Z to S.'));
+    expect(sz, isNot(contains('+---')));
+  });
 }

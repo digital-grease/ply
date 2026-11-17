@@ -56,4 +56,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(def), findsOneWidget, reason: 'tap expands to the definition');
   });
+
+  testWidgets('a "card weaving" search finds the tablet weaving entries', (tester) async {
+    await pumpScreen(tester);
+    await tester.enterText(find.byType(TextField), 'Card weaving');
+    await tester.pumpAndSettle();
+    // "card weaving" is the alias of Tablet weaving and is named in Card's definition.
+    expect(find.text('Tablet weaving'), findsOneWidget);
+    expect(
+      find.text('also: card weaving'),
+      findsOneWidget,
+      reason: 'the alias shows as a subtitle',
+    );
+    expect(find.text('Card'), findsOneWidget);
+    expect(find.text('Warp'), findsNothing, reason: 'shaft-weaving terms are filtered out');
+  });
 }

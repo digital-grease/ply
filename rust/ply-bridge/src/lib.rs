@@ -20,6 +20,8 @@ pub mod nalbind_dto;
 pub mod nalbind_recipe_dto;
 // Ready to make or share (ADR 0021).
 pub mod readiness_dto;
+// Tablet weaving (M10-02, ADR 0018).
+pub mod tablet_dto;
 pub mod weave_plan_dto;
 
 // frb emits this (git-ignored). It MUST sit below the crate's `//!` inner docs — frb's

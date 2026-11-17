@@ -21,8 +21,12 @@
 
 pub mod band;
 pub mod card;
+pub mod checkpoint;
 pub mod diagnostic;
+pub mod document;
 pub mod error;
+pub mod instructions;
+pub mod render;
 pub mod simulate;
 pub mod validate;
 
@@ -36,11 +40,28 @@ pub use card::{
     Arrangement, CardPosition, Face, Hole, IllegalArrangement, Position, ThreadingDirection, Turn,
     Twining,
 };
+pub use checkpoint::{
+    band_fingerprint, checkpoint_interval, checkpoints, nearest_before, state_after_from,
+    try_simulate_from, Checkpoint, CheckpointError, MAX_CHECKPOINT_CARD_STATES,
+    MIN_CHECKPOINT_INTERVAL,
+};
 pub use diagnostic::{
     CardSet, Diagnostic, PackSet, RunEnd, Severity, TabletCode, TabletLocation, MAX_LOCATION_CARDS,
     MAX_LOCATION_PACKS,
 };
+pub use document::{
+    check_document_limits, document_schema_version, read_document, write_document, DocumentError,
+    LoadedDocument, TabletDocument, MAX_DOCUMENT_BYTES, MAX_NOTES_BYTES, MAX_PROBED_DOCUMENT_BYTES,
+    TABLET_FORMAT, TABLET_SCHEMA_VERSION,
+};
 pub use error::TabletError;
+pub use instructions::{
+    working_instructions, InstructionKind, InstructionLine, Instructions, MAX_GROUPS_PER_LINE,
+};
+pub use render::{
+    fit_cell_px, try_render_face, try_render_turning, RasterLimits, RenderError, RenderOptions,
+    TabletRaster, MAX_CELL_PX, MIN_LETTER_CELL_PX,
+};
 pub use simulate::{
     face_color, state_after, try_simulate, try_simulate_all, BandState, CardPick, CardState,
     FaceCell, FaceColor, FaceThread, PickInfo, TabletWindow, TwistState,

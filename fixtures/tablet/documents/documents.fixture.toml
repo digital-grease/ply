@@ -1,0 +1,35 @@
+# Fixture record for the tablet weaving documents (see fixtures/README.md).
+
+id = "tablet/documents"
+title = "The oracle bands as .plytab documents, and one-defect documents"
+technique = "tablet weaving: the native document of ADR 0018 section 14 (schema version 1)"
+files = [
+  "band-1-threaded-in.plytab",
+  "sampler-2-starts-idles-flip.plytab",
+  "sampler-3-flip-then-opposite.plytab",
+  "invalid/cases.expect.json",
+]
+created = "2026-11-17"
+license = "original"
+provenance = """
+The three valid documents hold exactly the bands of ../oracle/<name>.band.json (original bands made \
+for Ply's tests, ADR 0018 sections 11 and 12 and a third sampler worked by hand from its rules), \
+each with a name and notes, and were written by the engine's own .plytab writer \
+(rust/ply-tablet/src/document.rs) through the ignored test regenerate_oracle_documents. The \
+documents in invalid/ were typed from small one-card bands, each with one defect, and \
+invalid/cases.expect.json says, written by hand from the reading rules, how the reader must treat \
+each one. Nothing in the expectations comes from the reader under test."""
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-tablet/tests/document_fixtures.rs: each valid document reads to exactly its oracle band \
+and writes back byte for byte (and again after a second save); a compacted, reordered copy settles \
+on the same bytes after one save; every invalid document is refused (or opens) as its case says, and \
+the version probe agrees with the reader; documents past the count limits are refused on read and \
+never written. rust/ply-bridge/src/tablet_dto.rs: the documents cross the bridge and come back byte \
+for byte; format failures are typed. app/test/library_backup_tablet_test.dart: a backup carries and \
+restores them, and refuses the newer and unreadable ones."""
+practitioner_tablet_check = "pending"
+practitioner_reviewer = "a tablet weaver, arranged by the owner (ADR 0018 section 17)"
+known_limits = "Development fixtures, not migration fixtures: no released build has written a .plytab yet."

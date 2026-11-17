@@ -12,7 +12,8 @@ const String kPlyknitFormat = 'ply.knit';
 /// Which kind of Ply document a [NativeFormatException] is about (drives its wording).
 enum NativeDocument {
   knitPattern('pattern', 'knitting pattern'),
-  nalbindProject('project', 'nalbinding project');
+  nalbindProject('project', 'nalbinding project'),
+  tabletBand('band', 'tablet weaving band');
 
   const NativeDocument(this.noun, this.fullName);
 
@@ -89,6 +90,34 @@ int? plyknitSchemaVersion(String text) {
   if (decoded is! Map<String, dynamic>) return null;
   if (!decoded.containsKey('format')) return 1;
   if (decoded['format'] != kPlyknitFormat) return null;
+  final version = decoded['schema_version'];
+  return version is int && version >= 1 ? version : null;
+}
+
+/// The `format` value of a `.plytab` envelope (mirrors `ply_tablet::TABLET_FORMAT`).
+const String kPlytabFormat = 'ply.tablet';
+
+/// The longest text [plytabSchemaVersion] decodes.
+const int kPlytabProbeMaxBytes = 1024 * 1024;
+
+/// The `.plytab` schema version of a SMALL text, by the engine's rule (`ply_tablet::document`): a
+/// JSON object whose `format` is `ply.tablet` carries its version in `schema_version` (a positive
+/// integer); there is no legacy, unversioned form. Null for anything else.
+///
+/// It DECODES THE WHOLE TEXT, so it reads at most [kPlytabProbeMaxBytes] and is null past that. The
+/// app never uses it on a file from disk or a backup: those go through the engine's envelope-only
+/// reader (`TabletRepository.documentVersion`), which builds nothing in proportion to the file.
+/// Host tests, which have no engine, use it on small fixtures.
+int? plytabSchemaVersion(String text) {
+  if (text.length > kPlytabProbeMaxBytes) return null;
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! Map<String, dynamic>) return null;
+  if (decoded['format'] != kPlytabFormat) return null;
   final version = decoded['schema_version'];
   return version is int && version >= 1 ? version : null;
 }

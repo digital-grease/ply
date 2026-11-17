@@ -944,6 +944,146 @@ pub fn nalbind_readiness(notation: String, recipe: Option<RecipeDto>) -> Readine
     crate::readiness_dto::nalbind(&notation, recipe)
 }
 
+// ---------------------------------------------------------------------------
+// M10-02 TABLET WEAVING (ADR 0018; DTOs and the work behind each call in `tablet_dto.rs`, flat
+// enums only, so no freezed rebuild). The editor hands the whole `TabletDocumentDto` to every call;
+// each returns one whole result, never per card or per cell. Checkpoints cross as opaque bytes.
+// ---------------------------------------------------------------------------
+
+pub use crate::tablet_dto::{
+    TabletArrangementDto, TabletBandStateDto, TabletCardDto, TabletCardPickDto, TabletCardStateDto,
+    TabletCheckpointDto, TabletColorDto, TabletDiagnosticDto, TabletDocumentDto, TabletFaceKind,
+    TabletFaceThreadDto, TabletFaceThreadKind, TabletFormatFailure, TabletFormatFailureKind,
+    TabletHoleKind, TabletInstructionKind, TabletInstructionLineDto, TabletInstructionsDto,
+    TabletLocationDto, TabletLocationKind, TabletNoteDto, TabletNoteKind, TabletPackDto,
+    TabletPickDto, TabletPickInfoDto, TabletRasterDto, TabletReportDto, TabletRunEndKind,
+    TabletRunFailure, TabletRunFailureKind, TabletSegmentDto, TabletSettingsDto,
+    TabletSeverityKind, TabletThreadingKind, TabletTurnKind, TabletTwiningKind, TabletWindowDto,
+    TabletWordsDto,
+};
+
+/// Parse a native `.plytab` file into the editor's document. A file saved by a newer Ply, another
+/// format, or one that is malformed or past the size limits is an `Err(TabletFormatFailure)`, which
+/// Dart receives as a thrown `TabletFormatFailure`. A band with structural errors opens (the report
+/// lists them).
+pub fn tablet_parse(text: String) -> Result<TabletDocumentDto, TabletFormatFailure> {
+    crate::tablet_dto::parse(&text)
+}
+
+/// Serialize the editor's document as a current-version `.plytab` envelope. `Err` (a sentence) when
+/// the document is past the sizes `tablet_parse` opens, or a pick gives one card's words twice: a
+/// file this build would refuse is never written.
+pub fn tablet_write(doc: TabletDocumentDto) -> Result<String, String> {
+    crate::tablet_dto::write(doc)
+}
+
+/// The `.plytab` schema version this build writes (and the newest it reads).
+pub fn tablet_schema_version() -> u32 {
+    ply_tablet::TABLET_SCHEMA_VERSION
+}
+
+/// The schema version a `.plytab` file says it has, from its envelope alone: nothing else in the
+/// file is decoded, however large it is. `None` when it is not a `.plytab` envelope; a newer version
+/// is returned as found, for the caller to refuse. The app's save guard and backup restore check
+/// read versions through this, never by decoding the file in Dart.
+pub fn tablet_document_version(text: String) -> Option<u32> {
+    crate::tablet_dto::document_version(&text)
+}
+
+/// Whether the tablet weaving rules still await a tablet weaver's review (ADR 0018 section 17).
+pub fn tablet_review_pending() -> bool {
+    ply_tablet::PRACTITIONER_REVIEW_PENDING
+}
+
+/// Validate a band: every diagnostic with its typed location (at most 200 of each code, the rest
+/// counted), the expanded pick count, and the counts by severity.
+pub fn tablet_validate(doc: TabletDocumentDto) -> Result<TabletReportDto, TabletRunFailure> {
+    crate::tablet_dto::validate(doc)
+}
+
+/// The band's checkpoints, for paging through a long band without folding from pick 1 each time.
+pub fn tablet_checkpoints(
+    doc: TabletDocumentDto,
+) -> Result<Vec<TabletCheckpointDto>, TabletRunFailure> {
+    crate::tablet_dto::checkpoints(doc)
+}
+
+/// Simulate picks `first` to `last` (1-based, inclusive): every card's state and faces at each
+/// pick, at most 50,000 cells. `checkpoint` (the nearest before `first`) is used when it belongs to
+/// this band; otherwise the window is folded from pick 1, with the same result.
+pub fn tablet_simulate_window(
+    doc: TabletDocumentDto,
+    first: u32,
+    last: u32,
+    checkpoint: Option<TabletCheckpointDto>,
+) -> Result<TabletWindowDto, TabletRunFailure> {
+    crate::tablet_dto::simulate_window(doc, first, last, checkpoint)
+}
+
+/// Every card's arrangement, threading and twist after `pick` picks (0: as set up).
+pub fn tablet_state_after(
+    doc: TabletDocumentDto,
+    pick: u32,
+    checkpoint: Option<TabletCheckpointDto>,
+) -> Result<TabletBandStateDto, TabletRunFailure> {
+    crate::tablet_dto::state_after(doc, pick, checkpoint)
+}
+
+/// Draw one face of picks `first` to `last` as RGBA (pick 1 at the bottom; the top face card 1 at
+/// the left, the back card 1 at the right), at `cell_px` or the largest pitch the raster budget
+/// allows; `letters` draws each cell's hole letter. Past the budget even at 1 px: `TooLarge`.
+pub fn tablet_render_face(
+    doc: TabletDocumentDto,
+    first: u32,
+    last: u32,
+    face: TabletFaceKind,
+    cell_px: u32,
+    letters: bool,
+    checkpoint: Option<TabletCheckpointDto>,
+) -> Result<TabletRasterDto, TabletRunFailure> {
+    crate::tablet_dto::render(
+        doc,
+        first,
+        last,
+        crate::tablet_dto::Drawing::Face(face),
+        cell_px,
+        letters,
+        checkpoint,
+        &ply_tablet::RasterLimits::DEFAULT,
+    )
+}
+
+/// Draw the turning chart of picks `first` to `last` as RGBA (pick 1 at the bottom, card 1 at the
+/// left, a letter per cell, flips and releases marked), within the same raster budget.
+pub fn tablet_render_turning(
+    doc: TabletDocumentDto,
+    first: u32,
+    last: u32,
+    cell_px: u32,
+    checkpoint: Option<TabletCheckpointDto>,
+) -> Result<TabletRasterDto, TabletRunFailure> {
+    crate::tablet_dto::render(
+        doc,
+        first,
+        last,
+        crate::tablet_dto::Drawing::Turning,
+        cell_px,
+        false,
+        checkpoint,
+        &ply_tablet::RasterLimits::DEFAULT,
+    )
+}
+
+/// The band's written working instructions (one line per pick or repeated block, by pack or card
+/// range, events in words, the twist ledger after each segment), at most `max_lines` (and at most
+/// 5,000) lines, the rest counted.
+pub fn tablet_instructions(
+    doc: TabletDocumentDto,
+    max_lines: u32,
+) -> Result<TabletInstructionsDto, TabletRunFailure> {
+    crate::tablet_dto::instructions(doc, max_lines)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

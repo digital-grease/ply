@@ -19,4 +19,5 @@ ply-common = { workspace = true }
 ply-weave = { workspace = true }
 ply-knit = { workspace = true }
 ply-nalbind = { workspace = true }
+ply-tablet = { workspace = true }
 flutter_rust_bridge = "=2.12.0"

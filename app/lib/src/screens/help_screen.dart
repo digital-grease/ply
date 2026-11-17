@@ -18,7 +18,7 @@ class HelpScreen extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.menu_book_outlined),
             title: const Text('Glossary'),
-            subtitle: const Text('Definitions for weaving, knitting & nalbinding terms'),
+            subtitle: const Text('Definitions for weaving, knitting, nalbinding & tablet weaving terms'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const GlossaryScreen()),
@@ -72,7 +72,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Which crafts does Ply support?",
-      "Three: weaving, knitting, and nalbinding, each on its own tab in the app. Weaving and knitting have full editors with live previews. Nalbinding offers a stitch reference dictionary, a notation playground, and saved projects (stitch notation, notes, photos, and an optional step-by-step recipe you can follow).",
+      "Four: weaving, knitting, nalbinding, and tablet weaving (also called card weaving), each on its own tab in the app. Weaving, knitting and tablet weaving have full editors with live previews. Nalbinding offers a stitch reference dictionary, a notation playground, and saved projects (stitch notation, notes, photos, and an optional step-by-step recipe you can follow).",
     ),
     FaqEntry(
       "Do I need an account or an internet connection to use Ply?",
@@ -80,7 +80,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Where are my patterns stored?",
-      "Your patterns are plain files saved on your device, not in any cloud or proprietary container. Weaving drafts save as standard .wif files (with a small JSON sidecar for app notes), knitting patterns save as .plyknit JSON alongside a preview image, and nalbinding projects save as .plynal files with their photos.",
+      "Your patterns are plain files saved on your device, not in any cloud or proprietary container. Weaving drafts save as standard .wif files (with a small JSON sidecar for app notes), knitting patterns save as .plyknit JSON alongside a preview image, nalbinding projects save as .plynal files with their photos, and tablet weaving bands save as .plytab files.",
     ),
     FaqEntry(
       "What platforms does Ply run on?",
@@ -141,6 +141,12 @@ const List<FaqSection> kFaq = [
       "Yes. A validation band runs the engine's structural checks live on every edit and appears next to the draft (below the cloth on a phone, in the side panel on a tablet) only when there is something to say, with errors in red, warnings in amber, and notes (advice about a deliberate instruction, such as catching the weft at the selvedge on a double shot) in the accent color. It stays out of the way on a clean draft, and you can tap it to expand a scrollable list with the errors sorted first.",
     ),
   ]),
+  FaqSection('Tablet weaving', [
+    FaqEntry(
+      "How do I draft a tablet weaving band?",
+      "Open the Tablet weaving tab in the library (tablet weaving is also called card weaving). Each band is saved on your device as a .plytab file. The editor has four parts. Cards: give each hole of each card (A, B, C and D) a thread from the palette, or leave it empty; choose S or Z threading; choose where the card starts from two presets, \"A at the near top\" (Ply's home position, shown first for now, provisionally, until a tablet weaver has reviewed it) or \"printed face to the right, D at the near top\" (the way many commercial cards are set); and put cards into packs. Turning: a letter for each card on each pick, F for forward, B for backward, I for idle, or ? for something Ply does not model, such as a half turn, kept with the pattern's own words; add a flip or a twist release before a pick; and work a segment of picks several times. Band: the band chart, drawn with pick 1 at the bottom and the newest pick at the top, as the band grows away from you (unlike Ply's shaft-weaving drafts, which put pick 1 at the top); the top face with card 1 at the left, and the back, as seen with the band turned over, with card 1 at the right; and a step-by-step player that shows each card's position and twist at every pick. Checks: warnings such as long floats and high twist, the things Ply does not model, and errors; tap one to go to it. The rules Ply uses to work out the faces and the twist await a tablet weaver's review, so until then treat what Ply shows as a guide. You can print a band or share it as a PDF with the setup, the turning chart, the band chart, the written instructions and the checks. Ply does not read or write WIF or other programs' files for tablet weaving.",
+    ),
+  ]),
   FaqSection('Knitting & nalbinding', [
     FaqEntry(
       "How do I make a knitting chart? Can I paint stitches, undo mistakes, and zoom in?",
@@ -194,7 +200,7 @@ const List<FaqSection> kFaq = [
   FaqSection('Tips & troubleshooting', [
     FaqEntry(
       "Where do all my patterns live, and how do I find the right craft?",
-      "The home screen is one library with a tab per craft: Weaving, Knitting, and Nalbinding. Your saved weaves and knits each show up as thumbnails under their tab, and everything is stored as files on your device, so there is no account or cloud sync to worry about.",
+      "The home screen is one library with a tab per craft: Weaving, Knitting, Nalbinding, and Tablet weaving. Your saved weaves, knits and bands each show up as thumbnails under their tab, and everything is stored as files on your device, so there is no account or cloud sync to worry about.",
     ),
     FaqEntry(
       "How do I back up my patterns, or move them to a new phone?",
@@ -226,7 +232,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Where is the glossary, and why can't I do machine knitting export or nalbinding recipes?",
-      "The glossary lives right here in Help: tap the Glossary entry at the top of this screen (Help is the question-mark icon in the home screen's top bar). It is a searchable reference covering weaving, knitting, and nalbinding terms. Knitout export for machine knitters is planned but not built yet, so for now knitting is charts plus written instructions only. Nalbinding has the stitch reference, the notation playground, and simple saved projects; the recipe model (worked pieces with shaping steps) is still planned.",
+      "The glossary lives right here in Help: tap the Glossary entry at the top of this screen (Help is the question-mark icon in the home screen's top bar). It is a searchable reference covering weaving, knitting, nalbinding, and tablet weaving terms. Knitout export for machine knitters is planned but not built yet, so for now knitting is charts plus written instructions only. Nalbinding has the stitch reference, the notation playground, and simple saved projects; the recipe model (worked pieces with shaping steps) is still planned.",
     ),
   ]),
 ];
