@@ -1,0 +1,30 @@
+{
+  "description": "Four-shaft plain-weave double width with the fold on the left (one shuttle, top, bottom, bottom, top, as Ply's double-weave generator writes it), 480 ends by 8 picks, sett 24 ends per inch in the reed (both layers together) from the file's [WARP] Spacing=0.0416667. In the reed it is 20 in wide, folded; opened out it is about 40 in. The loom check uses the folded width the loom holds: it fits a 24 in loom (opened, 40 in would not) and not a 16 in one.",
+  "structural_errors": 0,
+  "checks": [
+    {
+      "loom": "fixture-four-shaft-jack",
+      "sett_per_inch": null,
+      "feasible": true,
+      "diagnostics": [
+        { "code": "loom.shafts_fit", "severity": "fits", "message": "This draft threads 4 shafts; Four-shaft jack loom has 4." },
+        { "code": "loom.treadles_fit", "severity": "fits", "message": "This draft uses 4 treadles; Four-shaft jack loom has 6." },
+        { "code": "loom.treadles_at_once_fit", "severity": "fits", "message": "No pick presses more than one treadle at a time." },
+        { "code": "loom.shed_fits", "severity": "fits", "message": "This draft's tie-up is written for a rising shed (the marked shafts go up), as a jack loom works." },
+        { "code": "loom.width_fits", "severity": "fits", "message": "Woven double width with the fold on the left, this draft is 20 in wide in the reed, folded (480 ends at 24 ends per inch, from the file); opened out, the cloth is about 40 in. Four-shaft jack loom weaves up to 24 in." },
+        { "code": "loom.reed_fits", "severity": "fits", "message": "Sley the 12-dent reed 2 per dent for 24 ends per inch." }
+      ]
+    },
+    {
+      "loom": "fixture-table-loom",
+      "sett_per_inch": null,
+      "feasible": false,
+      "diagnostics": [
+        { "code": "loom.shafts_fit", "severity": "fits", "message": "This draft threads 4 shafts; Table loom has 8." },
+        { "code": "loom.lift_plan_loom", "severity": "fits", "message": "On Table loom you lift the shafts with hand levers for each pick, so treadles do not limit this draft." },
+        { "code": "loom.width_exceeded", "severity": "not_feasible", "message": "Woven double width with the fold on the left, this draft is 20 in wide in the reed, folded (480 ends at 24 ends per inch, from the file); opened out, the cloth is about 40 in. Table loom weaves up to 16 in." },
+        { "code": "loom.reed_fits", "severity": "fits", "message": "Sley the 12-dent reed 2 per dent for 24 ends per inch." }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true }
+# The `looms.json` loom-profile file (ADR 0014) is JSON, read and written by the engine.
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 ply-common = { workspace = true }
 

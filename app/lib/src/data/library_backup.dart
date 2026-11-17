@@ -7,8 +7,9 @@
 //   knits/<id>.plyknit + knits/<id>.json + knits/<id>.plyknit.v<n>.bak (format-upgrade backups)
 //   nalbinds/<id>.plynal + nalbinds/<id>.json + nalbinds/<id>.photos/<name>.<ext>
 //
-// A full backup may also carry `app_settings.json` (opt-in, the settings in effect); a single-project
-// export is the same format holding one project and never the settings. Thumbnails (`<id>.png`) are
+// A full backup may also carry `app_settings.json` (opt-in, the settings in effect) and `looms.json`
+// (the weaver's loom profiles, whenever there are any; ADR 0014); a single-project export is the
+// same format holding one project and never the settings or the looms. Thumbnails (`<id>.png`) are
 // rebuildable caches and are left out; a restore rebuilds them.
 //
 // A restore treats the file as hostile until every check has passed: hard limits on size, entry
@@ -38,9 +39,11 @@ import 'package:uuid/uuid.dart';
 import '../diagnostics/log_buffer.dart';
 import '../models/app_settings.dart';
 import '../models/draft_meta.dart';
+import '../models/loom_profile.dart';
 import '../models/nalbind_project.dart';
 import '../models/native_format.dart';
 import 'app_settings_repository.dart';
+import 'loom_repository.dart' show LoomFileException, LoomFileProblem;
 import 'ustar.dart';
 
 const int _mib = 1024 * 1024;
@@ -120,6 +123,10 @@ const String backupManifestPath = 'manifest.json';
 /// file has in the documents directory). It is the only path outside a craft folder a backup holds.
 const String backupSettingsPath = 'app_settings.json';
 
+/// The loom profiles a full backup carries, at the archive root (the same name as the file beside
+/// the craft folders; ADR 0014).
+const String backupLoomsPath = 'looms.json';
+
 /// A project id as Ply writes it (a uuid), and as a backup may name it: ASCII letters, digits, '-'
 /// and '_', at most 64 characters, starting with a letter or digit. No '.', so a file name splits
 /// into id and extension unambiguously.
@@ -190,6 +197,7 @@ class BackupLimits {
     this.maxSidecarBytes = _mib,
     this.maxFileBytes = 64 * _mib,
     this.maxSettingsBytes = 64 * 1024,
+    this.maxLoomsBytes = _mib,
   });
 
   /// The limits for the device this runs on: a phone saves a backup through the system save dialog,
@@ -221,6 +229,9 @@ class BackupLimits {
 
   /// The largest app settings entry. The file Ply writes is about a hundred bytes.
   final int maxSettingsBytes;
+
+  /// The largest `looms.json` entry (the engine reads at most 1 MB).
+  final int maxLoomsBytes;
 
   int maxBytesFor(BackupFileRole role) =>
       role == BackupFileRole.sidecar ? maxSidecarBytes : maxFileBytes;
@@ -316,6 +327,12 @@ class BackupManifestFile {
   /// The [backupSettingsPath] entry, which belongs to no project.
   const BackupManifestFile.settings({required this.size, required this.sha256})
       : path = backupSettingsPath,
+        craft = null,
+        projectId = null;
+
+  /// The [backupLoomsPath] entry, which belongs to no project.
+  const BackupManifestFile.looms({required this.size, required this.sha256})
+      : path = backupLoomsPath,
         craft = null,
         projectId = null;
 
@@ -430,8 +447,9 @@ class BackupManifest {
         throw const BackupException(BackupProblem.unsafe, detail: 'a long path');
       }
       final isSettings = path == backupSettingsPath;
-      final classified = isSettings ? null : classifyLibraryPath(path);
-      if (!isSettings && classified == null) {
+      final isLooms = path == backupLoomsPath;
+      final classified = (isSettings || isLooms) ? null : classifyLibraryPath(path);
+      if (!isSettings && !isLooms && classified == null) {
         throw BackupException(BackupProblem.unsafe, detail: 'manifest path $path');
       }
       // Case-insensitively unique: on a case-insensitive file system two such paths are one file.
@@ -439,12 +457,14 @@ class BackupManifest {
         throw BackupException(BackupProblem.unsafe, detail: 'duplicate manifest path $path');
       }
       if (classified == null) {
-        // The app settings: no project, and a limit of their own.
+        // The app settings or the looms: no project, and a limit of their own.
         if (craftName != null || project != null) throw damaged('craft or project of $path');
-        if (size > limits.maxSettingsBytes) {
+        if (size > (isLooms ? limits.maxLoomsBytes : limits.maxSettingsBytes)) {
           throw BackupException(BackupProblem.unsafe, detail: '$path is $size bytes');
         }
-        files.add(BackupManifestFile.settings(size: size, sha256: digest));
+        files.add(isLooms
+            ? BackupManifestFile.looms(size: size, sha256: digest)
+            : BackupManifestFile.settings(size: size, sha256: digest));
         continue;
       }
       if (craftName != classified.craft.manifestName || project != classified.projectId) {
@@ -504,6 +524,18 @@ class BackupSettingsFile {
   final String sha256;
 }
 
+/// The loom profiles a full backup carries: the `looms.json` bytes, verbatim, and how many looms
+/// they hold (for the summary).
+class BackupLoomsFile {
+  BackupLoomsFile(this.bytes, this.count) : sha256 = _hexSha256(bytes);
+
+  final Uint8List bytes;
+  final int count;
+
+  /// Lowercase hex.
+  final String sha256;
+}
+
 /// Lowercase hex SHA-256 of a small byte list (files are hashed in chunks instead).
 String _hexSha256(List<int> bytes) => sha256.convert(bytes).toString();
 
@@ -520,6 +552,8 @@ class BackupPlan {
     this.projectName,
     this.settings,
     this.includeSettings = false,
+    this.looms,
+    this.loomsLeftOut,
   });
 
   final DateTime createdAt;
@@ -539,6 +573,19 @@ class BackupPlan {
   /// Whether the file made from this plan holds `app_settings.json`.
   bool get carriesSettings => includeSettings && settings != null;
 
+  /// The loom profiles this backup carries (a full backup, when the weaver has any).
+  final BackupLoomsFile? looms;
+
+  /// Why My looms is not in this backup although the weaver has a looms file (one of the sentences
+  /// below), or null. The backup summary shows it.
+  final String? loomsLeftOut;
+
+  static const String loomsNewer = 'My looms was saved by a newer version of Ply, so it is not in '
+      'this backup.';
+  static const String loomsUnreadable = 'My looms could not be read, so it is not in this backup.';
+  static const String loomsTooLarge = 'My looms is too large to back up, so it is not in this '
+      'backup.';
+
   /// This plan with the app settings in or out (the backup summary's checkbox).
   BackupPlan withSettings(bool include) => BackupPlan(
         createdAt: createdAt,
@@ -550,6 +597,8 @@ class BackupPlan {
         projectName: projectName,
         settings: settings,
         includeSettings: include,
+        looms: looms,
+        loomsLeftOut: loomsLeftOut,
       );
 
   int get projectCount => projectCounts.values.sum;
@@ -561,6 +610,8 @@ class BackupPlan {
         files: [
           if (carriesSettings)
             BackupManifestFile.settings(size: settings!.bytes.length, sha256: settings!.sha256),
+          if (looms != null)
+            BackupManifestFile.looms(size: looms!.bytes.length, sha256: looms!.sha256),
           for (final f in files)
             BackupManifestFile(
               path: f.archivePath,
@@ -577,6 +628,7 @@ class BackupPlan {
   int get archiveSize =>
       ustarEntryLength(manifestBytes.length) +
       (carriesSettings ? ustarEntryLength(settings!.bytes.length) : 0) +
+      (looms != null ? ustarEntryLength(looms!.bytes.length) : 0) +
       files.fold<int>(0, (sum, f) => sum + ustarEntryLength(f.size)) +
       ustarEndLength;
 
@@ -660,6 +712,7 @@ class RestoreProject {
     this.refusal,
     this.targetId,
     this.targetName,
+    this.loomPlanId,
   }) : _files = files;
 
   final BackupCraft craft;
@@ -677,6 +730,10 @@ class RestoreProject {
 
   /// Its name in the library: [name], or "<name> (restored)" for a conflict.
   final String? targetName;
+
+  /// For a weaving draft planned for a loom, that loom's id in the backup (its sidecar's
+  /// `loomPlan.loomId`): when the restore adds that loom as a copy, the draft is pointed at the copy.
+  final String? loomPlanId;
 
   final List<_ArchivedFile> _files;
 
@@ -700,6 +757,77 @@ class RestoreSettings {
   static const String unreadable = 'The app settings in this backup could not be read.';
 }
 
+/// One loom of a backup, as the restore preview shows it (ADR 0014).
+class RestoreLoom {
+  const RestoreLoom(this.loom, this.status, this.target, {this.copyId, this.drafts = 0});
+
+  /// The loom as the backup has it.
+  final LoomProfile loom;
+
+  /// [RestoreStatus.add] (not in My looms), [RestoreStatus.alreadyPresent] (the same loom, field for
+  /// field) or [RestoreStatus.conflict] (a different loom with its id: added as a copy).
+  final RestoreStatus status;
+
+  /// What a restore adds: the loom itself, or for a conflict a copy under a new id named
+  /// "<name> (restored)"; null when nothing is added.
+  final LoomProfile? target;
+
+  /// The id of the copy that stands for this loom in My looms: the copy a conflict adds, or the copy
+  /// an earlier restore of this backup made (then the loom is already present). Drafts restored from
+  /// this backup that name the loom are pointed at it. Null when no copy is involved.
+  final String? copyId;
+
+  /// How many drafts restored from this backup name this loom (and so use the copy, when one is
+  /// added).
+  final int drafts;
+
+  /// A key unique within a backup (the loom's id there).
+  String get key => loom.id;
+
+  RestoreLoom _withDrafts(int n) =>
+      RestoreLoom(loom, status, target, copyId: copyId, drafts: n);
+}
+
+/// The looms of a backup: [items] when they can be restored, otherwise the [refusal] sentence.
+class RestoreLooms {
+  const RestoreLooms.available(this.items) : refusal = null;
+  const RestoreLooms.refused(String this.refusal) : items = const [];
+
+  final List<RestoreLoom> items;
+  final String? refusal;
+
+  List<RestoreLoom> withStatus(RestoreStatus status) =>
+      [for (final i in items) if (i.status == status) i];
+
+  /// The copies drafts must point at when [skipped] conflicts are left out: the backup's loom id to
+  /// the copy's id and name, for every copy that is (or already was) in My looms.
+  Map<String, (String, String)> relinks(Set<String> skipped) => {
+        for (final i in items)
+          if (i.copyId != null &&
+              (i.status == RestoreStatus.alreadyPresent ||
+                  (i.status == RestoreStatus.conflict && !skipped.contains(i.key))))
+            i.key: (i.copyId!, i.target?.name ?? LibraryBackup.loomCopyName(i.loom.name)),
+      };
+
+  /// The looms a restore adds: every new one, and every conflict whose key is not in [skipped].
+  List<LoomProfile> selected(Set<String> skipped) => [
+        for (final i in items)
+          if (i.target != null &&
+              (i.status == RestoreStatus.add ||
+                  (i.status == RestoreStatus.conflict && !skipped.contains(i.key))))
+            i.target!,
+      ];
+
+  static const String unreadable = 'The looms in this backup could not be read.';
+  static const String newer = 'The looms in this backup were saved by a newer version of Ply. '
+      'Update the app to restore them.';
+  static const String localUnreadable =
+      'Your looms on this device could not be read, so the looms in this backup cannot be added.';
+  static const String tooMany =
+      'Adding these looms would pass ${LoomLimits.maxLooms} looms, so they cannot be restored.';
+  static const String unsupported = 'This version of Ply cannot restore looms.';
+}
+
 /// A checked backup, ready to preview and restore. Nothing has been written yet.
 class RestorePlan {
   const RestorePlan({
@@ -708,6 +836,7 @@ class RestorePlan {
     required this.appVersion,
     required this.projects,
     this.settings,
+    this.looms,
   });
 
   /// The backup file. It must stay in place until [LibraryBackup.restore] returns.
@@ -719,19 +848,29 @@ class RestorePlan {
   /// The backup's app settings; null when it has none.
   final RestoreSettings? settings;
 
+  /// The backup's loom profiles; null when it has none.
+  final RestoreLooms? looms;
+
   List<RestoreProject> forCraft(BackupCraft craft, RestoreStatus status) =>
       [for (final p in projects) if (p.craft == craft && p.status == status) p];
 }
 
 /// What a restore wrote.
 class RestoreResult {
-  const RestoreResult(this.restored, {this.settingsRestored = false});
+  const RestoreResult(this.restored,
+      {this.settingsRestored = false, this.loomsRestored = 0, this.draftsRelinked = 0});
 
   /// The projects now in the library, with their final ids.
   final List<({BackupCraft craft, String id})> restored;
 
   /// Whether the backup's app settings were applied.
   final bool settingsRestored;
+
+  /// How many looms were added to My looms.
+  final int loomsRestored;
+
+  /// How many restored drafts were pointed at the restored copy of their loom.
+  final int draftsRelinked;
 
   int get count => restored.length;
 }
@@ -747,6 +886,29 @@ class NativeFileChecks {
   final Future<void> Function(String text)? knit;
 }
 
+/// What a backup needs from My looms (ADR 0014). Production wires the loom repository and the
+/// engine's `looms.json` reader; host tests pass stand-ins.
+class LoomBackupHooks {
+  const LoomBackupHooks({
+    required this.currentFile,
+    required this.decode,
+    required this.currentLooms,
+    required this.add,
+  });
+
+  /// The `looms.json` bytes to back up, verbatim, or null when there is none.
+  final Future<Uint8List?> Function() currentFile;
+
+  /// The looms in `looms.json` bytes (untrusted). Throws (a [LoomFileException] says why).
+  final Future<List<LoomProfile>> Function(Uint8List bytes) decode;
+
+  /// The looms in My looms now. Throws when My looms cannot be read.
+  final Future<List<LoomProfile>> Function() currentLooms;
+
+  /// Add looms to My looms in one write and return how to undo it exactly.
+  final Future<Future<void> Function()> Function(List<LoomProfile> looms) add;
+}
+
 /// The library backup service: [planBackup] and [buildBackup] make a backup, [inspectBackup] checks
 /// one and builds the restore preview, and [restore] writes it.
 class LibraryBackup {
@@ -759,6 +921,7 @@ class LibraryBackup {
     this.rebuildThumbnail,
     this.currentSettings,
     this.applySettings,
+    this.looms,
     DateTime Function()? clock,
     @visibleForTesting this.beforePlace,
   }) : _clock = clock ?? DateTime.now;
@@ -784,6 +947,10 @@ class LibraryBackup {
   /// Applies restored app settings (production persists them first, then updates the app). Throwing
   /// rolls the whole restore back. Null: settings cannot be restored.
   final Future<void> Function(AppSettings settings)? applySettings;
+
+  /// My looms, which a full backup carries and a restore adds to. Null: backups carry no looms, and
+  /// a backup with looms restores its projects only.
+  final LoomBackupHooks? looms;
   final DateTime Function() _clock;
 
   /// Test seam: called before each file or folder is moved into the library on restore. Throwing
@@ -829,7 +996,8 @@ class LibraryBackup {
         }
       }
     }
-    if (files.isEmpty) throw const BackupException(BackupProblem.noProjects);
+    final (loomsFile, loomsLeftOut) = await _loomsFile();
+    if (files.isEmpty && loomsFile == null) throw const BackupException(BackupProblem.noProjects);
     final settings = await _settingsFile();
     return _checked(BackupPlan(
       createdAt: _clock(),
@@ -839,6 +1007,8 @@ class LibraryBackup {
       photoCount: photos,
       settings: settings,
       includeSettings: settings != null,
+      looms: loomsFile,
+      loomsLeftOut: loomsLeftOut,
     ));
   }
 
@@ -968,6 +1138,37 @@ class LibraryBackup {
     }
   }
 
+  /// My looms as the `looms.json` a full backup carries (verbatim), or null when there are none.
+  /// When the file cannot be read, is newer, or is over its limit, the backup is made without it (a
+  /// restore would refuse it anyway) and the second value says why, for the backup summary.
+  Future<(BackupLoomsFile?, String?)> _loomsFile() async {
+    final hooks = looms;
+    if (hooks == null) return (null, null);
+    try {
+      final bytes = await hooks.currentFile();
+      if (bytes == null) return (null, null);
+      if (bytes.length > limits.maxLoomsBytes) {
+        PlyLog.instance.warn('Backup: looms.json left out (${bytes.length} bytes).');
+        return (null, BackupPlan.loomsTooLarge);
+      }
+      final count = (await hooks.decode(bytes)).length;
+      return (count == 0 ? null : BackupLoomsFile(bytes, count), null);
+    } on LoomFileException catch (e) {
+      PlyLog.instance.warn('Backup: looms left out ($e).');
+      return (
+        null,
+        switch (e.problem) {
+          LoomFileProblem.newerVersion => BackupPlan.loomsNewer,
+          LoomFileProblem.tooLarge => BackupPlan.loomsTooLarge,
+          LoomFileProblem.unreadable => BackupPlan.loomsUnreadable,
+        },
+      );
+    } catch (e) {
+      PlyLog.instance.warn('Backup: looms left out ($e).');
+      return (null, BackupPlan.loomsUnreadable);
+    }
+  }
+
   /// [plan], once it is within the export limits with the app settings included (the larger
   /// variant), so Ply never hands out a file it would refuse to restore.
   BackupPlan _checked(BackupPlan plan) {
@@ -1008,6 +1209,11 @@ class LibraryBackup {
       final settings = plan.settings!.bytes;
       header(backupSettingsPath, settings.length);
       data(settings);
+    }
+    final loomsFile = plan.looms;
+    if (loomsFile != null) {
+      header(backupLoomsPath, loomsFile.bytes.length);
+      data(loomsFile.bytes);
     }
 
     for (final f in plan.files) {
@@ -1062,7 +1268,11 @@ class LibraryBackup {
       throw BackupException(BackupProblem.unreadable, detail: '$e');
     }
     try {
-      final (manifest, accumulators, settings) = await _readArchive(raf, length);
+      final (manifest, accumulators, settings, loomBytes) = await _readArchive(raf, length);
+      // The looms first: a draft that names a loom restored as a copy is compared with the library
+      // as it would be once pointed at the copy.
+      final loomPlan = loomBytes == null ? null : await _classifyLooms(loomBytes);
+      final relinks = loomPlan?.relinks(const {}) ?? const <String, (String, String)>{};
       final projects = <RestoreProject>[];
       for (final craft in BackupCraft.values) {
         final dir = Directory(p.join(docs.path, craft.directory));
@@ -1070,7 +1280,7 @@ class LibraryBackup {
         final ofCraft = accumulators.values.where((a) => a.craft == craft).toList()
           ..sort((a, b) => a.id.compareTo(b.id));
         for (final acc in ofCraft) {
-          projects.add(await _classify(raf, acc, dir, stems));
+          projects.add(await _classify(raf, acc, dir, stems, relinks));
         }
       }
       return RestorePlan(
@@ -1079,6 +1289,7 @@ class LibraryBackup {
         appVersion: manifest.appVersion,
         projects: projects,
         settings: settings,
+        looms: loomPlan == null ? null : _withDraftCounts(loomPlan, projects),
       );
     } on FileSystemException catch (e) {
       throw BackupException(BackupProblem.unreadable, detail: '$e');
@@ -1091,8 +1302,8 @@ class LibraryBackup {
   /// that must be inspected (native file, upgrade backup, sidecar, app settings) is read into
   /// memory, within the per-entry limits, checked right away, and dropped: only the verdict and a
   /// few digests are kept per project (and the parsed settings). Photos are only hashed.
-  Future<(BackupManifest, Map<String, _ProjectAccumulator>, RestoreSettings?)> _readArchive(
-      RandomAccessFile raf, int length) async {
+  Future<(BackupManifest, Map<String, _ProjectAccumulator>, RestoreSettings?, Uint8List?)>
+      _readArchive(RandomAccessFile raf, int length) async {
     final reader = UstarReader(raf, length);
     final BackupManifest manifest;
     try {
@@ -1113,6 +1324,7 @@ class LibraryBackup {
     final seen = <String>{};
     final accumulators = <String, _ProjectAccumulator>{};
     RestoreSettings? settings;
+    Uint8List? loomBytes;
     int? knitVersion;
     Future<int> knit() async => knitVersion ??= await currentKnitSchemaVersion();
     var entries = 1;
@@ -1128,8 +1340,9 @@ class LibraryBackup {
           throw const BackupException(BackupProblem.unsafe, detail: 'a long path');
         }
         final isSettings = path == backupSettingsPath;
-        final layout = isSettings ? null : classifyLibraryPath(path);
-        if (!isSettings && layout == null) {
+        final isLooms = path == backupLoomsPath;
+        final layout = (isSettings || isLooms) ? null : classifyLibraryPath(path);
+        if (!isSettings && !isLooms && layout == null) {
           throw BackupException(BackupProblem.unsafe, detail: 'path $path');
         }
         if (!seen.add(path.toLowerCase())) {
@@ -1142,7 +1355,9 @@ class LibraryBackup {
         if (record.size != entry.size) {
           throw BackupException(BackupProblem.damaged, detail: '$path size');
         }
-        final max = layout == null ? limits.maxSettingsBytes : limits.maxBytesFor(layout.role);
+        final max = layout != null
+            ? limits.maxBytesFor(layout.role)
+            : (isLooms ? limits.maxLoomsBytes : limits.maxSettingsBytes);
         if (entry.size > max) {
           throw BackupException(BackupProblem.unsafe, detail: '$path is ${entry.size} bytes');
         }
@@ -1150,6 +1365,10 @@ class LibraryBackup {
             keep: layout?.role != BackupFileRole.photo);
         if (digest != record.sha256) {
           throw BackupException(BackupProblem.damaged, detail: '$path checksum');
+        }
+        if (isLooms) {
+          loomBytes = content; // read as untrusted input once the archive has checked out
+          continue;
         }
         if (layout == null) {
           settings = _checkSettings(content!);
@@ -1172,7 +1391,111 @@ class LibraryBackup {
     if (seen.length != expected.length) {
       throw const BackupException(BackupProblem.damaged, detail: 'a manifest file is missing');
     }
-    return (manifest, accumulators, settings);
+    return (manifest, accumulators, settings, loomBytes);
+  }
+
+  /// The looms of a backup, as untrusted input, compared with My looms by id: new (added under
+  /// their id), the same field for field (skipped), or different (offered as a copy named
+  /// "<name> (restored)" under an id derived from the loom, so a repeated restore recognizes the copy
+  /// it made). Refused, with the reason, when they cannot be read, are newer, My looms cannot be
+  /// read, or adding them would pass the loom limit. An existing loom is never changed.
+  Future<RestoreLooms?> _classifyLooms(Uint8List bytes) async {
+    final hooks = looms;
+    if (hooks == null) return const RestoreLooms.refused(RestoreLooms.unsupported);
+    final List<LoomProfile> backed;
+    try {
+      backed = await hooks.decode(bytes);
+    } on LoomFileException catch (e) {
+      return RestoreLooms.refused(e.problem == LoomFileProblem.newerVersion
+          ? RestoreLooms.newer
+          : RestoreLooms.unreadable);
+    } catch (_) {
+      return const RestoreLooms.refused(RestoreLooms.unreadable);
+    }
+    if (backed.isEmpty) return null;
+    final List<LoomProfile> local;
+    try {
+      local = await hooks.currentLooms();
+    } catch (_) {
+      return const RestoreLooms.refused(RestoreLooms.localUnreadable);
+    }
+    final byId = {for (final l in local) l.id: l};
+    final taken = {...byId.keys};
+    final items = <RestoreLoom>[];
+    for (final loom in backed) {
+      final mine = byId[loom.id];
+      if (mine == null && taken.add(loom.id)) {
+        items.add(RestoreLoom(loom, RestoreStatus.add, loom));
+        continue;
+      }
+      if (mine == loom) {
+        items.add(RestoreLoom(loom, RestoreStatus.alreadyPresent, null));
+        continue;
+      }
+      final name = loomCopyName(loom.name);
+      var copyId = _loomCopyId(loom);
+      if (byId[copyId] == loom.copyWith(id: copyId, name: name)) {
+        // The copy an earlier restore of this backup made.
+        items.add(RestoreLoom(loom, RestoreStatus.alreadyPresent, null, copyId: copyId));
+        continue;
+      }
+      while (taken.contains(copyId)) {
+        copyId = _uuid.v4();
+      }
+      taken.add(copyId);
+      items.add(RestoreLoom(loom, RestoreStatus.conflict, loom.copyWith(id: copyId, name: name),
+          copyId: copyId));
+    }
+    final adding = items.where((i) => i.target != null).length;
+    if (local.length + adding > LoomLimits.maxLooms) {
+      return const RestoreLooms.refused(RestoreLooms.tooMany);
+    }
+    return RestoreLooms.available(List.unmodifiable(items));
+  }
+
+  /// [looms] with, for each loom, how many of the drafts a restore would add (new or as a copy) name
+  /// it.
+  static RestoreLooms _withDraftCounts(RestoreLooms looms, List<RestoreProject> projects) {
+    if (looms.refusal != null) return looms;
+    final counts = <String, int>{};
+    for (final p in projects) {
+      final id = p.loomPlanId;
+      if (id == null) continue;
+      if (p.status == RestoreStatus.add || p.status == RestoreStatus.conflict) {
+        counts[id] = (counts[id] ?? 0) + 1;
+      }
+    }
+    return RestoreLooms.available(
+        List.unmodifiable([for (final i in looms.items) i._withDrafts(counts[i.key] ?? 0)]));
+  }
+
+  /// [json] (a sidecar) with its `loomPlan` pointed at the loom [loomId] named [loomName]; every
+  /// other key, of the plan too, kept with its value and in its place.
+  static Map<String, dynamic> _relinked(
+      Map<String, dynamic> json, String loomId, String loomName) {
+    final out = Map<String, dynamic>.of(json);
+    final plan = out['loomPlan'];
+    if (plan is Map) out['loomPlan'] = {...plan, 'loomId': loomId, 'loomName': loomName};
+    return out;
+  }
+
+  /// The name of a loom restored as a copy: "<name> (restored)", the name shortened to keep within
+  /// the loom name limit.
+  static String loomCopyName(String name) {
+    const suffix = ' (restored)';
+    final base = name.trim().isEmpty ? 'Unnamed loom' : name.trim();
+    return '${clipToRunes(base, LoomLimits.maxNameChars - suffix.length)}$suffix';
+  }
+
+  /// A version-8 (custom) UUID derived from the loom's content.
+  static String _loomCopyId(LoomProfile loom) {
+    final digest = sha256.convert(utf8.encode('ply.looms restored copy\n${loom.canonicalKey}'));
+    final b = digest.bytes.sublist(0, 16);
+    b[6] = (b[6] & 0x0F) | 0x80;
+    b[8] = (b[8] & 0x3F) | 0x80;
+    final hex = b.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-'
+        '${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
   /// App settings from a backup, as untrusted input: offered only when they parse as the settings
@@ -1226,6 +1549,10 @@ class LibraryBackup {
     acc.name = meta.name;
     acc.sidecarDigest = sidecarDigest(json);
     acc.copySidecarDigest = sidecarDigest(json, name: copyNameFor(meta.name));
+    final plan = json['loomPlan'];
+    if (acc.craft == BackupCraft.weaving && plan is Map && plan['loomId'] is String) {
+      acc.loomPlanId = plan['loomId'] as String;
+    }
     final version = json['schemaVersion'];
     if (version is int && version > DraftMeta.currentSchemaVersion) {
       return RestoreRefusal.newerVersion;
@@ -1279,7 +1606,7 @@ class LibraryBackup {
   /// present, or restore it as a copy. [raf] is the open archive (a nalbinding copy's renamed
   /// `.plynal` is derived from it when an earlier copy may already be in the library).
   Future<RestoreProject> _classify(RandomAccessFile raf, _ProjectAccumulator acc, Directory dir,
-      Set<String> stems) async {
+      Set<String> stems, Map<String, (String, String)> relinks) async {
     final RestoreRefusal? refusal = acc.newer
         ? RestoreRefusal.newerVersion
         : acc.unreadable
@@ -1298,13 +1625,20 @@ class LibraryBackup {
           refusal: status == RestoreStatus.refused ? refusal : null,
           targetId: targetId,
           targetName: targetName,
+          loomPlanId: acc.loomPlanId,
         );
     if (refusal != null) return make(RestoreStatus.refused);
 
     if (!stems.contains(acc.id.toLowerCase())) {
       return make(RestoreStatus.add, targetId: acc.id, targetName: name);
     }
-    if (await _sameAsLibrary(dir, acc.id, acc.files, acc.sidecarDigest!)) {
+    // A draft that names a loom restored as a copy is also the same as the library once pointed at
+    // the copy (what an earlier restore of this backup wrote).
+    final relink = relinks[acc.loomPlanId];
+    final relinked = relink == null ? null : await _relinkedSidecar(raf, acc, relink);
+    if (await _sameAsLibrary(dir, acc.id, acc.files, acc.sidecarDigest!) ||
+        (relinked != null &&
+            await _sameAsLibrary(dir, acc.id, acc.files, sidecarDigest(relinked)))) {
       return make(RestoreStatus.alreadyPresent);
     }
     // A copy: a deterministic id, so restoring the same backup again finds the copy it made.
@@ -1315,7 +1649,11 @@ class LibraryBackup {
           ? await _renamedNative(raf, acc, copyNameFor(name))
           : null;
       if (await _sameAsLibrary(dir, copyId, acc.files, acc.copySidecarDigest!,
-          native: renamedNative)) {
+              native: renamedNative) ||
+          (relinked != null &&
+              await _sameAsLibrary(
+                  dir, copyId, acc.files, sidecarDigest(relinked, name: copyNameFor(name)),
+                  native: renamedNative))) {
         return make(RestoreStatus.alreadyPresent);
       }
       do {
@@ -1327,6 +1665,19 @@ class LibraryBackup {
 
   /// The library name of a project restored as a copy.
   static String copyNameFor(String name) => '$name (restored)';
+
+  /// The project's sidecar as it is once pointed at the loom copy [relink] (id, name), read again
+  /// from the archive and checked against its recorded digest.
+  Future<Map<String, dynamic>> _relinkedSidecar(
+      RandomAccessFile raf, _ProjectAccumulator acc, (String, String) relink) async {
+    final f = acc.files.firstWhere((f) => f.layout.role == BackupFileRole.sidecar);
+    final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
+    if (digest != f.sha256) {
+      throw BackupException(BackupProblem.damaged, detail: '${f.layout.pathFor(acc.id)} changed');
+    }
+    return _relinked(
+        jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>, relink.$1, relink.$2);
+  }
 
   /// A digest of a sidecar's content that ignores `lastOpened` (bumped by every open) and key order,
   /// with the name replaced by [name] when given (to compare against a restored copy).
@@ -1441,7 +1792,9 @@ class LibraryBackup {
   /// removed and a [BackupProblem.restoreFailed] is thrown: the library and the settings are exactly
   /// as they were. Afterwards thumbnails are rebuilt (best-effort).
   Future<RestoreResult> restore(RestorePlan plan,
-      {Set<String> skippedConflicts = const {}, bool restoreSettings = false}) async {
+      {Set<String> skippedConflicts = const {},
+      bool restoreSettings = false,
+      Set<String> skippedLoomConflicts = const {}}) async {
     final selected = [
       for (final project in plan.projects)
         if (project.status == RestoreStatus.add ||
@@ -1449,19 +1802,28 @@ class LibraryBackup {
           project,
     ];
     final settings = restoreSettings ? plan.settings?.settings : null;
-    if (selected.isEmpty && settings == null) return const RestoreResult([]);
+    final loomsToAdd = plan.looms?.selected(skippedLoomConflicts) ?? const <LoomProfile>[];
+    // Drafts of this restore planned for a loom that is restored as a copy point at the copy.
+    final relinks =
+        plan.looms?.relinks(skippedLoomConflicts) ?? const <String, (String, String)>{};
+    (String, String)? relinkFor(RestoreProject p) =>
+        p.craft == BackupCraft.weaving ? relinks[p.loomPlanId] : null;
+    if (selected.isEmpty && settings == null && loomsToAdd.isEmpty) {
+      return const RestoreResult([]);
+    }
     final docs = await documentsDir();
     await _sweepStaging(docs);
     final staging = Directory(p.join(docs.path, '$stagingPrefix${_uuid.v4()}'));
     final placed = <FileSystemEntity>[];
     final createdDirs = <Directory>[];
+    Future<void> Function()? undoLooms;
     try {
       if (selected.isNotEmpty) {
         await staging.create();
         final raf = await plan.archive.open();
         try {
           for (final project in selected) {
-            await _stage(raf, staging, project);
+            await _stage(raf, staging, project, relink: relinkFor(project));
           }
         } finally {
           await raf.close();
@@ -1502,13 +1864,26 @@ class LibraryBackup {
               : await File(from).rename(to));
         }
       }
-      // Last: a failure to apply the settings still rolls every project back.
+      // Then the looms, in one write of looms.json, so a later failure can put it back exactly.
+      if (loomsToAdd.isNotEmpty) {
+        final hooks = looms;
+        if (hooks == null) throw StateError('this build cannot restore looms');
+        undoLooms = await hooks.add(loomsToAdd);
+      }
+      // Last: a failure to apply the settings still rolls every project (and the looms) back.
       if (settings != null) {
         final apply = applySettings;
         if (apply == null) throw StateError('this build cannot apply app settings');
         await apply(settings);
       }
     } catch (e) {
+      if (undoLooms != null) {
+        try {
+          await undoLooms();
+        } catch (undoError) {
+          PlyLog.instance.error('Restore rollback could not put looms.json back: $undoError');
+        }
+      }
       await _rollback(placed, createdDirs);
       await _deleteQuietly(staging);
       PlyLog.instance.error('Restore failed and was rolled back: $e');
@@ -1518,6 +1893,7 @@ class LibraryBackup {
 
     final restored = [for (final s in selected) (craft: s.craft, id: s.targetId!)];
     PlyLog.instance.info('Restored ${restored.length} projects'
+        '${loomsToAdd.isNotEmpty ? ', ${loomsToAdd.length} looms' : ''}'
         '${settings != null ? ' and the app settings' : ''} from a backup.');
     final rebuild = rebuildThumbnail;
     if (rebuild != null) {
@@ -1530,7 +1906,10 @@ class LibraryBackup {
         }
       }
     }
-    return RestoreResult(restored, settingsRestored: settings != null);
+    return RestoreResult(restored,
+        settingsRestored: settings != null,
+        loomsRestored: loomsToAdd.length,
+        draftsRelinked: selected.where((p) => relinkFor(p) != null).length);
   }
 
   /// Copy [project]'s files out of the archive into [staging], under its target id. Each digest is
@@ -1539,12 +1918,24 @@ class LibraryBackup {
   /// name the `.plynal` carries): a JSON edit of the `name` key alone, the one deliberate exception
   /// to copying a document byte for byte. A project restored under its own id, and every other file
   /// of a copy, is written byte for byte.
-  Future<void> _stage(RandomAccessFile raf, Directory staging, RestoreProject project) async {
+  Future<void> _stage(RandomAccessFile raf, Directory staging, RestoreProject project,
+      {(String, String)? relink}) async {
     final id = project.targetId!;
     final rename = project.status == RestoreStatus.conflict;
     for (final f in project._files) {
       final dest = File(p.joinAll([staging.path, ...f.layout.pathFor(id).split('/')]));
       await dest.parent.create(recursive: true);
+      if (relink != null && f.layout.role == BackupFileRole.sidecar) {
+        // A draft planned for a loom this restore adds as a copy (or that an earlier restore of
+        // this backup added): its sidecar names the copy, and the copy's name too when renamed.
+        final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
+        if (digest != f.sha256) throw StateError('${f.layout.pathFor(project.id)} changed');
+        final json = _relinked(
+            jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>, relink.$1, relink.$2);
+        if (rename) json['name'] = project.targetName!;
+        await dest.writeAsBytes(utf8.encode(jsonEncode(json)), flush: true);
+        continue;
+      }
       if (rename &&
           (f.layout.role == BackupFileRole.sidecar ||
               (f.layout.role == BackupFileRole.native &&
@@ -1679,6 +2070,9 @@ class _ProjectAccumulator {
   /// [LibraryBackup.sidecarDigest] of the sidecar, as is and renamed for a copy.
   String? sidecarDigest;
   String? copySidecarDigest;
+
+  /// A weaving draft's `loomPlan.loomId`, when it names a loom.
+  String? loomPlanId;
 }
 
 class _DigestSink implements Sink<Digest> {

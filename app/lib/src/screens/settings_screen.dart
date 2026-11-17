@@ -11,6 +11,7 @@ import '../state/theme_providers.dart';
 import '../theme/spacing.dart';
 import '../widgets/progress_dialog.dart';
 import 'diagnostics_screen.dart';
+import 'looms_screen.dart';
 import 'ravelry_screen.dart';
 import 'restore_preview_screen.dart';
 
@@ -116,6 +117,21 @@ class SettingsScreen extends ConsumerWidget {
                 selected: {settings.unit},
                 onSelectionChanged: (s) => notifier.setUnit(s.first),
               ),
+            ),
+          ),
+          const Divider(height: PlySpacing.lg),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(PlySpacing.md, PlySpacing.xs, PlySpacing.md, PlySpacing.xs),
+            child: Text('Equipment',
+                style: text.titleSmall?.copyWith(color: Theme.of(context).colorScheme.primary)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.fact_check_outlined),
+            title: const Text(LoomsScreen.title),
+            subtitle: const Text('The looms you weave on, so a draft can be checked against one'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const LoomsScreen()),
             ),
           ),
           const Divider(height: PlySpacing.lg),
@@ -306,6 +322,9 @@ class _BackupSummaryDialogState extends State<_BackupSummaryDialog> {
           for (final craft in BackupCraft.values)
             Text('${craft.label}: ${plural(plan.projectCounts[craft] ?? 0, 'project')}'
                 '${craft == BackupCraft.nalbinding && plan.photoCount > 0 ? ', ${plural(plan.photoCount, 'photo')}' : ''}'),
+          if (plan.looms != null)
+            Text('My looms: ${plural(plan.looms!.count, 'loom')}'),
+          if (plan.loomsLeftOut != null) Text(plan.loomsLeftOut!),
           const SizedBox(height: PlySpacing.sm),
           Text('Size: ${formatBytes(plan.archiveSize)}'),
           const SizedBox(height: PlySpacing.sm),

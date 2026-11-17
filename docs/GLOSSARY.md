@@ -53,6 +53,36 @@ plain so it can double as user-facing help content.
   yarn measured straight); budgeted in yarn estimates alongside shrinkage.
 - **Loom waste** — warp that can't be woven (tie-on, thrums); a fixed allowance per warp.
 
+### Looms and reeds
+- **Jack loom**: a floor loom whose treadles raise the shafts tied to them while the other shafts
+  stay down. It weaves a tie-up written for a rising shed.
+- **Counterbalance loom**: a floor loom whose shafts hang from rollers or pulleys, linked to each
+  other, so every treadle moves every shaft: the tied shafts sink and the rest rise. It weaves a
+  tie-up written for a sinking shed, and works best when each shed raises as many shafts as it
+  lowers (a balanced shed).
+- **Countermarch loom**: a floor loom with two sets of lamms, one that raises shafts and one that
+  lowers them, so every shaft is tied up or down on each treadle. It weaves a tie-up written either
+  way.
+- **Table loom**: a smaller loom worked by hand levers, usually one for each shaft, set for each
+  pick instead of pressing treadles. It follows a liftplan.
+- **Dobby loom**: a loom that selects the shafts for each pick itself, with pegs on bars or a
+  computer, following a liftplan. It suits drafts with many shafts.
+- **Lamm**: a bar between the treadles and the shafts that carries the tie-up cords.
+- **Skeleton tie-up**: a tie-up for more sheds than the loom has treadles, where some picks press
+  two treadles at once, one with each foot.
+- **Reed**: the comb-like frame in the beater that spaces the warp ends and beats the weft into
+  place. It is sized by its dents per inch, or per 10 cm for a metric reed (a 40/10 reed has 40
+  dents in 10 cm).
+- **Dent**: one space between the wires of a reed. One or more ends go in each dent; the dents per
+  inch times the ends in each dent is the sett.
+- **Sleying order**: how many ends go in each dent, repeated across the warp, such as 2, 1, 1 for 16
+  ends per inch in a 12-dent reed.
+- **Weaving width** (width in the reed): how wide the warp is in the reed, its ends divided by its
+  sett. A loom's weaving width is the widest warp it takes. A double-width cloth is woven folded, so
+  it is about half as wide in the reed as it is opened out.
+- **Loom profile**: in Ply, a loom you describe in My looms (its type, shafts, treadles, weaving
+  width and reeds), so a draft can be checked against it.
+
 ### Structures (families)
 - **Plain weave / tabby** — over-one/under-one; maximum interlacement, most stable.
 - **Twill** — diagonal lines from offset floats (denim is a twill).

@@ -1,0 +1,31 @@
+# Fixture record for looms.json (see fixtures/README.md).
+
+id = "weaving/looms/looms"
+title = "Four invented loom profiles, as Ply's looms.json stores them"
+technique = "loom profiles"
+files = ["looms.json"]
+created = "2026-11-15"
+license = "original"
+provenance = """
+Written by the engine's looms.json writer (ply_weave::loom_file::write) from the profiles built in \
+rust/ply-weave/tests/loom_fixtures.rs. The looms are invented for the tests, not any maker's \
+model: a four-shaft jack floor loom with six treadles, a 24 in weaving width, a 12-dent and a \
+10-dent reed and two treadles at once; a PARTIAL profile (Borrowed loom) with only its shaft count \
+recorded, every other field null or empty; a metric eight-shaft countermarch loom with 40/10 and \
+50/10 reeds; and an eight-shaft table loom with no treadle count."""
+
+[format]
+format = "ply.looms"
+schema_version = 1
+unknown_fields = "written as null (or an empty reed list), never as 0"
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/src/loom_file.rs (the_tracked_fixture_round_trips_byte_for_byte): it reads, and \
+writing what was read gives the same bytes. rust/ply-weave/tests/loom_fixtures.rs: it is what the \
+builders write. app/test/loom_profile_test.dart: the app's version probe reads it as schema \
+version 1."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Equipment only: no beam, heddle or dobby bar counts."

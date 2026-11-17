@@ -640,6 +640,65 @@ pub fn validate_nalbind(dto: NalbindStitchDto) -> Vec<NalbindIssueDto> {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// M8-02 LOOM PROFILES and loom feasibility (ADR 0014; DTOs in `loom_dto.rs`, flat enums only, so
+// no freezed rebuild). The app owns the `looms.json` file I/O; the engine owns its format and the
+// checks, which stay separate from structural validation.
+// ---------------------------------------------------------------------------
+
+pub use crate::loom_dto::{
+    DentUnitKind, LengthDto, LoomDiagnosticDto, LoomFileFailure, LoomFileFailureKind,
+    LoomLibraryDto, LoomLocationDto, LoomLocationKind, LoomProfileDto, LoomReportDto,
+    LoomSeverityKind, LoomTypeKind, ReedDto, SettDto, SettSourceKind,
+};
+
+/// Parse `looms.json` (any supported schema version). A newer, foreign, oversized or unreadable
+/// file is an `Err(LoomFileFailure)`, which Dart receives as a thrown `LoomFileFailure`; reading
+/// never writes.
+pub fn parse_looms(text: String) -> Result<LoomLibraryDto, LoomFileFailure> {
+    weave::loom_file::read(&text)
+        .map(|l| LoomLibraryDto::from(&l))
+        .map_err(LoomFileFailure::from)
+}
+
+/// Serialize the weaver's looms as a current-version `looms.json`. `Err` when a profile is outside
+/// the engine's limits, an id repeats, or there are too many looms (Ply never writes a file it would
+/// refuse to read).
+pub fn write_looms(dto: LoomLibraryDto) -> Result<String, String> {
+    weave::loom_file::write(&dto.into()).map_err(|e| e.to_string())
+}
+
+/// Check an editor draft against a loom profile (with the weaver's sett for this draft, if any):
+/// every loom diagnostic, separate from `validate_draft`. `Err` when the draft DTO cannot convert or
+/// the profile is outside the engine's limits (it is untrusted input, so it is refused rather than
+/// checked against).
+pub fn check_loom_dto(
+    draft: DraftDto,
+    loom: LoomProfileDto,
+    sett: Option<SettDto>,
+) -> Result<LoomReportDto, String> {
+    let draft = Draft::try_from(draft)?;
+    let loom = weave::loom::LoomProfile::from(loom);
+    if let Some(problem) = loom.problems().into_iter().next() {
+        return Err(format!(
+            "the loom profile cannot be checked against: {problem}"
+        ));
+    }
+    let input = weave::feasibility::LoomCheckInput {
+        sett: sett.map(Into::into),
+    };
+    Ok(LoomReportDto::from(&weave::feasibility::check(
+        &draft, &loom, &input,
+    )))
+}
+
+/// The sett a draft's WIF gives (`1 / [WARP] Spacing`), when it spaces every end alike; `None`
+/// otherwise (or when the DTO cannot convert). Lets the loom chooser show the file's sett.
+pub fn draft_sett_dto(draft: DraftDto) -> Option<SettDto> {
+    let draft = Draft::try_from(draft).ok()?;
+    weave::feasibility::file_sett(&draft).map(SettDto::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -12,6 +12,7 @@ import '../diagnostics/crash_reporter.dart' show kPlyAppVersion;
 import '../models/native_format.dart';
 import 'editor_providers.dart';
 import 'knit_editor_providers.dart';
+import 'loom_providers.dart';
 import 'theme_providers.dart';
 
 /// The system save dialog and file picker for backups. Tests override it.
@@ -22,11 +23,13 @@ final backupFileAccessProvider =
 /// `.plyknit` version comes from what the engine writes (so a knit format bump needs no change
 /// here), WIF and knit files are also parsed by the engine before a restore, and restored projects
 /// get their thumbnails rebuilt. A full backup offers the app settings in effect; restored settings
-/// go through the settings notifier (saved first, then applied). Tests override it with a service
-/// over a temp directory.
+/// go through the settings notifier (saved first, then applied). A full backup carries My looms
+/// (`looms.json`, read by the engine), and a restore adds a backup's looms in one write that a later
+/// failure undoes (ADR 0014). Tests override it with a service over a temp directory.
 final libraryBackupProvider = Provider<LibraryBackup>((ref) {
   final drafts = ref.watch(repositoryProvider);
   final knits = ref.watch(knitRepositoryProvider);
+  final looms = ref.watch(loomRepositoryProvider);
   return LibraryBackup(
     documentsDir: getApplicationDocumentsDirectory,
     currentKnitSchemaVersion: () async {
@@ -54,6 +57,15 @@ final libraryBackupProvider = Provider<LibraryBackup>((ref) {
     },
     currentSettings: () async => ref.read(appSettingsProvider),
     applySettings: (settings) => ref.read(appSettingsProvider.notifier).restore(settings),
+    looms: LoomBackupHooks(
+      currentFile: looms.currentBytes,
+      decode: looms.decodeBytes,
+      currentLooms: () async {
+        final bytes = await looms.currentBytes();
+        return bytes == null ? const [] : await looms.decodeBytes(bytes);
+      },
+      add: looms.addLooms,
+    ),
   );
 });
 

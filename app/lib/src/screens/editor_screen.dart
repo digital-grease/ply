@@ -10,11 +10,14 @@ import '../print/print_export.dart' show PdfExportText;
 import '../print/weave_print.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
+import '../state/loom_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/book_view_sheet.dart';
 import '../widgets/dimensions_bar.dart';
 import '../widgets/draft_layout.dart';
 import '../widgets/integrated_draft_view.dart';
+import '../widgets/loom_check_panel.dart';
+import '../widgets/loom_plan_sheet.dart';
 import '../widgets/loom_type_picker.dart';
 import '../widgets/save_draft_dialog.dart';
 import '../widgets/unsaved_changes_guard.dart';
@@ -29,6 +32,7 @@ enum _OverflowAction {
   zoomIn,
   zoomOut,
   loomType,
+  loomPlan,
   convert,
   viewLayers,
   bookView,
@@ -152,6 +156,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // on save. It only pins a Book view button; the editor grid is one row per pick regardless.
       ref.read(overshotTreadlingProvider.notifier).state =
           widget.meta?.overshotTreadling ?? false;
+      // Seed the loom this draft is planned for (ADR 0014) from the sidecar; saved back on save. The
+      // loom group starts collapsed for each session.
+      ref.read(draftLoomPlanProvider.notifier).state = widget.meta?.loomPlan;
+      ref.read(loomCheckExpandedProvider.notifier).state = false;
       setState(() => _loading = false);
     } catch (e) {
       if (!mounted) return;
@@ -241,6 +249,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       var docToSave = state.draft;
       final loomType = ref.read(loomTypeProvider);
       final overshotTreadling = ref.read(overshotTreadlingProvider);
+      final loomPlan = ref.read(draftLoomPlanProvider);
       if (widget.meta != null) {
         // Pass a field only when this session changed it: an untouched one keeps whatever the sidecar
         // held, including a value written by a newer build that this one could not interpret.
@@ -248,6 +257,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         meta = old.copyWith(
             loomType: loomType == old.loomType ? null : loomType,
             overshotTreadling: overshotTreadling == old.overshotTreadling ? null : overshotTreadling,
+            loomPlan: loomPlan == old.loomPlan ? null : loomPlan,
+            clearLoomPlan: loomPlan == null && old.loomPlan != null,
             lastOpened: DateTime.now());
       } else {
         final input = await showSaveDraftDialog(context, initialName: widget.title);
@@ -260,6 +271,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           notes: input.notes,
           loomType: loomType,
           overshotTreadling: overshotTreadling,
+          loomPlan: loomPlan,
           savedAt: now,
           lastOpened: now,
         );
@@ -547,8 +559,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // UNCONDITIONAL pop (PopScope gates only maybePop), so saving still exits without re-prompting.
     final dirty = ref.watch(
         draftEditorProvider.select((s) => s.dirtyStructural || s.strokeBase != null));
+    // A changed loom choice is unsaved work too (it is saved with the draft). Only once loaded: the
+    // plan provider still holds the previous session's value until _load seeds it.
+    final planChanged = ready && ref.watch(draftLoomPlanProvider) != widget.meta?.loomPlan;
+    // "Loom for this draft" is offered once the weaver has a loom, or when the draft names one; with
+    // neither, the menu looks as it always did.
+    final hasLooms =
+        ref.watch(loomLibraryProvider.select((a) => a.valueOrNull?.looms.isNotEmpty ?? false));
     return PopScope<bool>(
-      canPop: !dirty,
+      canPop: !dirty && !planChanged,
       onPopInvokedWithResult: _onLeave,
       child: Scaffold(
       appBar: AppBar(
@@ -597,6 +616,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _zoom(-1);
                       case _OverflowAction.loomType:
                         _chooseLoomType();
+                      case _OverflowAction.loomPlan:
+                        chooseLoomForDraft(context, ref);
                       case _OverflowAction.convert:
                         _convertToLiftplan();
                       case _OverflowAction.viewLayers:
@@ -639,6 +660,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           leading: Icon(Icons.precision_manufacturing_outlined),
                           title: Text('Loom type…')),
                     ),
+                    // Which of My looms this draft is planned for, and the loom check (ADR 0014).
+                    if (hasLooms || ref.read(draftLoomPlanProvider) != null)
+                      const PopupMenuItem(
+                        value: _OverflowAction.loomPlan,
+                        child: ListTile(
+                            dense: true,
+                            leading: Icon(Icons.fact_check_outlined),
+                            title: Text('$kLoomForDraftTitle…')),
+                      ),
                     PopupMenuItem(
                       value: _OverflowAction.convert,
                       enabled: isTreadled && !_converting,
@@ -759,6 +789,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
               children: [
                 DimensionsBar(),
                 ValidationPanel(),
+                // The loom group takes what is left of the rail's height, and scrolls in it when
+                // expanded, so the rail never overflows.
+                Flexible(child: SingleChildScrollView(child: LoomCheckPanel())),
               ],
             ),
           ),
@@ -795,6 +828,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           const LayeredDrawdownNote(),
           const Flexible(child: IntegratedDraftView()),
           const ValidationPanel(),
+          const LoomCheckPanel(),
           const DimensionsBar(),
           if (showSwatch) const Expanded(child: WovenPreview()),
         ],

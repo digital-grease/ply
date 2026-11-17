@@ -1,0 +1,54 @@
+{
+  "description": "An eight-shaft 4/4 straight twill, 16 ends by 16 picks, rising shed, treadled 1 to 8 twice, sett 20 ends per inch from the file's [WARP] Spacing=0.05. Structurally valid, so the loom check is a separate judgement: not feasible on four shafts and six treadles, fits an eight-shaft partial profile with most of its equipment not recorded, and fits a table loom.",
+  "structural_errors": 0,
+  "checks": [
+    {
+      "loom": "fixture-four-shaft-jack",
+      "sett_per_inch": null,
+      "feasible": false,
+      "diagnostics": [
+        { "code": "loom.shafts_exceeded", "severity": "not_feasible", "message": "This draft threads 8 shafts; Four-shaft jack loom has 4." },
+        { "code": "loom.treadles_exceeded", "severity": "not_feasible", "message": "This draft uses 8 treadles; Four-shaft jack loom has 6." },
+        { "code": "loom.treadles_at_once_fit", "severity": "fits", "message": "No pick presses more than one treadle at a time." },
+        { "code": "loom.shed_fits", "severity": "fits", "message": "This draft's tie-up is written for a rising shed (the marked shafts go up), as a jack loom works." },
+        { "code": "loom.width_fits", "severity": "fits", "message": "This draft is 0.8 in wide in the reed (16 ends at 20 ends per inch, from the file); Four-shaft jack loom weaves up to 24 in." },
+        { "code": "loom.reed_fits", "severity": "fits", "message": "Sley the 10-dent reed 2 per dent for 20 ends per inch." }
+      ]
+    },
+    {
+      "loom": "fixture-partial",
+      "sett_per_inch": null,
+      "feasible": true,
+      "diagnostics": [
+        { "code": "loom.shafts_fit", "severity": "fits", "message": "This draft threads 8 shafts; Borrowed loom has 8." },
+        { "code": "loom.treadles_unknown", "severity": "not_checked", "message": "Borrowed loom's type and treadles are not recorded, so the treadles were not checked. This draft uses 8 treadles." },
+        { "code": "loom.treadles_at_once_fit", "severity": "fits", "message": "No pick presses more than one treadle at a time." },
+        { "code": "loom.shed_unknown", "severity": "not_checked", "message": "Borrowed loom's type is not recorded, so Ply cannot tell whether it raises or lowers the shafts you tie. This draft's tie-up is written for a rising shed (the marked shafts go up)." },
+        { "code": "loom.width_unknown_loom", "severity": "not_checked", "message": "Borrowed loom's weaving width is not recorded, so the width was not checked. This draft is 0.8 in wide in the reed (16 ends at 20 ends per inch, from the file)." },
+        { "code": "loom.reed_unknown", "severity": "not_checked", "message": "No reeds are recorded for Borrowed loom, so no reed was chosen." }
+      ]
+    },
+    {
+      "loom": "fixture-table-loom",
+      "sett_per_inch": null,
+      "feasible": true,
+      "diagnostics": [
+        { "code": "loom.shafts_fit", "severity": "fits", "message": "This draft threads 8 shafts; Table loom has 8." },
+        { "code": "loom.lift_plan_loom", "severity": "fits", "message": "On Table loom you lift the shafts with hand levers for each pick, so treadles do not limit this draft." },
+        { "code": "loom.width_fits", "severity": "fits", "message": "This draft is 0.8 in wide in the reed (16 ends at 20 ends per inch, from the file); Table loom weaves up to 16 in." },
+        { "code": "loom.reed_irregular", "severity": "advice", "message": "No reed gives 20 ends per inch with the same number of ends in every dent. Sley the 12-dent reed 2, 2, 1, repeated across the warp, for 20 ends per inch." }
+      ]
+    },
+    {
+      "loom": "fixture-table-loom",
+      "sett_per_inch": 24,
+      "feasible": true,
+      "diagnostics": [
+        { "code": "loom.shafts_fit", "severity": "fits", "message": "This draft threads 8 shafts; Table loom has 8." },
+        { "code": "loom.lift_plan_loom", "severity": "fits", "message": "On Table loom you lift the shafts with hand levers for each pick, so treadles do not limit this draft." },
+        { "code": "loom.width_fits", "severity": "fits", "message": "This draft is 0.7 in wide in the reed (16 ends at 24 ends per inch, the sett you entered); Table loom weaves up to 16 in." },
+        { "code": "loom.reed_fits", "severity": "fits", "message": "Sley the 12-dent reed 2 per dent for 24 ends per inch." }
+      ]
+    }
+  ]
+}

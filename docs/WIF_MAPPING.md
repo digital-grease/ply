@@ -15,6 +15,7 @@ Implementation: `rust/ply-weave/src/wif.rs` (`parse` / `write`).
 | `[WEAVING]` `Shafts`, `Treadles`, `Rising Shed` | `Draft.shafts`, `.treadles`, `.shed` | ✅ |
 | `[WARP]` `Threads`, `Units`, `Color` | end count, `Draft.unit`, default warp color | ✅ |
 | `[WEFT]` `Threads`, `Units`, `Color` | pick count, default weft color | ✅ |
+| `[WARP]` / `[WEFT]` other keys (`Spacing`, `Thickness`, `Spacing Zoom`, `Thickness Zoom`, `Symbol`, vendor keys) | `Draft.retained` as `WARP` / `WEFT` | ✅ (kept verbatim and written back inside `[WARP]` / `[WEFT]` after `Threads` and `Units`; earlier builds dropped them on a re-save. `[WARP] Spacing` is the file's sett, 1 / sett in `Units`, which the loom check reads) |
 | `[THREADING]` `end=shaft[,shaft]` | `Threading` | ✅ |
 | `[TIEUP]` `treadle=shaft,…` | `TieUp` | ✅ |
 | `[TREADLING]` `pick=treadle,…` | `Treadling` | ✅ |
@@ -107,6 +108,25 @@ any reader), only the working data is lost. The earlier `[PRIVATE PLY PICK ROLES
   thread draws a wider column / taller row); they round-trip through `write`. Other per-thread
   metadata Ply does not model (e.g. spacing) is kept verbatim in `Draft.retained` and re-emitted,
   so a structural-edit re-serialize is no longer lossy for it.
+- **Spacing (the sett).** The `Spacing` key of `[WARP]` (and of `[WEFT]`), with the section's
+  other unmodeled keys, is kept and written back inside its section, so a re-save keeps the file's
+  sett. A kept length (`Spacing`, `Thickness`) is never written under another unit than the one it
+  was written in: a section whose `Units` is not the one Ply writes for the draft (`Decipoints`, or
+  a `[WEFT]` in centimeters under an inch `[WARP]`) keeps its own `Units`, and a section with no
+  `Units` drops its `Spacing` and `Thickness` on a re-save, since nothing says what unit they are
+  in. Ply reads the spacing as `1 / sett` in `[WARP] Units`, and `[WARP SPACING]` as per-end
+  overrides, to find the warp's width in the reed for the loom check; a spacing that does not give
+  a usable sett (over 1000 or under 0.01 ends per inch) is not used for the width either. Ply does
+  not write a sett it did not read.
+- **Decipoints.** The original WIF 1.1 lists `Decipoints` (a tenth of a point, 1/720 inch) beside
+  `Inches` and `Centimeters`. The current specification at wif-format.org marks it deprecated, with
+  "treat as Inches", and its guide notes that WeaveIt does so. Ply takes a decipoint draft's unit as
+  inches for its calculators (as before), keeps `Units=Decipoints` when it writes the file back, and
+  reads a decipoint spacing as 1/720 inch for the loom check; a value that then gives an impossible
+  sett (an inch value written under the label) is treated as unknown, never guessed.
+- **Looms are not WIF data.** The weaver's loom profiles live in Ply's own `looms.json`, and the
+  loom a draft is planned for in the draft's sidecar (`<id>.json`, key `loomPlan`). Nothing about
+  looms is written to a `.wif`, so another program sees the same file as before.
 - **Leniency over strictness.** The parser never panics on imperfect files — missing
   sections default sensibly; unknown keys are ignored. It errors only when there's no
   recognizable draft data at all.

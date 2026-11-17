@@ -144,6 +144,7 @@ impl From<LayerConstructionKind> for Option<Construction> {
 }
 
 /// Measurement unit for the draft's lengths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnitKind {
     Inches,
     Centimeters,

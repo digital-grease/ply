@@ -33,7 +33,7 @@ import/export is lossless for what we support.
 | `PickRole`, `pick_roles` (`Vec<PickRole>`) | Per weft pick, what it is for: `Unknown` (default), `Pattern`, `Tabby`, `TopLayer`, `BottomLayer`. Empty = every role unknown (every third-party WIF); otherwise length-coupled to the picks and kept aligned by every operation that changes them. Never inferred from color or shafts. The overshot and double-weave generators record them; the Book view sets them and, when they allow it exactly, shows the overshot "Use tabby" shorthand. Stored in a WIF 1.1 private section (see WIF_MAPPING). |
 | `WeftWork`, `weft_work` | How the weft is worked (M8-06): per pick its shuttle (`Option<ShuttleId>`, 1 to 8; empty = all unknown) and strands carried together in the pass (`u8`, 1 to 4; empty = all 1), each shuttle's starting `Side`, and the `ShotGroup`s (a range of at least two consecutive picks worked as repeated passes in ONE shed: a double or triple shot, which is not double weave). Pass direction is DERIVED (`Draft::pass_starts`: each shuttle alternates its own direction from its starting side), never stored. Groups are kept on one shed by `Draft::sound_shot_groups` through every pick edit. Never inferred. Stored with the roles in the WIF private section. Also the declared double-weave `construction` (below). |
 | `Construction`, `weft_work.construction` (`Option<Construction>`) | The double-weave construction the weaver declared or a generator set (M8-09): `TwoLayers`, `Tube`, or `DoubleWidth { fold: Side }`. A label, never inferred: `construction::derive_edges` derives what happens at each selvedge from the pick roles, shuttles and starting sides (at each turn of a shuttle, its next pick on the other layer joins the layers at that edge, on the same layer leaves the edge open), summarized per edge as open, joined, mixed, or unknown; validation warns where the declared construction and the derived edges disagree. Kept through every pick edit. Stored in the WIF private section (`Version=2`). |
-| `RetainedSection` | A WIF `[SECTION]` Ply does not model (spacing, vendor sections), kept verbatim for export fidelity (M3): round-tripped on a structural edit, stale per-thread ones dropped on a resize. |
+| `RetainedSection` | A WIF `[SECTION]` Ply does not model (spacing, vendor sections), kept verbatim for export fidelity (M3): round-tripped on a structural edit, stale per-thread ones dropped on a resize. The `[TEXT]` lines other than the title and the unmodeled keys of `[WARP]` / `[WEFT]` (such as `Spacing`) are kept the same way under the names `TEXT`, `WARP` and `WEFT`, and written back inside their own sections. |
 
 ### Three decisions worth knowing
 
@@ -86,6 +86,32 @@ double shot needs the weft caught at the selvedge). Safe to run on every edit.
 
 A **tabby (plain-weave) shed** is a raised-shaft set that lifts exactly every other threaded
 warp end (`Draft::plain_weave_phase`); "tabby a" lifts the first threaded end.
+
+### Loom profiles and feasibility (`loom.rs`, `loom_file.rs`, `feasibility.rs`)
+
+A **loom profile** (`LoomProfile`) is the weaver's equipment, not part of a draft: a stable id, a
+name, a loom type (`LoomKind`: jack, counterbalance, countermarch, table, dobby, or not recorded),
+shafts, treadles, the weaving width (the widest warp in the reed, with its unit), the reeds (dents
+per inch or per 10 cm), how many treadles the weaver presses at once, and free setup notes. Every
+equipment field may be missing; unknown is `None` (or an empty reed list), never 0. The profiles
+are stored in Ply's own `looms.json` (an envelope like `.plyknit`: `format` `ply.looms`,
+`schema_version` 1, a newer file refused), never in WIF. Which loom a draft is planned for is kept
+in the draft's sidecar under `loomPlan` (the loom's id and name, and the weaver's sett for the
+check).
+
+`feasibility::check(draft, profile, input)` says whether the draft can be woven on that loom as
+drafted, SEPARATELY from `validate`: a structurally valid draft can be not feasible, and a
+structurally broken one still gets its loom check. Each finding (`LoomDiagnostic`) has a stable
+code (such as `loom.shafts_exceeded`), a severity (not feasible, advice, not checked, fits), a
+short summary and a sentence with the exact requirement ("This draft threads 8 shafts; Floor loom
+has 4."), and where it applies (shafts, treadles or picks) and what to do when Ply can say. The
+checks: distinct shafts threaded against the loom's; distinct treadles pressed (a table loom or
+dobby works from the liftplan instead; a liftplan on a treadle loom needs a treadle per distinct
+shed); treadles pressed at once; the tie-up's shed direction against the loom type (advice to tie
+the other squares, never an error); unbalanced sheds on a counterbalance (advice); the width in
+the reed (ends over the sett, from the weaver or from `[WARP] Spacing`) against the weaving width,
+with a double-width cloth checked at its folded width; and a reed and sleying for the sett. A check
+whose input is unknown reports that it was not checked.
 
 ## Knitting (sketch — not built, M5)
 

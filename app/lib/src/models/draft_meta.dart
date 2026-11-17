@@ -23,6 +23,7 @@
 
 import 'package:collection/collection.dart';
 
+import 'loom_check.dart';
 import 'loom_type.dart';
 
 /// Metadata describing one saved draft, serialized to `<id>.json`.
@@ -34,6 +35,7 @@ class DraftMeta {
     this.notes = '',
     this.loomType = LoomType.jack,
     this.overshotTreadling = false,
+    this.loomPlan,
     required DateTime savedAt,
     required DateTime lastOpened,
     this.schemaVersion = currentSchemaVersion,
@@ -72,6 +74,11 @@ class DraftMeta {
   /// sidecars load unchanged and keep the value across a save.
   final bool overshotTreadling;
 
+  /// The loom this draft is planned for (ADR 0014): the loom's id and name and the weaver's sett for
+  /// the loom check, or null when none was chosen. App-only (never in the WIF); stored under
+  /// `loomPlan`, written only when set, and a value this build cannot read is kept in [extra].
+  final LoomPlan? loomPlan;
+
   /// When the draft was first saved.
   final DateTime savedAt;
 
@@ -100,6 +107,7 @@ class DraftMeta {
     'notes',
     'loomType',
     'overshotTreadling',
+    'loomPlan',
     'savedAt',
     'lastOpened',
     'schemaVersion',
@@ -112,6 +120,8 @@ class DraftMeta {
     String? notes,
     LoomType? loomType,
     bool? overshotTreadling,
+    LoomPlan? loomPlan,
+    bool clearLoomPlan = false,
     DateTime? savedAt,
     DateTime? lastOpened,
     int? schemaVersion,
@@ -125,6 +135,7 @@ class DraftMeta {
             'notes' => notes != null,
             'loomType' => loomType != null,
             'overshotTreadling' => overshotTreadling != null,
+            'loomPlan' => loomPlan != null || clearLoomPlan,
             'savedAt' => savedAt != null,
             'lastOpened' => lastOpened != null,
             'schemaVersion' => schemaVersion != null,
@@ -137,6 +148,7 @@ class DraftMeta {
       notes: notes ?? this.notes,
       loomType: loomType ?? this.loomType,
       overshotTreadling: overshotTreadling ?? this.overshotTreadling,
+      loomPlan: clearLoomPlan ? null : (loomPlan ?? this.loomPlan),
       savedAt: savedAt ?? this.savedAt,
       lastOpened: lastOpened ?? this.lastOpened,
       schemaVersion: schemaVersion ?? this.schemaVersion,
@@ -154,6 +166,7 @@ class DraftMeta {
         'notes': notes,
         'loomType': loomType.serialName,
         'overshotTreadling': overshotTreadling,
+        if (loomPlan != null) 'loomPlan': loomPlan!.toJson(),
         'savedAt': savedAt.toIso8601String(),
         'lastOpened': lastOpened.toIso8601String(),
         'schemaVersion': schemaVersion,
@@ -189,6 +202,7 @@ class DraftMeta {
       loomType: read('loomType', (raw) => raw is String ? loomTypeFromSerialOrNull(raw) : null) ??
           LoomType.jack,
       overshotTreadling: read('overshotTreadling', (raw) => raw is bool ? raw : null) ?? false,
+      loomPlan: read('loomPlan', LoomPlan.fromJson),
       savedAt: savedAt,
       // Fall back to savedAt so sort order is still sensible if lastOpened is absent.
       lastOpened: read('lastOpened', date) ?? savedAt,
@@ -208,6 +222,7 @@ class DraftMeta {
           notes == other.notes &&
           loomType == other.loomType &&
           overshotTreadling == other.overshotTreadling &&
+          loomPlan == other.loomPlan &&
           savedAt == other.savedAt &&
           lastOpened == other.lastOpened &&
           schemaVersion == other.schemaVersion &&
@@ -221,6 +236,7 @@ class DraftMeta {
         notes,
         loomType,
         overshotTreadling,
+        loomPlan,
         savedAt,
         lastOpened,
         schemaVersion,

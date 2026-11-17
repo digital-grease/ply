@@ -7,7 +7,9 @@
 //! v1 round-trips the common shaft-loom case: `WEAVING`, `THREADING`,
 //! `TIEUP`+`TREADLING` or `LIFTPLAN`, `COLOR TABLE`, and `WARP`/`WEFT` default +
 //! per-thread colors. Thickness, spacing, and non-0..255 palette ranges are parsed
-//! leniently / defaulted (never panic) and are TODO for full fidelity.
+//! leniently / defaulted (never panic) and are TODO for full fidelity. The `[WARP]` / `[WEFT]` keys
+//! Ply does not model, such as `Spacing` (the file's sett), are kept and written back inside their
+//! sections (see [`WARP_SECTION`]); the loom check reads the sett from them (ADR 0014).
 //!
 //! Per-pick working data (not part of WIF proper: roles, shuttles and their starting sides, strands
 //! per pick, shot groups) lives in Ply's WIF 1.1 private section [`PICKS_SECTION`], tied to the cloth
@@ -304,7 +306,7 @@ pub fn parse(text: &str) -> Result<Draft> {
             entries: s.entries.clone(),
         })
         .collect::<Vec<_>>();
-    let retained = with_source_credit(&ini, retained);
+    let retained = with_thread_keys(&ini, with_source_credit(&ini, retained), unit);
 
     if shafts == 0 && threading.ends() == 0 {
         return Err(WeaveError::WifParse(
@@ -404,6 +406,36 @@ const LEGACY_ROLES_VERSION: u32 = 1;
 /// the rest is the file's credit, kept verbatim and written back into `[TEXT]` beside the Title, so
 /// a draft Ply re-saves still names its author.
 pub const TEXT_SECTION: &str = "TEXT";
+
+/// The names under which the `[WARP]` and `[WEFT]` keys Ply does not model (`Spacing`, `Thickness`,
+/// `Spacing Zoom`, `Thickness Zoom`, `Symbol`, vendor keys) are kept in [`Draft::retained`]. Like the
+/// `[TEXT]` credit, they are written back inside their own section (after `Threads` and `Units`), not
+/// as a section of their own, so a file Ply re-saves keeps its sett (`Spacing` is "1 / sett" in WIF
+/// 1.1). They are not per-thread data, so a resize keeps them (ADR 0014).
+pub const WARP_SECTION: &str = "WARP";
+
+/// See [`WARP_SECTION`].
+pub const WEFT_SECTION: &str = "WEFT";
+
+/// The `[WARP]` / `[WEFT]` keys Ply models (or deliberately does not write back): the thread count
+/// and the unit are written from the draft, and the default `Color` is replaced by per-thread colors
+/// (a kept default index could name a different palette entry after an edit).
+const THREAD_SECTION_MODELED_KEYS: [&str; 3] = ["Threads", "Units", "Color"];
+
+/// The `[WARP]` / `[WEFT]` keys whose values are lengths in the section's `Units`. A kept length is
+/// only ever written back under the unit it was written in (ADR 0014): a section whose `Units` is
+/// not the one Ply writes for the draft (`Decipoints`, or a `[WEFT]` in another unit than `[WARP]`)
+/// keeps its own `Units`, and a section with no `Units` at all drops these keys, since nothing says
+/// what unit they are in.
+const THREAD_SECTION_LENGTH_KEYS: [&str; 2] = ["Spacing", "Thickness"];
+
+/// The `Units` value Ply writes for a draft unit.
+fn unit_token(unit: Unit) -> &'static str {
+    match unit {
+        Unit::Inches => "Inches",
+        Unit::Centimeters => "Centimeters",
+    }
+}
 
 /// Ply's record of the program that first wrote a draft: `Source Program=` and, when the file gave
 /// one, `Source Version=`. A file Ply writes must name Ply as its `[WIF] Source Program`, so on
@@ -871,8 +903,12 @@ pub fn write(draft: &Draft) -> String {
                 && (s.name.eq_ignore_ascii_case(PICKS_SECTION)
                     || s.name.eq_ignore_ascii_case(LEGACY_ROLES_SECTION)))
         })
-        // The kept [TEXT] credit is written inside [TEXT] above, not as a section of its own.
+        // The kept [TEXT] credit is written inside [TEXT] above, and the kept [WARP] / [WEFT] keys
+        // inside those sections below, not as sections of their own.
         .filter(|s| !s.name.eq_ignore_ascii_case(TEXT_SECTION))
+        .filter(|s| {
+            !s.name.eq_ignore_ascii_case(WARP_SECTION) && !s.name.eq_ignore_ascii_case(WEFT_SECTION)
+        })
         .collect();
     // WIF 1.1 lists private sections in [CONTENTS] as `PRIVATE <SourceID> <SectionName>=true`.
     if write_picks {
@@ -889,13 +925,44 @@ pub fn write(draft: &Draft) -> String {
     line!("Rising Shed={}", matches!(draft.shed, ShedType::Rising));
     line!("");
 
+    // The thread count and unit come from the draft (or the section's own unit, when the file wrote
+    // it in another, so its lengths keep their meaning); then the keys of the file's own [WARP] /
+    // [WEFT] that Ply does not model (its spacing, that is its sett, and the rest), as they were read.
+    let section_unit = |name: &str| -> String {
+        draft
+            .retained
+            .iter()
+            .filter(|s| s.name.eq_ignore_ascii_case(name))
+            .flat_map(|s| s.entries.iter())
+            .find(|(k, _)| k.trim().eq_ignore_ascii_case("Units"))
+            .map_or_else(|| unit.to_string(), |(_, v)| v.trim().to_string())
+    };
+    let kept_keys = |name: &str| -> Vec<&(String, String)> {
+        draft
+            .retained
+            .iter()
+            .filter(|s| s.name.eq_ignore_ascii_case(name))
+            .flat_map(|s| s.entries.iter())
+            .filter(|(k, _)| {
+                !THREAD_SECTION_MODELED_KEYS
+                    .iter()
+                    .any(|m| k.trim().eq_ignore_ascii_case(m))
+            })
+            .collect()
+    };
     line!("[WARP]");
     line!("Threads={}", draft.ends());
-    line!("Units={}", unit);
+    line!("Units={}", section_unit(WARP_SECTION));
+    for (k, v) in kept_keys(WARP_SECTION) {
+        line!("{}={}", k, v);
+    }
     line!("");
     line!("[WEFT]");
     line!("Threads={}", draft.picks());
-    line!("Units={}", unit);
+    line!("Units={}", section_unit(WEFT_SECTION));
+    for (k, v) in kept_keys(WEFT_SECTION) {
+        line!("{}={}", k, v);
+    }
     line!("");
 
     // Declare the palette encoding explicitly so the file is self-describing: Ply's model is RGB
@@ -1057,6 +1124,44 @@ fn with_source_credit(ini: &Ini, mut retained: Vec<RetainedSection>) -> Vec<Reta
             }
             retained.push(RetainedSection {
                 name: SOURCE_SECTION.into(),
+                entries,
+            });
+        }
+    }
+    retained
+}
+
+/// [`Draft::retained`] plus the keys of the file's `[WARP]` and `[WEFT]` that Ply does not model (see
+/// [`WARP_SECTION`]), in file order, each kept as a pseudo-section named after its section. A
+/// section's own `Units` is kept first when it is not the one Ply writes for the draft's `unit`, so
+/// its lengths keep their meaning; a section with no `Units` keeps no lengths (see
+/// [`THREAD_SECTION_LENGTH_KEYS`]). Nothing is added for a section that has only modeled keys.
+fn with_thread_keys(
+    ini: &Ini,
+    mut retained: Vec<RetainedSection>,
+    unit: Unit,
+) -> Vec<RetainedSection> {
+    let is = |keys: &[&str], k: &str| keys.iter().any(|m| k.trim().eq_ignore_ascii_case(m));
+    for name in [WARP_SECTION, WEFT_SECTION] {
+        let Some(section) = ini.section(name) else {
+            continue;
+        };
+        let token = section.get("Units").filter(|t| !t.is_empty());
+        let mut entries: Vec<(String, String)> = Vec::new();
+        if let Some(t) = token.filter(|t| !t.eq_ignore_ascii_case(unit_token(unit))) {
+            entries.push(("Units".to_string(), t.to_string()));
+        }
+        entries.extend(
+            section
+                .entries
+                .iter()
+                .filter(|(k, _)| !is(&THREAD_SECTION_MODELED_KEYS, k))
+                .filter(|(k, _)| token.is_some() || !is(&THREAD_SECTION_LENGTH_KEYS, k))
+                .cloned(),
+        );
+        if !entries.is_empty() {
+            retained.push(RetainedSection {
+                name: name.into(),
                 entries,
             });
         }
@@ -1389,6 +1494,114 @@ Threads=4
         assert!(text.contains("[WARP SPACING]") && text.contains("[ACME VENDOR]"));
         assert!(text.contains("Foo=Bar"));
         assert_eq!(parse(&text).unwrap().retained, d.retained); // round-trips
+    }
+
+    /// The `[WARP]` and `[WEFT]` keys Ply does not model (the spacing, that is the sett, and the
+    /// others) were dropped by every re-save; they are kept now, written back inside their own
+    /// sections, and survive a resize (they are not per thread). `Color` is not kept: Ply writes
+    /// per-thread colors instead.
+    #[test]
+    fn warp_and_weft_keys_survive_a_resave() {
+        let wif = SAMPLE
+            .replace(
+                "[WARP]\nThreads=4\nUnits=Inches\n",
+                "[WARP]\nThreads=4\nUnits=Inches\nSpacing=0.0833\nColor=1\nThickness=0.05\n\
+                 Vendor Key=keep me\n",
+            )
+            .replace(
+                "[WEFT]\nThreads=4\n",
+                "[WEFT]\nThreads=4\nUnits=Inches\nSpacing=0.1\n",
+            );
+        let d = parse(&wif).unwrap();
+        let kept = |d: &Draft, name: &str| -> Vec<(String, String)> {
+            d.retained
+                .iter()
+                .find(|s| s.name == name)
+                .map(|s| s.entries.clone())
+                .unwrap_or_default()
+        };
+        let pair = |k: &str, v: &str| (k.to_string(), v.to_string());
+        assert_eq!(
+            kept(&d, WARP_SECTION),
+            vec![
+                pair("Spacing", "0.0833"),
+                pair("Thickness", "0.05"),
+                pair("Vendor Key", "keep me"),
+            ]
+        );
+        assert_eq!(kept(&d, WEFT_SECTION), vec![pair("Spacing", "0.1")]);
+        let text = write(&d);
+        assert_eq!(
+            section_text(&text, "WARP"),
+            "[WARP]\r\nThreads=4\r\nUnits=Inches\r\nSpacing=0.0833\r\nThickness=0.05\r\n\
+             Vendor Key=keep me\r\n"
+        );
+        assert!(section_text(&text, "WEFT").contains("Spacing=0.1\r\n"));
+        // One [WARP] section, listed once in [CONTENTS].
+        assert_eq!(text.matches("[WARP]").count(), 1);
+        assert_eq!(text.matches("\r\nWARP=true").count(), 1);
+        assert_eq!(parse(&text).unwrap(), d, "round-trips");
+        // Not per thread: a resize keeps them.
+        let r = d.resized(6, 6, d.shafts, d.treadles);
+        assert_eq!(kept(&r, WARP_SECTION), kept(&d, WARP_SECTION));
+        assert!(write(&r).contains("Spacing=0.0833"));
+        // A file with only modeled keys keeps nothing extra.
+        assert!(parse(SAMPLE)
+            .unwrap()
+            .retained
+            .iter()
+            .all(|s| s.name != WARP_SECTION && s.name != WEFT_SECTION));
+    }
+
+    /// A kept length (`Spacing`, `Thickness`) is never written back under another unit than the one
+    /// it was written in: a `[WEFT]` in centimeters under an inch `[WARP]`, or a decipoint section,
+    /// keeps its own `Units`; a section with no `Units` keeps no lengths (its other keys stay).
+    #[test]
+    fn a_kept_length_is_never_written_under_another_unit() {
+        let wif = SAMPLE.replace(
+            "[WEFT]\nThreads=4\n",
+            "[WEFT]\nThreads=4\nUnits=Centimeters\nSpacing=0.25\n",
+        );
+        let d = parse(&wif).unwrap();
+        assert_eq!(d.unit, Unit::Inches, "the draft's unit comes from [WARP]");
+        let text = write(&d);
+        assert_eq!(
+            section_text(&text, "WEFT"),
+            "[WEFT]\r\nThreads=4\r\nUnits=Centimeters\r\nSpacing=0.25\r\n"
+        );
+        assert!(section_text(&text, "WARP").contains("Units=Inches\r\n"));
+        assert_eq!(parse(&text).unwrap(), d, "round-trips");
+
+        let wif = SAMPLE.replace(
+            "[WARP]\nThreads=4\nUnits=Inches\n",
+            "[WARP]\nThreads=4\nUnits=Decipoints\nSpacing=30\nThickness=10\n",
+        );
+        let d = parse(&wif).unwrap();
+        let text = write(&d);
+        assert_eq!(
+            section_text(&text, "WARP"),
+            "[WARP]\r\nThreads=4\r\nUnits=Decipoints\r\nSpacing=30\r\nThickness=10\r\n"
+        );
+        assert_eq!(parse(&text).unwrap(), d, "round-trips");
+
+        let wif = SAMPLE.replace(
+            "[WEFT]\nThreads=4\n",
+            "[WEFT]\nThreads=4\nSpacing=0.25\nThickness=0.1\nSymbol=x\n",
+        );
+        let text = write(&parse(&wif).unwrap());
+        let weft = section_text(&text, "WEFT");
+        assert!(
+            !weft.contains("Spacing") && !weft.contains("Thickness"),
+            "{weft}"
+        );
+        assert!(weft.contains("Symbol=x"), "{weft}");
+
+        // A section in the draft's own unit keeps no Units entry: nothing changes for it.
+        assert!(parse(SAMPLE)
+            .unwrap()
+            .retained
+            .iter()
+            .all(|s| s.entries.iter().all(|(k, _)| k != "Units")));
     }
 
     /// A resize that changes the end count DROPS a per-thread `[WARP …]` section (its one-row-per-end

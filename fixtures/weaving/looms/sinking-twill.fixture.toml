@@ -1,0 +1,41 @@
+# Fixture record for sinking-twill (see fixtures/README.md).
+
+id = "weaving/looms/sinking-twill"
+title = "Four-shaft 2/2 twill written for a sinking shed, on a jack and a countermarch loom"
+technique = "loom feasibility"
+files = ["sinking-twill.wif", "sinking-twill.expect.json", "looms.json"]
+created = "2026-11-15"
+license = "original"
+provenance = """
+An original draft written by the builder in rust/ply-weave/tests/loom_fixtures.rs: a straight \
+draw on 4 shafts, a 2/2 twill re-expressed for a sinking shed (each treadle's marks are the two \
+shafts that go down; the cloth is the same 2/2 twill), 8 ends by 8 picks, with no warp spacing in \
+the file."""
+
+[structure]
+ends = 8
+picks = 8
+shafts = 4
+treadles = 4
+shed = "sinking"
+sett = "none in the file; 20 ends per inch entered for one check"
+
+[checks]
+"fixture-four-shaft-jack" = "fits, with advice: a jack loom raises the shafts you tie, so tie the squares each treadle leaves blank"
+"fixture-eight-shaft-countermarch" = "fits: the marked shafts go to the lamms that lower them; with 20 ends per inch entered, the metric 40/10 reed 2 per dent gives about 20.3"
+
+[sources]
+references = [
+  "Jane Stafford Textiles, \"Tie-Up on a Counter-Marche Loom\", https://help.janestaffordtextiles.com/article/178-tie-up-on-a-counter-marche-loom (rising draft to the rising lamms, the rest to the sinking lamms; and the reverse for a sinking draft)",
+  "Glimakra USA, \"Types of Looms\", https://glimakrausa.com/types-of-looms",
+  "Wikipedia, \"Reed (weaving)\", https://en.wikipedia.org/wiki/Reed_(weaving) (dents per inch or per 10 cm)",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/loom_fixtures.rs: the file is exactly what the builder writes; it validates \
+with no structural errors; every diagnostic and the feasible verdict equal the hand-written oracle."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "The advice to tie the other squares is exact for picks that press one treadle, as every pick here does."

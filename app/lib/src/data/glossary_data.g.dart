@@ -125,6 +125,55 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'warp that can\'t be woven (tie-on, thrums); a fixed allowance per warp.',
   ),
   GlossaryTerm(
+    term: 'Jack loom',
+    definition: 'a floor loom whose treadles raise the shafts tied to them while the other shafts stay down. It weaves a tie-up written for a rising shed.',
+  ),
+  GlossaryTerm(
+    term: 'Counterbalance loom',
+    definition: 'a floor loom whose shafts hang from rollers or pulleys, linked to each other, so every treadle moves every shaft: the tied shafts sink and the rest rise. It weaves a tie-up written for a sinking shed, and works best when each shed raises as many shafts as it lowers (a balanced shed).',
+  ),
+  GlossaryTerm(
+    term: 'Countermarch loom',
+    definition: 'a floor loom with two sets of lamms, one that raises shafts and one that lowers them, so every shaft is tied up or down on each treadle. It weaves a tie-up written either way.',
+  ),
+  GlossaryTerm(
+    term: 'Table loom',
+    definition: 'a smaller loom worked by hand levers, usually one for each shaft, set for each pick instead of pressing treadles. It follows a liftplan.',
+  ),
+  GlossaryTerm(
+    term: 'Dobby loom',
+    definition: 'a loom that selects the shafts for each pick itself, with pegs on bars or a computer, following a liftplan. It suits drafts with many shafts.',
+  ),
+  GlossaryTerm(
+    term: 'Lamm',
+    definition: 'a bar between the treadles and the shafts that carries the tie-up cords.',
+  ),
+  GlossaryTerm(
+    term: 'Skeleton tie-up',
+    definition: 'a tie-up for more sheds than the loom has treadles, where some picks press two treadles at once, one with each foot.',
+  ),
+  GlossaryTerm(
+    term: 'Reed',
+    definition: 'the comb-like frame in the beater that spaces the warp ends and beats the weft into place. It is sized by its dents per inch, or per 10 cm for a metric reed (a 40/10 reed has 40 dents in 10 cm).',
+  ),
+  GlossaryTerm(
+    term: 'Dent',
+    definition: 'one space between the wires of a reed. One or more ends go in each dent; the dents per inch times the ends in each dent is the sett.',
+  ),
+  GlossaryTerm(
+    term: 'Sleying order',
+    definition: 'how many ends go in each dent, repeated across the warp, such as 2, 1, 1 for 16 ends per inch in a 12-dent reed.',
+  ),
+  GlossaryTerm(
+    term: 'Weaving width',
+    aka: 'width in the reed',
+    definition: 'how wide the warp is in the reed, its ends divided by its sett. A loom\'s weaving width is the widest warp it takes. A double-width cloth is woven folded, so it is about half as wide in the reed as it is opened out.',
+  ),
+  GlossaryTerm(
+    term: 'Loom profile',
+    definition: 'in Ply, a loom you describe in My looms (its type, shafts, treadles, weaving width and reeds), so a draft can be checked against it.',
+  ),
+  GlossaryTerm(
     term: 'Plain weave / tabby',
     definition: 'over-one/under-one; maximum interlacement, most stable.',
   ),

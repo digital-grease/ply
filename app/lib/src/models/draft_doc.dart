@@ -315,6 +315,12 @@ const String kWifTextSection = 'TEXT';
 /// Mirrors `ply_weave::wif::SOURCE_SECTION`.
 const String kWifSourceSection = 'PRIVATE PLY SOURCE';
 
+/// The retained sections holding the `[WARP]` and `[WEFT]` keys Ply does not model (`Spacing`, the
+/// file's sett, and the rest): the engine writes them back inside their own sections. Mirror
+/// `ply_weave::wif::WARP_SECTION` and `WEFT_SECTION`.
+const String kWifWarpSection = 'WARP';
+const String kWifWeftSection = 'WEFT';
+
 /// One `key=value` line of a retained (unmodeled) WIF section. Immutable, value-equal.
 class RetainedEntry {
   const RetainedEntry(this.key, this.value);

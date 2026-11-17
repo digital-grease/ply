@@ -1,0 +1,45 @@
+{
+  "description": "A four-shaft 2/2 straight twill, 8 ends by 8 picks, written for a SINKING shed (Rising Shed=false: each treadle's marks are the two shafts that go down), with no warp spacing in the file. On a jack loom, which raises the shafts you tie, that is advice to tie the other squares, never an error; on a countermarch loom it is how to tie the two sets of lamms. With no sett the width and reed are not checked, until the weaver enters one.",
+  "structural_errors": 0,
+  "checks": [
+    {
+      "loom": "fixture-four-shaft-jack",
+      "sett_per_inch": null,
+      "feasible": true,
+      "diagnostics": [
+        { "code": "loom.shafts_fit", "severity": "fits", "message": "This draft threads 4 shafts; Four-shaft jack loom has 4." },
+        { "code": "loom.treadles_fit", "severity": "fits", "message": "This draft uses 4 treadles; Four-shaft jack loom has 6." },
+        { "code": "loom.treadles_at_once_fit", "severity": "fits", "message": "No pick presses more than one treadle at a time." },
+        { "code": "loom.tie_up_for_sinking_shed", "severity": "advice", "message": "This draft's tie-up is written for a sinking shed (the marked shafts go down), but a jack loom raises the shafts you tie." },
+        { "code": "loom.width_unknown_sett", "severity": "not_checked", "message": "The sett is not known, so the width was not checked: the file gives no warp spacing." },
+        { "code": "loom.reed_no_sett", "severity": "not_checked", "message": "The sett is not known, so no reed was chosen." }
+      ]
+    },
+    {
+      "loom": "fixture-eight-shaft-countermarch",
+      "sett_per_inch": null,
+      "feasible": true,
+      "diagnostics": [
+        { "code": "loom.shafts_fit", "severity": "fits", "message": "This draft threads 4 shafts; Eight-shaft countermarch has 8." },
+        { "code": "loom.treadles_fit", "severity": "fits", "message": "This draft uses 4 treadles; Eight-shaft countermarch has 10." },
+        { "code": "loom.treadles_at_once_fit", "severity": "fits", "message": "No pick presses more than one treadle at a time." },
+        { "code": "loom.countermarch_tie_up", "severity": "fits", "message": "This draft's tie-up is written for a sinking shed (the marked shafts go down). On a countermarch loom, tie each treadle's marked shafts to the lamms that lower them and every other shaft to the lamms that raise them." },
+        { "code": "loom.width_unknown_sett", "severity": "not_checked", "message": "The sett is not known, so the width was not checked: the file gives no warp spacing." },
+        { "code": "loom.reed_no_sett", "severity": "not_checked", "message": "The sett is not known, so no reed was chosen." }
+      ]
+    },
+    {
+      "loom": "fixture-eight-shaft-countermarch",
+      "sett_per_inch": 20,
+      "feasible": true,
+      "diagnostics": [
+        { "code": "loom.shafts_fit", "severity": "fits", "message": "This draft threads 4 shafts; Eight-shaft countermarch has 8." },
+        { "code": "loom.treadles_fit", "severity": "fits", "message": "This draft uses 4 treadles; Eight-shaft countermarch has 10." },
+        { "code": "loom.treadles_at_once_fit", "severity": "fits", "message": "No pick presses more than one treadle at a time." },
+        { "code": "loom.countermarch_tie_up", "severity": "fits", "message": "This draft's tie-up is written for a sinking shed (the marked shafts go down). On a countermarch loom, tie each treadle's marked shafts to the lamms that lower them and every other shaft to the lamms that raise them." },
+        { "code": "loom.width_fits", "severity": "fits", "message": "This draft is 1 cm wide in the reed (8 ends at 20 ends per inch, the sett you entered); Eight-shaft countermarch weaves up to 100 cm." },
+        { "code": "loom.reed_fits", "severity": "fits", "message": "Sley the 40/10 reed 2 per dent: 80 ends per 10 cm (about 20.3 per inch), close to the 20 ends per inch of this draft." }
+      ]
+    }
+  ]
+}

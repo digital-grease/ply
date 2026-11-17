@@ -786,11 +786,12 @@ PrintDocument buildWeavePrintDocument(
     printNotes.add('The drawdowns show every intersection of both layers, not the face of the '
         'cloth.');
   }
-  // The file's credit is printed under Source; any other kept section is named here.
+  // The file's credit is printed under Source; any other kept section is named here (the kept keys
+  // of [WARP] and [WEFT], such as the spacing, belong to those sections, not to one of their own).
+  const inSections = {kWifTextSection, kWifSourceSection, kWifWarpSection, kWifWeftSection};
   final unprinted = [
     for (final r in doc.retained)
-      if (r.name.toUpperCase() != kWifTextSection && r.name.toUpperCase() != kWifSourceSection)
-        r.name,
+      if (!inSections.contains(r.name.toUpperCase())) r.name,
   ];
   if (unprinted.isNotEmpty) {
     printNotes.add('The file holds data Ply keeps but does not print: ${_and(unprinted)}.');

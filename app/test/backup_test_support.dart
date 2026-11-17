@@ -192,6 +192,7 @@ class FakeBackup extends LibraryBackup {
   BackupPlan? builtFrom;
   Set<String>? skipped;
   bool? restoredSettings;
+  Set<String>? skippedLooms;
 
   @override
   Future<BackupPlan> planBackup() async {
@@ -220,15 +221,20 @@ class FakeBackup extends LibraryBackup {
 
   @override
   Future<RestoreResult> restore(RestorePlan plan,
-      {Set<String> skippedConflicts = const {}, bool restoreSettings = false}) async {
+      {Set<String> skippedConflicts = const {},
+      bool restoreSettings = false,
+      Set<String> skippedLoomConflicts = const {}}) async {
     skipped = skippedConflicts;
     restoredSettings = restoreSettings;
+    skippedLooms = skippedLoomConflicts;
     if (restoreError != null) throw restoreError!;
     return RestoreResult([
       for (final p in plan.projects)
         if (p.status == RestoreStatus.add ||
             (p.status == RestoreStatus.conflict && !skippedConflicts.contains(p.key)))
           (craft: p.craft, id: p.targetId!),
-    ], settingsRestored: restoreSettings && plan.settings?.settings != null);
+    ],
+        settingsRestored: restoreSettings && plan.settings?.settings != null,
+        loomsRestored: plan.looms?.selected(skippedLoomConflicts).length ?? 0);
   }
 }

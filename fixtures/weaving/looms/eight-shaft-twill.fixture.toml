@@ -1,0 +1,48 @@
+# Fixture record for eight-shaft-twill (see fixtures/README.md).
+
+id = "weaving/looms/eight-shaft-twill"
+title = "Eight-shaft 4/4 twill, structurally valid, checked against four loom profiles"
+technique = "loom feasibility"
+files = ["eight-shaft-twill.wif", "eight-shaft-twill.expect.json", "looms.json"]
+created = "2026-11-15"
+license = "original"
+provenance = """
+An original draft written by the builder in rust/ply-weave/tests/loom_fixtures.rs: a straight \
+draw on 8 shafts, a 4/4 twill tie-up, treadled 1 to 8 twice, 16 ends by 16 picks, with the sett \
+given the way WIF carries it ([WARP] Spacing=0.05 inches, that is 20 ends per inch). No published \
+draft was copied; the loom profiles in looms.json are invented equipment, not any maker's loom."""
+
+[structure]
+ends = 16
+picks = 16
+shafts = 8
+treadles = 8
+shed = "rising"
+sett = "20 ends per inch, from [WARP] Spacing"
+
+[checks]
+# Which looms of looms.json the oracle checks this draft against, and what it shows.
+"fixture-four-shaft-jack" = "not feasible: 8 shafts on 4, 8 treadles on 6; the width and reed fit"
+"fixture-partial" = "a partial profile: only the shaft count is known, so treadles, shed, width and reed are not checked"
+"fixture-table-loom" = "fits: a table loom works from the lift plan; the 12-dent reed needs a 2, 2, 1 sleying for 20 ends per inch, or 2 per dent at the entered 24"
+
+[sources]
+# The rules the checks apply, cited, never copied (shafts and treadles as positions, table looms
+# lifting by hand, sleying orders).
+references = [
+  "Jane Stafford Textiles, \"The Difference Between a Counter-Marche, a Jack and a Counter-Balance Loom\", https://help.janestaffordtextiles.com/article/166-the-difference-between-a-counter-marche-a-jack-and-a-counter-balance-loom",
+  "FiberArts.org, \"Loom types\", https://fiberarts.org/design/articles/loomtypes.php (table looms are usually jack looms worked by hand levers)",
+  "Schacht Spindle Co., \"Sleying reeds for different setts\", https://schachtspindle.com/pages/reed-substitution-chart",
+  "WIF 1.1 specification, https://developer.wif-format.org/v1.1/wif-format_v1_1.html ([WARP] Spacing is the centre-to-centre distance, 1 / sett)",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/loom_fixtures.rs: the file is exactly what the builder writes (line endings \
+aside); it validates with no structural errors; every diagnostic of every check (code, severity \
+and exact message) and the feasible verdict equal the oracle. The oracle was written by hand from \
+the rules, before the engine was run against it."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Equipment feasibility only. Draw-in, take-up, beam capacity, heddle counts and dobby bar counts are not modelled."

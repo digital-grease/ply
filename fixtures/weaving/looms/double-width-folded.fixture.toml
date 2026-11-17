@@ -1,0 +1,45 @@
+# Fixture record for double-width-folded (see fixtures/README.md).
+
+id = "weaving/looms/double-width-folded"
+title = "Plain-weave double width, 480 ends at 24 ends per inch, checked at its folded width"
+technique = "loom feasibility, double width"
+files = ["double-width-folded.wif", "double-width-folded.expect.json", "looms.json"]
+created = "2026-11-15"
+license = "original"
+provenance = """
+An original draft written by Ply's double-weave generator (structure::double_weave, 480 ends, 8 \
+picks, double width with the fold on the left) with the sett given as WIF carries it ([WARP] \
+Spacing=0.0416667 inches, 24 ends per inch for both layers together in the reed). The same \
+construction as fixtures/weaving/doubleweave/double-width-fold-left, made wide enough for the \
+width check to matter."""
+
+[structure]
+ends = 480
+picks = 8
+shafts = 4
+treadles = 4
+shed = "rising"
+construction = "double width, fold on the left"
+sett = "24 ends per inch in the reed, from [WARP] Spacing"
+
+[checks]
+"fixture-four-shaft-jack" = "fits: 20 in wide in the reed, folded, on a 24 in loom; opened out about 40 in, which the loom never has to hold"
+"fixture-table-loom" = "not feasible: 20 in in the reed on a 16 in loom"
+
+[sources]
+references = [
+  "Ashford, \"Use two reeds to weave double width, double layer and patterns\", https://ashford.co.nz/?p=26541",
+  "Schacht Spindle Co., \"Subtle Star Overshot Doubleweave Blanket\", https://schachtspindle.com/blogs/projects/subtle-star-overshot-doubleweave-blanket (twice the width of the reed)",
+  "Jane Stafford Textiles, School of Weaving season 3 episode 7, \"Double Width, Double Layers\", https://schoolofweaving.tv/season-3-episode-7-double-width-double-layers (draw-in and tension at the fold)",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/loom_fixtures.rs: the file is exactly what the generator and the builder \
+write; it validates with no structural errors; every diagnostic and the feasible verdict equal the \
+hand-written oracle, including the folded width in the reed and the opened width of about twice \
+that."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "The opened width is about twice the reed width, not exactly: the fold draws in, and the sett at the fold is often adjusted. Ply checks the width in the reed only."

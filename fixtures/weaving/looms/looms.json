@@ -1,0 +1,82 @@
+{
+  "format": "ply.looms",
+  "schema_version": 1,
+  "looms": [
+    {
+      "id": "fixture-four-shaft-jack",
+      "name": "Four-shaft jack loom",
+      "kind": "jack",
+      "shafts": 4,
+      "treadles": 6,
+      "weaving_width": {
+        "value": 24.0,
+        "unit": "inches"
+      },
+      "reeds": [
+        {
+          "dents": 12.0,
+          "per": "inch"
+        },
+        {
+          "dents": 10.0,
+          "per": "inch"
+        }
+      ],
+      "treadles_at_once": 2,
+      "notes": "Fixture: a small jack floor loom."
+    },
+    {
+      "id": "fixture-partial",
+      "name": "Borrowed loom",
+      "kind": null,
+      "shafts": 8,
+      "treadles": null,
+      "weaving_width": null,
+      "reeds": [],
+      "treadles_at_once": null,
+      "notes": "Fixture: only the shaft count is known."
+    },
+    {
+      "id": "fixture-eight-shaft-countermarch",
+      "name": "Eight-shaft countermarch",
+      "kind": "countermarch",
+      "shafts": 8,
+      "treadles": 10,
+      "weaving_width": {
+        "value": 100.0,
+        "unit": "centimeters"
+      },
+      "reeds": [
+        {
+          "dents": 40.0,
+          "per": "10cm"
+        },
+        {
+          "dents": 50.0,
+          "per": "10cm"
+        }
+      ],
+      "treadles_at_once": 2,
+      "notes": "Fixture: a metric countermarch loom."
+    },
+    {
+      "id": "fixture-table-loom",
+      "name": "Table loom",
+      "kind": "table",
+      "shafts": 8,
+      "treadles": null,
+      "weaving_width": {
+        "value": 16.0,
+        "unit": "inches"
+      },
+      "reeds": [
+        {
+          "dents": 12.0,
+          "per": "inch"
+        }
+      ],
+      "treadles_at_once": null,
+      "notes": "Fixture: a table loom with a lever for each shaft."
+    }
+  ]
+}
