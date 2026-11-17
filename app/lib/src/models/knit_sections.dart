@@ -1,6 +1,7 @@
 // Pure helpers for a knitting pattern's SECTIONS (the construction layer above the chart; the
 // engine's `ply_knit::sections` owns their meaning and the stitch ledger). No FFI: ids, the step
-// kinds the editor offers, and the hold steps a "return stitches" step can name.
+// kinds the editor offers, the hold steps a "return stitches" step can name, and the garment's
+// PIECES (ADR 0020) a section works and a join step brings in.
 
 import 'dart:convert';
 
@@ -26,9 +27,14 @@ enum KnitStepKind {
       'Name groups of stitches on the needle, such as the instep and the sole, to count each.'),
   shape('Shaping',
       'Decrease or increase on some rows or rounds, a number of times or to a stitch count.'),
-  close('Graft or close', 'Graft the last stitches together, or bind them off together.'),
+  close('Graft or close',
+      'Graft the last stitches together, or bind them off together; or close two groups on hold.'),
   roundStart('Move the start of the round',
       'Make the round start where the work is now, as patterns say after a gusset pick-up.'),
+  join(
+      'Join a piece or held stitches',
+      'Knit another piece, or stitches on hold, into this piece where the work is: sleeves onto a '
+          'yoke, a thumb from its held stitches.'),
   unchecked('Written step (not checked)',
       'Any other instruction, in your own words. Ply does not check it.');
 
@@ -59,6 +65,7 @@ KnitStepKind knitStepKind(KnitStepActionDto action) => switch (action) {
       KnitStepActionDto_Groups() => KnitStepKind.groups,
       KnitStepActionDto_Close() => KnitStepKind.close,
       KnitStepActionDto_RoundStart() => KnitStepKind.roundStart,
+      KnitStepActionDto_Join() => KnitStepKind.join,
     };
 
 /// The plain-words name of a work stitch.
@@ -97,10 +104,14 @@ String sectionConstructionLabel(ConstructionKind? c) => switch (c) {
     };
 
 /// Whether a written-instructions line is a section heading (`Section 2: Left side`, or `Section 2`
-/// for a section with no name, with `(worked flat)` or `(worked in the round)` when the section
-/// says), as the engine writes them for a pattern with sections.
-bool isKnitSectionHeading(String line) =>
-    RegExp(r'^Section \d+(?:: .*| \(worked (?:flat|in the round)\))?$').hasMatch(line);
+/// for a section with no name, with the piece it works and `(worked flat)` or `(worked in the
+/// round)` in brackets when the pattern has pieces or the section says), as the engine writes them
+/// for a pattern with sections.
+bool isKnitSectionHeading(String line) => RegExp(r'^Section \d+(?:: .*| \(.+\))?$').hasMatch(line);
+
+/// Whether a written-instructions line is the engine's opening line for a pattern in several
+/// pieces (`Made in 3 pieces: body, left sleeve and right sleeve. ...`).
+bool isKnitPiecesLine(String line) => RegExp(r'^Made in \d+ pieces?: ').hasMatch(line);
 
 /// The largest stitch count a step form accepts (the same bound as the pattern cast-on).
 const int kMaxStepCount = 100000;
@@ -114,6 +125,18 @@ const int kMaxNeedleGroups = 100;
 
 /// Whether [text] is longer than a section or step text may be.
 bool knitTextTooLong(String text) => utf8.encode(text).length > kMaxSectionTextBytes;
+
+/// The most pieces a pattern may have (`ply_knit::sections::MAX_PIECES`).
+const int kMaxKnitPieces = 50;
+
+/// The most a piece's name may hold, in bytes of UTF-8 (`ply_knit::sections::MAX_PIECE_NAME_BYTES`):
+/// it is named in every count while it is set aside.
+const int kMaxPieceNameBytes = 200;
+
+/// What a form says when a piece's name is past [kMaxPieceNameBytes], or null when it fits.
+String? knitPieceNameProblem(String name) => utf8.encode(name.trim()).length > kMaxPieceNameBytes
+    ? 'Too long: keep a piece\'s name under 200 bytes (most letters take 1).'
+    : null;
 
 /// What a form says when a text is past [kMaxSectionTextBytes].
 const String kKnitTextTooLong =
@@ -135,6 +158,19 @@ String _nextId(Iterable<String> ids, String prefix) {
 /// The id for a new section of [p] (`section-N`).
 String nextSectionId(KnitPatternDto p) => _nextId([for (final s in p.sections) s.id], 'section-');
 
+/// The id for a new piece of [p] (`piece-N`). Every id a section or a join step still names counts
+/// as used, so deleting a piece never lets a new one take its id and silently become what those
+/// steps meant.
+String nextPieceId(KnitPatternDto p) => _nextId([
+      for (final piece in p.pieces) piece.id,
+      for (final s in p.sections) ...[
+        if (s.piece != null) s.piece!,
+        for (final st in s.steps)
+          if (st.action case KnitStepActionDto_Join(source: JoinSourceDto_Piece(:final piece)))
+            piece,
+      ],
+    ], 'piece-');
+
 /// The id for a new step of [p] (`step-N`), unique across every section. Every id a "return held
 /// stitches" or "pick up along" step names counts as used too, so deleting a hold or work-flat step
 /// never lets a new one take its id and silently become what the orphaned step refers to.
@@ -145,6 +181,8 @@ String nextStepId(KnitPatternDto p) => _nextId([
           if (st.action case KnitStepActionDto_Resume(:final hold)) hold,
           if (st.action case KnitStepActionDto_PickUp(along: PickUpAlongDto_Piece(:final step)))
             step,
+          if (st.action case KnitStepActionDto_Join(source: JoinSourceDto_Held(:final hold))) hold,
+          if (st.action case KnitStepActionDto_Close(:final holds)) ...holds,
         ],
     ], 'step-');
 
@@ -172,6 +210,27 @@ class KnitHoldRef {
   /// `center neck (Divide, step 2)`.
   String get label =>
       '${name.trim().isEmpty ? 'Unnamed group' : name.trim()} ($sectionName, step $stepNumber)';
+}
+
+/// A piece's display name: its name, or `piece N` (1-based) when it has none (the engine's
+/// `piece_title`).
+String knitPieceTitle(KnitPatternDto p, int index) {
+  final name = index >= 0 && index < p.pieces.length ? p.pieces[index].name.trim() : '';
+  return name.isEmpty ? 'piece ${index + 1}' : name;
+}
+
+/// [s] with its first letter in capitals, for a title.
+String knitCapitalized(String s) => s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+/// The index in [p]'s pieces of the piece the section at [si] works (the engine's
+/// `section_piece`): the piece it names, or the first when it names none; null for a pattern of
+/// one piece, or a section naming a piece [p] does not have.
+int? knitSectionPieceIndex(KnitPatternDto p, int si) {
+  if (p.pieces.isEmpty || si < 0 || si >= p.sections.length) return null;
+  final id = p.sections[si].piece;
+  if (id == null) return 0;
+  final i = p.pieces.indexWhere((piece) => piece.id == id);
+  return i < 0 ? null : i;
 }
 
 /// A section's display name: its name, or `Section N` (1-based) when it has none (the engine's
@@ -226,7 +285,8 @@ List<String> knitGroupNames(KnitPatternDto p) {
 
 /// The action a new step of [kind] starts with in its form: nothing that would surprise (counts the
 /// knitter then sets; the first hold step for a return).
-KnitStepActionDto defaultKnitStepAction(KnitStepKind kind, KnitPatternDto p) => switch (kind) {
+KnitStepActionDto defaultKnitStepAction(KnitStepKind kind, KnitPatternDto p, {int? sectionIndex}) =>
+    switch (kind) {
       KnitStepKind.chartRows =>
         KnitStepActionDto.chartRows(first: 1, last: p.chart.rows.isEmpty ? 1 : p.chart.rows.length),
       KnitStepKind.work => const KnitStepActionDto.work(
@@ -254,6 +314,24 @@ KnitStepActionDto defaultKnitStepAction(KnitStepKind kind, KnitPatternDto p) => 
               ? const PickUpAlongDto.edge(text: '')
               : PickUpAlongDto.piece(step: knitFlatParts(p).last.stepId)),
       KnitStepKind.groups => const KnitStepActionDto.groups(groups: []),
-      KnitStepKind.close => const KnitStepActionDto.close(method: CloseMethodKind.graft),
+      KnitStepKind.close => const KnitStepActionDto.close(method: CloseMethodKind.graft, holds: []),
       KnitStepKind.roundStart => const KnitStepActionDto.roundStart(),
+      KnitStepKind.join => _defaultJoin(p, sectionIndex),
     };
+
+/// A join's starting source: another piece than the one section [sectionIndex] works, the first
+/// that is not it; else the last stitches put on hold; else none (the form asks for one).
+KnitStepActionDto _defaultJoin(KnitPatternDto p, int? sectionIndex) {
+  final own = sectionIndex == null ? null : knitSectionPieceIndex(p, sectionIndex);
+  final others = [
+    for (var i = 0; i < p.pieces.length; i++)
+      if (i != own) p.pieces[i].id,
+  ];
+  final holds = knitHoldSteps(p);
+  return KnitStepActionDto.join(
+      source: others.isNotEmpty && own != null
+          ? JoinSourceDto.piece(piece: others.first)
+          : JoinSourceDto.held(hold: holds.isEmpty ? '' : holds.last.stepId),
+      stitch: WorkStitchKind.knit,
+      resolveTurns: false);
+}

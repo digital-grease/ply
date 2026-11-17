@@ -28,6 +28,7 @@ KnitPatternDto _pattern({List<KnitSectionDto> sections = const []}) => KnitPatte
       ]),
       notes: '',
       sections: sections,
+      pieces: const [],
     );
 
 const _knitToEnd =

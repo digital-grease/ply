@@ -65,6 +65,7 @@ KnitPatternDto _fourByFour() => KnitPatternDto(
       ),
       notes: '',
       sections: const [],
+      pieces: const [],
     );
 
 /// [FakeEditorRepo] plus the persistence calls the leave guard drives (no disk, no FFI).

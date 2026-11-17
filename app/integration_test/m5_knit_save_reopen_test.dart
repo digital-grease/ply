@@ -90,7 +90,7 @@ void main() {
     expect(afterDelete.map((e) => e.id), isNot(contains(id)));
   });
 
-  testWidgets('a schema-version-2 pattern opens without a cast-on and saves as version 5',
+  testWidgets('a schema-version-2 pattern opens without a cast-on and saves as version 6',
       (tester) async {
     final repo = KnitRepository();
     final pattern = KnitEditorState(pattern: await repo.blank()).resizeChart(4, 2).pattern;
@@ -101,11 +101,12 @@ void main() {
     final path = (await repo.openKnit(id)).patternPath;
 
     // Put the same pattern back on disk exactly as the version-2 writer stored it: no cast_on key
-    // (and no sections, which version 4 added).
+    // (and no sections, which version 4 added, or pieces, which version 6 added).
     final envelope = jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
     (envelope['document'] as Map<String, dynamic>)
       ..remove('cast_on')
-      ..remove('sections');
+      ..remove('sections')
+      ..remove('pieces');
     envelope['schema_version'] = 2;
     final v2 = const JsonEncoder.withIndent('  ').convert(envelope);
     File(path).writeAsStringSync(v2);
@@ -117,7 +118,7 @@ void main() {
 
     final edited = KnitEditorState(pattern: opened).setCastOn(4).pattern;
     await repo.saveKnit(pattern: edited, meta: meta, id: id);
-    expect(plyknitSchemaVersion(File(path).readAsStringSync()), 5);
+    expect(plyknitSchemaVersion(File(path).readAsStringSync()), 6);
     expect(File(KnitRepository.backupPath(path, 2)).readAsStringSync(), v2,
         reason: 'the version-2 original is kept once');
     expect((await repo.readPattern(id)).castOn, 4);

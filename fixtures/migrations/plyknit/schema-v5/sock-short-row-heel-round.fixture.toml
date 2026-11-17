@@ -1,0 +1,33 @@
+# Fixture record for migrations/plyknit/schema-v5/sock-short-row-heel-round (see fixtures/README.md).
+
+id = "migrations/plyknit/schema-v5/sock-short-row-heel-round"
+title = "Child's sock with a German short-row heel in the round"
+format = "ply.knit"
+schema_version = 5
+files = ["sock-short-row-heel-round.plyknit"]
+created = "2026-11-16"
+license = "original"
+immutable = true
+provenance = """
+Schema version 5 bytes exactly as the ply-knit engine wrote them before schema version 6 existed: \
+copied byte for byte from fixtures/knitting/sections/sock-short-row-heel-round.plyknit at commit e6e9d3e, which the \
+engine's own .plyknit writer produced at commit 4754ea2. Schema version 5 was never in a tagged \
+release (v0.1.7 wrote version 1); development builds from 4754ea2 to e6e9d3e wrote it. Kept so the \
+version 5 to 6 migration is always tested against real bytes. Never edit or regenerate this file."""
+shape = "In the round, a cast-on of 32 stitches; five sections: cuff, leg, a German short-row heel over half the stitches (worked flat, then joined back into the round), foot and toe (shaping, then grafting)."
+
+[expected_after_migration]
+source_version = 5
+document = "The document gets pieces = [] and every section piece = null (one piece, every section working it); no step changes; every other document field unchanged"
+behavior = "The written instructions, every ledger line and count, and the validation issues are exactly the oracle in fixtures/knitting/sections/sock-short-row-heel-round.expect.json, which did not change for schema version 6."
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/src/native.rs (every_schema_v5_fixture_migrates_to_v6_as_one_piece and \
+schema_v5_fixtures_count_write_and_validate_as_before): the file reads as schema version 5, \
+migrates to the current version with only the new fields added (no pieces, every section's piece \
+null), re-saves as the current version, and its written instructions, ledger and validation issues \
+are the version 5 results. rust/ply-bridge/src/knit_dto.rs opens one through parse_knit and saves \
+it as the current version. app/test/native_format_test.dart reads it as schema version 5 and \
+app/test/knit_repository_test.dart keeps a one-time .v5.bak of these bytes when a save upgrades it."""

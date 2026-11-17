@@ -160,6 +160,25 @@ plain so it can double as user-facing help content.
 - **Start of the round** (beginning of round): the point where each round begins, usually kept with
   a marker. Sock patterns often move it, for example to the center of the heel after picking up the
   gusset stitches.
+- **Piece**: in Ply, a part of a garment knitted on its own needle, such as the body, a sleeve or a
+  thumb. Each section works one piece; the first piece is the one the cast-on is for.
+- **Join pieces**: knit the stitches of one piece onto the needle of another, so they go on as one,
+  such as sleeves knitted onto the body for a yoke. In Ply a join step knits another piece, or
+  stitches on hold, into the row or round where the work is, with the right side facing.
+- **Set aside**: in Ply, the stitches of the pieces not being worked, waiting on their own needles or
+  holders until a section works them or a join brings them in. Every count lists them.
+- **Yoke**: the upper part of a sweater that joins the body and the sleeves and narrows toward the
+  neck. In a bottom-up yoke the body and the sleeves are knitted to the underarms and then joined on
+  one needle.
+- **Raglan**: a sweater whose sleeves meet the body along diagonal lines from the underarm to the
+  neck. A top-down raglan divides its yoke at the underarms into the body and the two sleeves.
+- **Underarm stitches**: stitches put on hold or bound off where a sleeve meets the body, later
+  grafted or bound off together to close the underarm.
+- **Held-stitch thumb**: a mitten thumb whose stitches go on a holder while the hand goes on, with
+  stitches cast on over the gap; the thumb is knitted later from the held stitches plus stitches
+  picked up along the opening.
+- **Afterthought thumb**: a mitten thumb placed by knitting a few stitches with waste yarn; later the
+  waste yarn is pulled out and the live stitches above and below it are picked up for the thumb.
 
 ### Knitting abbreviations
 - **Beginning** (beg) — the start of a row or round.

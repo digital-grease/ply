@@ -16,7 +16,11 @@
 //! 5. working in the round, parts worked flat, needle groups, pick-ups, shaping and closing keep the
 //!    same accounting: a pick-up adds exactly its stitches, a short row's decrease takes exactly
 //!    one, a shaping step reaches exactly its count by whole repeats, a close moves every stitch to
-//!    grafted or bound off, and the needle groups always hold exactly the stitches on the needle.
+//!    grafted or bound off, and the needle groups always hold exactly the stitches on the needle;
+//! 6. several pieces (ADR 0020) keep it too: sections work generated pieces (some missing), joins
+//!    take generated pieces and holds, and on the needle, on hold, set aside on the other pieces,
+//!    bound off and grafted still change by exactly what each step adds (a join adds nothing; it
+//!    moves stitches), per piece where a step's check needs the row it works.
 //!
 //! Run: `cargo test -p ply-knit --test sections_proptest`
 
@@ -191,24 +195,54 @@ fn arb_round_action() -> impl Strategy<Value = StepAction> {
                 })
                 .collect()
         }),
-        prop_oneof![
-            Just(CloseMethod::Graft),
-            Just(CloseMethod::ThreeNeedleBindOff)
-        ]
-        .prop_map(|method| StepAction::Close { method }),
+        (
+            prop_oneof![
+                Just(CloseMethod::Graft),
+                Just(CloseMethod::ThreeNeedleBindOff)
+            ],
+            prop_oneof![
+                3 => Just(Vec::new()),
+                2 => (arb_ref(), arb_ref()).prop_map(|(a, b)| vec![a, b]),
+                1 => prop::collection::vec(arb_ref(), 0..4),
+            ]
+        )
+            .prop_map(|(method, holds)| StepAction::Close { method, holds }),
     ]
+}
+
+/// The version-6 join: another piece (one of the first few, or a missing one) or a hold.
+fn arb_join_action() -> impl Strategy<Value = StepAction> {
+    (
+        prop_oneof![
+            prop_oneof![
+                (0usize..4).prop_map(|i| format!("p{i}")),
+                Just("gone".to_string())
+            ]
+            .prop_map(JoinSource::Piece),
+            arb_ref().prop_map(JoinSource::Held),
+        ],
+        arb_stitch(),
+        any::<bool>(),
+    )
+        .prop_map(|(source, stitch, resolve_turns)| StepAction::Join {
+            source,
+            stitch,
+            resolve_turns,
+        })
 }
 
 fn arb_action() -> impl Strategy<Value = StepAction> {
     prop_oneof![
         8 => arb_plain_action(),
         4 => arb_round_action(),
+        3 => arb_join_action(),
         1 => (0u32..5, 0u32..5).prop_map(|(first, last)| StepAction::ChartRows { first, last }),
     ]
 }
 
-/// Sections whose steps are numbered `step-0`, `step-1`, ... across the pattern.
-fn sections_of(groups: Vec<Vec<StepAction>>) -> Vec<Section> {
+/// Sections whose steps are numbered `step-0`, `step-1`, ... across the pattern, each working the
+/// piece `pieces[i]` (`None`: the first; ids `p0`, `p1`, ...; some may be missing).
+fn sections_on(groups: Vec<Vec<StepAction>>, pieces: &[Option<usize>]) -> Vec<Section> {
     let mut n = 0;
     groups
         .into_iter()
@@ -222,6 +256,7 @@ fn sections_of(groups: Vec<Vec<StepAction>>) -> Vec<Section> {
             },
             notes: String::new(),
             construction: None,
+            piece: pieces.get(i).copied().flatten().map(|k| format!("p{k}")),
             steps: actions
                 .into_iter()
                 .map(|action| {
@@ -271,6 +306,7 @@ fn pattern(
         },
         notes: String::new(),
         sections,
+        pieces: Vec::new(),
     }
 }
 
@@ -280,15 +316,36 @@ fn arb_pattern(actions: BoxedStrategy<StepAction>) -> impl Strategy<Value = Knit
         arb_side(),
         prop::bool::weighted(0.4),
         0usize..10,
-        prop::collection::vec(prop::collection::vec(actions, 0..8), 1..4),
+        prop::collection::vec(prop::collection::vec(actions, 0..8), 1..6),
+        // The pattern's pieces (0: one piece, as before), and each section's (one past the last is
+        // a piece the pattern does not have).
+        prop_oneof![2 => Just(0usize), 3 => 1usize..4],
+        prop::collection::vec(prop::option::of(0usize..5), 6),
     )
-        .prop_map(|(cast_on, first, round, width, groups)| {
-            pattern(cast_on, first, round, width, sections_of(groups))
+        .prop_map(|(cast_on, first, round, width, groups, pieces, on)| {
+            let on: Vec<Option<usize>> = if pieces == 0 {
+                Vec::new()
+            } else {
+                on.into_iter().map(|k| k.map(|k| k.min(pieces))).collect()
+            };
+            let mut p = pattern(cast_on, first, round, width, sections_on(groups, &on));
+            p.pieces = (0..pieces)
+                .map(|i| Piece {
+                    id: format!("p{i}"),
+                    name: if i == 2 {
+                        String::new()
+                    } else {
+                        format!("piece {i}")
+                    },
+                })
+                .collect();
+            p
         })
 }
 
-fn total(c: &NeedleCount) -> u64 {
-    c.on_needle + c.held_total() + c.bound_off + c.grafted
+/// Every live stitch and every stitch closed off, when each piece's count is known.
+fn total(c: &NeedleCount) -> Option<u64> {
+    Some(c.on_needle + c.held_total() + c.bound_off_total + c.grafted_total + c.set_aside_total()?)
 }
 
 /// The stitches being worked: the part worked flat, or the whole needle.
@@ -303,11 +360,15 @@ proptest! {
     fn the_ledger_validation_and_written_never_panic(p in arb_pattern(arb_action().boxed())) {
         let l = ledger(&p);
         let _ = validate(&p);
+        prop_assert_eq!(l.pieces.len(), p.pieces.len());
         let written = to_written(&p);
         prop_assert!(written.len() >= p.sections.len());
         for line in &l.lines {
+            // Every line is on the piece its section works.
+            prop_assert_eq!(line.piece, section_piece(&p, line.section));
             if let LineCount::Counted(c) = &line.count {
                 prop_assert!(c.to_work <= c.on_needle);
+                prop_assert!(c.set_aside.iter().all(|a| Some(a.piece) != line.piece));
                 prop_assert!(c.past_turns <= c.on_needle);
                 prop_assert!(c.pending_turns <= c.on_needle);
             }
@@ -319,18 +380,26 @@ proptest! {
         p in arb_pattern(arb_action().boxed())
     ) {
         let l = ledger(&p);
-        // The pattern's cast-on is on the needle at the start, flat or joined into a round.
+        // The pattern's cast-on is on the first piece's needle at the start, flat or joined into a
+        // round; every other piece starts empty.
         let start = p.cast_on.map_or(0, u64::from);
         let mut prev = Some(start);
-        // What was left to work in the row before the line (for a chart row's consumption).
-        let mut to_work: Option<u64> = Some(start);
-        // The stitches being worked before the line (for a shaping step's target).
-        let mut worked: Option<u64> = Some(start);
+        // For each piece (by the line's piece; `None` for a pattern of one piece): what was left to
+        // work in its row before the line (for a chart row's consumption) and the stitches being
+        // worked (for a shaping step's target), as its last line left them.
+        let mut state: std::collections::HashMap<Option<usize>, (Option<u64>, Option<u64>)> =
+            std::collections::HashMap::new();
         for line in &l.lines {
             let step = &p.sections[line.section].steps[line.step];
+            let first = matches!(line.piece, None | Some(0));
+            let init = Some(if first { start } else { 0 });
+            let (to_work, worked) = *state.entry(line.piece).or_insert((init, init));
             match &line.count {
                 LineCount::Counted(c) => {
-                    prop_assert!(c.on_needle + c.held_total() <= MAX_LIVE_STITCHES);
+                    prop_assert!(
+                        c.on_needle + c.held_total() + c.set_aside_total().unwrap_or(0)
+                            <= MAX_LIVE_STITCHES
+                    );
                     let added: i64 = match (&step.action, line.chart_row) {
                         (_, Some(r)) => {
                             let waiting = to_work.expect("a chart row works a counted needle");
@@ -358,16 +427,16 @@ proptest! {
                         }
                         _ => 0,
                     };
-                    if let Some(before) = prev {
+                    if let (Some(before), Some(now)) = (prev, total(c)) {
                         prop_assert_eq!(
-                            total(c) as i64 - before as i64,
+                            now as i64 - before as i64,
                             added,
                             "{:?} at {}/{}", step.action, line.section, line.step
                         );
                     }
-                    prev = Some(total(c));
-                    to_work = Some(c.to_work);
-                    worked = Some(working(c));
+                    // A piece set aside with an unknown count: the next line starts afresh.
+                    prev = total(c);
+                    state.insert(line.piece, (Some(c.to_work), Some(working(c))));
                 }
                 LineCount::NotCounted => {
                     // Not applied: the next counted line continues from the same total.
@@ -381,9 +450,26 @@ proptest! {
                 }
                 LineCount::Unknown => {
                     prev = None;
-                    to_work = None;
-                    worked = None;
+                    state.insert(line.piece, (None, None));
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn a_piece_s_own_counts_never_pass_the_pattern_s(p in arb_pattern(arb_action().boxed())) {
+        for line in &ledger(&p).lines {
+            if let LineCount::Counted(c) = &line.count {
+                prop_assert!(c.bound_off <= c.bound_off_total);
+                prop_assert!(c.grafted <= c.grafted_total);
+                if p.pieces.is_empty() {
+                    prop_assert_eq!(c.bound_off, c.bound_off_total);
+                    prop_assert_eq!(c.grafted, c.grafted_total);
+                }
+                // Every index a count holds is in its table.
+                prop_assert!(c.held.iter().all(|h| h.hold < c.names.holds.len()));
+                prop_assert!(c.groups.iter().all(|g| g.name < c.names.groups.len()));
+                prop_assert!(c.set_aside.iter().all(|x| x.piece < c.names.pieces.len()));
             }
         }
     }
@@ -417,8 +503,11 @@ proptest! {
         p in arb_pattern(arb_plain_action().boxed())
     ) {
         let l = ledger(&p);
-        let mut before: Option<NeedleCount> = None;
+        // The last counted line of each piece.
+        let mut last: std::collections::HashMap<Option<usize>, Option<NeedleCount>> =
+            std::collections::HashMap::new();
         for line in &l.lines {
+            let before = last.get(&line.piece).cloned().flatten();
             let step = &p.sections[line.section].steps[line.step];
             let asked = match step.action {
                 StepAction::BindOff { count: Some(k), .. } | StepAction::Hold { count: Some(k), .. } => {
@@ -432,9 +521,13 @@ proptest! {
                 }
             }
             match &line.count {
-                LineCount::Counted(c) => before = Some(c.clone()),
+                LineCount::Counted(c) => {
+                    last.insert(line.piece, Some(c.clone()));
+                }
                 LineCount::NotCounted => {}
-                LineCount::Unknown => before = None,
+                LineCount::Unknown => {
+                    last.insert(line.piece, None);
+                }
             }
         }
     }
@@ -453,7 +546,7 @@ proptest! {
             kind.as_str(),
             "Work" | "Hold" | "Resume" | "Opaque" | "CastOn" | "BindOff" | "ShortRow" | "ChartRows"
                 | "JoinRound" | "WorkFlat" | "Rows" | "Shape" | "PickUp" | "Groups" | "Close"
-                | "RoundStart"
+                | "RoundStart" | "Join"
         ));
         let p = pattern(Some(4), Side::Rs, false, 4, Vec::new());
         let mut v: serde_json::Value = serde_json::from_str(&native::write(&p).unwrap()).unwrap();

@@ -16,11 +16,11 @@ import 'package:ply/src/rust/knit_dto.dart';
 // sidecar. The engine serializer is stood in for by a canned current-version envelope (the real one
 // is covered by the Rust tests); legacy files are the real released bytes from `fixtures/`.
 
-/// What the engine writes for any pattern here: a current-version (5) envelope.
+/// What the engine writes for any pattern here: a current-version (6) envelope.
 final String _current = jsonEncode({
   'format': 'ply.knit',
-  'schema_version': 5,
-  'document': {'name': 'saved now', 'cast_on': null, 'sections': []},
+  'schema_version': 6,
+  'document': {'name': 'saved now', 'cast_on': null, 'sections': [], 'pieces': []},
 });
 
 class DiskOnlyKnitRepo extends KnitRepository {
@@ -51,6 +51,7 @@ const _pattern = KnitPatternDto(
   chart: ChartDto(width: 0, rows: []),
   notes: '',
   sections: [],
+  pieces: [],
 );
 
 List<int> fixtureBytes(String rel) => File('../fixtures/migrations/$rel').readAsBytesSync();
@@ -131,7 +132,7 @@ void main() {
       expect(backup.readAsBytesSync(), original, reason: 'the released bytes, untouched');
       expect(f('k1.plyknit').readAsStringSync(), _current,
           reason: 'upgraded to the current format');
-      expect(plyknitSchemaVersion(f('k1.plyknit').readAsStringSync()), 5);
+      expect(plyknitSchemaVersion(f('k1.plyknit').readAsStringSync()), 6);
 
       // The file is current now: later saves neither add nor replace a backup.
       await repo.saveKnit(pattern: _pattern, meta: meta('Sampler'), id: 'k1');
@@ -154,7 +155,7 @@ void main() {
         await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k2');
         final backup = f('k2.plyknit.v2.bak');
         expect(backup.readAsBytesSync(), original, reason: 'the v2 bytes, untouched');
-        expect(plyknitSchemaVersion(f('k2.plyknit').readAsStringSync()), 5);
+        expect(plyknitSchemaVersion(f('k2.plyknit').readAsStringSync()), 6);
 
         await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k2');
         expect(backup.readAsBytesSync(), original, reason: 'a later save never replaces it');
@@ -179,7 +180,7 @@ void main() {
         await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k3');
         final backup = f('k3.plyknit.v3.bak');
         expect(backup.readAsBytesSync(), original, reason: 'the v3 bytes, untouched');
-        expect(plyknitSchemaVersion(f('k3.plyknit').readAsStringSync()), 5);
+        expect(plyknitSchemaVersion(f('k3.plyknit').readAsStringSync()), 6);
 
         await repo.saveKnit(pattern: _pattern, meta: meta('Rib'), id: 'k3');
         expect(backup.readAsBytesSync(), original, reason: 'a later save never replaces it');
@@ -208,13 +209,37 @@ void main() {
         await repo.saveKnit(pattern: _pattern, meta: meta('Shoulder'), id: 'k4');
         final backup = f('k4.plyknit.v4.bak');
         expect(backup.readAsBytesSync(), original, reason: 'the v4 bytes, untouched');
-        expect(plyknitSchemaVersion(f('k4.plyknit').readAsStringSync()), 5);
+        expect(plyknitSchemaVersion(f('k4.plyknit').readAsStringSync()), 6);
 
         await repo.saveKnit(pattern: _pattern, meta: meta('Shoulder'), id: 'k4');
         expect(backup.readAsBytesSync(), original, reason: 'a later save never replaces it');
         expect(namesIn(dir), ['k4.json', 'k4.plyknit', 'k4.plyknit.v4.bak']);
 
         await repo.deleteKnit('k4');
+        expect(namesIn(dir), isEmpty);
+      });
+    }
+
+    for (final name in ['sock-heel-flap-round', 'sock-short-row-heel-round', 'round-problems']) {
+      test('saving over schema-version-5 $name keeps its bytes as a one-time .v5.bak', () async {
+        // Real v5 bytes (written by the engine before v6). Opening one migrates it in memory
+        // (engine, covered by the Rust tests: one piece, every section working it, nothing else
+        // changed); the first save upgrades the file and keeps the original next to it, once.
+        final original = fixtureBytes('plyknit/schema-v5/$name.plyknit');
+        expect(plyknitSchemaVersion(utf8.decode(original)), 5);
+        f('k5.plyknit').writeAsBytesSync(original);
+        f('k5.json').writeAsBytesSync(fixtureBytes('sidecar/v0.1.7/knit.json'));
+
+        await repo.saveKnit(pattern: _pattern, meta: meta('Sock'), id: 'k5');
+        final backup = f('k5.plyknit.v5.bak');
+        expect(backup.readAsBytesSync(), original, reason: 'the v5 bytes, untouched');
+        expect(plyknitSchemaVersion(f('k5.plyknit').readAsStringSync()), 6);
+
+        await repo.saveKnit(pattern: _pattern, meta: meta('Sock'), id: 'k5');
+        expect(backup.readAsBytesSync(), original, reason: 'a later save never replaces it');
+        expect(namesIn(dir), ['k5.json', 'k5.plyknit', 'k5.plyknit.v5.bak']);
+
+        await repo.deleteKnit('k5');
         expect(namesIn(dir), isEmpty);
       });
     }
@@ -253,7 +278,7 @@ void main() {
     for (final (label, onDisk, problem) in [
       (
         'a file saved by a newer Ply',
-        '{"format":"ply.knit","schema_version":6,"document":{"future":true}}',
+        '{"format":"ply.knit","schema_version":7,"document":{"future":true}}',
         NativeFormatProblem.newerVersion,
       ),
       ('an unreadable file', '{half a pattern', NativeFormatProblem.unreadable),

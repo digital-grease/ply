@@ -1,0 +1,32 @@
+# Fixture record for mitten-thumb-round (see fixtures/README.md).
+
+id = "knitting/sections/mitten-thumb-round"
+title = "Mitten with a held-stitch thumb worked as a second piece"
+technique = "pieces, working in the round, stitches held mid-round and cast on over, needle groups, top shaping, Kitchener stitch, a piece made from held stitches plus picked-up stitches"
+files = ["mitten-thumb-round.plyknit", "mitten-thumb-round.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written for Ply's tests: the document was typed by hand and saved through the engine's own .plyknit writer (schema version 6). A plain 40-stitch adult mitten from the usual parts of a cuff-up mitten with a held-stitch thumb (20 rounds of rib, 14 plain rounds, 8 thumb stitches held and 8 cast on over them, 22 more rounds, a top decreased on the palm and the back to 12 stitches and grafted), then the thumb as its own piece: the 8 held stitches knitted onto a new needle, 10 picked up along the cast-on edge of the opening (one in each cast-on stitch and one in each corner), joined in the round, 14 rounds, k2tog around and the yarn drawn through the last 9. The counts were chosen for the test; no published pattern, chart or text was copied. The oracle (expect.json) was worked out by hand from the knitting, round by round, before the engine was run on the file, and then compared with it: every line and count matched as worked out. On 2026-11-16 (review fixes) the pieces were named Hand and Thumb, each piece's lines now count only its own stitches grafted or bound off (so the thumb's no longer carry the hand's 12 grafted), and the thumb's single decrease round got its own wording; those lines were worked out by hand again and matched."""
+
+[sources]
+# Conventions the oracle's written text and ledger follow (cited, nothing reproduced).
+references = [
+  "The common held-stitch thumb of a cuff-up mitten (general practice, no source text used): the thumb stitches placed on waste yarn or a holder, the same number cast on over the gap, and later the held stitches knitted from needles with stitches picked up along the cast-on edge and one at each corner.",
+  "Jimmy Beans Wool, \"Kitchener Stitch Knitting Tutorial\", https://jimmybeanswool.com/blogs/tutorials/kitchener-stitch-knitting-tutorial (grafting two needles of equal stitches closed).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/section_fixtures.rs (section_fixtures_match_their_oracles): the file parses as \
+a current .plyknit envelope and re-saves to the same bytes; the written instructions equal the \
+oracle line for line; every ledger line has the oracle's text, place, piece and count (on the \
+needle, still to work, waiting past a turn, wraps and double stitches pending, each group on hold, \
+bound off, side, in the round, each needle group, worked flat, grafted, every other piece set \
+aside); each piece ends as the oracle says; validation reports exactly the oracle's issues (none). \
+app/test/knit_sections_fixture_test.dart reads the same files (the current schema version, the \
+sections' and pieces' shape, and the PDF and screen text built from the oracle)."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Gauge, yarn, the lengths of the cuff, hand and thumb and the Kitchener stitch sequence itself are not part of the fixture; the rows steps say what is worked in the pattern's own words (not checked), and drawing the yarn through the last thumb stitches is an unchecked step with its stated change. The hand's round starts at the side where the thumb is placed, 2 stitches in; a left and a right mitten would place the thumb on opposite sides."

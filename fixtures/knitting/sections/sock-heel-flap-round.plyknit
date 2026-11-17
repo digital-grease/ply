@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
     "name": "Top-down sock with a heel flap and gusset",
     "construction": "InTheRound",
@@ -229,6 +229,7 @@
         "name": "Cuff",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-1",
@@ -255,6 +256,7 @@
         "name": "Leg",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-3",
@@ -291,6 +293,7 @@
         "name": "Heel flap",
         "notes": "The slipped stitch at the start of every row makes the chain the gusset stitches are picked up from.",
         "construction": "Flat",
+        "piece": null,
         "steps": [
           {
             "id": "step-5",
@@ -318,6 +321,7 @@
         "name": "Heel turn",
         "notes": "",
         "construction": "Flat",
+        "piece": null,
         "steps": [
           {
             "id": "step-7",
@@ -564,6 +568,7 @@
         "name": "Gusset",
         "notes": "After the second pick-up, knit to the center of the heel: the round starts there from then on.",
         "construction": null,
+        "piece": null,
         "steps": [
           {
             "id": "step-21",
@@ -656,6 +661,7 @@
         "name": "Foot",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-27",
@@ -673,6 +679,7 @@
         "name": "Toe",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-28",
@@ -712,12 +719,14 @@
             "id": "step-30",
             "action": {
               "Close": {
-                "method": "Graft"
+                "method": "Graft",
+                "holds": []
               }
             }
           }
         ]
       }
-    ]
+    ],
+    "pieces": []
   }
 }

@@ -7,7 +7,7 @@ files = ["ledger-problems-flat.plyknit", "ledger-problems-flat.expect.json"]
 created = "2026-11-13"
 license = "original"
 provenance = """
-Written for Ply's tests through the engine's own .plyknit writer (schema version 4), and re-saved by it as schema version 5 on 2026-11-15: only schema_version and the new fields (each section's construction and each short row's decrease, both null) changed, and the oracle did not change. A list of deliberate mistakes, not a pattern anyone would knit; no published material was used."""
+Written for Ply's tests through the engine's own .plyknit writer (schema version 4), and re-saved by it as schema version 5 on 2026-11-15: only schema_version and the new fields (each section's construction and each short row's decrease, both null) changed, and the oracle did not change. A list of deliberate mistakes, not a pattern anyone would knit; no published material was used. Re-saved by the engine's writer as schema version 6 on 2026-11-16: only schema_version and the new fields (no pieces, each section's piece null) changed, and the oracle did not change."""
 
 [sources]
 # Conventions the oracle's written text and ledger follow (cited, nothing reproduced).

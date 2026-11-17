@@ -1,6 +1,7 @@
 //! Knitting section acceptance fixtures (`fixtures/knitting/sections/`): original flat patterns
-//! with short rows and held stitches, and socks worked in the round (a heel flap and gusset, a
-//! short-row heel), each with a hand-derived oracle. Each fixture is a `.plyknit`
+//! with short rows and held stitches, socks worked in the round (a heel flap and gusset, a
+//! short-row heel), and garments in several pieces (a mitten and its thumb, a yoke pullover), each
+//! with a hand-derived oracle. Each fixture is a `.plyknit`
 //! file the engine wrote, an `.expect.json` oracle (the written instructions; every ledger line with
 //! its place, text and count; the validation issues) and a `.fixture.toml` record.
 //!
@@ -10,7 +11,7 @@
 //!
 //! Run: `cargo test -p ply-knit --test section_fixtures`
 
-use ply_knit::sections::{ledger, section_title, LineCount};
+use ply_knit::sections::{ledger, piece_title, section_title, LineCount};
 use ply_knit::{native, to_written, validate, Construction, Severity, Side};
 use serde_json::Value;
 
@@ -20,13 +21,17 @@ const DIR: &str = concat!(
 );
 
 /// Every tracked fixture, by name.
-const FIXTURES: [&str; 6] = [
+const FIXTURES: [&str; 10] = [
     "shoulder-short-rows-flat",
     "neckline-hold-flat",
     "ledger-problems-flat",
     "sock-heel-flap-round",
     "sock-short-row-heel-round",
     "round-problems",
+    "mitten-thumb-round",
+    "yoke-sweater-round",
+    "pieces-problems",
+    "raglan-top-down-round",
 ];
 
 fn read(name: &str, ext: &str) -> String {
@@ -116,6 +121,15 @@ fn section_fixtures_match_their_oracles() {
                 "{at}"
             );
             assert_eq!(line.written(), want["line"].as_str().unwrap(), "{at}");
+            // Added for several pieces (schema version 6): the piece a line's section works; older
+            // oracles leave it out, which means a pattern of one piece.
+            assert_eq!(
+                line.piece.map(|i| piece_title(&p, i)),
+                want.get("piece")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                "{at}: piece"
+            );
             match (&line.count, &want["count"]) {
                 (LineCount::Counted(c), Value::Object(w)) => {
                     assert_eq!(c.on_needle, w["on_needle"].as_u64().unwrap(), "{at}");
@@ -127,8 +141,11 @@ fn section_fixtures_match_their_oracles() {
                         w["pending_turns"].as_u64().unwrap(),
                         "{at}"
                     );
-                    let held: Vec<(String, u64)> =
-                        c.held.iter().map(|h| (h.name.clone(), h.count)).collect();
+                    let held: Vec<(String, u64)> = c
+                        .held
+                        .iter()
+                        .map(|h| (c.hold_name(h).to_string(), h.count))
+                        .collect();
                     let want_held: Vec<(String, u64)> = w["held"]
                         .as_array()
                         .unwrap()
@@ -143,8 +160,11 @@ fn section_fixtures_match_their_oracles() {
                     // apart and nothing grafted.
                     let flag = |k: &str| w.get(k).and_then(Value::as_bool).unwrap_or(false);
                     assert_eq!(c.in_round, flag("in_round"), "{at}: in the round");
-                    let groups: Vec<(String, u64)> =
-                        c.groups.iter().map(|g| (g.name.clone(), g.count)).collect();
+                    let groups: Vec<(String, u64)> = c
+                        .groups
+                        .iter()
+                        .map(|g| (c.group_name(g).to_string(), g.count))
+                        .collect();
                     let want_groups: Vec<(String, u64)> = w
                         .get("groups")
                         .and_then(Value::as_array)
@@ -167,6 +187,21 @@ fn section_fixtures_match_their_oracles() {
                         w.get("grafted").and_then(Value::as_u64).unwrap_or(0),
                         "{at}: grafted"
                     );
+                    let set_aside: Vec<(String, Option<u64>)> = c
+                        .set_aside
+                        .iter()
+                        .map(|a| (c.piece_name(a).to_string(), a.count))
+                        .collect();
+                    let want_aside: Vec<(String, Option<u64>)> = w
+                        .get("set_aside")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .map(|g| (g[0].as_str().unwrap().to_string(), g[1].as_u64()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    assert_eq!(set_aside, want_aside, "{at}: set aside");
                     let group_total: u64 = c.groups.iter().map(|g| g.count).sum();
                     assert!(
                         c.groups.is_empty() || group_total == c.on_needle,
@@ -177,7 +212,24 @@ fn section_fixtures_match_their_oracles() {
                     // first slice's fixtures add or remove nothing else, so it is the cast-on (or,
                     // for a chart row that makes more than it takes, more); the sock fixtures
                     // decrease, and say so.
-                    let total = c.on_needle + c.held_total() + c.bound_off + c.grafted;
+                    // The piece's own stitches closed off, and the whole pattern's (older oracles
+                    // have one piece, so they are the same).
+                    let num = |k: &str, or: u64| w.get(k).and_then(Value::as_u64).unwrap_or(or);
+                    assert_eq!(
+                        c.bound_off_total,
+                        num("bound_off_total", c.bound_off),
+                        "{at}: bound off in all"
+                    );
+                    assert_eq!(
+                        c.grafted_total,
+                        num("grafted_total", c.grafted),
+                        "{at}: grafted in all"
+                    );
+                    let total = c.on_needle
+                        + c.held_total()
+                        + c.bound_off_total
+                        + c.grafted_total
+                        + c.set_aside_total().unwrap_or(0);
                     if expect.get("conserves_stitches").and_then(Value::as_bool) != Some(false) {
                         assert!(
                             total >= u64::from(p.cast_on.unwrap()),
@@ -192,6 +244,28 @@ fn section_fixtures_match_their_oracles() {
                 (got, want) => panic!("{at}: count {got:?}, oracle {want}"),
             }
         }
+
+        // How each piece ends (older oracles have no pieces).
+        let pieces: Vec<(String, String)> = l
+            .pieces
+            .iter()
+            .map(|s| (piece_title(&p, s.piece), s.text.clone()))
+            .collect();
+        let want_pieces: Vec<(String, String)> = expect
+            .get("pieces")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .map(|x| {
+                        (
+                            x[0].as_str().unwrap().to_string(),
+                            x[1].as_str().unwrap().to_string(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(pieces, want_pieces, "{name}: pieces");
 
         let issues: Vec<(String, String)> = validate(&p)
             .into_iter()

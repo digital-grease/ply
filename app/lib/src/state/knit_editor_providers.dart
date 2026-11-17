@@ -166,6 +166,13 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
   void addStep(String sectionId, KnitStepActionDto action, {int? index}) =>
       state = state.addStep(sectionId, action, index: index);
 
+  // Piece edits (ADR 0020; see [KnitEditorState.addPiece] and the rest): one undo entry each.
+  void addPiece(String name) => state = state.addPiece(name);
+  void renamePieceAt(int pi, String name) => state = state.renamePieceAt(pi, name);
+  void movePieceAt(int pi, int delta) => state = state.movePieceAt(pi, delta);
+  void removePieceAt(int pi) => state = state.removePieceAt(pi);
+  void setSectionPieceAt(int si, String? pieceId) => state = state.setSectionPieceAt(si, pieceId);
+
   void undo() => state = state.undoEdit();
   void redo() => state = state.redoEdit();
 }

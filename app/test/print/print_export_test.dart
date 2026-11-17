@@ -249,6 +249,7 @@ void main() {
           ]),
           notes: '',
           sections: [],
+          pieces: [],
         );
 
     testWidgets('knit editor: More > Print or share PDF prints the open pattern', (tester) async {

@@ -1,0 +1,24 @@
+# Fixture record for pieces-problems (see fixtures/README.md).
+
+id = "knitting/sections/pieces-problems"
+title = "Several pieces: every refusal"
+technique = "pieces, joins of another piece and of held stitches, the ledger's refusals and warnings for pieces"
+files = ["pieces-problems.plyknit", "pieces-problems.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written for Ply's tests: the document was typed by hand and saved through the engine's own .plyknit writer (schema version 6). A list of deliberate mistakes around a few joins that work, not a pattern anyone would knit; no published material was used. Each ledger count and each problem's place was worked out by hand from the steps before it (a refused step changes nothing), before the engine was run on the file, and then compared with it: every line matched; one warning had been left out by hand (the front's third section ends partway through a row, the first slice's rule), was checked against that rule and added to the oracle. On 2026-11-16 (review fixes) the pieces were named with capitals (Front, Back, ...), lines and messages name them without an added article, the cuff's lines count only its own bound-off stitches, and every step of a section of a piece already joined to another is refused (it was a warning); those lines were worked out by hand again and matched."""
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/section_fixtures.rs (section_fixtures_match_their_oracles): the file parses as \
+a current .plyknit envelope and re-saves to the same bytes; the written instructions equal the \
+oracle line for line; every ledger line has the oracle's text, place, piece and count (or unknown, \
+or not counted); each piece ends as the oracle says; validation reports exactly the oracle's \
+issues, in order. app/test/knit_sections_fixture_test.dart reads the same files (the current \
+schema version, the sections' and pieces' shape, and the PDF and screen text built from the \
+oracle)."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Not a pattern to knit. One piece's id repeats another's on purpose (a file edited by hand), so the sleeve can never be worked."

@@ -477,9 +477,10 @@ pub fn tieup_for_shed_dto(rows: Vec<Vec<u16>>, shafts: u16, shed: ShedKind) -> V
 
 pub use crate::knit_dto::{
     CableDefDto, CellDto, ChartDto, CloseMethodKind, ConstructionKind, CrossKind, DecreaseKind,
-    GaugeDto, KnitConstructionDto, KnitFormatFailure, KnitFormatFailureKind, KnitGroupCountDto,
-    KnitHeldCountDto, KnitIssueDto, KnitLedgerLineDto, KnitLineCountKind, KnitNeedleCountDto,
-    KnitPatternDto, KnitSectionDto, KnitSectionIssueDto, KnitStepActionDto, KnitStepDto,
+    GaugeDto, JoinSourceDto, KnitConstructionDto, KnitFormatFailure, KnitFormatFailureKind,
+    KnitGroupCountDto, KnitHeldCountDto, KnitHoldNameDto, KnitIssueDto, KnitLedgerLineDto,
+    KnitLineCountKind, KnitNeedleCountDto, KnitPatternDto, KnitPieceCountDto, KnitPieceDto,
+    KnitPieceSummaryDto, KnitSectionDto, KnitSectionIssueDto, KnitStepActionDto, KnitStepDto,
     NeedleGroupDto, PickUpAlongDto, RepeatDto, RepeatSpanDto, RowDto, ShapeUntilDto, SideKind,
     StitchDefDto, StitchLegendDto, TurnAtDto, TurnDecreaseDto, TurnMethodKind, WorkStitchKind,
     WorkToDto, YarnWeightKind,
@@ -496,7 +497,14 @@ pub fn parse_knit(json: String) -> Result<KnitPatternDto, KnitFormatFailure> {
     // opens also fits the DTOs exactly.
     ply_knit::sections::check_limits(&pattern).map_err(|why| KnitFormatFailure {
         kind: KnitFormatFailureKind::Unreadable,
-        message: format!("the pattern's sections are too large to open: {why}"),
+        message: match why {
+            ply_knit::sections::LimitError::TooLarge(why) => {
+                format!("the pattern's sections are too large to open: {why}")
+            }
+            ply_knit::sections::LimitError::BadPieceId(why) => {
+                format!("the pattern's pieces cannot be opened: {why}")
+            }
+        },
     })?;
     Ok(KnitPatternDto::from(&pattern))
 }
@@ -507,11 +515,14 @@ pub fn parse_knit(json: String) -> Result<KnitPatternDto, KnitFormatFailure> {
 /// is never written (the app keeps the pattern unsaved and says why).
 pub fn write_knit(dto: KnitPatternDto) -> Result<String, String> {
     let pattern = ply_knit::KnitPattern::from(dto);
-    ply_knit::sections::check_limits(&pattern).map_err(|why| {
-        format!(
+    ply_knit::sections::check_limits(&pattern).map_err(|why| match why {
+        ply_knit::sections::LimitError::TooLarge(why) => format!(
             "a section is too large to save: {why}. Your changes are still here; shorten it and \
              save again"
-        )
+        ),
+        ply_knit::sections::LimitError::BadPieceId(why) => format!(
+            "a piece cannot be saved: {why}. Your changes are still here; change it and save again"
+        ),
     })?;
     pattern.to_json().map_err(|e| e.to_string())
 }
@@ -552,6 +563,7 @@ pub fn knit_blank_pattern() -> KnitPatternDto {
         },
         notes: String::new(),
         sections: Vec::new(),
+        pieces: Vec::new(),
     };
     KnitPatternDto::from(&pattern)
 }

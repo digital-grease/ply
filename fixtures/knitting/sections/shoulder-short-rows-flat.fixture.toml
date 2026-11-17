@@ -7,7 +7,7 @@ files = ["shoulder-short-rows-flat.plyknit", "shoulder-short-rows-flat.expect.js
 created = "2026-11-13"
 license = "original"
 provenance = """
-Written for Ply's tests through the engine's own .plyknit writer (schema version 4), and re-saved by it as schema version 5 on 2026-11-15: only schema_version and the new fields (each section's construction and each short row's decrease, both null) changed, and the oracle did not change. The shoulder is a generic three-step slope over 24 stitches, the shape any shoulder shaping has; no published pattern, chart or text was copied."""
+Written for Ply's tests through the engine's own .plyknit writer (schema version 4), and re-saved by it as schema version 5 on 2026-11-15: only schema_version and the new fields (each section's construction and each short row's decrease, both null) changed, and the oracle did not change. The shoulder is a generic three-step slope over 24 stitches, the shape any shoulder shaping has; no published pattern, chart or text was copied. Re-saved by the engine's writer as schema version 6 on 2026-11-16: only schema_version and the new fields (no pieces, each section's piece null) changed, and the oracle did not change."""
 
 [sources]
 # Conventions the oracle's written text and ledger follow (cited, nothing reproduced).

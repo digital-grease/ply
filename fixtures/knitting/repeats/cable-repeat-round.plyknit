@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
     "name": "Cable panel repeat in the round",
     "construction": "InTheRound",
@@ -388,6 +388,7 @@
       ]
     },
     "notes": "A 2/2 right cross inside a 6-stitch motif; round 3 marks a repeat that cuts the cable.",
-    "sections": []
+    "sections": [],
+    "pieces": []
   }
 }

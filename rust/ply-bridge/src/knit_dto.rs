@@ -15,9 +15,9 @@ use ply_knit::pattern::{
     StitchDef, StitchLegend,
 };
 use ply_knit::sections::{
-    CloseMethod, Decrease, HeldCount, Ledger, LedgerLine, LineCount, NeedleCount, NeedleGroup,
-    PickUpAlong, Section, SectionIssue, ShapeUntil, Step, StepAction, TurnAt, TurnDecrease,
-    TurnMethod, WorkStitch, WorkTo,
+    CloseMethod, Decrease, HeldCount, JoinSource, Ledger, LedgerLine, LineCount, NeedleCount,
+    NeedleGroup, PickUpAlong, Piece, PieceSummary, Section, SectionIssue, ShapeUntil, Step,
+    StepAction, TurnAt, TurnDecrease, TurnMethod, WorkStitch, WorkTo,
 };
 use ply_knit::validate::{KnitIssue, Severity};
 use ply_knit::KnitError;
@@ -133,6 +133,13 @@ pub enum CloseMethodKind {
     ThreeNeedleBindOff,
 }
 
+/// What a join step works into the row (schema version 6, a freezed union): every stitch of another
+/// piece (by the piece's id), or a group on hold (by the id of the step that put it there).
+pub enum JoinSourceDto {
+    Piece { piece: String },
+    Held { hold: String },
+}
+
 /// What a section step does; mirrors `ply_knit::sections::StepAction` (a freezed union in Dart).
 /// `stitch_change` is an `i32` here (the engine keeps `i64`, which frb would make a `BigInt` on the
 /// web): `parse_knit` refuses a file whose change is past `MAX_LIVE_STITCHES` (1,000,000), so every
@@ -201,10 +208,19 @@ pub enum KnitStepActionDto {
     Groups {
         groups: Vec<NeedleGroupDto>,
     },
+    /// `holds` (schema version 6): two hold steps' ids, to close those groups against each other;
+    /// empty to close the stitches on the needle.
     Close {
         method: CloseMethodKind,
+        holds: Vec<String>,
     },
     RoundStart,
+    // Schema version 6: several pieces.
+    Join {
+        source: JoinSourceDto,
+        stitch: WorkStitchKind,
+        resolve_turns: bool,
+    },
 }
 
 // --- structs ---------------------------------------------------------------------------------------
@@ -222,19 +238,64 @@ pub struct KnitSectionDto {
     pub notes: String,
     /// Whether the section is worked flat or in the round, when the pattern says.
     pub construction: Option<ConstructionKind>,
+    /// The id of the piece the section works (`None`: the pattern's first piece).
+    pub piece: Option<String>,
     pub steps: Vec<KnitStepDto>,
+}
+
+/// A piece of the garment (the body, a sleeve), with a stable id; the first is the main piece, the
+/// one the pattern's cast-on is for.
+pub struct KnitPieceDto {
+    pub id: String,
+    pub name: String,
+}
+
+/// Another piece set aside while a line's piece is worked, as the ledger counts it (`count`: `None`
+/// when unknown).
+pub struct KnitPieceCountDto {
+    /// The piece's index in the pattern's pieces (its id and name are there).
+    pub piece_index: u32,
+    pub count: Option<u32>,
+}
+
+/// How a piece ends, from the ledger: its sections, its live stitches at the end (`None`:
+/// unknown), where it was joined to another piece, and all of it in words.
+pub struct KnitPieceSummaryDto {
+    pub id: String,
+    pub name: String,
+    /// 0-based position in the pattern's pieces.
+    pub index: u32,
+    /// 0-based positions of the sections that work it, in order.
+    pub section_indices: Vec<u32>,
+    pub live: Option<u32>,
+    /// The piece it was joined to, and the join step's 0-based section and step positions.
+    pub joined_into: Option<String>,
+    pub joined_section_index: Option<u32>,
+    pub joined_step_index: Option<u32>,
+    /// `18 sts left on the needle at the end`, `joined to the body at Yoke, step 3`.
+    pub text: String,
 }
 
 /// A group of stitches on hold, as the ledger counts it. `hold` is the hold step's id.
 pub struct KnitHeldCountDto {
-    pub hold: String,
-    pub name: String,
+    /// The group's index in [`KnitConstructionDto::holds`] (its name and hold step are there).
+    pub hold_index: u32,
     pub count: u32,
+}
+
+/// A group put on hold, named once for the whole construction: the hold step's id and place, and
+/// the group's name.
+pub struct KnitHoldNameDto {
+    pub hold_step_id: String,
+    pub section_index: u32,
+    pub step_index: u32,
+    pub name: String,
 }
 
 /// A needle group as the ledger counts it.
 pub struct KnitGroupCountDto {
-    pub name: String,
+    /// The group's name, as an index into [`KnitConstructionDto::group_names`].
+    pub name_index: u32,
     pub count: u32,
 }
 
@@ -258,6 +319,11 @@ pub struct KnitNeedleCountDto {
     /// rests on the needle).
     pub flat: Option<u32>,
     pub grafted: u32,
+    /// Every other piece that still has stitches, set aside while this one is worked.
+    pub set_aside: Vec<KnitPieceCountDto>,
+    /// Bound off and grafted in the whole pattern (`bound_off` and `grafted` are the piece's own).
+    pub bound_off_total: u32,
+    pub grafted_total: u32,
 }
 
 /// Whether a ledger line was counted, could not be known, or was refused.
@@ -268,9 +334,10 @@ pub enum KnitLineCountKind {
 }
 
 /// One line of the worked construction: a step, or one chart row of a chart-rows step.
+/// Lines carry positions and counts only, never a copy of an id or a name: the pattern and the
+/// construction's tables have those (ADR 0020 review: a file's names would otherwise be repeated
+/// on every line).
 pub struct KnitLedgerLineDto {
-    pub section_id: String,
-    pub step_id: String,
     /// 0-based positions of the section and the step.
     pub section_index: u32,
     pub step_index: u32,
@@ -285,13 +352,14 @@ pub struct KnitLedgerLineDto {
     pub count_text: String,
     /// The whole line as the written instructions give it.
     pub written: String,
+    /// The index in the pattern's pieces of the piece the line's section works (`None` for a
+    /// pattern of one piece).
+    pub piece_index: Option<u32>,
 }
 
-/// A problem the ledger found, located by section and step id when it is about one.
+/// A problem the ledger found, located by section and step position when it is about one.
 pub struct KnitSectionIssueDto {
     pub severity: SeverityKind,
-    pub section_id: Option<String>,
-    pub step_id: Option<String>,
     /// 0-based positions of the section and step (ids can repeat in a hand-edited file; the
     /// positions never do).
     pub section_index: Option<u32>,
@@ -308,6 +376,12 @@ pub struct KnitSectionIssueDto {
 pub struct KnitConstructionDto {
     pub lines: Vec<KnitLedgerLineDto>,
     pub issues: Vec<KnitSectionIssueDto>,
+    /// How each of the pattern's pieces ends (empty for a pattern of one piece).
+    pub pieces: Vec<KnitPieceSummaryDto>,
+    /// Every group put on hold, in the order the ledger met them (counts name them by index).
+    pub holds: Vec<KnitHoldNameDto>,
+    /// Every needle group name the counts refer to by index.
+    pub group_names: Vec<String>,
 }
 
 /// Stitches AND rows per gauge window (4 in / 10 cm, per `unit`).
@@ -375,6 +449,8 @@ pub struct KnitPatternDto {
     pub notes: String,
     /// The construction sections; empty for a chart-only pattern. See `KnitPattern::sections`.
     pub sections: Vec<KnitSectionDto>,
+    /// The garment's pieces; empty for a pattern of one piece. See `KnitPattern::pieces`.
+    pub pieces: Vec<KnitPieceDto>,
 }
 
 /// One validation problem, severity preserved (reuses the weave `SeverityKind`).
@@ -693,6 +769,14 @@ impl From<&KnitPattern> for KnitPatternDto {
             chart: ChartDto::from(&p.chart),
             notes: p.notes.clone(),
             sections: p.sections.iter().map(KnitSectionDto::from).collect(),
+            pieces: p
+                .pieces
+                .iter()
+                .map(|x| KnitPieceDto {
+                    id: x.id.clone(),
+                    name: x.name.clone(),
+                })
+                .collect(),
         }
     }
 }
@@ -709,6 +793,14 @@ impl From<KnitPatternDto> for KnitPattern {
             chart: p.chart.into(),
             notes: p.notes,
             sections: p.sections.into_iter().map(Section::from).collect(),
+            pieces: p
+                .pieces
+                .into_iter()
+                .map(|x| Piece {
+                    id: x.id,
+                    name: x.name,
+                })
+                .collect(),
         }
     }
 }
@@ -978,10 +1070,23 @@ impl From<&StepAction> for KnitStepActionDto {
                     })
                     .collect(),
             },
-            StepAction::Close { method } => Self::Close {
+            StepAction::Close { method, holds } => Self::Close {
                 method: method.into(),
+                holds,
             },
             StepAction::RoundStart {} => Self::RoundStart,
+            StepAction::Join {
+                source,
+                stitch,
+                resolve_turns,
+            } => Self::Join {
+                source: match source {
+                    JoinSource::Piece(piece) => JoinSourceDto::Piece { piece },
+                    JoinSource::Held(hold) => JoinSourceDto::Held { hold },
+                },
+                stitch: stitch.into(),
+                resolve_turns,
+            },
         }
     }
 }
@@ -1074,10 +1179,23 @@ impl From<KnitStepActionDto> for StepAction {
                     })
                     .collect(),
             },
-            KnitStepActionDto::Close { method } => Self::Close {
+            KnitStepActionDto::Close { method, holds } => Self::Close {
                 method: method.into(),
+                holds,
             },
             KnitStepActionDto::RoundStart => Self::RoundStart {},
+            KnitStepActionDto::Join {
+                source,
+                stitch,
+                resolve_turns,
+            } => Self::Join {
+                source: match source {
+                    JoinSourceDto::Piece { piece } => JoinSource::Piece(piece),
+                    JoinSourceDto::Held { hold } => JoinSource::Held(hold),
+                },
+                stitch: stitch.into(),
+                resolve_turns,
+            },
         }
     }
 }
@@ -1089,6 +1207,7 @@ impl From<&Section> for KnitSectionDto {
             name: s.name.clone(),
             notes: s.notes.clone(),
             construction: s.construction.map(ConstructionKind::from),
+            piece: s.piece.clone(),
             steps: s
                 .steps
                 .iter()
@@ -1107,6 +1226,7 @@ impl From<KnitSectionDto> for Section {
             name: s.name,
             notes: s.notes,
             construction: s.construction.map(Construction::from),
+            piece: s.piece,
             steps: s
                 .steps
                 .into_iter()
@@ -1136,8 +1256,7 @@ impl From<&NeedleCount> for KnitNeedleCountDto {
                 .held
                 .iter()
                 .map(|h: &HeldCount| KnitHeldCountDto {
-                    hold: h.hold.clone(),
-                    name: h.name.clone(),
+                    hold_index: sat(h.hold as u64),
                     count: sat(h.count),
                 })
                 .collect(),
@@ -1148,12 +1267,22 @@ impl From<&NeedleCount> for KnitNeedleCountDto {
                 .groups
                 .iter()
                 .map(|g| KnitGroupCountDto {
-                    name: g.name.clone(),
+                    name_index: sat(g.name as u64),
                     count: sat(g.count),
                 })
                 .collect(),
             flat: c.flat.map(sat),
             grafted: sat(c.grafted),
+            set_aside: c
+                .set_aside
+                .iter()
+                .map(|a| KnitPieceCountDto {
+                    piece_index: sat(a.piece as u64),
+                    count: a.count.map(sat),
+                })
+                .collect(),
+            bound_off_total: sat(c.bound_off_total),
+            grafted_total: sat(c.grafted_total),
         }
     }
 }
@@ -1166,19 +1295,10 @@ fn severity_to_dto(s: Severity) -> SeverityKind {
 }
 
 impl KnitConstructionDto {
-    /// The ledger of `pattern`, with every section and step named by its stable id.
+    /// The ledger of `pattern`: every line and problem by position, and the names the counts
+    /// refer to, once each.
     pub fn of(pattern: &KnitPattern, ledger: &Ledger) -> Self {
-        let section_id = |i: usize| pattern.sections.get(i).map(|s| s.id.clone());
-        let step_id = |i: usize, j: usize| {
-            pattern
-                .sections
-                .get(i)
-                .and_then(|s| s.steps.get(j))
-                .map(|st| st.id.clone())
-        };
         let line = |l: &LedgerLine| KnitLedgerLineDto {
-            section_id: section_id(l.section).unwrap_or_default(),
-            step_id: step_id(l.section, l.step).unwrap_or_default(),
             section_index: sat(l.section as u64),
             step_index: sat(l.step as u64),
             chart_row: l.chart_row.map(|r| sat(r as u64 + 1)),
@@ -1193,23 +1313,54 @@ impl KnitConstructionDto {
             count: l.count.counted().map(KnitNeedleCountDto::from),
             count_text: l.count.text(),
             written: l.written(),
+            piece_index: l.piece.map(|i| sat(i as u64)),
         };
         let issue = |i: &SectionIssue| KnitSectionIssueDto {
             severity: severity_to_dto(i.severity),
-            section_id: i.section.and_then(section_id),
-            step_id: match (i.section, i.step) {
-                (Some(s), Some(t)) => step_id(s, t),
-                _ => None,
-            },
             section_index: i.section.map(|s| sat(s as u64)),
             step_index: i.step.map(|t| sat(t as u64)),
             chart_row: i.chart_row.map(|r| sat(r as u64 + 1)),
             text: i.text.clone(),
             message: i.message.clone(),
         };
+        let piece_id = |i: usize| {
+            pattern
+                .pieces
+                .get(i)
+                .map(|x| x.id.clone())
+                .unwrap_or_default()
+        };
+        let piece = |s: &PieceSummary| KnitPieceSummaryDto {
+            id: piece_id(s.piece),
+            name: pattern
+                .pieces
+                .get(s.piece)
+                .map(|x| x.name.clone())
+                .unwrap_or_default(),
+            index: sat(s.piece as u64),
+            section_indices: s.sections.iter().map(|&i| sat(i as u64)).collect(),
+            live: s.live.map(sat),
+            joined_into: s.joined.map(|(into, _, _)| piece_id(into)),
+            joined_section_index: s.joined.map(|(_, si, _)| sat(si as u64)),
+            joined_step_index: s.joined.map(|(_, _, ti)| sat(ti as u64)),
+            text: s.text.clone(),
+        };
         KnitConstructionDto {
             lines: ledger.lines.iter().map(line).collect(),
             issues: ledger.issues.iter().map(issue).collect(),
+            pieces: ledger.pieces.iter().map(piece).collect(),
+            holds: ledger
+                .names
+                .holds
+                .iter()
+                .map(|h| KnitHoldNameDto {
+                    hold_step_id: h.hold.clone(),
+                    section_index: sat(h.section as u64),
+                    step_index: sat(h.step as u64),
+                    name: h.name.clone(),
+                })
+                .collect(),
+            group_names: ledger.names.groups.clone(),
         }
     }
 }
@@ -1287,6 +1438,16 @@ mod tests {
             },
             notes: "n".into(),
             sections: every_step_kind(),
+            pieces: vec![
+                Piece {
+                    id: "piece-1".into(),
+                    name: "body".into(),
+                },
+                Piece {
+                    id: "piece-2".into(),
+                    name: String::new(),
+                },
+            ],
         };
         let back = KnitPattern::from(KnitPatternDto::from(&p));
         assert_eq!(back, p);
@@ -1304,6 +1465,7 @@ mod tests {
                 name: "Shoulder".into(),
                 notes: "n".into(),
                 construction: None,
+                piece: None,
                 steps: vec![
                     step("a", StepAction::ChartRows { first: 1, last: 2 }),
                     step(
@@ -1392,6 +1554,7 @@ mod tests {
                 name: String::new(),
                 notes: String::new(),
                 construction: None,
+                piece: None,
                 steps: Vec::new(),
             },
             Section {
@@ -1399,6 +1562,7 @@ mod tests {
                 name: "Heel".into(),
                 notes: String::new(),
                 construction: Some(Construction::Flat),
+                piece: None,
                 steps: vec![
                     step(
                         "m",
@@ -1492,18 +1656,316 @@ mod tests {
                         "w",
                         StepAction::Close {
                             method: CloseMethod::Graft,
+                            holds: Vec::new(),
                         },
                     ),
                     step(
                         "x",
                         StepAction::Close {
                             method: CloseMethod::ThreeNeedleBindOff,
+                            holds: Vec::new(),
                         },
                     ),
                     step("y", StepAction::RoundStart {}),
                 ],
             },
+            Section {
+                id: "section-4".into(),
+                name: "Thumb".into(),
+                notes: String::new(),
+                construction: Some(Construction::InTheRound),
+                piece: Some("piece-2".into()),
+                steps: vec![
+                    step(
+                        "z",
+                        StepAction::Join {
+                            source: JoinSource::Held("h".into()),
+                            stitch: WorkStitch::Knit,
+                            resolve_turns: true,
+                        },
+                    ),
+                    step(
+                        "z2",
+                        StepAction::Join {
+                            source: JoinSource::Piece("piece-1".into()),
+                            stitch: WorkStitch::InPattern,
+                            resolve_turns: false,
+                        },
+                    ),
+                ],
+            },
         ]
+    }
+
+    /// The (section, step) position of the step with id `id` in `p`.
+    fn at(p: &KnitPatternDto, id: &str) -> (u32, u32) {
+        for (si, s) in p.sections.iter().enumerate() {
+            if let Some(ti) = s.steps.iter().position(|st| st.id == id) {
+                return (si as u32, ti as u32);
+            }
+        }
+        panic!("no step {id}");
+    }
+
+    /// The first ledger line of the step with id `id`.
+    fn line_of<'c>(
+        p: &KnitPatternDto,
+        c: &'c KnitConstructionDto,
+        id: &str,
+    ) -> &'c KnitLedgerLineDto {
+        let (si, ti) = at(p, id);
+        c.lines
+            .iter()
+            .find(|l| (l.section_index, l.step_index) == (si, ti))
+            .unwrap()
+    }
+
+    /// A garment in several pieces crosses with each line's piece, the pieces set aside and how
+    /// each piece ends (the hand-derived yoke fixture, through the real bridge calls).
+    #[test]
+    fn a_yoke_construction_crosses_with_pieces_set_aside_and_joins() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/knitting/sections/yoke-sweater-round.plyknit"
+        );
+        let dto = crate::api::parse_knit(std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(dto.pieces.len(), 3);
+        assert_eq!(dto.sections[1].piece.as_deref(), Some("piece-2"));
+        assert!(dto.sections[0].piece.is_none());
+        let p = KnitPattern::from(
+            crate::api::parse_knit(std::fs::read_to_string(path).unwrap()).unwrap(),
+        );
+        let pdto = KnitPatternDto::from(&p);
+        let c = crate::api::knit_construction(dto);
+        assert!(c.issues.is_empty());
+        let join = line_of(&pdto, &c, "step-22");
+        assert_eq!(join.piece_index, Some(0));
+        let count = join.count.as_ref().unwrap();
+        assert_eq!(count.on_needle, 244);
+        let aside: Vec<(u32, Option<u32>)> = count
+            .set_aside
+            .iter()
+            .map(|a| (a.piece_index, a.count))
+            .collect();
+        assert_eq!(aside, vec![(2, Some(54))]);
+        assert_eq!(pdto.pieces[2].name, "Right sleeve");
+        // The groups on hold by index into the construction's table, named once there.
+        let held: Vec<(String, u32)> = count
+            .held
+            .iter()
+            .map(|h| (c.holds[h.hold_index as usize].name.clone(), h.count))
+            .collect();
+        assert_eq!(
+            held,
+            vec![
+                ("left sleeve underarm".into(), 10),
+                ("right sleeve underarm".into(), 10),
+                ("body left underarm".into(), 10)
+            ]
+        );
+        assert_eq!(c.holds[2].hold_step_id, "step-21");
+        assert_eq!((c.holds[2].section_index, c.holds[2].step_index), (3, 1));
+        let sleeve = &c.pieces[1];
+        assert_eq!(
+            (sleeve.id.as_str(), sleeve.index, sleeve.live),
+            ("piece-2", 1, Some(0))
+        );
+        let last = c.lines.last().unwrap().count.as_ref().unwrap();
+        assert_eq!((last.bound_off, last.bound_off_total), (136, 136));
+        assert_eq!(sleeve.section_indices, vec![1]);
+        assert_eq!(sleeve.joined_into.as_deref(), Some("piece-1"));
+        assert_eq!(
+            (sleeve.joined_section_index, sleeve.joined_step_index),
+            (Some(3), Some(2))
+        );
+        assert_eq!(
+            sleeve.text,
+            "joined to Body at Joining round and yoke, step 3"
+        );
+        assert_eq!(c.pieces[0].section_indices, vec![0, 3, 4, 5]);
+    }
+
+    /// The real version-5 bytes open through the bridge as one piece (no pieces, every section's
+    /// piece not stated), and saving writes the current version.
+    #[test]
+    fn a_v5_file_opens_as_one_piece_and_saves_as_current() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/migrations/plyknit/schema-v5/sock-heel-flap-round.plyknit"
+        );
+        let v5 = std::fs::read_to_string(path).unwrap();
+        assert_eq!(ply_knit::native::schema_version(&v5).unwrap(), 5);
+        let dto = crate::api::parse_knit(v5).unwrap();
+        assert!(dto.pieces.is_empty());
+        assert!(dto.sections.iter().all(|s| s.piece.is_none()));
+        let c = crate::api::knit_construction(dto);
+        assert!(c.pieces.is_empty());
+        assert!(c.lines.iter().all(|l| l.piece_index.is_none()));
+        let dto = crate::api::parse_knit(std::fs::read_to_string(path).unwrap()).unwrap();
+        let saved = crate::api::write_knit(dto).unwrap();
+        assert_eq!(
+            ply_knit::native::schema_version(&saved).unwrap(),
+            ply_knit::KNIT_SCHEMA_VERSION
+        );
+        let again = crate::api::parse_knit(saved.clone()).unwrap();
+        assert_eq!(crate::api::write_knit(again).unwrap(), saved);
+    }
+
+    /// Every byte of text a construction crosses with.
+    fn dto_bytes(c: &KnitConstructionDto) -> usize {
+        let lines: usize = c
+            .lines
+            .iter()
+            .map(|l| {
+                l.text.len()
+                    + l.count_text.len()
+                    + l.written.len()
+                    + l.label.as_ref().map_or(0, String::len)
+            })
+            .sum();
+        let issues: usize = c
+            .issues
+            .iter()
+            .map(|i| i.text.len() + i.message.len())
+            .sum();
+        let pieces: usize = c
+            .pieces
+            .iter()
+            .map(|x| {
+                x.id.len()
+                    + x.name.len()
+                    + x.text.len()
+                    + x.joined_into.as_ref().map_or(0, String::len)
+            })
+            .sum();
+        let holds: usize = c
+            .holds
+            .iter()
+            .map(|h| h.hold_step_id.len() + h.name.len())
+            .sum();
+        lines + issues + pieces + holds + c.group_names.iter().map(String::len).sum::<usize>()
+    }
+
+    /// A hostile file at the limits crosses as a construction of about its own size: lines carry
+    /// indices and counts, and every name is crossed once (the review's two measured cases: pieces
+    /// at the limits with every line listing the others, and many long holds before many rows).
+    #[test]
+    fn a_construction_at_the_limits_is_about_the_size_of_its_file() {
+        let step = |id: String, action: StepAction| Step { id, action };
+        let rows = |n: usize| -> Vec<Step> {
+            (0..n)
+                .map(|i| {
+                    step(
+                        format!("r{i}"),
+                        StepAction::Rows {
+                            count: 1,
+                            text: String::new(),
+                        },
+                    )
+                })
+                .collect()
+        };
+        let section = |id: String, piece: Option<String>, steps: Vec<Step>| Section {
+            id,
+            name: String::new(),
+            notes: String::new(),
+            construction: None,
+            piece,
+            steps,
+        };
+        // 50 pieces with 64-byte ids and 200-byte names, 49 one-step sections, then 9,900 rows.
+        let mut many = KnitPattern::from(crate::api::knit_blank_pattern());
+        many.cast_on = Some(1);
+        let id = |i: usize| format!("{i:02}{}", "p".repeat(62));
+        many.pieces = (0..ply_knit::sections::MAX_PIECES)
+            .map(|i| Piece {
+                id: id(i),
+                name: "n".repeat(ply_knit::sections::MAX_PIECE_NAME_BYTES),
+            })
+            .collect();
+        many.sections = (1..50)
+            .map(|i| {
+                section(
+                    format!("s{i}"),
+                    Some(id(i)),
+                    vec![step(format!("c{i}"), StepAction::CastOn { count: 1 })],
+                )
+            })
+            .collect();
+        many.sections
+            .push(section("last".into(), Some(id(0)), rows(9_900)));
+        // 1,000 one-stitch holds with 100-byte ids and names, then 1,000 rows.
+        let mut holds = KnitPattern::from(crate::api::knit_blank_pattern());
+        holds.cast_on = Some(2_000);
+        let mut steps: Vec<Step> = (0..1000)
+            .map(|i| {
+                step(
+                    format!("{i:04}{}", "h".repeat(96)),
+                    StepAction::Hold {
+                        count: Some(1),
+                        name: format!("{i:04}{}", "n".repeat(96)),
+                    },
+                )
+            })
+            .collect();
+        steps.extend(rows(1000));
+        holds.sections = vec![section("s".into(), None, steps)];
+        for p in [many, holds] {
+            let file = p.to_json().unwrap();
+            assert!(
+                crate::api::parse_knit(file.clone()).is_ok(),
+                "within the limits"
+            );
+            let c = crate::api::knit_construction(KnitPatternDto::from(&p));
+            let bytes = dto_bytes(&c);
+            assert!(
+                bytes < 2 * file.len() + 2_000_000,
+                "{bytes} bytes of text for a {} byte file",
+                file.len()
+            );
+        }
+    }
+
+    /// Piece ids are short ids (new in schema version 6): a file with another is refused on load,
+    /// and the app's pattern is not written with one.
+    #[test]
+    fn a_piece_id_that_is_not_a_short_id_is_refused() {
+        let mut pattern = KnitPattern::from(crate::api::knit_blank_pattern());
+        pattern.pieces = vec![Piece {
+            id: "x".repeat(65),
+            name: "Body".into(),
+        }];
+        let Err(err) = crate::api::parse_knit(pattern.to_json().unwrap()) else {
+            panic!("a long piece id must be refused");
+        };
+        assert_eq!(err.kind, KnitFormatFailureKind::Unreadable);
+        assert!(
+            err.message
+                .starts_with("the pattern's pieces cannot be opened: "),
+            "{}",
+            err.message
+        );
+        let err = crate::api::write_knit(KnitPatternDto::from(&pattern)).unwrap_err();
+        assert!(err.starts_with("a piece cannot be saved: "), "{err}");
+        pattern.pieces[0].id = "piece-1".into();
+        assert!(crate::api::write_knit(KnitPatternDto::from(&pattern)).is_ok());
+    }
+
+    /// A pattern past the piece limits is refused on load and never written.
+    #[test]
+    fn too_many_pieces_are_refused_on_load_and_on_save() {
+        let mut pattern = KnitPattern::from(crate::api::knit_blank_pattern());
+        pattern.pieces = (0..=ply_knit::sections::MAX_PIECES)
+            .map(|i| Piece {
+                id: format!("piece-{i}"),
+                name: format!("p{i}"),
+            })
+            .collect();
+        assert!(crate::api::parse_knit(pattern.to_json().unwrap()).is_err());
+        assert!(crate::api::write_knit(KnitPatternDto::from(&pattern)).is_err());
+        pattern.pieces.pop();
+        let saved = crate::api::write_knit(KnitPatternDto::from(&pattern)).unwrap();
+        assert!(crate::api::parse_knit(saved).is_ok());
     }
 
     /// A sock's ledger crosses with its needle groups, the part worked flat, rounds and grafting
@@ -1519,14 +1981,10 @@ mod tests {
             dto.sections[2].construction,
             Some(ConstructionKind::Flat)
         ));
+        let pdto = crate::api::parse_knit(std::fs::read_to_string(path).unwrap()).unwrap();
         let c = crate::api::knit_construction(dto);
         assert!(c.issues.is_empty());
-        let flap = c
-            .lines
-            .iter()
-            .find(|l| l.step_id == "step-6")
-            .and_then(|l| l.count.as_ref())
-            .unwrap();
+        let flap = line_of(&pdto, &c, "step-6").count.as_ref().unwrap();
         assert_eq!(
             (flap.on_needle, flap.flat, flap.in_round),
             (64, Some(32), false)
@@ -1534,12 +1992,12 @@ mod tests {
         let names: Vec<(String, u32)> = flap
             .groups
             .iter()
-            .map(|g| (g.name.clone(), g.count))
+            .map(|g| (c.group_names[g.name_index as usize].clone(), g.count))
             .collect();
         assert_eq!(names, vec![("sole".into(), 32), ("instep".into(), 32)]);
         let last = c.lines.last().unwrap().count.as_ref().unwrap();
         assert_eq!((last.on_needle, last.grafted), (0, 16));
-        let joined = c.lines.iter().find(|l| l.step_id == "step-23").unwrap();
+        let joined = line_of(&pdto, &c, "step-23");
         assert!(joined.count.as_ref().unwrap().in_round);
         assert_eq!(
             joined.count_text,
@@ -1566,6 +2024,7 @@ mod tests {
             name: "S".into(),
             notes: String::new(),
             construction: None,
+            piece: None,
             steps: vec![Step {
                 id: "a".into(),
                 action,
@@ -1643,6 +2102,7 @@ mod tests {
             name: "Shoulder".into(),
             notes: String::new(),
             construction: None,
+            piece: None,
             steps: vec![
                 Step {
                     id: "step-1".into(),
@@ -1666,10 +2126,7 @@ mod tests {
         let c = crate::api::knit_construction(KnitPatternDto::from(&pattern));
         assert_eq!(c.lines.len(), 2);
         let first = &c.lines[0];
-        assert_eq!(
-            (first.section_id.as_str(), first.step_id.as_str()),
-            ("section-1", "step-1")
-        );
+        assert_eq!((first.section_index, first.step_index), (0, 0));
         assert_eq!(first.label.as_deref(), Some("Short row 1 (RS)"));
         assert_eq!(
             first.written,
@@ -1689,7 +2146,7 @@ mod tests {
         let issue = c
             .issues
             .iter()
-            .find(|i| i.step_id.as_deref() == Some("step-2"))
+            .find(|i| (i.section_index, i.step_index) == (Some(0), Some(1)))
             .unwrap();
         assert!(matches!(issue.severity, SeverityKind::Error));
         assert_eq!(
@@ -1717,6 +2174,7 @@ mod tests {
             name: "x".repeat(ply_knit::sections::MAX_TEXT_BYTES + 1),
             notes: String::new(),
             construction: None,
+            piece: None,
             steps: Vec::new(),
         }];
         let Err(err) = crate::api::parse_knit(pattern.to_json().unwrap()) else {
@@ -1799,6 +2257,7 @@ mod tests {
             },
             notes: String::new(),
             sections: Vec::new(),
+            pieces: Vec::new(),
         };
         assert_eq!(
             crate::api::knit_written(KnitPatternDto::from(&pattern)),
@@ -1819,7 +2278,7 @@ mod tests {
         let kind =
             |text: &str| KnitFormatFailure::from(KnitPattern::from_json(text).unwrap_err()).kind;
         assert_eq!(
-            kind(r#"{"format":"ply.knit","schema_version":6,"document":{}}"#),
+            kind(r#"{"format":"ply.knit","schema_version":7,"document":{}}"#),
             KnitFormatFailureKind::NewerVersion
         );
         assert_eq!(
@@ -1827,7 +2286,7 @@ mod tests {
             KnitFormatFailureKind::WrongFormat
         );
         assert_eq!(kind("{not json"), KnitFormatFailureKind::Unreadable);
-        for current_or_older in [2, 3, 4, 5] {
+        for current_or_older in [2, 3, 4, 5, 6] {
             assert_eq!(
                 kind(&format!(
                     r#"{{"format":"ply.knit","schema_version":{current_or_older},"document":{{}}}}"#

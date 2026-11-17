@@ -73,9 +73,20 @@
 //! **Unknown stays unknown.** An unchecked step that does not say how it changes the stitch count
 //! makes every later count unknown (one warning); a chart row that cannot be counted does the same.
 //!
+//! **Pieces** (third slice, ADR 0020). A pattern may name its pieces ([`KnitPattern::pieces`]: the
+//! body, the left sleeve, a thumb) and each section the piece it works ([`Section::piece`]; none:
+//! the first piece, which the pattern's cast-on is for). The ledger keeps one needle per piece:
+//! starting a section of another piece sets the current one aside where it is. Holders are shared,
+//! so a piece can take up stitches another put on hold (the split of a raglan yoke, a thumb), and
+//! [`StepAction::Join`] works another piece's stitches, or a held group, into the row where the work
+//! is, with the right side facing (sleeves onto a yoke; a thumb from held stitches, then a pick-up).
+//! Every count also lists the other pieces' stitches set aside, and a join only ever moves
+//! stitches. [`Ledger::pieces`] says how each piece ends.
+//!
 //! The written form ([`written`]) and validation ([`crate::validate`]) both read this one ledger.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -108,11 +119,91 @@ pub const MAX_TEXT_BYTES: usize = 10_000;
 /// The most needle groups one step may name or set (a sock has two or three).
 pub const MAX_GROUPS: usize = 100;
 
+/// The most pieces a pattern may have (a garment has a handful; a blanket of squares a few dozen),
+/// and the longest a piece's name may be, in bytes: a set-aside piece is named in every count.
+pub const MAX_PIECES: usize = 50;
+pub const MAX_PIECE_NAME_BYTES: usize = 200;
+
+/// Why a file's sections cannot be opened or saved ([`check_limits`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LimitError {
+    /// Past one of the sizes a file may have.
+    TooLarge(String),
+    /// A piece's id, or a section's or a join's reference to one, is not a short id: 1 to 64
+    /// letters, digits, `-` and `_`, starting with a letter or digit (the grammar of the materials
+    /// ids, `ply_common::materials::is_valid_id`). Piece ids are new in schema version 6.
+    BadPieceId(String),
+}
+
+impl std::fmt::Display for LimitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LimitError::TooLarge(why) | LimitError::BadPieceId(why) => f.write_str(why),
+        }
+    }
+}
+
 /// Whether `pattern`'s sections are within the sizes a file may have: at most [`MAX_SECTIONS`]
 /// sections and [`MAX_STEPS`] steps, every id, name, note and text at most [`MAX_TEXT_BYTES`], and
 /// every unchecked step's stitch change within [`MAX_LIVE_STITCHES`] either way (a larger one could
-/// never be applied). `Err` says, in plain words, which limit a file goes past.
-pub fn check_limits(pattern: &KnitPattern) -> Result<(), String> {
+/// never be applied); at most [`MAX_PIECES`] pieces, each name at most [`MAX_PIECE_NAME_BYTES`];
+/// and every piece id, and every reference to one, a short id ([`LimitError::BadPieceId`]). `Err`
+/// says, in plain words, which rule a file breaks.
+pub fn check_limits(pattern: &KnitPattern) -> Result<(), LimitError> {
+    check_piece_ids(pattern)?;
+    check_sizes(pattern).map_err(LimitError::TooLarge)
+}
+
+/// Piece ids and the references to them follow the short-id grammar.
+fn check_piece_ids(pattern: &KnitPattern) -> Result<(), LimitError> {
+    let valid = ply_common::materials::is_valid_id;
+    let bad = |what: &str| {
+        Err(LimitError::BadPieceId(format!(
+            "{what} is not a piece id Ply can use (1 to 64 letters, digits, - and _, starting \
+             with a letter or digit)"
+        )))
+    };
+    if pattern.pieces.len() > MAX_PIECES {
+        // Reported by the sizes check, without looking at every id.
+        return Ok(());
+    }
+    if pattern.pieces.iter().any(|p| !valid(&p.id)) {
+        return bad("a piece's id");
+    }
+    for s in &pattern.sections {
+        if s.piece.as_deref().is_some_and(|id| !valid(id)) {
+            return bad("the piece a section works");
+        }
+        for st in &s.steps {
+            if let StepAction::Join {
+                source: JoinSource::Piece(id),
+                ..
+            } = &st.action
+            {
+                if !valid(id) {
+                    return bad("the piece a join step names");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_sizes(pattern: &KnitPattern) -> Result<(), String> {
+    let pieces = &pattern.pieces;
+    if pieces.len() > MAX_PIECES {
+        return Err(format!(
+            "the pattern has {} pieces; Ply opens at most {MAX_PIECES}",
+            pieces.len()
+        ));
+    }
+    for piece in pieces {
+        if piece.name.len() > MAX_PIECE_NAME_BYTES {
+            return Err(format!(
+                "a piece's name is longer than {MAX_PIECE_NAME_BYTES} bytes"
+            ));
+        }
+    }
     let sections = &pattern.sections;
     if sections.len() > MAX_SECTIONS {
         return Err(format!(
@@ -128,7 +219,7 @@ pub fn check_limits(pattern: &KnitPattern) -> Result<(), String> {
     }
     let long = |t: &str| t.len() > MAX_TEXT_BYTES;
     for s in sections {
-        if long(&s.id) || long(&s.name) || long(&s.notes) {
+        if long(&s.id) || long(&s.name) || long(&s.notes) || s.piece.as_deref().is_some_and(long) {
             return Err(format!(
                 "a section's id, name or notes is longer than {MAX_TEXT_BYTES} bytes"
             ));
@@ -153,6 +244,10 @@ pub fn check_limits(pattern: &KnitPattern) -> Result<(), String> {
                     StepAction::Groups { groups } => {
                         groups.iter().any(|g| long(&g.name) || long(&g.notes))
                     }
+                    StepAction::Join { source, .. } => match source {
+                        JoinSource::Piece(t) | JoinSource::Held(t) => long(t),
+                    },
+                    StepAction::Close { holds, .. } => holds.iter().any(|h| long(h)),
                     _ => false,
                 };
             if too_long {
@@ -163,6 +258,7 @@ pub fn check_limits(pattern: &KnitPattern) -> Result<(), String> {
             let many = match &st.action {
                 StepAction::Shape { groups, .. } => groups.len(),
                 StepAction::Groups { groups } => groups.len(),
+                StepAction::Close { holds, .. } => holds.len(),
                 _ => 0,
             };
             if many > MAX_GROUPS {
@@ -206,7 +302,27 @@ pub struct Section {
     /// the section's start; the steps themselves join the work into the round
     /// ([`StepAction::JoinRound`]) or work part of it flat ([`StepAction::WorkFlat`]).
     pub construction: Option<Construction>,
+    /// The id of the piece ([`KnitPattern::pieces`]) the section works (schema version 6). `None`:
+    /// the first piece, the one the pattern's cast-on is for (in older files, the only piece).
+    pub piece: Option<String>,
     pub steps: Vec<Step>,
+}
+
+/// A piece of the garment (the body, the left sleeve, a thumb), worked on its own needle by the
+/// sections that name it (schema version 6). `id` is stable: it never changes on a rename or move.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Piece {
+    pub id: String,
+    pub name: String,
+}
+
+/// The stitches a [`StepAction::Join`] works into the row (schema version 6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JoinSource {
+    /// Every live stitch of the piece with this id (a sleeve joined to the body for the yoke).
+    Piece(String),
+    /// The group put on hold by the step with this id (a thumb's held stitches).
+    Held(String),
 }
 
 /// One step of a section. `id` is stable and unique in the pattern; a step that returns held
@@ -403,25 +519,61 @@ pub enum StepAction {
     /// or round; the counts must add up to the stitches on the needle. An empty list stops
     /// counting groups.
     Groups { groups: Vec<NeedleGroup> },
-    /// Close the last stitches: graft the two halves together or bind them off together.
-    Close { method: CloseMethod },
+    /// Close the last stitches: graft the two halves together or bind them off together. With
+    /// `holds` (schema version 6; `[]` in older files and for the stitches on the needle): close
+    /// the two groups on hold that the hold steps with these ids made, against each other (the
+    /// underarm stitches held on a body and on a sleeve), leaving the needle as it is.
+    Close {
+        method: CloseMethod,
+        holds: Vec<String>,
+    },
     /// Make the round start where the work is now, partway through a round ("knit 9 sts: this is
     /// the new start of the round", after a gusset pick-up); every stitch, group and side keeps its
     /// place. A part worked flat starts at the start of the round, so this also chooses where it
     /// starts.
     RoundStart {},
+    // --- schema version 6: several pieces ---
+    /// Work the stitches of another piece, or a group on hold, into the row where the work is, with
+    /// the right side facing: they join this piece ("knit across the 54 sts of the left sleeve";
+    /// onto an empty needle, a new piece's first row). `resolve_turns` works the wraps and double
+    /// stitches among them, as a work step does.
+    Join {
+        source: JoinSource,
+        stitch: WorkStitch,
+        resolve_turns: bool,
+    },
 }
 
 // --- ledger output ---------------------------------------------------------------------------------
 
-/// A group of stitches on hold, as the ledger counts it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A group of stitches on hold, as the ledger counts it: an index into [`LedgerNames::holds`] and
+/// its count, so no line copies the group's name or its hold step's id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HeldCount {
-    /// The id of the step that put the group on hold.
+    /// The group's index in [`LedgerNames::holds`] (the order the groups were put on hold).
+    pub hold: usize,
+    pub count: u64,
+}
+
+/// A group of stitches on hold, as the ledger names it (once, however many lines count it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HoldName {
+    /// The id of the step that put the group on hold, and that step's place.
     pub hold: String,
+    pub section: usize,
+    pub step: usize,
     /// The group's name as that step gives it.
     pub name: String,
-    pub count: u64,
+}
+
+/// The names a ledger's counts refer to by index: every group put on hold, every needle group
+/// name, every piece (its display name). Each is stored once, so a ledger's memory grows with the
+/// file, never with a name's length times the number of lines (ADR 0020 review).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LedgerNames {
+    pub holds: Vec<HoldName>,
+    pub groups: Vec<String>,
+    pub pieces: Vec<String>,
 }
 
 /// What the ledger knows after a step.
@@ -440,7 +592,8 @@ pub struct NeedleCount {
     pub pending_turns: u64,
     /// Every group on hold, in the order they were put there.
     pub held: Vec<HeldCount>,
-    /// Stitches bound off so far, in the whole pattern.
+    /// Stitches bound off so far from the piece being worked (with one piece: in the whole
+    /// pattern).
     pub bound_off: u64,
     /// The side the row in progress (or the next row) is worked from, when known.
     pub side: Option<Side>,
@@ -453,16 +606,44 @@ pub struct NeedleCount {
     /// flat. The rest of `on_needle` rests on the needle; `to_work` and `past_turns` count the
     /// flat part.
     pub flat: Option<u64>,
-    /// Stitches grafted closed so far, in the whole pattern.
+    /// Stitches grafted closed so far in the piece being worked (with one piece: in the whole
+    /// pattern).
     pub grafted: u64,
+    /// Every OTHER piece that still has stitches, set aside while this one is worked, in the
+    /// pattern's piece order (schema version 6; empty for a pattern of one piece).
+    pub set_aside: Vec<PieceCount>,
+    /// Stitches bound off and grafted so far in the whole pattern, every piece together (the same
+    /// as `bound_off` and `grafted` with one piece).
+    pub bound_off_total: u64,
+    pub grafted_total: u64,
+    /// The names `held`, `groups` and `set_aside` refer to: one table shared by every line.
+    pub names: Arc<LedgerNames>,
+}
+
+/// A piece set aside, as the ledger counts it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PieceCount {
+    /// The piece's index in [`KnitPattern::pieces`] (and [`LedgerNames::pieces`]).
+    pub piece: usize,
+    /// Its live stitches (on its needle, a part worked flat included); `None` when its count is
+    /// unknown.
+    pub count: Option<u64>,
 }
 
 /// A needle group as the ledger counts it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GroupCount {
-    pub name: String,
+    /// The group's name, as an index into [`LedgerNames::groups`].
+    pub name: usize,
     pub count: u64,
 }
+
+/// The most entries of one list (needle groups, groups on hold) a count names; past it the count
+/// gives how many and their stitches, so its text stays short whatever the file holds.
+const NAMED_IN_COUNT: usize = 6;
+
+/// The most pieces set aside that a count names.
+const PIECES_IN_COUNT: usize = 3;
 
 impl NeedleCount {
     /// Stitches on hold in all groups.
@@ -470,18 +651,41 @@ impl NeedleCount {
         self.held.iter().map(|h| h.count).sum()
     }
 
+    /// Stitches set aside on the other pieces, when every one of their counts is known.
+    pub fn set_aside_total(&self) -> Option<u64> {
+        self.set_aside.iter().map(|p| p.count).sum()
+    }
+
+    /// The name of a group on hold this count lists.
+    pub fn hold_name(&self, h: &HeldCount) -> &str {
+        self.names.holds.get(h.hold).map_or("", |x| x.name.as_str())
+    }
+
+    /// The name of a needle group this count lists.
+    pub fn group_name(&self, g: &GroupCount) -> &str {
+        self.names.groups.get(g.name).map_or("", String::as_str)
+    }
+
+    /// The display name of a piece this count lists as set aside.
+    pub fn piece_name(&self, p: &PieceCount) -> &str {
+        self.names.pieces.get(p.piece).map_or("", String::as_str)
+    }
+
     /// The count as the written instructions give it, without brackets: `24 sts on the needle, 6
     /// waiting past a turn; 12 on hold; 6 bound off`, or with needle groups or a part worked flat
     /// `64 sts on the needle: 32 sole, 32 instep; 32 worked flat, 32 resting; 12 still to work in
-    /// this row`.
+    /// this row`. Names are shortened past [`SHORT_NAME_CHARS`], and a list past
+    /// [`NAMED_IN_COUNT`] entries is given as a number, so the text is short whatever the file.
     pub fn text(&self) -> String {
         let unit = if self.in_round { "rnd" } else { "row" };
         let mut head = format!("{} on the needle", sts(self.on_needle));
-        if !self.groups.is_empty() {
+        if self.groups.len() > NAMED_IN_COUNT {
+            head.push_str(&format!(" in {} needle groups", self.groups.len()));
+        } else if !self.groups.is_empty() {
             let parts: Vec<String> = self
                 .groups
                 .iter()
-                .map(|g| format!("{} {}", g.count, display_name(&g.name)))
+                .map(|g| format!("{} {}", g.count, display_name(self.group_name(g))))
                 .collect();
             head.push_str(&format!(": {}", parts.join(", ")));
         }
@@ -509,12 +713,42 @@ impl NeedleCount {
         match self.held.as_slice() {
             [] => {}
             [one] => s.push_str(&format!("; {} on hold", one.count)),
+            many if many.len() > NAMED_IN_COUNT => s.push_str(&format!(
+                "; {} on hold in {} groups",
+                sts(self.held_total()),
+                many.len()
+            )),
             many => {
                 let parts: Vec<String> = many
                     .iter()
-                    .map(|h| format!("{} {}", display_name(&h.name), h.count))
+                    .map(|h| format!("{} {}", display_name(self.hold_name(h)), h.count))
                     .collect();
                 s.push_str(&format!("; on hold: {}", parts.join(", ")));
+            }
+        }
+        match self.set_aside.as_slice() {
+            [] => {}
+            few if few.len() <= PIECES_IN_COUNT => {
+                let parts: Vec<String> = few
+                    .iter()
+                    .map(|p| match p.count {
+                        Some(k) => format!("{} {k}", display_name(self.piece_name(p))),
+                        None => format!("{} (count unknown)", display_name(self.piece_name(p))),
+                    })
+                    .collect();
+                s.push_str(&format!("; set aside: {}", parts.join(", ")));
+            }
+            many => {
+                let known: u64 = many.iter().filter_map(|p| p.count).sum();
+                let unknown = many.iter().filter(|p| p.count.is_none()).count();
+                s.push_str(&format!(
+                    "; set aside in {} other pieces: {}",
+                    many.len(),
+                    sts(known)
+                ));
+                if unknown > 0 {
+                    s.push_str(&format!(" (count unknown for {unknown} of them)"));
+                }
             }
         }
         if self.bound_off > 0 {
@@ -573,6 +807,9 @@ pub struct LedgerLine {
     /// An unchecked step in the pattern's own words.
     pub opaque: bool,
     pub count: LineCount,
+    /// The index in [`KnitPattern::pieces`] of the piece the line's section works (`None` for a
+    /// pattern of one piece, or a section naming a piece the pattern does not have).
+    pub piece: Option<usize>,
 }
 
 impl LedgerLine {
@@ -609,6 +846,28 @@ pub struct Ledger {
     /// The construction is too long to count ([`MAX_STEPS`], [`MAX_LINES`]): the lines stop where
     /// the ledger stopped, and one error says so.
     pub stopped: bool,
+    /// How each of the pattern's pieces ends, in [`KnitPattern::pieces`] order (empty for a pattern
+    /// of one piece).
+    pub pieces: Vec<PieceSummary>,
+    /// The names every line's count refers to by index (the same table each count holds).
+    pub names: Arc<LedgerNames>,
+}
+
+/// A piece at the end of the ledger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PieceSummary {
+    /// The piece's index in [`KnitPattern::pieces`].
+    pub piece: usize,
+    /// The sections that work it, in order.
+    pub sections: Vec<usize>,
+    /// Its live stitches at the end (`None`: unknown). 0 once it was joined to another piece.
+    pub live: Option<u64>,
+    /// Where it was joined to another piece: that piece's index, and the join step's section and
+    /// step.
+    pub joined: Option<(usize, usize, usize)>,
+    /// Its end in words: `18 sts left on the needle at the end`, `joined to the body at Yoke, step
+    /// 3`, `no stitches left at the end`, `no section works this piece`.
+    pub text: String,
 }
 
 /// A section's display name: its name, or `Section 2` when it has none.
@@ -619,25 +878,81 @@ pub fn section_title(pattern: &KnitPattern, section: usize) -> String {
     }
 }
 
+/// A piece's display name: its name, or `piece 2` when it has none.
+pub fn piece_title(pattern: &KnitPattern, piece: usize) -> String {
+    match pattern.pieces.get(piece).map(|p| p.name.trim()) {
+        Some(name) if !name.is_empty() => name.to_string(),
+        _ => format!("piece {}", piece + 1),
+    }
+}
+
+/// The index in [`KnitPattern::pieces`] of the piece section `section` works: the piece it names,
+/// or the first piece when it names none. `None` for a pattern of one piece (no pieces listed) and
+/// for a section that names a piece the pattern does not have.
+pub fn section_piece(pattern: &KnitPattern, section: usize) -> Option<usize> {
+    if pattern.pieces.is_empty() {
+        return None;
+    }
+    match pattern.sections.get(section)?.piece.as_deref() {
+        None => Some(0),
+        Some(id) => pattern.pieces.iter().position(|p| p.id == id),
+    }
+}
+
 /// The heading line the written instructions give a section: `Section 1: Back`, or `Section 2`,
-/// with how it is worked when the section says (`Section 3: Heel flap (worked flat)`).
+/// with the piece it works when the pattern has pieces and the section is not named after it, and
+/// how it is worked when the section says (`Section 3: Heel flap (worked flat)`, `Section 5: Cuff
+/// (left sleeve, worked in the round)`).
 pub fn heading(pattern: &KnitPattern, section: usize) -> String {
-    let mut h = match pattern.sections.get(section).map(|s| s.name.trim()) {
-        Some(name) if !name.is_empty() => format!("Section {}: {name}", section + 1),
-        _ => format!("Section {}", section + 1),
+    let name = pattern.sections.get(section).map_or("", |s| s.name.trim());
+    let mut h = if name.is_empty() {
+        format!("Section {}", section + 1)
+    } else {
+        format!("Section {}: {name}", section + 1)
     };
+    let mut notes = Vec::new();
+    if let Some(pi) = section_piece(pattern, section) {
+        let piece = piece_title(pattern, pi);
+        if !piece.eq_ignore_ascii_case(name) {
+            notes.push(piece);
+        }
+    }
     match pattern.sections.get(section).and_then(|s| s.construction) {
-        Some(Construction::Flat) => h.push_str(" (worked flat)"),
-        Some(Construction::InTheRound) => h.push_str(" (worked in the round)"),
+        Some(Construction::Flat) => notes.push("worked flat".into()),
+        Some(Construction::InTheRound) => notes.push("worked in the round".into()),
         None => {}
     }
+    if !notes.is_empty() {
+        h.push_str(&format!(" ({})", notes.join(", ")));
+    }
     h
+}
+
+/// The line a pattern with pieces starts with: `Made in 3 pieces: body, left sleeve and right
+/// sleeve. The cast-on below is for the body.` `None` for a pattern of one piece.
+pub fn pieces_line(pattern: &KnitPattern) -> Option<String> {
+    let n = pattern.pieces.len();
+    if n == 0 {
+        return None;
+    }
+    let names: Vec<String> = (0..n).map(|i| piece_title(pattern, i)).collect();
+    let list = match names.as_slice() {
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        [] => String::new(),
+    };
+    let mut s = format!("Made in {}: {list}.", count_of(n as u64, "piece", "pieces"));
+    if pattern.cast_on.is_some_and(|c| c > 0) {
+        s.push_str(&format!(" The cast-on below is for {}.", names[0]));
+    }
+    Some(s)
 }
 
 /// The written instructions of a pattern with sections (see [`crate::to_written`]).
 pub fn written(pattern: &KnitPattern) -> Vec<String> {
     let ledger = ledger(pattern);
-    let mut out = Vec::with_capacity(ledger.lines.len() + 2 * pattern.sections.len() + 1);
+    let mut out = Vec::with_capacity(ledger.lines.len() + 2 * pattern.sections.len() + 2);
+    out.extend(pieces_line(pattern));
     if let Some(n) = pattern.cast_on {
         out.push(crate::written::cast_on_line(pattern.construction, n));
     }
@@ -675,10 +990,21 @@ pub fn written(pattern: &KnitPattern) -> Vec<String> {
 pub fn ledger(pattern: &KnitPattern) -> Ledger {
     let mut walk = Walk::new(pattern);
     walk.run();
+    let pieces = walk.summaries();
+    // One table of names for the whole ledger, shared by every count.
+    let names = Arc::new(std::mem::take(&mut walk.names));
+    let mut lines = walk.lines;
+    for line in &mut lines {
+        if let LineCount::Counted(c) = &mut line.count {
+            c.names = names.clone();
+        }
+    }
     Ledger {
-        lines: walk.lines,
+        lines,
         issues: walk.issues,
         stopped: walk.stopped,
+        pieces,
+        names,
     }
 }
 
@@ -896,14 +1222,21 @@ fn seg_tidy(segs: &mut Vec<Seg>) {
     *segs = out;
 }
 
+/// A needle group by name with its stitches added up, borrowed from the runs (no name is copied).
+#[derive(Debug, Clone, Copy)]
+struct NamedCount<'a> {
+    name: &'a str,
+    count: u64,
+}
+
 /// The groups by name, in the order they first appear, with their stitches added up.
-fn group_counts<'a>(runs: impl IntoIterator<Item = &'a Seg>) -> Vec<GroupCount> {
-    let mut out: Vec<GroupCount> = Vec::new();
+fn group_counts<'a>(runs: impl IntoIterator<Item = &'a Seg>) -> Vec<NamedCount<'a>> {
+    let mut out: Vec<NamedCount<'a>> = Vec::new();
     for s in runs {
         match out.iter_mut().find(|g| g.name == s.name) {
             Some(g) => g.count += s.len,
-            None => out.push(GroupCount {
-                name: s.name.clone(),
+            None => out.push(NamedCount {
+                name: &s.name,
                 count: s.len,
             }),
         }
@@ -1113,13 +1446,17 @@ impl Needle {
         let crossed_marks = take(&mut self.marks, |m| m.pos >= lo_pos && m.pos <= hi_pos);
         let (c, yarn) = (self.c, self.yarn_here);
         let up = self.up;
+        let round = self.round;
         let crossed_gaps = take(&mut self.gaps, |g| {
             let inside = if up {
                 g.at > c && g.at < c + k
             } else {
                 g.at + k > c && g.at < c
             };
-            inside || (g.at == c && yarn && k > 0)
+            // In the round a round begins where the last one ended, so its first stitch is reached
+            // across a gap at the start of the round.
+            let round_start = round && g.at == 0 && c == 0 && k > 0;
+            inside || (g.at == c && yarn && k > 0) || round_start
         });
         if self.up {
             self.c += k;
@@ -1220,8 +1557,15 @@ impl Needle {
 
     /// Add `k` stitches after stitch n (the end of the round), joining `join`'s group. The work's
     /// position does not change. False when Ply cannot tell the group (as [`Needle::insert`]).
-    fn append(&mut self, k: u64, join: Join) -> bool {
+    fn append(&mut self, k: u64, join: Join) -> (Option<Gap>, bool) {
         let n = self.n;
+        // In the round, stitches added after the last one go where a gap at the start of the round
+        // is, and close it.
+        let closed = if self.round {
+            take(&mut self.gaps, |g| g.at == 0).into_iter().next()
+        } else {
+            None
+        };
         let grouped = seg_insert(&mut self.segs, n, k, join, self.round, n == 0);
         // The boundary at the start of the round is just after stitch n: a part whose last stitch
         // is stitch n keeps its left side there, before the new stitches; a part whose first stitch
@@ -1232,7 +1576,7 @@ impl Needle {
             }
         }
         self.n += k;
-        grouped
+        (closed, grouped)
     }
 
     /// Move the boundaries of the sides of parts worked flat after stitches `start..=end` are taken
@@ -1419,10 +1763,21 @@ impl Needle {
         self.edge_row = self.edge_row.map(|u| !u);
     }
 
-    /// Drop gaps that are no longer between two stitches, and duplicates.
+    /// Drop gaps that are no longer between two stitches, and duplicates. In the round the last
+    /// stitch and the first are next to each other: a gap there is at boundary 0 (the start of
+    /// the round), wherever it was recorded (ADR 0020 review).
     fn tidy(&mut self) {
         let n = self.n;
-        self.gaps.retain(|g| g.at > 0 && g.at < n);
+        if self.round {
+            for g in &mut self.gaps {
+                if g.at >= n {
+                    g.at = 0;
+                }
+            }
+            self.gaps.retain(|_| n > 0);
+        } else {
+            self.gaps.retain(|g| g.at > 0 && g.at < n);
+        }
         let mut seen = Vec::new();
         self.gaps.retain(|g| {
             if seen.contains(&g.at) {
@@ -1463,6 +1818,43 @@ struct Group {
     /// The needle groups the stitches were in, so they go back into them.
     segs: Vec<Seg>,
     resumed: Option<(usize, usize)>,
+    /// Right-side rows travelled toward the group's last stitch when it was put on hold (`None`:
+    /// not known), so a join that knits it from the right side keeps its needle groups in order.
+    rs_up: Option<bool>,
+    /// Put on hold from a needle whose count was known. A group held while it was not has only the
+    /// count its step states, unchecked: no count lists it, and a piece that takes it up is not
+    /// counted after (with one piece the whole ledger was unknown by then anyway).
+    checked: bool,
+}
+
+/// One piece's needle while another piece is worked (ADR 0020): the walk keeps the current piece's
+/// needle in [`Walk::needle`] and [`Walk::rest`], and every other piece's here.
+#[derive(Debug, Clone)]
+struct Slot {
+    /// `None`: the count is unknown.
+    needle: Option<Needle>,
+    rest: Option<Rest>,
+    /// The piece was joined to another: that piece's index, and the join step's section and step.
+    joined: Option<(usize, usize, usize)>,
+    /// The sections that work this piece, in order.
+    sections: Vec<usize>,
+}
+
+impl Slot {
+    fn empty() -> Self {
+        Slot {
+            needle: Some(Needle::empty()),
+            rest: None,
+            joined: None,
+            sections: Vec::new(),
+        }
+    }
+
+    /// Its live stitches (`None`: unknown).
+    fn live(&self) -> Option<u64> {
+        let rest = self.rest.as_ref().map_or(0, |r| r.count);
+        self.needle.as_ref().map(|n| n.n + rest)
+    }
 }
 
 /// The stitches resting on the needle while part of the round is worked flat
@@ -1524,11 +1916,49 @@ struct Walk<'a> {
     /// The construction is too long to count: nothing more is walked.
     stopped: bool,
     colors: Option<HashMap<usize, String>>,
+    /// Every piece's needle (ADR 0020), by its index in `p.pieces` (one slot when the pattern lists
+    /// none), then one slot for a section that names a piece the pattern does not have. The current
+    /// piece's slot is stale: its needle is [`Walk::needle`] and [`Walk::rest`].
+    slots: Vec<Slot>,
+    /// The slot being worked.
+    cur: usize,
+    /// The piece of the last section walked (its index in `p.pieces`).
+    last_piece: Option<usize>,
+    /// The current piece's needle was put back in its slot (the walk is over).
+    parked: bool,
+    /// The names counts refer to by index, and where each needle group name is in it.
+    names: LedgerNames,
+    group_index: HashMap<String, usize>,
+    /// An empty table each count holds until the walk is over (then the ledger's own).
+    no_names: Arc<LedgerNames>,
+    /// Stitches bound off and grafted in each piece's slot.
+    piece_bound: Vec<u64>,
+    piece_grafted: Vec<u64>,
 }
 
 impl<'a> Walk<'a> {
     fn new(p: &'a KnitPattern) -> Self {
+        let pieces = p.pieces.len().max(1);
+        let mut slots = vec![Slot::empty(); pieces];
+        slots.push(Slot {
+            needle: None,
+            ..Slot::empty()
+        });
+        let n_slots = slots.len();
         Walk {
+            slots,
+            cur: 0,
+            last_piece: None,
+            parked: false,
+            names: LedgerNames {
+                holds: Vec::new(),
+                groups: Vec::new(),
+                pieces: (0..p.pieces.len()).map(|i| piece_title(p, i)).collect(),
+            },
+            group_index: HashMap::new(),
+            no_names: Arc::default(),
+            piece_bound: vec![0; n_slots],
+            piece_grafted: vec![0; n_slots],
             p,
             needle: None,
             rest: None,
@@ -1594,6 +2024,7 @@ impl<'a> Walk<'a> {
         for (si, section) in p.sections.iter().enumerate() {
             self.short_no = 0;
             self.make_ds = None;
+            self.enter(si);
             self.check_construction(si, section);
             for (ti, step) in section.steps.iter().enumerate() {
                 self.step(si, ti, step);
@@ -1604,6 +2035,68 @@ impl<'a> Walk<'a> {
             self.end_section(si);
         }
         self.end_pattern();
+    }
+
+    /// The slot of the piece a section works: its piece (the first when it names none), or the
+    /// slot for a piece the pattern does not have.
+    fn slot_of(&self, si: usize) -> usize {
+        let orphan = self.slots.len() - 1;
+        match (self.p.pieces.is_empty(), &self.p.sections[si].piece) {
+            (true, None) => 0,
+            (true, Some(_)) => orphan,
+            (false, _) => section_piece(self.p, si).unwrap_or(orphan),
+        }
+    }
+
+    /// Take up the needle of the piece section `si` works, setting the current piece's aside (ADR
+    /// 0020). A section naming a piece the pattern does not have is an error, and its steps are
+    /// counted on an unknown needle that nothing else shares.
+    fn enter(&mut self, si: usize) {
+        let target = self.slot_of(si);
+        let orphan = self.slots.len() - 1;
+        if target != self.cur {
+            self.slots[self.cur].needle = self.needle.take();
+            self.slots[self.cur].rest = self.rest.take();
+            self.needle = self.slots[target].needle.take();
+            self.rest = self.slots[target].rest.take();
+            self.cur = target;
+        }
+        if target == orphan {
+            self.needle = None;
+            self.rest = None;
+            self.last_piece = None;
+            self.error(
+                Some(si),
+                None,
+                None,
+                "works a piece the pattern does not have (it may have been deleted), so its steps \
+                 are not counted; choose one of the pattern's pieces"
+                    .into(),
+            );
+            return;
+        }
+        self.slots[target].sections.push(si);
+        self.last_piece = (!self.p.pieces.is_empty()).then_some(target);
+    }
+
+    /// The piece being worked was joined to another (that piece, and the join's section and step):
+    /// every step of its sections is refused (ADR 0020 review).
+    fn joined_here(&self) -> Option<(usize, usize, usize)> {
+        if self.in_orphan() {
+            return None;
+        }
+        self.slots.get(self.cur).and_then(|s| s.joined)
+    }
+
+    /// No step of this section is applied: its piece is missing, or was joined to another. Its
+    /// steps are still walked for their words, on an unknown needle, and take nothing.
+    fn suppressed(&self) -> bool {
+        self.in_orphan() || self.joined_here().is_some()
+    }
+
+    /// The pattern lists pieces and the current section works one of them: its index.
+    fn cur_piece(&self) -> Option<usize> {
+        (!self.p.pieces.is_empty() && self.cur < self.p.pieces.len()).then_some(self.cur)
     }
 
     /// A section that says how it is worked: the work must already be worked that way when it
@@ -1673,9 +2166,14 @@ impl<'a> Walk<'a> {
     fn held_total(&self) -> u64 {
         self.groups
             .iter()
-            .filter(|g| g.resumed.is_none())
+            .filter(|g| g.resumed.is_none() && g.checked)
             .filter_map(|g| g.count)
             .sum()
+    }
+
+    /// The current section works a piece the pattern does not have.
+    fn in_orphan(&self) -> bool {
+        self.cur == self.slots.len() - 1
     }
 
     /// Whether adding `k` stitches to the needle would put more than [`MAX_LIVE_STITCHES`] on the
@@ -1685,8 +2183,31 @@ impl<'a> Walk<'a> {
         let rest = self.rest.as_ref().map_or(0, |r| r.count);
         n.saturating_add(rest)
             .saturating_add(self.held_total())
+            .saturating_add(self.others_total())
             .saturating_add(k)
             > MAX_LIVE_STITCHES
+    }
+
+    /// Stitches on every other piece's needle (an unknown count counts 0: its stitches were
+    /// counted against the cap while they were known).
+    fn others_total(&self) -> u64 {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != self.cur)
+            .filter_map(|(_, s)| s.live())
+            .fold(0u64, u64::saturating_add)
+    }
+
+    /// The other pieces that still have stitches, as a count lists them.
+    fn set_aside(&self) -> Vec<PieceCount> {
+        (0..self.p.pieces.len())
+            .filter(|&i| i != self.cur)
+            .filter_map(|i| {
+                let count = self.slots[i].live();
+                (count != Some(0)).then_some(PieceCount { piece: i, count })
+            })
+            .collect()
     }
 
     /// The side a row toward stitch n is worked from on a fresh needle: the pattern's first-row side,
@@ -1723,7 +2244,7 @@ impl<'a> Walk<'a> {
     fn group_names(&self) -> Vec<String> {
         group_counts(self.all_segs())
             .into_iter()
-            .map(|g| g.name)
+            .map(|g| g.name.to_string())
             .collect()
     }
 
@@ -1756,7 +2277,7 @@ impl<'a> Walk<'a> {
                 "{why}, so Ply cannot tell how the change falls between the needle groups ({}); it \
                  stops counting the groups here (divide the stitches into groups again to count \
                  them)",
-                names.join(", ")
+                listed(&names)
             ),
         );
     }
@@ -1798,12 +2319,32 @@ impl<'a> Walk<'a> {
                 }
             }
         }
+        // Pieces are named by id too (by sections and joins).
+        let mut piece_ids: Vec<(&str, usize)> = Vec::new();
+        for (i, piece) in p.pieces.iter().enumerate() {
+            if piece.id.trim().is_empty() {
+                let text = format!("{} has no id", capitalize(&self.the_piece(i)));
+                self.error(None, None, None, text);
+            } else if let Some(&(_, first)) = piece_ids.iter().find(|(id, _)| *id == piece.id) {
+                let text = format!(
+                    "{} and {} have the same id ('{}'), so a section or join naming it works {}",
+                    capitalize(&self.the_piece(first)),
+                    self.the_piece(i),
+                    piece.id,
+                    self.the_piece(first)
+                );
+                self.error(None, None, None, text);
+            } else {
+                piece_ids.push((&piece.id, i));
+            }
+        }
     }
 
     // --- issues and lines ---
 
     fn place(&self, si: usize, ti: Option<usize>, row: Option<usize>) -> String {
-        let mut s = section_title(self.p, si);
+        // Shortened: every message about a step names its section.
+        let mut s = short(&section_title(self.p, si), SECTION_IN_MESSAGE_CHARS);
         if let Some(t) = ti {
             s.push_str(&format!(", step {}", t + 1));
         }
@@ -1844,18 +2385,36 @@ impl<'a> Walk<'a> {
     }
 
     /// The ledger's count now.
-    fn snapshot(&self) -> LineCount {
+    fn snapshot(&mut self) -> LineCount {
+        // Needle group names are kept once, in the ledger's table; a count holds their indices.
+        let names: Vec<(String, u64)> = group_counts(self.all_segs())
+            .into_iter()
+            .filter(|g| !self.group_index.contains_key(g.name))
+            .map(|g| (g.name.to_string(), g.count))
+            .collect();
+        for (name, _) in names {
+            self.group_index
+                .insert(name.clone(), self.names.groups.len());
+            self.names.groups.push(name);
+        }
         let Some(needle) = &self.needle else {
             return LineCount::Unknown;
         };
         let held = self
             .groups
             .iter()
-            .filter(|g| g.resumed.is_none())
-            .map(|g| HeldCount {
-                hold: g.hold.clone(),
-                name: g.name.clone(),
+            .enumerate()
+            .filter(|(_, g)| g.resumed.is_none() && g.checked)
+            .map(|(i, g)| HeldCount {
+                hold: i,
                 count: g.count.unwrap_or(0),
+            })
+            .collect();
+        let groups = group_counts(self.all_segs())
+            .into_iter()
+            .map(|g| GroupCount {
+                name: self.group_index.get(g.name).copied().unwrap_or(0),
+                count: g.count,
             })
             .collect();
         let rest = self.rest.as_ref();
@@ -1866,13 +2425,40 @@ impl<'a> Walk<'a> {
             past_turns: needle.lo + needle.hi,
             pending_turns: (needle.marks.len() + rest.map_or(0, |r| r.marks.len())) as u64,
             held,
-            bound_off: self.bound_off,
+            bound_off: self.piece_bound[self.cur],
             side: needle.side(),
             in_round: needle.round,
-            groups: group_counts(self.all_segs()),
+            groups,
             flat: rest.map(|_| needle.n),
-            grafted: self.grafted,
+            grafted: self.piece_grafted[self.cur],
+            set_aside: self.set_aside(),
+            bound_off_total: self.bound_off,
+            grafted_total: self.grafted,
+            names: self.no_names.clone(),
         })
+    }
+
+    /// Bind off or graft `k` stitches of the current piece: the pattern's totals and the piece's.
+    /// The caller has checked that the pattern's total does not overflow.
+    fn add_closed(&mut self, graft: bool, k: u64) {
+        if graft {
+            self.grafted += k;
+            self.piece_grafted[self.cur] += k;
+        } else {
+            self.bound_off += k;
+            self.piece_bound[self.cur] += k;
+        }
+    }
+
+    /// Put a group on hold, naming it once in the ledger's table.
+    fn push_group(&mut self, si: usize, ti: usize, group: Group) {
+        self.names.holds.push(HoldName {
+            hold: group.hold.clone(),
+            section: si,
+            step: ti,
+            name: group.name.clone(),
+        });
+        self.groups.push(group);
     }
 
     /// Add a line. `text` is lower case; it is capitalized when there is no label. `sentence` adds
@@ -1897,6 +2483,7 @@ impl<'a> Walk<'a> {
         if sentence {
             text.push('.');
         }
+        let piece = self.cur_piece();
         self.lines.push(LedgerLine {
             section: si,
             step: ti,
@@ -1905,6 +2492,7 @@ impl<'a> Walk<'a> {
             text,
             opaque,
             count,
+            piece,
         });
         self.lines.len() - 1
     }
@@ -2054,12 +2642,49 @@ impl<'a> Walk<'a> {
         if !self.room(lines) {
             return;
         }
+        if let Some((into, js, jt)) = self.joined_here() {
+            return self.refuse_joined(si, ti, step, into, js, jt);
+        }
         // A pending double stitch is this step's to mention, or the turn line's.
         self.ds_now = self.make_ds.take();
         self.dispatch(si, ti, step);
         if let Some(line) = self.ds_now.take() {
             self.ds_on_turn_line(line);
         }
+    }
+
+    /// A step of a piece that was joined to another: refused, in its own words, changing nothing.
+    /// Its words come from walking it on an unknown needle (which takes nothing, see
+    /// [`Walk::suppressed`]); whatever that walk says is dropped for the one problem.
+    fn refuse_joined(
+        &mut self,
+        si: usize,
+        ti: usize,
+        step: &'a Step,
+        into: usize,
+        js: usize,
+        jt: usize,
+    ) {
+        let needle = self.needle.take();
+        let rest = self.rest.take();
+        let (lines, issues, ds) = (self.lines.len(), self.issues.len(), self.make_ds);
+        self.ds_now = None;
+        self.dispatch(si, ti, step);
+        self.ds_now = None;
+        self.make_ds = ds;
+        self.issues.truncate(issues);
+        for line in &mut self.lines[lines..] {
+            line.count = LineCount::NotCounted;
+        }
+        self.needle = needle;
+        self.rest = rest;
+        let problem = format!(
+            "{} was joined to {} at {}, so it cannot be worked again; start a new piece instead",
+            self.the_piece(self.cur),
+            self.the_piece(into),
+            self.place(js, Some(jt), None)
+        );
+        self.error(Some(si), Some(ti), None, problem);
     }
 
     fn dispatch(&mut self, si: usize, ti: usize, step: &'a Step) {
@@ -2108,8 +2733,19 @@ impl<'a> Walk<'a> {
                 group,
             } => self.pick_up(si, ti, *count, along, group.as_deref()),
             StepAction::Groups { groups } => self.set_groups(si, ti, groups),
-            StepAction::Close { method } => self.close(si, ti, *method),
+            StepAction::Close { method, holds } => {
+                if holds.is_empty() {
+                    self.close(si, ti, *method)
+                } else {
+                    self.close_held(si, ti, *method, holds)
+                }
+            }
             StepAction::RoundStart {} => self.round_start(si, ti),
+            StepAction::Join {
+                source,
+                stitch,
+                resolve_turns,
+            } => self.join(si, ti, source, *stitch, *resolve_turns),
         }
     }
 
@@ -2452,6 +3088,38 @@ impl<'a> Walk<'a> {
             let first = self.first_side();
             self.needle = Some(Needle::fresh(k, Some(first)));
             format!("cast on {}", sts(k))
+        } else if needle.row_start && needle.round && needle.gaps.iter().any(|g| g.at == 0) {
+            // In the round, over a gap at the start of the round (the stitches before or after it
+            // went on hold): onto the right needle there, at the end of the round, in the group of
+            // the stitches held from it (ADR 0020 review).
+            let gap_group = needle
+                .gaps
+                .iter()
+                .find(|g| g.at == 0)
+                .map(|g| g.group.clone());
+            let join = match &gap_group {
+                Some(GapGroup::One(name)) => Join::Named(name),
+                Some(GapGroup::Several) => Join::Unknown,
+                Some(GapGroup::None) | None => Join::Adjacent,
+            };
+            let (closed, grouped) = self.needle.as_mut().expect("counting").append(k, join);
+            if !grouped {
+                let why = if matches!(gap_group, Some(GapGroup::Several)) {
+                    "this step casts on over a gap left by stitches from more than one needle group"
+                } else {
+                    "this step casts on stitches between two needle groups"
+                };
+                self.drop_groups(si, ti, None, why);
+            }
+            match closed {
+                Some(gap) => format!(
+                    "cast on {} onto the right needle, over the gap left by the stitches on hold \
+                     ({})",
+                    sts(k),
+                    display_name(&gap.name)
+                ),
+                None => format!("cast on {} onto the right needle", sts(k)),
+            }
         } else if needle.row_start {
             let unit = if needle.round { "rnd" } else { "row" };
             let (_, grouped) =
@@ -2562,7 +3230,8 @@ impl<'a> Walk<'a> {
             needle.yarn_here = true;
         }
         let emptied = needle.n == 0;
-        self.bound_off = total;
+        let _ = total;
+        self.add_closed(false, k);
         let base = if whole && emptied {
             "bind off all sts".to_string()
         } else {
@@ -2597,14 +3266,25 @@ impl<'a> Walk<'a> {
                 && g.name.trim().eq_ignore_ascii_case(name.trim())
         });
         let Some(needle) = &self.needle else {
-            self.groups.push(Group {
-                hold: step.id.clone(),
-                name: name.to_string(),
-                count: count.map(u64::from),
-                marks: Vec::new(),
-                segs: Vec::new(),
-                resumed: None,
-            });
+            if self.suppressed() {
+                // Not put on hold: a later step that returns them says so.
+                self.failed_holds.push(step.id.clone());
+                return self.unknown_line(si, ti, fallback);
+            }
+            self.push_group(
+                si,
+                ti,
+                Group {
+                    hold: step.id.clone(),
+                    name: name.to_string(),
+                    count: count.map(u64::from),
+                    marks: Vec::new(),
+                    segs: Vec::new(),
+                    resumed: None,
+                    rs_up: None,
+                    checked: false,
+                },
+            );
             return self.unknown_line(si, ti, fallback);
         };
         if needle.n == 0 {
@@ -2653,11 +3333,21 @@ impl<'a> Walk<'a> {
             format!("place the next {} on a holder{shown}", sts(k))
         };
         let needle = self.needle.as_mut().expect("counting");
+        // Which way right-side rows travel along these stitches, for a join that knits them.
+        let rs_up = if needle.round {
+            Some(true)
+        } else if needle.unoriented {
+            None
+        } else {
+            needle.up_side.map(|s| s == Side::Rs)
+        };
         let (marks, segs) = needle.remove_ahead(k);
-        if needle.rh() > 0 && needle.lh() > 0 {
+        // In the round the stitches either side of the held ones are always neighbours, even when
+        // the held ones started or ended the round (the gap is then at the start of the round).
+        if (needle.rh() > 0 && needle.lh() > 0) || (needle.round && needle.n > 0) {
             let group = match group_counts(segs.iter()).as_slice() {
                 [] => GapGroup::None,
-                [one] => GapGroup::One(one.name.clone()),
+                [one] => GapGroup::One(one.name.to_string()),
                 _ => GapGroup::Several,
             };
             needle.gaps.push(Gap {
@@ -2668,14 +3358,20 @@ impl<'a> Walk<'a> {
             needle.tidy();
         }
         needle.settle();
-        self.groups.push(Group {
-            hold: step.id.clone(),
-            name: name.to_string(),
-            count: Some(k),
-            marks,
-            segs,
-            resumed: None,
-        });
+        self.push_group(
+            si,
+            ti,
+            Group {
+                hold: step.id.clone(),
+                name: name.to_string(),
+                count: Some(k),
+                marks,
+                segs,
+                resumed: None,
+                rs_up,
+                checked: true,
+            },
+        );
         let line_count = self.snapshot();
         self.push_line(si, ti, None, None, text, true, false, line_count);
     }
@@ -2703,10 +3399,7 @@ impl<'a> Walk<'a> {
                 format!("names {other}, which does not put stitches on hold"),
             );
         };
-        let shown = match name.trim() {
-            "" => String::new(),
-            n => format!(" ({n})"),
-        };
+        let shown = shown(name);
         let text_for = |k: Option<u64>, empty: bool| {
             let what = match k {
                 Some(k) => format!("the {} on hold{shown}", sts(k)),
@@ -2759,21 +3452,42 @@ impl<'a> Walk<'a> {
         };
         if let Some((rs, rt)) = self.groups[gi].resumed {
             let other = self.place(rs, Some(rt), None);
+            // Taken by a join (ADR 0020), which knits them, or returned by a return step.
+            let did = match p.sections[rs].steps.get(rt).map(|st| &st.action) {
+                Some(StepAction::Join { .. }) => "already knitted them into the work",
+                _ => "already returned them to the needle",
+            };
             return self.refuse(
                 si,
                 ti,
                 text_for(self.groups[gi].count, false),
-                format!(
-                    "returns the stitches on hold{shown}, but {other} already returned them to the \
-                     needle"
-                ),
+                format!("returns the stitches on hold{shown}, but {other} {did}"),
             );
         }
         let group = self.groups[gi].clone();
         let Some(needle) = &self.needle else {
-            self.groups[gi].resumed = Some((si, ti));
+            // Taken all the same, so a later step does not take it twice (not in a section whose
+            // piece is missing: once that is fixed, the section is walked again).
+            if !self.suppressed() {
+                self.groups[gi].resumed = Some((si, ti));
+            }
             return self.unknown_line(si, ti, text_for(group.count, false));
         };
+        if !group.checked {
+            // Held while its piece's count was unknown (only possible with several pieces).
+            self.groups[gi].resumed = Some((si, ti));
+            self.warn(
+                Some(si),
+                Some(ti),
+                None,
+                format!(
+                    "the stitches on hold{shown} were put on hold while the stitch count was \
+                     unknown, so the count after returning them is unknown too"
+                ),
+            );
+            self.needle = None;
+            return self.unknown_line(si, ti, text_for(group.count, false));
+        }
         // Moving stitches from the holder to the needle keeps the total, which the cap already holds.
         let k = group.count.unwrap_or(0);
         let empty = needle.n == 0;
@@ -3242,8 +3956,27 @@ impl<'a> Walk<'a> {
         if let Some(line) = self.make_ds.take() {
             self.ds_on_turn_line(line);
         }
-        let Some(needle) = self.needle.clone() else {
+        let Some(needle) = &self.needle else {
             return;
+        };
+        // What the checks read, without copying the needle (its groups may have long names).
+        struct Ends {
+            n: u64,
+            row_start: bool,
+            round: bool,
+            lh: u64,
+            lo: u64,
+            hi: u64,
+            kinds: Vec<Pending>,
+        }
+        let needle = Ends {
+            n: needle.n,
+            row_start: needle.row_start,
+            round: needle.round,
+            lh: needle.lh(),
+            lo: needle.lo,
+            hi: needle.hi,
+            kinds: needle.marks.iter().map(|m| m.kind).collect(),
         };
         if needle.n > 0 && !needle.row_start {
             self.warn(
@@ -3253,12 +3986,12 @@ impl<'a> Walk<'a> {
                 format!(
                     "ends part way through a {}, with {} still to work in it",
                     if needle.round { "round" } else { "row" },
-                    stitches(needle.lh())
+                    stitches(needle.lh)
                 ),
             );
         }
         let waiting = needle.lo + needle.hi;
-        let mut kinds: Vec<Pending> = needle.marks.iter().map(|m| m.kind).collect();
+        let mut kinds: Vec<Pending> = needle.kinds;
         if let Some(rest) = &self.rest {
             kinds.extend(rest.marks.iter().map(|(_, m)| m.kind));
         }
@@ -3303,7 +4036,14 @@ impl<'a> Walk<'a> {
     }
 
     fn end_pattern(&mut self) {
-        if let Some(rest) = self.rest.clone() {
+        // Every piece's needle back in its slot, the current one included.
+        self.park();
+        let orphan = self.slots.len() - 1;
+        let rests: Vec<Rest> = self.slots[..orphan]
+            .iter()
+            .filter_map(|s| s.rest.clone())
+            .collect();
+        for rest in rests {
             if let Some(&(ws, wt)) = self.by_id.get(rest.step.as_str()) {
                 self.warn(
                     Some(ws),
@@ -3328,10 +4068,7 @@ impl<'a> Walk<'a> {
             let Some(&(hs, ht)) = self.by_id.get(g.hold.as_str()) else {
                 continue;
             };
-            let shown = match g.name.trim() {
-                "" => String::new(),
-                n => format!(" ({n})"),
-            };
+            let shown = shown(&g.name);
             let what = match g.count {
                 Some(k) => format!(
                     "{} {} still on hold{shown}",
@@ -3347,6 +4084,7 @@ impl<'a> Walk<'a> {
                 format!("{what} at the end of the pattern; no step returns them to the needle"),
             );
         }
+        self.end_pieces();
         let unused = ranges(&self.used_rows, false);
         if !unused.is_empty() {
             let parts: Vec<String> = unused
@@ -3628,7 +4366,7 @@ impl<'a> Walk<'a> {
             );
             return self.refuse(si, ti, generic, problem);
         }
-        let old = needle.clone();
+        let old = needle;
         let mut piece = Needle::fresh(m, Some(Side::Rs));
         piece.marks = old.marks.iter().copied().filter(|k| k.pos <= m).collect();
         piece.gaps = old.gaps.iter().filter(|g| g.at < m).cloned().collect();
@@ -3925,7 +4663,12 @@ impl<'a> Walk<'a> {
         let Some(rows) = times.checked_mul(u64::from(every)) else {
             return self.refuse(si, ti, generic, too_many());
         };
-        let text = shape_text(change, every, until, groups, how, needle.round, Some(times));
+        let text = if rows == 1 {
+            // One shaping row or round: said as one (ADR 0020 review).
+            single_shape_text(change, groups, how, Some(after as u64))
+        } else {
+            shape_text(change, every, until, groups, how, needle.round, Some(times))
+        };
         let label = self.rows_label(rows);
         let text = if label.is_some() {
             self.with_double_stitch(text)
@@ -3992,7 +4735,7 @@ impl<'a> Walk<'a> {
             }
         });
         let flat_words = |name: &Option<String>| match name.as_deref() {
-            Some(n) if !n.is_empty() => format!("the {n}"),
+            Some(n) if !n.is_empty() => format!("the {}", short(n, SHORT_NAME_CHARS)),
             _ => "the part worked flat".to_string(),
         };
         let edge = match along {
@@ -4062,7 +4805,7 @@ impl<'a> Walk<'a> {
                 let problem = format!(
                     "there is no needle group called {}; the groups are {}",
                     display_name(g),
-                    names.join(", ")
+                    listed(&names)
                 );
                 return self.refuse(si, ti, generic, problem);
             }
@@ -4070,7 +4813,7 @@ impl<'a> Walk<'a> {
                 let problem = format!(
                     "the stitches are in needle groups ({}); say which group the picked-up \
                      stitches go on",
-                    names.join(", ")
+                    listed(&names)
                 );
                 return self.refuse(si, ti, generic, problem);
             }
@@ -4202,7 +4945,7 @@ impl<'a> Walk<'a> {
                 self.needle = Some(fresh);
             }
             PickPlace::RoundEnd => {
-                let grouped = self.needle.as_mut().expect("counting").append(k, join);
+                let (_, grouped) = self.needle.as_mut().expect("counting").append(k, join);
                 if !grouped {
                     self.drop_groups(
                         si,
@@ -4443,9 +5186,9 @@ impl<'a> Walk<'a> {
                     let problem = format!(
                         "{what} joins two needle groups of the same size, but the {} has {} and \
                          the {} has {}",
-                        display_name(&a.name),
+                        display_name(a.name),
                         stitches(a.count),
-                        display_name(&b.name),
+                        display_name(b.name),
                         stitches(b.count)
                     );
                     return self.refuse(si, ti, generic, problem);
@@ -4454,27 +5197,27 @@ impl<'a> Walk<'a> {
                     CloseMethod::Graft => format!(
                         "graft the {} {} sts to the {} {} sts with Kitchener stitch",
                         a.count,
-                        display_name(&a.name),
+                        display_name(a.name),
                         b.count,
-                        display_name(&b.name)
+                        display_name(b.name)
                     ),
                     CloseMethod::ThreeNeedleBindOff => format!(
                         "with the right sides together, bind off the {} {} sts and the {} {} sts \
                          together with a three-needle bind-off",
                         a.count,
-                        display_name(&a.name),
+                        display_name(a.name),
                         b.count,
-                        display_name(&b.name)
+                        display_name(b.name)
                     ),
                 }
             }
             [_, _, ..] => {
-                let names: Vec<String> = groups.iter().map(|g| display_name(&g.name)).collect();
+                let names: Vec<String> = groups.iter().map(|g| g.name.to_string()).collect();
                 let problem = format!(
                     "{what} joins two halves, but the stitches are in {} needle groups ({}); \
                      divide them into two groups first",
                     groups.len(),
-                    names.join(", ")
+                    listed(&names)
                 );
                 return self.refuse(si, ti, generic, problem);
             }
@@ -4502,7 +5245,7 @@ impl<'a> Walk<'a> {
                 }
             }
         };
-        let (total, overflow) = match method {
+        let (_, overflow) = match method {
             CloseMethod::Graft => self.grafted.overflowing_add(n),
             CloseMethod::ThreeNeedleBindOff => self.bound_off.overflowing_add(n),
         };
@@ -4514,12 +5257,633 @@ impl<'a> Walk<'a> {
         let gaps = std::mem::take(&mut needle.gaps);
         let text = self.crossings(si, ti, None, text, &marks, &gaps, false, false);
         match method {
-            CloseMethod::Graft => self.grafted = total,
-            CloseMethod::ThreeNeedleBindOff => self.bound_off = total,
+            CloseMethod::Graft => self.add_closed(true, n),
+            CloseMethod::ThreeNeedleBindOff => self.add_closed(false, n),
         }
         self.needle = Some(Needle::empty());
         let count = self.snapshot();
         self.push_line(si, ti, None, None, text, true, false, count);
+    }
+}
+
+// --- the walk: several pieces (schema version 6, ADR 0020) ------------------------------------------
+
+/// What a join takes once it is applied.
+#[derive(Debug, Clone, Copy)]
+enum JoinTake {
+    /// Every stitch of the piece with this index.
+    Piece(usize),
+    /// The group on hold at this index of [`Walk::groups`].
+    Group(usize),
+}
+
+/// The stitches a join works in, in right-side order.
+struct JoinSrc {
+    /// `None`: their count is unknown.
+    k: Option<u64>,
+    /// Wraps and double stitches among them (all crossed by the join).
+    marks: Vec<Mark>,
+    /// Gaps among them (crossed by the join, so warned about).
+    gaps: Vec<Gap>,
+    /// Their needle groups in right-side order; `None` when Ply cannot tell the order of several.
+    segs: Option<Vec<Seg>>,
+    /// `across the 54 sts of the left sleeve` / `the 8 sts on hold (thumb)`, without the verb.
+    what: String,
+    /// `across the sts of the left sleeve`: the same without a count.
+    generic: String,
+    /// `Left sleeve` / `the stitches on hold (thumb)`, for messages.
+    who: String,
+    /// The needle groups among them when their order is not known (`segs` is `None`).
+    unordered: Vec<String>,
+    take: JoinTake,
+}
+
+/// `segs` in right-side order, given whether right-side rows travelled toward their last stitch;
+/// `None` when that is not known and the order matters (more than one group).
+fn rs_order(segs: &[Seg], rs_up: Option<bool>) -> Option<Vec<Seg>> {
+    match rs_up {
+        Some(true) => Some(segs.to_vec()),
+        Some(false) => Some(segs.iter().rev().cloned().collect()),
+        None if group_counts(segs.iter()).len() <= 1 => Some(segs.to_vec()),
+        None => None,
+    }
+}
+
+impl<'a> Walk<'a> {
+    /// A piece as words refer to it: its name as the knitter gave it (no article added, shortened
+    /// past [`SHORT_NAME_CHARS`]), or `piece 3` for a piece with no name.
+    fn the_piece(&self, i: usize) -> String {
+        match self.p.pieces.get(i).map(|p| p.name.trim()) {
+            Some(name) if !name.is_empty() => short(name, SHORT_NAME_CHARS),
+            _ => format!("piece {}", i + 1),
+        }
+    }
+
+    /// Put the current piece's needle back in its slot, once, so every slot is current (at the end
+    /// of the walk).
+    fn park(&mut self) {
+        if !self.parked {
+            self.slots[self.cur].needle = self.needle.take();
+            self.slots[self.cur].rest = self.rest.take();
+            self.parked = true;
+        }
+    }
+
+    /// Warnings for the pieces at the end of the pattern: a piece no section works, and a piece other
+    /// than the one worked last that still has stitches set aside.
+    fn end_pieces(&mut self) {
+        for i in 0..self.p.pieces.len() {
+            let slot = self.slots[i].clone();
+            let piece = self.the_piece(i);
+            // A piece joined to another has no stitches left; one that still has some (by any
+            // route) is checked like every other piece.
+            if slot.joined.is_some() && slot.live() == Some(0) {
+                continue;
+            }
+            if slot.sections.is_empty() && slot.joined.is_none() {
+                let cast = match slot.live() {
+                    Some(n) if n > 0 => format!(
+                        "; its {} cast on {} never worked",
+                        stitches(n),
+                        if n == 1 { "is" } else { "are" }
+                    ),
+                    _ => String::new(),
+                };
+                self.warn(None, None, None, format!("no section works {piece}{cast}"));
+                continue;
+            }
+            if Some(i) == self.last_piece {
+                continue;
+            }
+            if let Some(n) = slot.live() {
+                if n > 0 {
+                    let last = slot.sections.last().copied();
+                    self.warn(
+                        last,
+                        None,
+                        None,
+                        format!(
+                            "{} of {piece} {} still set aside at the end of the pattern; no step \
+                             joins {} to another piece or finishes {}",
+                            stitches(n),
+                            if n == 1 { "is" } else { "are" },
+                            if n == 1 { "it" } else { "them" },
+                            if n == 1 { "it" } else { "them" },
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    /// How each piece ends, for [`Ledger::pieces`].
+    fn summaries(&mut self) -> Vec<PieceSummary> {
+        self.park();
+        (0..self.p.pieces.len())
+            .map(|i| {
+                let slot = &self.slots[i];
+                let live = slot.live();
+                // From the stitches left first, so none can vanish from the summary.
+                let text = if let (Some((into, s, t)), Some(0)) = (slot.joined, live) {
+                    format!(
+                        "joined to {} at {}",
+                        self.the_piece(into),
+                        self.place(s, Some(t), None)
+                    )
+                } else if slot.sections.is_empty() && live == Some(0) {
+                    "no section works this piece".to_string()
+                } else {
+                    match live {
+                        None => "stitch count unknown at the end".to_string(),
+                        Some(0) => "no stitches left at the end".to_string(),
+                        Some(n) => format!("{} left on the needle at the end", sts(n)),
+                    }
+                };
+                PieceSummary {
+                    piece: i,
+                    sections: slot.sections.clone(),
+                    live,
+                    joined: slot.joined,
+                    text,
+                }
+            })
+            .collect()
+    }
+
+    /// The stitches a join takes, or the problem that stops it (with the step's words for the
+    /// refused line).
+    fn join_source(
+        &self,
+        si: usize,
+        ti: usize,
+        source: &JoinSource,
+    ) -> Result<JoinSrc, (String, String)> {
+        match source {
+            JoinSource::Piece(id) => {
+                let Some(pi) = self.p.pieces.iter().position(|p| p.id == *id) else {
+                    return Err((
+                        "across the sts of another piece".into(),
+                        "joins a piece the pattern does not have (it may have been deleted); \
+                         choose one of the pattern's pieces"
+                            .into(),
+                    ));
+                };
+                let piece = self.the_piece(pi);
+                let generic = format!("across the sts of {piece}");
+                let refuse = |problem: String| Err((generic.clone(), problem));
+                if Some(pi) == self.cur_piece() {
+                    return refuse(format!(
+                        "joins {piece} to itself; a join brings in the stitches of another piece \
+                         or of a holder"
+                    ));
+                }
+                let slot = &self.slots[pi];
+                if let Some((into, s, t)) = slot.joined {
+                    let other = self.place(s, Some(t), None);
+                    return refuse(format!(
+                        "{piece} was already joined to {} at {other}",
+                        self.the_piece(into)
+                    ));
+                }
+                let Some(n) = &slot.needle else {
+                    return Ok(JoinSrc {
+                        k: None,
+                        marks: Vec::new(),
+                        gaps: Vec::new(),
+                        segs: Some(Vec::new()),
+                        what: generic.clone(),
+                        generic,
+                        who: piece,
+                        unordered: Vec::new(),
+                        take: JoinTake::Piece(pi),
+                    });
+                };
+                if slot.rest.is_some() {
+                    return refuse(format!(
+                        "part of {piece} is still worked flat; join it back into the round in its \
+                         own section first"
+                    ));
+                }
+                if n.n == 0 {
+                    return refuse(if slot.sections.is_empty() {
+                        format!("{piece} has no stitches yet: no section before this one works it")
+                    } else {
+                        format!("{piece} has no stitches left on its needle")
+                    });
+                }
+                if !n.row_start {
+                    let unit = if n.round { "round" } else { "row" };
+                    return refuse(format!(
+                        "{piece} is partway through a {unit} ({} still to work in it); finish the \
+                         {unit} in its own section first",
+                        stitches(n.lh())
+                    ));
+                }
+                // Right-side order: a round, or a flat piece whose right-side rows travel toward its
+                // last stitch, from its first stitch; otherwise from its last.
+                let rs_up = if n.round {
+                    Some(true)
+                } else if n.unoriented {
+                    None
+                } else {
+                    n.up_side.map(|s| s == Side::Rs)
+                };
+                Ok(JoinSrc {
+                    k: Some(n.n),
+                    marks: n.marks.clone(),
+                    // Worked from its first stitch to its last: a gap at the start of a round is
+                    // at the ends of the run, not crossed.
+                    gaps: n
+                        .gaps
+                        .iter()
+                        .filter(|g| !(n.round && g.at == 0))
+                        .cloned()
+                        .collect(),
+                    segs: rs_order(&n.segs, rs_up),
+                    what: format!("across the {} of {piece}", sts(n.n)),
+                    generic,
+                    who: piece,
+                    unordered: group_counts(n.segs.iter())
+                        .into_iter()
+                        .map(|g| g.name.to_string())
+                        .collect(),
+                    take: JoinTake::Piece(pi),
+                })
+            }
+            JoinSource::Held(hold) => {
+                let Some(&(hs, ht)) = self.by_id.get(hold.as_str()) else {
+                    return Err((
+                        "the held sts".into(),
+                        "joins held stitches, but the step that put them on hold is gone (it may \
+                         have been deleted)"
+                            .into(),
+                    ));
+                };
+                let other = self.place(hs, Some(ht), None);
+                let StepAction::Hold { name, .. } = &self.p.sections[hs].steps[ht].action else {
+                    return Err((
+                        "the held sts".into(),
+                        format!("names {other}, which does not put stitches on hold"),
+                    ));
+                };
+                let shown = shown(name);
+                let generic = format!("the sts on hold{shown}");
+                let refuse = |problem: String| Err((generic.clone(), problem));
+                if (hs, ht) > (si, ti) {
+                    return refuse(format!(
+                        "joins the stitches on hold{shown} before {other} puts them on hold; move \
+                         this step after it"
+                    ));
+                }
+                let gi = match self.groups.iter().rposition(|g| g.hold == *hold) {
+                    Some(gi) if !self.failed_holds.iter().any(|h| h == hold) => gi,
+                    _ => {
+                        return refuse(format!(
+                            "joins the stitches on hold{shown}, but {other} could not put them on \
+                             hold"
+                        ))
+                    }
+                };
+                let group = &self.groups[gi];
+                if let Some((rs, rt)) = group.resumed {
+                    let taker = self.place(rs, Some(rt), None);
+                    return refuse(format!(
+                        "joins the stitches on hold{shown}, but {taker} already took them off the \
+                         holder"
+                    ));
+                }
+                Ok(JoinSrc {
+                    k: group.count.filter(|_| group.checked),
+                    marks: group.marks.iter().map(|(_, m)| *m).collect(),
+                    gaps: Vec::new(),
+                    segs: rs_order(&group.segs, group.rs_up),
+                    what: match group.count {
+                        Some(k) => format!("the {} on hold{shown}", sts(k)),
+                        None => generic.clone(),
+                    },
+                    generic,
+                    who: format!("the stitches on hold{shown}"),
+                    unordered: group_counts(group.segs.iter())
+                        .into_iter()
+                        .map(|g| g.name.to_string())
+                        .collect(),
+                    take: JoinTake::Group(gi),
+                })
+            }
+        }
+    }
+
+    /// The source is taken: a piece's needle is emptied and recorded as joined to the current piece,
+    /// a group is off its holder.
+    fn take_source(&mut self, take: JoinTake, si: usize, ti: usize) {
+        match take {
+            JoinTake::Piece(pi) => {
+                let into = self.cur_piece().unwrap_or(pi);
+                let slot = &mut self.slots[pi];
+                slot.needle = Some(Needle::empty());
+                slot.rest = None;
+                slot.joined = Some((into, si, ti));
+            }
+            JoinTake::Group(gi) => self.groups[gi].resumed = Some((si, ti)),
+        }
+    }
+
+    /// Close two groups on hold against each other (ADR 0020 review): graft them, or bind them off
+    /// together, whatever piece the work is on; the needle is left as it is. Both groups are
+    /// checked as a join checks held stitches, must differ and must be the same size.
+    fn close_held(&mut self, si: usize, ti: usize, method: CloseMethod, holds: &[String]) {
+        let generic = match method {
+            CloseMethod::Graft => {
+                "graft the two groups of sts on hold together with Kitchener stitch".to_string()
+            }
+            CloseMethod::ThreeNeedleBindOff => {
+                "bind off the two groups of sts on hold together with a three-needle bind-off"
+                    .to_string()
+            }
+        };
+        let [a, b] = holds else {
+            let problem = format!(
+                "closes {} on hold; name two groups, one for each needle",
+                count_of(holds.len() as u64, "group", "groups")
+            );
+            return self.refuse(si, ti, generic, problem);
+        };
+        if a == b {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "names the same stitches on hold twice; name the two groups to close together"
+                    .into(),
+            );
+        }
+        let mut srcs = Vec::with_capacity(2);
+        for id in [a, b] {
+            match self.join_source(si, ti, &JoinSource::Held(id.clone())) {
+                Ok(src) => srcs.push(src),
+                Err((_, problem)) => {
+                    let problem = problem.replacen("joins", "closes", 1);
+                    return self.refuse(si, ti, generic, problem);
+                }
+            }
+        }
+        let (x, y) = (&srcs[0], &srcs[1]);
+        let what = match method {
+            CloseMethod::Graft => "grafting",
+            CloseMethod::ThreeNeedleBindOff => "a three-needle bind-off",
+        };
+        let (tx, ty) = (x.take, y.take);
+        let (Some(kx), Some(ky)) = (x.k, y.k) else {
+            if !self.suppressed() {
+                self.take_source(tx, si, ti);
+                self.take_source(ty, si, ti);
+                if self.needle.is_some() {
+                    self.warn(
+                        Some(si),
+                        Some(ti),
+                        None,
+                        "the stitch count of the stitches on hold is unknown, so the count after \
+                         closing them is unknown too"
+                            .into(),
+                    );
+                    self.needle = None;
+                }
+            }
+            return self.unknown_line(si, ti, generic);
+        };
+        if kx != ky {
+            let problem = format!(
+                "{what} joins two groups of the same size, but {} are {} and {} are {}",
+                x.who,
+                stitches(kx),
+                y.who,
+                stitches(ky)
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        let total = kx + ky;
+        let current = match method {
+            CloseMethod::Graft => self.grafted,
+            CloseMethod::ThreeNeedleBindOff => self.bound_off,
+        };
+        if current.checked_add(total).is_none() {
+            return self.refuse(si, ti, generic, too_many());
+        }
+        let text = match method {
+            CloseMethod::Graft => format!("graft {} to {} with Kitchener stitch", x.what, y.what),
+            CloseMethod::ThreeNeedleBindOff => format!(
+                "place {} and {} on two needles and, with the right sides together, bind them off \
+                 together with a three-needle bind-off",
+                x.what, y.what
+            ),
+        };
+        let marks: Vec<Mark> = x.marks.iter().chain(&y.marks).copied().collect();
+        let text = self.crossings(si, ti, None, text, &marks, &[], false, false);
+        if self.suppressed() {
+            return self.unknown_line(si, ti, text);
+        }
+        self.take_source(tx, si, ti);
+        self.take_source(ty, si, ti);
+        if self.needle.is_none() {
+            return self.unknown_line(si, ti, text);
+        }
+        self.add_closed(method == CloseMethod::Graft, total);
+        let count = self.snapshot();
+        self.push_line(si, ti, None, None, text, true, false, count);
+    }
+
+    fn join(
+        &mut self,
+        si: usize,
+        ti: usize,
+        source: &JoinSource,
+        stitch: WorkStitch,
+        resolve: bool,
+    ) {
+        let verb = match stitch {
+            WorkStitch::Knit => "knit",
+            WorkStitch::Purl => "purl",
+            WorkStitch::InPattern => "work",
+        };
+        let in_pattern = if stitch == WorkStitch::InPattern {
+            " in pattern"
+        } else {
+            ""
+        };
+        let src = match self.join_source(si, ti, source) {
+            Ok(src) => src,
+            Err((what, problem)) => {
+                return self.refuse(si, ti, format!("{verb} {what}{in_pattern}"), problem)
+            }
+        };
+        let generic = format!("{verb} {}{in_pattern}", src.generic);
+        let orphan = self.suppressed();
+        let Some(needle) = &self.needle else {
+            // Taken all the same, so a later step does not take it again (not in a section whose
+            // piece is missing: once that is fixed, the join is walked again).
+            if !orphan {
+                self.take_source(src.take, si, ti);
+            }
+            return self.unknown_line(si, ti, generic);
+        };
+        if needle.n == 0 && self.rest.is_some() {
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, generic, problem);
+        }
+        // Where the work is decides where the stitches go: always with the right side facing, as a
+        // pick-up does.
+        let place = if needle.n == 0 {
+            PickPlace::Empty
+        } else if needle.round {
+            if needle.row_start {
+                PickPlace::RoundEnd
+            } else {
+                PickPlace::Mid
+            }
+        } else if needle.side().is_none() {
+            return self.refuse(si, ti, generic, side_unknown_problem());
+        } else if !needle.row_start {
+            if needle.side() != Some(Side::Rs) {
+                return self.refuse(
+                    si,
+                    ti,
+                    generic,
+                    "joins with the right side facing, but the work is partway through a \
+                     wrong-side row"
+                        .into(),
+                );
+            }
+            PickPlace::Mid
+        } else if !needle.at_edge() {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "joins at a short-row turn; join at the end of a row or at its start".into(),
+            );
+        } else if needle.side() == Some(Side::Ws) {
+            PickPlace::RowEnd
+        } else {
+            PickPlace::RowStart
+        };
+        let Some(k) = src.k else {
+            self.take_source(src.take, si, ti);
+            self.warn(
+                Some(si),
+                Some(ti),
+                None,
+                format!(
+                    "the stitch count of {} is unknown, so the count after joining them is unknown \
+                     too",
+                    src.who
+                ),
+            );
+            self.needle = None;
+            return self.unknown_line(si, ti, generic);
+        };
+        let label = match place {
+            PickPlace::RowStart => self.take_label(false),
+            _ => None,
+        };
+        let base = match place {
+            PickPlace::Empty => {
+                format!(
+                    "with the RS facing, join the yarn and {verb} {}{in_pattern}",
+                    src.what
+                )
+            }
+            _ => {
+                let joining = match (src.take, self.cur_piece()) {
+                    (JoinTake::Piece(_), Some(c)) => {
+                        format!(", joining it to {}", self.the_piece(c))
+                    }
+                    _ => String::new(),
+                };
+                format!("{verb} {}{in_pattern}{joining}", src.what)
+            }
+        };
+        let base = if label.is_some() {
+            self.with_double_stitch(base)
+        } else {
+            base
+        };
+        let join = match &src.segs {
+            Some(s) if !s.is_empty() => Join::Exact(s),
+            Some(_) => Join::Adjacent,
+            None => Join::Unknown,
+        };
+        let mut closed = None;
+        let mut grouped = true;
+        match place {
+            PickPlace::Empty => {
+                let mut fresh = Needle::fresh(k, Some(Side::Rs));
+                fresh.c = k;
+                fresh.row_start = false;
+                fresh.yarn_here = true;
+                fresh.segs = src.segs.clone().unwrap_or_default();
+                fresh.settle();
+                self.needle = Some(fresh);
+                if src.segs.is_none() {
+                    // Groups whose order Ply cannot tell: not counted on the new piece, and said.
+                    self.warn(
+                        Some(si),
+                        Some(ti),
+                        None,
+                        format!(
+                            "Ply cannot tell which way round the needle groups of {} ({}) go, so \
+                             it does not count needle groups on this piece; divide the stitches \
+                             into groups again to count them",
+                            src.who,
+                            listed(&src.unordered)
+                        ),
+                    );
+                }
+            }
+            PickPlace::RoundEnd => {
+                let (c, g) = self.needle.as_mut().expect("counting").append(k, join);
+                closed = c;
+                grouped = g;
+            }
+            PickPlace::RowEnd | PickPlace::Mid | PickPlace::RowStart => {
+                let needle = self.needle.as_mut().expect("counting");
+                if place == PickPlace::RowEnd {
+                    // Onto the right-side row that just ended: the stitches continue it.
+                    needle.up = !needle.up;
+                    needle.row_start = false;
+                    needle.yarn_here = true;
+                }
+                needle.edge_row = None;
+                let (c, g) = needle.insert(k, false, &[], join);
+                closed = c;
+                grouped = g;
+                needle.settle();
+            }
+        }
+        if !grouped {
+            self.drop_groups(
+                si,
+                ti,
+                None,
+                "this step joins stitches between two needle groups, or stitches whose groups Ply \
+                 cannot place",
+            );
+        }
+        let mut text = self.crossings(si, ti, None, base, &src.marks, &src.gaps, resolve, true);
+        if place == PickPlace::RoundEnd {
+            // At the start of a round they go after the last stitch: say where the round starts.
+            text.push_str(
+                ", before the marker for the start of the rnd (the rnd now starts after them)",
+            );
+        }
+        if let Some(gap) = closed {
+            text.push_str(&format!(
+                ", over the gap left by the stitches on hold ({})",
+                display_name(&gap.name)
+            ));
+        }
+        self.take_source(src.take, si, ti);
+        let count = self.snapshot();
+        self.push_line(si, ti, None, label, text, true, false, count);
     }
 }
 
@@ -4608,6 +5972,10 @@ fn shape_text(
     round: bool,
     times: Option<u64>,
 ) -> String {
+    if until == ShapeUntil::Times(1) && every == 1 {
+        // One shaping row or round, said as one (ADR 0020 review).
+        return single_shape_text(change, groups, how, None);
+    }
     let unit = if round { "rnd" } else { "row" };
     let verb = if change < 0 { "decrease" } else { "increase" };
     let mut s = format!("{verb} {}", sts(change.unsigned_abs()));
@@ -4646,6 +6014,36 @@ fn shape_text(
     match how.trim().trim_end_matches('.') {
         "" => {}
         how => s.push_str(&format!("; each {verb} {unit}: {how}")),
+    }
+    s
+}
+
+/// The words of a shaping step of one row or round: `decrease 72 sts evenly (216 sts): *k2,
+/// k2tog; rep from * to end`, or `decrease 1 st on the front (7 sts)`.
+fn single_shape_text(change: i64, groups: &[String], how: &str, after: Option<u64>) -> String {
+    let verb = if change < 0 { "decrease" } else { "increase" };
+    let total = change.unsigned_abs() * groups.len().max(1) as u64;
+    let names: Vec<String> = groups
+        .iter()
+        .map(|g| format!("the {}", display_name(g)))
+        .collect();
+    let mut s = match names.as_slice() {
+        // "Evenly" only spreads more than one.
+        [] if total == 1 => format!("{verb} 1 st"),
+        [] => format!("{verb} {} evenly", sts(total)),
+        [one] => format!("{verb} {} on {one}", sts(change.unsigned_abs())),
+        [rest @ .., last] => format!(
+            "{verb} {} on each of {} and {last}",
+            sts(change.unsigned_abs()),
+            rest.join(", ")
+        ),
+    };
+    if let Some(after) = after {
+        s.push_str(&format!(" ({})", sts(after)));
+    }
+    match how.trim().trim_end_matches('.') {
+        "" => {}
+        how => s.push_str(&format!(": {how}")),
     }
     s
 }
@@ -4738,10 +6136,50 @@ fn side_noun(s: Side) -> &'static str {
     }
 }
 
+/// The longest a name a step, a count or a message refers to is shown, in characters; a longer one
+/// is cut short with `...`. A file may give a group a name of 10,000 bytes, and every line that
+/// counts it would otherwise repeat all of it.
+pub const SHORT_NAME_CHARS: usize = 40;
+
+/// The longest a section's title is shown where a message names the place, in characters.
+pub const SECTION_IN_MESSAGE_CHARS: usize = 60;
+
+/// A name as a reference to it is shown: trimmed, `unnamed` when empty, and at most
+/// [`SHORT_NAME_CHARS`] characters.
 fn display_name(name: &str) -> String {
     match name.trim() {
         "" => "unnamed".into(),
-        n => n.into(),
+        n => short(n, SHORT_NAME_CHARS),
+    }
+}
+
+/// `text` cut to at most `max` characters, ending `...` when it was longer.
+fn short(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(max.saturating_sub(3)).collect();
+    format!("{}...", kept.trim_end())
+}
+
+/// Names as a message lists them: shortened, at most [`NAMED_IN_COUNT`], then how many more.
+fn listed(names: &[String]) -> String {
+    let mut parts: Vec<String> = names
+        .iter()
+        .take(NAMED_IN_COUNT)
+        .map(|n| display_name(n))
+        .collect();
+    if names.len() > NAMED_IN_COUNT {
+        parts.push(format!("and {} more", names.len() - NAMED_IN_COUNT));
+    }
+    parts.join(", ")
+}
+
+/// ` (center neck)`: a group on hold named where a step refers to it (empty when it has no name).
+fn shown(name: &str) -> String {
+    match name.trim() {
+        "" => String::new(),
+        n => format!(" ({})", short(n, SHORT_NAME_CHARS)),
     }
 }
 
@@ -4800,6 +6238,7 @@ mod tests {
             },
             notes: String::new(),
             sections,
+            pieces: Vec::new(),
         }
     }
 
@@ -4809,6 +6248,7 @@ mod tests {
             name: name.into(),
             notes: String::new(),
             construction: None,
+            piece: None,
             steps: steps
                 .into_iter()
                 .map(|(id, action)| Step {
@@ -5187,7 +6627,10 @@ mod tests {
         let mut p = pat(Some(4), 4, 0, vec![section("s1", "S", vec![])]);
         assert!(check_limits(&p).is_ok());
         p.sections[0].notes = "n".repeat(MAX_TEXT_BYTES + 1);
-        assert!(check_limits(&p).unwrap_err().contains("longer than"));
+        assert!(check_limits(&p)
+            .unwrap_err()
+            .to_string()
+            .contains("longer than"));
         p.sections[0].notes.clear();
         p.sections[0].steps.push(Step {
             id: "a".into(),
@@ -5198,6 +6641,7 @@ mod tests {
         });
         assert!(check_limits(&p)
             .unwrap_err()
+            .to_string()
             .contains("changes the stitch count by"));
     }
 

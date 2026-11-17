@@ -157,6 +157,7 @@ Future<KnitPrintSource> gatherKnitPrint(
       ]),
       notes: '',
       sections: const [],
+      pieces: const [],
     );
     final px = await repo.renderPixels(one, cellPx: kPrintCellPxMax);
     if (px.width > 0 && px.height > 0) {
@@ -356,6 +357,8 @@ PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProbl
               'Sections',
               [for (var i = 0; i < p.sections.length; i++) knitSectionTitle(p, i)].join(', '),
             ),
+          // A garment in several pieces (ADR 0020): each piece and how it ends, by the ledger.
+          if (hasSections && p.pieces.isNotEmpty) PrintFact('Pieces', _piecesFact(s)),
           PrintFact('Colors',
               labels == null ? 'One color' : '${labels.length} colors, see the color key'),
         ]),
@@ -385,6 +388,9 @@ PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProbl
             'and "resting" count the stitches of a part worked back and forth, such as a heel '
             'flap, and those waiting on the needle meanwhile. A step marked "Not checked by Ply" '
             'is in the pattern\'s own words and Ply did not check it.'
+            '${p.pieces.isEmpty ? '' : ' The pattern is made in pieces, each on its own needle: '
+                'a heading names the piece its section works, and "set aside" counts the stitches '
+                'of the other pieces waiting meanwhile.'}'
             '${labels == null ? '' : ' MC is the main color and CC a contrast color (see the color key).'}',
             style: PrintTextStyle.muted,
           ),
@@ -444,8 +450,8 @@ PrintLine knitWrittenLine(String line) {
       label: m.group(1), flagged: flagged || body.startsWith('(repeats need fixing'));
 }
 
-/// The written instructions of a pattern with sections as print blocks: the cast-on line, then each
-/// section's heading, its notes and its steps.
+/// The written instructions of a pattern with sections as print blocks: the pieces (when there are
+/// several) and the cast-on line, then each section's heading, its notes and its steps.
 List<PrintBlock> _sectionBlocks(List<String> written) {
   final blocks = <PrintBlock>[];
   var lines = <PrintLine>[];
@@ -461,12 +467,32 @@ List<PrintBlock> _sectionBlocks(List<String> written) {
     } else if (l.startsWith('Notes: ')) {
       flush();
       blocks.add(PrintParagraph(l.substring('Notes: '.length), style: PrintTextStyle.muted));
+    } else if (isKnitPiecesLine(l)) {
+      // The pieces of a garment made in several (ADR 0020), before the cast-on.
+      flush();
+      blocks.add(PrintParagraph(l));
     } else {
       lines.add(knitWrittenLine(l));
     }
   }
   flush();
   return blocks;
+}
+
+/// The pieces of a pattern made in several, each with how it ends by the ledger: `Body (the
+/// cast-on): no stitches left at the end; Left sleeve: joined to the body at Yoke, step 3`.
+String _piecesFact(KnitPrintSource s) {
+  final p = s.pattern;
+  final summaries = s.construction?.pieces ?? const <KnitPieceSummaryDto>[];
+  return [
+    for (var i = 0; i < p.pieces.length; i++)
+      [
+        knitCapitalized(knitPieceTitle(p, i)),
+        if (i == 0 && p.castOn != null) ' (the cast-on)',
+        for (final x in summaries)
+          if (x.index == i) ': ${x.text}',
+      ].join(),
+  ].join('; ');
 }
 
 /// For each section problem (by its full message), where it is ("Back, step 3", "Back, step 2,

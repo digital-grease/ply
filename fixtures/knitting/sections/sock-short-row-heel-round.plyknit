@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
     "name": "Child's sock with a German short-row heel",
     "construction": "InTheRound",
@@ -221,6 +221,7 @@
         "name": "Cuff",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-1",
@@ -247,6 +248,7 @@
         "name": "Leg",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-3",
@@ -283,6 +285,7 @@
         "name": "Heel",
         "notes": "German short rows over the 16 sole stitches: the first half shortens each row by one stitch, the second half lengthens it again, then the heel joins the round.",
         "construction": null,
+        "piece": null,
         "steps": [
           {
             "id": "step-5",
@@ -589,6 +592,7 @@
         "name": "Foot",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-28",
@@ -606,6 +610,7 @@
         "name": "Toe",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-29",
@@ -645,12 +650,14 @@
             "id": "step-31",
             "action": {
               "Close": {
-                "method": "Graft"
+                "method": "Graft",
+                "holds": []
               }
             }
           }
         ]
       }
-    ]
+    ],
+    "pieces": []
   }
 }

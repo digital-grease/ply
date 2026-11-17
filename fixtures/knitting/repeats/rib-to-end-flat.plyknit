@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
     "name": "2x2 rib repeated to the end",
     "construction": "Flat",
@@ -338,6 +338,7 @@
       ]
     },
     "notes": "Row 1 sets 14 stitches; the rows above repeat the motif to the last stitch.",
-    "sections": []
+    "sections": [],
+    "pieces": []
   }
 }

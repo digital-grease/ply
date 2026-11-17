@@ -1,0 +1,798 @@
+{
+  "description": "A top-down raglan pullover in three pieces, worked out by hand. 96 sts are cast on for the neck and joined, the round starting at the right back raglan line: back 32, left sleeve 16, front 32, right sleeve 16, so the right sleeve's stitches are the last of the round. 8 rounds of k2, p2 rib (the chart round, then 7). The raglan yoke increases 8 sts (one each side of the four raglan markers) every other round 16 times: 96 + 128 = 224 sts in 32 rounds, back and front 64 each, each sleeve 48. The dividing round splits the yoke: knit the 64 back sts, put the next 48 (left sleeve) on hold (176 on the needle, 112 still to work), cast on 8 over the gap (184), knit the 64 front sts (48 left), put the remaining 48 (right sleeve) on hold: the round has reached its end, 136 sts, and the gap the right sleeve left is at the start of the round, between the last front stitch and the first back stitch; the 8 sts cast on there close it (144: 64 + 8 + 64 + 8). The body: 60 rounds, 12 of rib, all 144 bound off. Each sleeve is a piece made from its held stitches plus picked-up stitches: pick up 4 along the underarm cast-on from its center onto an empty needle (a right-side row, the wrong side next), knit the 48 held sts at the end of that row (52), pick up 4 more to the center (56), join in the round (the round starts at the center of the underarm), decrease 2 every 8th round to 40 ((56 - 40) / 2 = 8 times, 64 rounds), 10 rounds of rib and bind off 40. Every piece's lines give its own bound-off stitches. Made: 96 cast on + 128 increased + 16 cast on at the underarms + 16 picked up = 256; 32 decreased; 144 + 40 + 40 = 224 bound off.",
+  "covers": [
+    "a split of one piece into three: two groups put on hold, one of them the last stitches of the round",
+    "a gap at the start of the round closed by a cast-on there",
+    "a piece made from picked-up stitches and held stitches knitted at the end of a right-side row",
+    "per-piece bound-off counts"
+  ],
+  "conserves_stitches": false,
+  "construction": "InTheRound",
+  "first_row_side": "Rs",
+  "cast_on": 96,
+  "pieces": [
+    [
+      "Body",
+      "no stitches left at the end"
+    ],
+    [
+      "Left sleeve",
+      "no stitches left at the end"
+    ],
+    [
+      "Right sleeve",
+      "no stitches left at the end"
+    ]
+  ],
+  "written": [
+    "Made in 3 pieces: Body, Left sleeve and Right sleeve. The cast-on below is for Body.",
+    "Cast on 96 sts. Join to work in the round, being careful not to twist.",
+    "Section 1: Neckband (Body, worked in the round)",
+    "Round 1: *k2, p2; rep from * to end (96 sts on the needle)",
+    "Next 7 rnds: k2, p2 rib as set. (96 sts on the needle)",
+    "Section 2: Raglan yoke (Body, worked in the round)",
+    "Notes: Place a marker at each raglan line: after 32 sts (back), 16 (left sleeve), 32 (front) and 16 (right sleeve).",
+    "Next 32 rnds: increase 8 sts in the first rnd and then every other rnd, 16 times in all; each increase rnd: *knit to 1 st before the next marker, m1r, k1, slip the marker, k1, m1l; rep from * 3 more times. (224 sts on the needle)",
+    "Section 3: Dividing round (Body, worked in the round)",
+    "Notes: Each sleeve's stitches go on hold, and 8 underarm stitches are cast on in their place; the right sleeve's are the last of the round.",
+    "Next rnd: knit 64 sts. (224 sts on the needle, 160 still to work in this rnd)",
+    "Place the next 48 sts on a holder (left sleeve). (176 sts on the needle, 112 still to work in this rnd; 48 on hold)",
+    "Cast on 8 sts onto the right needle, over the gap left by the stitches on hold (left sleeve). (184 sts on the needle, 112 still to work in this rnd; 48 on hold)",
+    "Knit 64 sts. (184 sts on the needle, 48 still to work in this rnd; 48 on hold)",
+    "Place the remaining 48 sts on a holder (right sleeve). (136 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+    "Cast on 8 sts onto the right needle, over the gap left by the stitches on hold (right sleeve). (144 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+    "Section 4: Body (worked in the round)",
+    "Next 60 rnds: knit. (144 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+    "Next 12 rnds: k2, p2 rib. (144 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+    "Next rnd: bind off all sts. (0 sts on the needle; on hold: left sleeve 48, right sleeve 48; 144 bound off)",
+    "Section 5: Left sleeve (worked in the round)",
+    "Notes: The round starts at the center of the underarm.",
+    "Next row (RS): pick up and knit 4 sts along the underarm cast-on, from its center. (4 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+    "Knit the 48 sts on hold (left sleeve). (52 sts on the needle; 48 on hold)",
+    "Pick up and knit 4 sts along the underarm cast-on, to its center. (56 sts on the needle; 48 on hold)",
+    "Join to work in the round, being careful not to twist. (56 sts on the needle; 48 on hold)",
+    "Next 64 rnds: decrease 2 sts in the first rnd and then every 8th rnd until 40 sts remain (8 decrease rnds); each decrease rnd: k1, k2tog, knit to last 3 sts, ssk, k1. (40 sts on the needle; 48 on hold)",
+    "Next 10 rnds: k2, p2 rib. (40 sts on the needle; 48 on hold)",
+    "Next rnd: bind off all sts. (0 sts on the needle; 48 on hold; 40 bound off)",
+    "Section 6: Right sleeve (worked in the round)",
+    "Notes: The round starts at the center of the underarm.",
+    "Next row (RS): pick up and knit 4 sts along the underarm cast-on, from its center. (4 sts on the needle; 48 on hold)",
+    "Knit the 48 sts on hold (right sleeve). (52 sts on the needle)",
+    "Pick up and knit 4 sts along the underarm cast-on, to its center. (56 sts on the needle)",
+    "Join to work in the round, being careful not to twist. (56 sts on the needle)",
+    "Next 64 rnds: decrease 2 sts in the first rnd and then every 8th rnd until 40 sts remain (8 decrease rnds); each decrease rnd: k1, k2tog, knit to last 3 sts, ssk, k1. (40 sts on the needle)",
+    "Next 10 rnds: k2, p2 rib. (40 sts on the needle)",
+    "Next rnd: bind off all sts. (0 sts on the needle; 40 bound off)"
+  ],
+  "steps": [
+    {
+      "section": "Neckband",
+      "step": 1,
+      "chart_row": 1,
+      "piece": "Body",
+      "line": "Round 1: *k2, p2; rep from * to end (96 sts on the needle)",
+      "count": {
+        "on_needle": 96,
+        "to_work": 96,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Neckband",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Next 7 rnds: k2, p2 rib as set. (96 sts on the needle)",
+      "count": {
+        "on_needle": 96,
+        "to_work": 96,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Raglan yoke",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Next 32 rnds: increase 8 sts in the first rnd and then every other rnd, 16 times in all; each increase rnd: *knit to 1 st before the next marker, m1r, k1, slip the marker, k1, m1l; rep from * 3 more times. (224 sts on the needle)",
+      "count": {
+        "on_needle": 224,
+        "to_work": 224,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Dividing round",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Next rnd: knit 64 sts. (224 sts on the needle, 160 still to work in this rnd)",
+      "count": {
+        "on_needle": 224,
+        "to_work": 160,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Dividing round",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Place the next 48 sts on a holder (left sleeve). (176 sts on the needle, 112 still to work in this rnd; 48 on hold)",
+      "count": {
+        "on_needle": 176,
+        "to_work": 112,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Dividing round",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Cast on 8 sts onto the right needle, over the gap left by the stitches on hold (left sleeve). (184 sts on the needle, 112 still to work in this rnd; 48 on hold)",
+      "count": {
+        "on_needle": 184,
+        "to_work": 112,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Dividing round",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Knit 64 sts. (184 sts on the needle, 48 still to work in this rnd; 48 on hold)",
+      "count": {
+        "on_needle": 184,
+        "to_work": 48,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Dividing round",
+      "step": 5,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Place the remaining 48 sts on a holder (right sleeve). (136 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+      "count": {
+        "on_needle": 136,
+        "to_work": 136,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ],
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Dividing round",
+      "step": 6,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Cast on 8 sts onto the right needle, over the gap left by the stitches on hold (right sleeve). (144 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+      "count": {
+        "on_needle": 144,
+        "to_work": 144,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ],
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Body",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Next 60 rnds: knit. (144 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+      "count": {
+        "on_needle": 144,
+        "to_work": 144,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ],
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Body",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Next 12 rnds: k2, p2 rib. (144 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+      "count": {
+        "on_needle": 144,
+        "to_work": 144,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ],
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Body",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Body",
+      "line": "Next rnd: bind off all sts. (0 sts on the needle; on hold: left sleeve 48, right sleeve 48; 144 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ],
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 144,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 144,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Left sleeve",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Left sleeve",
+      "line": "Next row (RS): pick up and knit 4 sts along the underarm cast-on, from its center. (4 sts on the needle; on hold: left sleeve 48, right sleeve 48)",
+      "count": {
+        "on_needle": 4,
+        "to_work": 4,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "left sleeve",
+            48
+          ],
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 144,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Left sleeve",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Left sleeve",
+      "line": "Knit the 48 sts on hold (left sleeve). (52 sts on the needle; 48 on hold)",
+      "count": {
+        "on_needle": 52,
+        "to_work": 52,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 144,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Left sleeve",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Left sleeve",
+      "line": "Pick up and knit 4 sts along the underarm cast-on, to its center. (56 sts on the needle; 48 on hold)",
+      "count": {
+        "on_needle": 56,
+        "to_work": 56,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 144,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Left sleeve",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Left sleeve",
+      "line": "Join to work in the round, being careful not to twist. (56 sts on the needle; 48 on hold)",
+      "count": {
+        "on_needle": 56,
+        "to_work": 56,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 144,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Left sleeve",
+      "step": 5,
+      "chart_row": null,
+      "piece": "Left sleeve",
+      "line": "Next 64 rnds: decrease 2 sts in the first rnd and then every 8th rnd until 40 sts remain (8 decrease rnds); each decrease rnd: k1, k2tog, knit to last 3 sts, ssk, k1. (40 sts on the needle; 48 on hold)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 144,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Left sleeve",
+      "step": 6,
+      "chart_row": null,
+      "piece": "Left sleeve",
+      "line": "Next 10 rnds: k2, p2 rib. (40 sts on the needle; 48 on hold)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 144,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Left sleeve",
+      "step": 7,
+      "chart_row": null,
+      "piece": "Left sleeve",
+      "line": "Next rnd: bind off all sts. (0 sts on the needle; 48 on hold; 40 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 40,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 184,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Right sleeve",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Right sleeve",
+      "line": "Next row (RS): pick up and knit 4 sts along the underarm cast-on, from its center. (4 sts on the needle; 48 on hold)",
+      "count": {
+        "on_needle": 4,
+        "to_work": 4,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "right sleeve",
+            48
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 184,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Right sleeve",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Right sleeve",
+      "line": "Knit the 48 sts on hold (right sleeve). (52 sts on the needle)",
+      "count": {
+        "on_needle": 52,
+        "to_work": 52,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 184,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Right sleeve",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Right sleeve",
+      "line": "Pick up and knit 4 sts along the underarm cast-on, to its center. (56 sts on the needle)",
+      "count": {
+        "on_needle": 56,
+        "to_work": 56,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 184,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Right sleeve",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Right sleeve",
+      "line": "Join to work in the round, being careful not to twist. (56 sts on the needle)",
+      "count": {
+        "on_needle": 56,
+        "to_work": 56,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 184,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Right sleeve",
+      "step": 5,
+      "chart_row": null,
+      "piece": "Right sleeve",
+      "line": "Next 64 rnds: decrease 2 sts in the first rnd and then every 8th rnd until 40 sts remain (8 decrease rnds); each decrease rnd: k1, k2tog, knit to last 3 sts, ssk, k1. (40 sts on the needle)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 184,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Right sleeve",
+      "step": 6,
+      "chart_row": null,
+      "piece": "Right sleeve",
+      "line": "Next 10 rnds: k2, p2 rib. (40 sts on the needle)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 184,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Right sleeve",
+      "step": 7,
+      "chart_row": null,
+      "piece": "Right sleeve",
+      "line": "Next rnd: bind off all sts. (0 sts on the needle; 40 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 40,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 224,
+        "grafted_total": 0
+      }
+    }
+  ],
+  "issues": []
+}

@@ -1,6 +1,6 @@
 // M9-01 device proof: knitting patterns with SECTIONS through the real engine and the real
 // filesystem. Each pattern is built with the editor's own state edits, saved as a `.plyknit` (schema
-// version 5), listed, reopened unchanged, and its written instructions and stitch ledger come back
+// version 6), listed, reopened unchanged, and its written instructions and stitch ledger come back
 // from the engine exactly as worked out by hand. A flat shoulder: the short rows count the stitches
 // waiting past each turn, the resolving row works every wrap, and the held stitches are counted on
 // hold. A sock in the round: the heel flap over the sole stitches while the instep rests, the heel
@@ -197,7 +197,8 @@ Future<KnitPatternDto> _sock(KnitRepository repo) async {
               text: ''))
       .addStep('section-5', _toe(2, 16))
       .addStep('section-5', _toe(1, 8))
-      .addStep('section-5', const KnitStepActionDto.close(method: CloseMethodKind.graft));
+      .addStep(
+          'section-5', const KnitStepActionDto.close(method: CloseMethodKind.graft, holds: []));
   return s.pattern;
 }
 
@@ -236,7 +237,7 @@ void main() {
     expect((await repo.listKnits()).map((e) => e.id), contains(id));
     final path = (await repo.openKnit(id)).patternPath;
     final onDisk = File(path).readAsStringSync();
-    expect(plyknitSchemaVersion(onDisk), 5);
+    expect(plyknitSchemaVersion(onDisk), 6);
     final doc = (jsonDecode(onDisk) as Map<String, dynamic>)['document'] as Map<String, dynamic>;
     expect([for (final s in doc['sections'] as List) s['name']], ['Body', 'Shoulder']);
 
@@ -260,10 +261,12 @@ void main() {
     expect((third.onNeedle, third.toWork, third.pastTurns, third.pendingTurns), (24, 12, 12, 2));
     expect(third.side, SideKind.ws, reason: 'the row after the turn is a WS row');
     final last = c.lines.last.count!;
-    expect((last.onNeedle, last.held.single.name, last.held.single.count), (0, 'shoulder', 24));
+    expect((last.onNeedle, c.holds[last.held.single.holdIndex].name, last.held.single.count),
+        (0, 'shoulder', 24));
     expect(c.issues, hasLength(1));
     expect(c.issues.single.severity, SeverityKind.warning);
-    expect(c.issues.single.stepId, reopened.sections[1].steps.last.id);
+    expect((c.issues.single.sectionIndex, c.issues.single.stepIndex),
+        (1, reopened.sections[1].steps.length - 1));
     expect(
         c.issues.single.text,
         '24 stitches are still on hold (shoulder) at the end of the pattern; no step returns them '
@@ -309,7 +312,7 @@ void main() {
 
     final path = (await repo.openKnit(id)).patternPath;
     final onDisk = File(path).readAsStringSync();
-    expect(plyknitSchemaVersion(onDisk), 5);
+    expect(plyknitSchemaVersion(onDisk), 6);
     final doc = (jsonDecode(onDisk) as Map<String, dynamic>)['document'] as Map<String, dynamic>;
     expect([for (final s in doc['sections'] as List) s['construction']],
         ['InTheRound', 'Flat', 'Flat', null, 'InTheRound']);
@@ -327,7 +330,8 @@ void main() {
     final joined = c.lines.firstWhere((l) => l.text.startsWith('Join to work')).count!;
     expect((joined.inRound, joined.toWork, joined.midRow), (true, 16, true));
     final gusset = c.lines[14].count!; // after both pick-ups
-    expect([for (final g in gusset.groups) (g.name, g.count)], [('sole', 26), ('instep', 16)]);
+    expect([for (final g in gusset.groups) (c.groupNames[g.nameIndex], g.count)],
+        [('sole', 26), ('instep', 16)]);
     final last = c.lines.last.count!;
     expect((last.onNeedle, last.grafted), (0, 8));
     expect(await repo.validate(reopened), isEmpty);
@@ -396,7 +400,7 @@ void main() {
 
     final edited = KnitEditorState(pattern: opened).addSection('Body').pattern;
     await repo.saveKnit(pattern: edited, meta: meta, id: id);
-    expect(plyknitSchemaVersion(File(path).readAsStringSync()), 5);
+    expect(plyknitSchemaVersion(File(path).readAsStringSync()), 6);
     expect(File(KnitRepository.backupPath(path, 3)).readAsStringSync(), v3,
         reason: 'the version-3 original is kept once');
     expect((await repo.readPattern(id)).sections.single.name, 'Body');

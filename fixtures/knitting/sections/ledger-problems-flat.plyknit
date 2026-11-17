@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
     "name": "Problems the stitch ledger reports",
     "construction": "Flat",
@@ -465,6 +465,7 @@
         "name": "Problems",
         "notes": "",
         "construction": null,
+        "piece": null,
         "steps": [
           {
             "id": "step-1",
@@ -625,6 +626,7 @@
         "name": "Edging",
         "notes": "",
         "construction": null,
+        "piece": null,
         "steps": [
           {
             "id": "step-16",
@@ -646,6 +648,7 @@
           }
         ]
       }
-    ]
+    ],
+    "pieces": []
   }
 }

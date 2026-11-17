@@ -7,16 +7,19 @@ import '../rust/knit_dto.dart';
 /// the step's action on Save, or null on Cancel. [pattern] supplies the chart's height (for chart
 /// rows) and the hold steps a "return held stitches" step can name. The form checks only that each
 /// number is a whole number in range; whether the step fits the stitches on the needle is the
-/// engine ledger's call, shown beside the step.
+/// engine ledger's call, shown beside the step. [sectionIndex] is the section the step is in, so a
+/// join does not offer the piece that section works.
 Future<KnitStepActionDto?> showKnitStepDialog(
   BuildContext context, {
   required KnitStepKind kind,
   required KnitPatternDto pattern,
   KnitStepActionDto? initial,
+  int? sectionIndex,
 }) =>
     showDialog<KnitStepActionDto>(
       context: context,
-      builder: (_) => KnitStepDialog(kind: kind, pattern: pattern, initial: initial),
+      builder: (_) => KnitStepDialog(
+          kind: kind, pattern: pattern, initial: initial, sectionIndex: sectionIndex),
     );
 
 /// Open a dialog with one multi-line text field (section notes). Returns the text on Save (possibly
@@ -62,19 +65,23 @@ class _GroupFields {
 
 /// The step form. Public for tests.
 class KnitStepDialog extends StatefulWidget {
-  const KnitStepDialog({required this.kind, required this.pattern, this.initial, super.key});
+  const KnitStepDialog(
+      {required this.kind, required this.pattern, this.initial, this.sectionIndex, super.key});
 
   final KnitStepKind kind;
   final KnitPatternDto pattern;
   final KnitStepActionDto? initial;
+
+  /// The section the step is in (a join leaves out the piece it works), when known.
+  final int? sectionIndex;
 
   @override
   State<KnitStepDialog> createState() => _KnitStepDialogState();
 }
 
 class _KnitStepDialogState extends State<KnitStepDialog> {
-  late final KnitStepActionDto _start =
-      widget.initial ?? defaultKnitStepAction(widget.kind, widget.pattern);
+  late final KnitStepActionDto _start = widget.initial ??
+      defaultKnitStepAction(widget.kind, widget.pattern, sectionIndex: widget.sectionIndex);
 
   // Every field the forms use; each kind reads the ones it needs.
   final _count = TextEditingController();
@@ -107,6 +114,11 @@ class _KnitStepDialogState extends State<KnitStepDialog> {
   String _group = ''; // pick up: the needle group, or '' for none
   final List<_GroupFields> _groupRows = [];
   CloseMethodKind _close = CloseMethodKind.graft;
+  bool _joinPiece = true; // join: another piece (true) or held stitches
+  String _piece = ''; // join: the piece's id
+  bool _closeHeld = false; // close: two groups on hold instead of the stitches on the needle
+  String _closeA = ''; // close: the two hold steps' ids
+  String _closeB = '';
   bool _submitted = false;
 
   int get _height => widget.pattern.chart.rows.length;
@@ -227,8 +239,22 @@ class _KnitStepDialogState extends State<KnitStepDialog> {
         if (widget.initial == null && _groupRows.isEmpty) {
           _groupRows.addAll([_GroupFields(), _GroupFields()]);
         }
-      case KnitStepActionDto_Close(:final method):
+      case KnitStepActionDto_Close(:final method, :final holds):
         _close = method;
+        _closeHeld = holds.isNotEmpty;
+        if (holds.isNotEmpty) _closeA = holds.first;
+        if (holds.length > 1) _closeB = holds[1];
+      case KnitStepActionDto_Join(:final source, :final stitch, :final resolveTurns):
+        _stitch = stitch;
+        _resolve = resolveTurns;
+        switch (source) {
+          case JoinSourceDto_Piece(:final piece):
+            _joinPiece = true;
+            _piece = piece;
+          case JoinSourceDto_Held(:final hold):
+            _joinPiece = false;
+            _hold = hold;
+        }
     }
   }
 
@@ -397,9 +423,22 @@ class _KnitStepDialogState extends State<KnitStepDialog> {
         }
         return KnitStepActionDto.groups(groups: groups);
       case KnitStepKind.close:
-        return KnitStepActionDto.close(method: _close);
+        if (!_closeHeld) return KnitStepActionDto.close(method: _close, holds: const []);
+        if (_closeA.isEmpty || _closeB.isEmpty || _closeA == _closeB) return null;
+        return KnitStepActionDto.close(method: _close, holds: [_closeA, _closeB]);
       case KnitStepKind.roundStart:
         return const KnitStepActionDto.roundStart();
+      case KnitStepKind.join:
+        // A piece or hold no longer in the pattern is kept, and saved as it is, until another is
+        // chosen (the engine reports it).
+        if (_joinPiece) {
+          if (_piece.isEmpty) return null;
+          return KnitStepActionDto.join(
+              source: JoinSourceDto.piece(piece: _piece), stitch: _stitch, resolveTurns: _resolve);
+        }
+        if (_hold.isEmpty) return null;
+        return KnitStepActionDto.join(
+            source: JoinSourceDto.held(hold: _hold), stitch: _stitch, resolveTurns: _resolve);
     }
   }
 
@@ -442,7 +481,12 @@ class _KnitStepDialogState extends State<KnitStepDialog> {
   /// Nothing can be saved at all (no chart rows to work, no group to return).
   bool _blocked() =>
       (widget.kind == KnitStepKind.chartRows && _height == 0) ||
-      (widget.kind == KnitStepKind.resume && _holds.isEmpty);
+      (widget.kind == KnitStepKind.resume && _holds.isEmpty) ||
+      (widget.kind == KnitStepKind.join &&
+          widget.pattern.pieces.length < 2 &&
+          _holds.isEmpty &&
+          _piece.isEmpty &&
+          _hold.isEmpty);
 
   Widget _number(TextEditingController c, String label,
           {String? error, Key? key, bool signed = false, String? helper}) =>
@@ -948,17 +992,164 @@ class _KnitStepDialogState extends State<KnitStepDialog> {
               'needle group.',
               style: muted),
         ];
+      case KnitStepKind.join:
+        return _joinFields(context, muted);
       case KnitStepKind.close:
         return [
           _radios<CloseMethodKind>(_close, (v) => setState(() => _close = v as CloseMethodKind), [
             for (final m in CloseMethodKind.values) (m, closeMethodLabel(m)),
           ]),
-          Text(
-              'Closes every stitch on the needle. They must be in two needle groups of the same '
-              'size, or an even number of stitches with no groups, which Ply divides in half.',
-              style: muted),
+          SwitchListTile(
+            key: const Key('knit-step-close-held'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Close two groups on hold'),
+            subtitle: const Text('Such as the underarm stitches held on the body and on a sleeve.'),
+            value: _closeHeld,
+            onChanged: (v) => setState(() => _closeHeld = v),
+          ),
+          if (_closeHeld) ...[
+            _holdChoice(const Key('knit-step-close-a'), 'First group', _closeA,
+                (v) => setState(() => _closeA = v)),
+            _holdChoice(const Key('knit-step-close-b'), 'Second group', _closeB,
+                (v) => setState(() => _closeB = v),
+                error: _submitted && _closeA.isNotEmpty && _closeA == _closeB
+                    ? 'Choose two different groups.'
+                    : null),
+            Text(
+                'Ply closes the two groups against each other, wherever the work is; they must '
+                'be the same size.',
+                style: muted),
+          ] else
+            Text(
+                'Closes every stitch on the needle. They must be in two needle groups of the same '
+                'size, or an even number of stitches with no groups, which Ply divides in half.',
+                style: muted),
         ];
     }
+  }
+
+  /// A choice of one hold step's group, keeping one the pattern no longer has as "(not found)".
+  Widget _holdChoice(Key key, String label, String value, void Function(String) onChanged,
+      {String? error}) {
+    final holds = _holds;
+    final known = holds.any((h) => h.stepId == value);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: DropdownButtonFormField<String>(
+        key: key,
+        initialValue: value.isEmpty ? null : value,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: label,
+          errorMaxLines: 2,
+          errorText: error ?? (_submitted && value.isEmpty ? 'Choose the stitches on hold.' : null),
+        ),
+        items: [
+          for (final h in holds)
+            DropdownMenuItem(
+                value: h.stepId, child: Text(h.label, overflow: TextOverflow.ellipsis)),
+          if (value.isNotEmpty && !known)
+            DropdownMenuItem(
+                value: value,
+                child: const Text('Held stitches (not found)', overflow: TextOverflow.ellipsis)),
+        ],
+        onChanged: (v) => onChanged(v ?? ''),
+      ),
+    );
+  }
+
+  /// The join form: another piece or held stitches, the stitch, and the short-row turns.
+  List<Widget> _joinFields(BuildContext context, TextStyle muted) {
+    final pieces = widget.pattern.pieces;
+    final holds = _holds;
+    // Never the piece the step's own section works: a piece cannot join itself.
+    final own = widget.sectionIndex == null
+        ? null
+        : knitSectionPieceIndex(widget.pattern, widget.sectionIndex!);
+    final choices = [
+      for (var i = 0; i < pieces.length; i++)
+        if (i != own) i,
+    ];
+    final pieceKnown = choices.any((i) => pieces[i].id == _piece);
+    final holdKnown = holds.any((h) => h.stepId == _hold);
+    return [
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: SegmentedButton<bool>(
+          key: const Key('knit-step-join-source'),
+          segments: const [
+            ButtonSegment(value: true, label: Text('Another piece')),
+            ButtonSegment(value: false, label: Text('Held stitches')),
+          ],
+          selected: {_joinPiece},
+          onSelectionChanged: (v) => setState(() => _joinPiece = v.first),
+        ),
+      ),
+      if (_joinPiece)
+        if (choices.isEmpty && _piece.isEmpty)
+          Text(
+              pieces.isEmpty
+                  ? 'This pattern is one piece. Add pieces on the Sections screen (such as a '
+                      'sleeve) to join one here.'
+                  : 'There is no other piece to join. Add one on the Sections screen.',
+              style: muted)
+        else
+          DropdownButtonFormField<String>(
+            key: const Key('knit-step-join-piece'),
+            initialValue: _piece.isEmpty ? null : _piece,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'Piece to join',
+              errorText: _submitted && _piece.isEmpty ? 'Choose the piece to join.' : null,
+            ),
+            items: [
+              for (final i in choices)
+                DropdownMenuItem(
+                    value: pieces[i].id,
+                    child: Text(knitCapitalized(knitPieceTitle(widget.pattern, i)),
+                        overflow: TextOverflow.ellipsis)),
+              if (_piece.isNotEmpty && !pieceKnown)
+                DropdownMenuItem(
+                    value: _piece,
+                    child: Text(
+                        own != null && own < pieces.length && pieces[own].id == _piece
+                            ? 'This piece (it cannot join itself)'
+                            : 'A piece (not found)',
+                        overflow: TextOverflow.ellipsis)),
+            ],
+            onChanged: (v) => setState(() => _piece = v ?? ''),
+          )
+      else if (holds.isEmpty && _hold.isEmpty)
+        Text('No step puts stitches on hold yet. Add one first.', style: muted)
+      else
+        DropdownButtonFormField<String>(
+          key: const Key('knit-step-join-hold'),
+          initialValue: _hold.isEmpty ? null : _hold,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Stitches to knit',
+            errorText: _submitted && _hold.isEmpty ? 'Choose the stitches to knit.' : null,
+          ),
+          items: [
+            for (final h in holds)
+              DropdownMenuItem(
+                  value: h.stepId, child: Text(h.label, overflow: TextOverflow.ellipsis)),
+            if (_hold.isNotEmpty && !holdKnown)
+              DropdownMenuItem(
+                  value: _hold,
+                  child: const Text('Held stitches (not found)', overflow: TextOverflow.ellipsis)),
+          ],
+          onChanged: (v) => setState(() => _hold = v ?? ''),
+        ),
+      const SizedBox(height: 12),
+      _stitchChoice(),
+      _resolveSwitch(),
+      Text(
+          'Knitted with the right side facing where the work is: partway through a right-side row '
+          'or a round, or at the end of one. On an empty needle they start this piece. A piece '
+          'joined here is part of this piece from then on.',
+          style: muted),
+    ];
   }
 
   /// Remove group [i]. Its fields are let go after this frame, once nothing shows them.

@@ -31,7 +31,8 @@ class FakeSectionsRepo extends KnitRepository {
   @override
   Future<KnitConstructionDto> construction(KnitPatternDto pattern) async {
     calls++;
-    return canned ?? const KnitConstructionDto(lines: [], issues: []);
+    return canned ??
+        const KnitConstructionDto(lines: [], issues: [], pieces: [], holds: [], groupNames: []);
   }
 
   @override
@@ -93,6 +94,7 @@ KnitPatternDto _noSections() {
     chart: p.chart,
     notes: p.notes,
     sections: const [],
+    pieces: const [],
   );
 }
 
@@ -265,6 +267,7 @@ void main() {
         KnitSectionDto(id: 'x', name: 'A', notes: '', steps: [step, step]),
         KnitSectionDto(id: 'x', name: 'B', notes: '', steps: [step]),
       ],
+      pieces: const [],
     );
     final c = await _pump(tester, dup); // repeated keys would fail here in debug
     expect(find.text('1. A'), findsOneWidget);
@@ -312,6 +315,7 @@ void main() {
       chart: const ChartDto(width: 0, rows: []),
       notes: p.notes,
       sections: [p.sections[1]],
+      pieces: const [],
     );
     await tester.binding.setSurfaceSize(const Size(500, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));

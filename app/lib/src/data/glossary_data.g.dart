@@ -327,6 +327,38 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'the point where each round begins, usually kept with a marker. Sock patterns often move it, for example to the center of the heel after picking up the gusset stitches.',
   ),
   GlossaryTerm(
+    term: 'Piece',
+    definition: 'in Ply, a part of a garment knitted on its own needle, such as the body, a sleeve or a thumb. Each section works one piece; the first piece is the one the cast-on is for.',
+  ),
+  GlossaryTerm(
+    term: 'Join pieces',
+    definition: 'knit the stitches of one piece onto the needle of another, so they go on as one, such as sleeves knitted onto the body for a yoke. In Ply a join step knits another piece, or stitches on hold, into the row or round where the work is, with the right side facing.',
+  ),
+  GlossaryTerm(
+    term: 'Set aside',
+    definition: 'in Ply, the stitches of the pieces not being worked, waiting on their own needles or holders until a section works them or a join brings them in. Every count lists them.',
+  ),
+  GlossaryTerm(
+    term: 'Yoke',
+    definition: 'the upper part of a sweater that joins the body and the sleeves and narrows toward the neck. In a bottom-up yoke the body and the sleeves are knitted to the underarms and then joined on one needle.',
+  ),
+  GlossaryTerm(
+    term: 'Raglan',
+    definition: 'a sweater whose sleeves meet the body along diagonal lines from the underarm to the neck. A top-down raglan divides its yoke at the underarms into the body and the two sleeves.',
+  ),
+  GlossaryTerm(
+    term: 'Underarm stitches',
+    definition: 'stitches put on hold or bound off where a sleeve meets the body, later grafted or bound off together to close the underarm.',
+  ),
+  GlossaryTerm(
+    term: 'Held-stitch thumb',
+    definition: 'a mitten thumb whose stitches go on a holder while the hand goes on, with stitches cast on over the gap; the thumb is knitted later from the held stitches plus stitches picked up along the opening.',
+  ),
+  GlossaryTerm(
+    term: 'Afterthought thumb',
+    definition: 'a mitten thumb placed by knitting a few stitches with waste yarn; later the waste yarn is pulled out and the live stitches above and below it are picked up for the thumb.',
+  ),
+  GlossaryTerm(
     term: 'Beginning',
     aka: 'beg',
     definition: 'the start of a row or round.',

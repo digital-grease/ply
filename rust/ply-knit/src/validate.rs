@@ -236,6 +236,7 @@ mod tests {
             chart: Chart { width, rows },
             notes: String::new(),
             sections: Vec::new(),
+            pieces: Vec::new(),
         }
     }
 

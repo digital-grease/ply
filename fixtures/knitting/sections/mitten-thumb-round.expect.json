@@ -1,0 +1,555 @@
+{
+  "description": "A 40-stitch mitten worked from the cuff up, then its thumb as a second piece, worked out by hand. Cuff: 20 rounds of k2, p2 rib (the chart round, then 19 more). Hand: 14 plain rounds, then the thumb round: knit 2, put the next 8 sts on a holder (32 on the needle, 30 still to work), cast on 8 over the gap (40 again, the opening closed) and knit to the end; 22 more plain rounds. Top: the 40 sts are divided into the palm (20, the first half of the round, where the thumb is) and the back (20); decreasing 2 sts on each group every other round takes (40 - 24) / 4 = 4 decrease rounds, 8 rounds in all (12 palm, 12 back), then every round (24 - 12) / 4 = 3 rounds (6 and 6), and the 6 palm sts are grafted to the 6 back sts: 0 on the needle, 12 grafted, the 8 thumb sts still on hold. Thumb: a second piece with its own needle. With the right side facing, its 8 held sts are knitted onto the empty needle (a right-side row, so the wrong side faces next), 10 sts are picked up along the cast-on edge of the opening (8, plus 1 in each corner) at the end of that row (18), and the 18 are joined in the round; 14 plain rounds, k2tog around (18 - 9 = 9 sts, one decrease round) and the yarn is drawn through the last 9 (an unchecked step that says it removes 9). Each piece's lines give its own stitches grafted or bound off, so the thumb's say nothing of the hand's 12 grafted. 40 cast on + 8 cast on + 10 picked up = 58 stitches made; 16 + 12 + 9 decreased, 12 grafted and 9 drawn closed account for every one.",
+  "covers": [
+    "a pattern in two pieces, the cast-on for the first",
+    "a section naming no piece (the first piece) and sections naming theirs",
+    "stitches held mid-round and cast on over, from one piece",
+    "a second piece started from those held stitches with a join onto its empty needle",
+    "a pick-up continuing the row the join worked, then joining in the round",
+    "the held group counted while the first piece is finished, then taken by the join"
+  ],
+  "conserves_stitches": false,
+  "construction": "InTheRound",
+  "first_row_side": "Rs",
+  "cast_on": 40,
+  "pieces": [
+    [
+      "Hand",
+      "no stitches left at the end"
+    ],
+    [
+      "Thumb",
+      "no stitches left at the end"
+    ]
+  ],
+  "written": [
+    "Made in 2 pieces: Hand and Thumb. The cast-on below is for Hand.",
+    "Cast on 40 sts. Join to work in the round, being careful not to twist.",
+    "Section 1: Cuff (Hand, worked in the round)",
+    "Round 1: *k2, p2; rep from * to end (40 sts on the needle)",
+    "Next 19 rnds: k2, p2 rib as set. (40 sts on the needle)",
+    "Section 2: Hand (worked in the round)",
+    "Notes: The thumb's 8 stitches go on a holder in the round after the 14 plain rounds; the 8 cast on over them close the opening.",
+    "Next 14 rnds: knit. (40 sts on the needle)",
+    "Next rnd: knit 2 sts. (40 sts on the needle, 38 still to work in this rnd)",
+    "Place the next 8 sts on a holder (thumb). (32 sts on the needle, 30 still to work in this rnd; 8 on hold)",
+    "Cast on 8 sts onto the right needle, over the gap left by the stitches on hold (thumb). (40 sts on the needle, 30 still to work in this rnd; 8 on hold)",
+    "Knit to end. (40 sts on the needle; 8 on hold)",
+    "Next 22 rnds: knit. (40 sts on the needle; 8 on hold)",
+    "Section 3: Top (Hand, worked in the round)",
+    "Divide the 40 sts into needle groups, starting at the beginning of the rnd: 20 palm (needles 1 and 2), 20 back (needles 3 and 4). (40 sts on the needle: 20 palm, 20 back; 8 on hold)",
+    "Next 8 rnds: decrease 2 sts on each of the palm and the back in the first rnd and then every other rnd until 24 sts remain (4 decrease rnds); each decrease rnd: k1, ssk, knit to last 3 sts of the group, k2tog, k1. (24 sts on the needle: 12 palm, 12 back; 8 on hold)",
+    "Next 3 rnds: decrease 2 sts on each of the palm and the back in every rnd until 12 sts remain (3 decrease rnds); each decrease rnd: k1, ssk, knit to last 3 sts of the group, k2tog, k1. (12 sts on the needle: 6 palm, 6 back; 8 on hold)",
+    "Graft the 6 palm sts to the 6 back sts with Kitchener stitch. (0 sts on the needle; 8 on hold; 12 grafted)",
+    "Section 4: Thumb (worked in the round)",
+    "Notes: Pick up one stitch in each cast-on stitch and one in each corner of the opening.",
+    "With the RS facing, join the yarn and knit the 8 sts on hold (thumb). (8 sts on the needle)",
+    "Pick up and knit 10 sts along the cast-on edge of the thumb opening. (18 sts on the needle)",
+    "Join to work in the round, being careful not to twist. (18 sts on the needle)",
+    "Next 14 rnds: knit. (18 sts on the needle)",
+    "Next rnd: decrease 9 sts evenly (9 sts): k2tog around. (9 sts on the needle)",
+    "Not checked by Ply: Break the yarn, draw it through the remaining 9 sts and pull tight. (0 sts on the needle)"
+  ],
+  "steps": [
+    {
+      "section": "Cuff",
+      "step": 1,
+      "chart_row": 1,
+      "piece": "Hand",
+      "line": "Round 1: *k2, p2; rep from * to end (40 sts on the needle)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Cuff",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Next 19 rnds: k2, p2 rib as set. (40 sts on the needle)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Hand",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Next 14 rnds: knit. (40 sts on the needle)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Hand",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Next rnd: knit 2 sts. (40 sts on the needle, 38 still to work in this rnd)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 38,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Hand",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Place the next 8 sts on a holder (thumb). (32 sts on the needle, 30 still to work in this rnd; 8 on hold)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 30,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "thumb",
+            8
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Hand",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Cast on 8 sts onto the right needle, over the gap left by the stitches on hold (thumb). (40 sts on the needle, 30 still to work in this rnd; 8 on hold)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 30,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "thumb",
+            8
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Hand",
+      "step": 5,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Knit to end. (40 sts on the needle; 8 on hold)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "thumb",
+            8
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Hand",
+      "step": 6,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Next 22 rnds: knit. (40 sts on the needle; 8 on hold)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "thumb",
+            8
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Top",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Divide the 40 sts into needle groups, starting at the beginning of the rnd: 20 palm (needles 1 and 2), 20 back (needles 3 and 4). (40 sts on the needle: 20 palm, 20 back; 8 on hold)",
+      "count": {
+        "on_needle": 40,
+        "to_work": 40,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "thumb",
+            8
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "palm",
+            20
+          ],
+          [
+            "back",
+            20
+          ]
+        ],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Top",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Next 8 rnds: decrease 2 sts on each of the palm and the back in the first rnd and then every other rnd until 24 sts remain (4 decrease rnds); each decrease rnd: k1, ssk, knit to last 3 sts of the group, k2tog, k1. (24 sts on the needle: 12 palm, 12 back; 8 on hold)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 24,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "thumb",
+            8
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "palm",
+            12
+          ],
+          [
+            "back",
+            12
+          ]
+        ],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Top",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Next 3 rnds: decrease 2 sts on each of the palm and the back in every rnd until 12 sts remain (3 decrease rnds); each decrease rnd: k1, ssk, knit to last 3 sts of the group, k2tog, k1. (12 sts on the needle: 6 palm, 6 back; 8 on hold)",
+      "count": {
+        "on_needle": 12,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "thumb",
+            8
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "palm",
+            6
+          ],
+          [
+            "back",
+            6
+          ]
+        ],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Top",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Hand",
+      "line": "Graft the 6 palm sts to the 6 back sts with Kitchener stitch. (0 sts on the needle; 8 on hold; 12 grafted)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "thumb",
+            8
+          ]
+        ],
+        "bound_off": 0,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 12,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 12
+      }
+    },
+    {
+      "section": "Thumb",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Thumb",
+      "line": "With the RS facing, join the yarn and knit the 8 sts on hold (thumb). (8 sts on the needle)",
+      "count": {
+        "on_needle": 8,
+        "to_work": 8,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 12
+      }
+    },
+    {
+      "section": "Thumb",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Thumb",
+      "line": "Pick up and knit 10 sts along the cast-on edge of the thumb opening. (18 sts on the needle)",
+      "count": {
+        "on_needle": 18,
+        "to_work": 18,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 12
+      }
+    },
+    {
+      "section": "Thumb",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Thumb",
+      "line": "Join to work in the round, being careful not to twist. (18 sts on the needle)",
+      "count": {
+        "on_needle": 18,
+        "to_work": 18,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 12
+      }
+    },
+    {
+      "section": "Thumb",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Thumb",
+      "line": "Next 14 rnds: knit. (18 sts on the needle)",
+      "count": {
+        "on_needle": 18,
+        "to_work": 18,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 12
+      }
+    },
+    {
+      "section": "Thumb",
+      "step": 5,
+      "chart_row": null,
+      "piece": "Thumb",
+      "line": "Next rnd: decrease 9 sts evenly (9 sts): k2tog around. (9 sts on the needle)",
+      "count": {
+        "on_needle": 9,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 12
+      }
+    },
+    {
+      "section": "Thumb",
+      "step": 6,
+      "chart_row": null,
+      "piece": "Thumb",
+      "line": "Not checked by Ply: Break the yarn, draw it through the remaining 9 sts and pull tight. (0 sts on the needle)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 12
+      }
+    }
+  ],
+  "issues": []
+}

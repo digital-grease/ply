@@ -1,0 +1,31 @@
+# Fixture record for yoke-sweater-round (see fixtures/README.md).
+
+id = "knitting/sections/yoke-sweater-round"
+title = "Bottom-up yoke pullover: body and two sleeves joined for the yoke"
+technique = "pieces, working in the round, sleeve increases, moving the start of the round, underarm stitches held, joining pieces partway through a round over held gaps, yoke decreases, three-needle bind-off from held stitches"
+files = ["yoke-sweater-round.plyknit", "yoke-sweater-round.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written for Ply's tests: the document was typed by hand and saved through the engine's own .plyknit writer (schema version 6). A plain adult pullover built the way bottom-up yoke sweaters are: a 200-stitch body (the round starting at the center back) and two 44-stitch sleeves increased to 64, each sleeve's 10 underarm stitches put on hold, the sleeves set aside and then joined to the body in one round where the body's own 10 underarm stitches go on hold (288 stitches), the yoke decreased in three rounds (by a quarter, then a third, then a third) to a 96-stitch neckband, and each underarm closed with a three-needle bind-off of the body's held stitches and the sleeve's, in one step each. The counts were chosen for the test; no published pattern, chart or text was copied. The oracle (expect.json) was worked out by hand, round by round and for every step of the joining round (the needle, the stitches on hold and the pieces set aside always adding up to 328 there), before the engine was run on the file, and then compared with it: every line and count matched as worked out. On 2026-11-16 (review fixes) the pieces were named Body, Left sleeve and Right sleeve (lines name them without an added article), the yoke's single decrease rounds got their own wording, and the underarms became one three-needle bind-off of two held groups each; those lines were worked out by hand again the same way and matched."""
+
+[sources]
+# Conventions the oracle's written text and ledger follow (cited, nothing reproduced).
+references = [
+  "Elizabeth Zimmermann's percentage system for seamless yoke sweaters as commonly taught: sleeves and body worked to the underarm, some of the body's stitches held at each underarm (this fixture holds 10 of 200, 5 percent, at each), all joined on one needle, yoke decreases in a few rounds, underarms grafted or bound off together (general practice, no text used).",
+  "The three-needle bind-off as a way to close underarm stitches held on the body and the sleeve, right sides together (general practice).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/section_fixtures.rs (section_fixtures_match_their_oracles): the file parses as \
+a current .plyknit envelope and re-saves to the same bytes; the written instructions equal the \
+oracle line for line; every ledger line has the oracle's text, place, piece and count (including \
+each group on hold and every other piece set aside); each piece ends as the oracle says (the \
+sleeves joined to the body at their steps); validation reports exactly the oracle's issues (none). \
+app/test/knit_sections_fixture_test.dart reads the same files (the current schema version, the \
+sections' and pieces' shape, and the PDF and screen text built from the oracle)."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Gauge, yarn, lengths and any short-row shaping of the back neck are not part of the fixture; the rows steps say what is worked in the pattern's own words (not checked). Both sleeves are written out in full as two pieces (Ply has no \"make 2\" yet). The underarms use a three-needle bind-off; a graft of the same two groups is the same step with the other method."

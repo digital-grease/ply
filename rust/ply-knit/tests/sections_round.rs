@@ -38,6 +38,7 @@ fn pat(round: bool, cast_on: Option<u32>, width: usize, sections: Vec<Section>) 
         },
         notes: String::new(),
         sections,
+        pieces: Vec::new(),
     }
 }
 
@@ -47,6 +48,7 @@ fn section(name: &str, steps: Vec<StepAction>) -> Section {
         name: name.into(),
         notes: String::new(),
         construction: None,
+        piece: None,
         steps: steps
             .into_iter()
             .enumerate()
@@ -306,6 +308,7 @@ fn closing_without_groups_divides_the_stitches_in_half_or_binds_them_off() {
             "Toe",
             vec![StepAction::Close {
                 method: CloseMethod::Graft,
+                holds: Vec::new(),
             }],
         )],
     );
@@ -326,6 +329,7 @@ fn closing_without_groups_divides_the_stitches_in_half_or_binds_them_off() {
                 groups(&[("left", 6), ("right", 6)]),
                 StepAction::Close {
                     method: CloseMethod::ThreeNeedleBindOff,
+                    holds: Vec::new(),
                 },
             ],
         )],
@@ -474,6 +478,7 @@ fn an_unknown_count_leaves_every_new_step_unknown() {
                 groups(&[("a", 4)]),
                 StepAction::Close {
                     method: CloseMethod::Graft,
+                    holds: Vec::new(),
                 },
             ],
         )],
@@ -540,12 +545,16 @@ fn files_past_the_new_size_limits_are_named() {
     });
     assert!(check_limits(&p)
         .unwrap_err()
+        .to_string()
         .starts_with("a shaping step changes the stitch count by"));
     p.sections[0].steps[0].action = StepAction::Rows {
         count: 1,
         text: "t".repeat(MAX_TEXT_BYTES + 1),
     };
-    assert!(check_limits(&p).unwrap_err().contains("longer than"));
+    assert!(check_limits(&p)
+        .unwrap_err()
+        .to_string()
+        .contains("longer than"));
     p.sections[0].steps[0].action = StepAction::Groups {
         groups: (0..=MAX_GROUPS)
             .map(|i| NeedleGroup {
@@ -555,7 +564,10 @@ fn files_past_the_new_size_limits_are_named() {
             })
             .collect(),
     };
-    assert!(check_limits(&p).unwrap_err().contains("needle groups"));
+    assert!(check_limits(&p)
+        .unwrap_err()
+        .to_string()
+        .contains("needle groups"));
     p.sections[0].steps[0].action = StepAction::PickUp {
         count: 1,
         along: PickUpAlong::Edge("e".repeat(MAX_TEXT_BYTES + 1)),
@@ -674,8 +686,7 @@ fn a_flat_part_over_every_stitch_keeps_its_groups_when_it_rejoins() {
     );
     assert_eq!(
         l[4],
-        "Next rnd: decrease 1 st on the front in every rnd, 1 time in all. (7 sts on the needle: \
-         3 front, 4 back)"
+        "Next rnd: decrease 1 st on the front (7 sts). (7 sts on the needle: 3 front, 4 back)"
     );
     assert!(problems(&p).is_empty(), "{:?}", problems(&p));
 }
@@ -795,8 +806,20 @@ fn stitches_held_before_the_groups_were_set_are_not_guessed_into_one() {
         lines(&p)[3],
         "Return the 2 sts on hold (thumb) to the left needle. (10 sts on the needle)"
     );
+    // Holding the first stitches of a round leaves a gap at the start of the round, which the
+    // rest of the round crosses (ADR 0020 review).
     assert_eq!(
-        problems(&p),
+        problems(&p)[0],
+        (
+            Severity::Warning,
+            "Thumb, step 2: works across the gap left by the stitches put on hold (thumb), which \
+             joins the two sides with a strand of yarn; cast on over the gap, or put one side on \
+             hold to work the sides separately"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        problems(&p)[1..],
         vec![(
             Severity::Warning,
             "Thumb, step 4: these stitches were put on hold before the stitches were divided into \
@@ -939,7 +962,7 @@ fn moving_the_start_of_the_round_is_refused_in_flat_work_and_where_it_already_is
     assert_eq!(
         c.groups
             .iter()
-            .map(|g| (g.name.as_str(), g.count))
+            .map(|g| (c.group_name(g), g.count))
             .collect::<Vec<_>>(),
         vec![("a", 4), ("b", 4)]
     );
@@ -1052,6 +1075,7 @@ fn closing_at_a_short_row_turn_is_refused() {
                 },
                 StepAction::Close {
                     method: CloseMethod::Graft,
+                    holds: Vec::new(),
                 },
             ],
         )],

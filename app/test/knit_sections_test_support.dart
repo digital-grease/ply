@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ply/src/models/knit_sections.dart';
 import 'package:ply/src/rust/dto.dart' show ColorDto, SeverityKind, UnitKind;
 import 'package:ply/src/rust/knit_dto.dart';
 
 // Host-side helpers for the knitting section tests. Host tests cannot load the engine, so this reads
-// a `.plyknit` file's document (the engine's serde shape, schema version 5) straight into the bridge
+// a `.plyknit` file's document (the engine's serde shape, schema version 6) straight into the bridge
 // DTOs, and rebuilds the engine's construction result from a fixture's hand-derived oracle. Reading
 // every field of the shared fixtures this way also proves the Dart DTOs can carry each of them.
 
@@ -18,6 +19,10 @@ const List<String> kSectionFixtures = [
   'sock-heel-flap-round',
   'sock-short-row-heel-round',
   'round-problems',
+  'mitten-thumb-round',
+  'yoke-sweater-round',
+  'pieces-problems',
+  'raglan-top-down-round',
 ];
 
 String sectionFixtureText(String name, String ext) =>
@@ -95,11 +100,16 @@ KnitPatternDto patternFromPlyknit(String text) {
           name: s['name'] as String,
           notes: s['notes'] as String,
           construction: _construction(s['construction'] as String?),
+          piece: s['piece'] as String?,
           steps: [
             for (final st in s['steps'] as List)
               KnitStepDto(id: st['id'] as String, action: _action(st['action'])),
           ],
         ),
+    ],
+    pieces: [
+      for (final x in d['pieces'] as List? ?? const [])
+        KnitPieceDto(id: x['id'] as String, name: x['name'] as String),
     ],
   );
 }
@@ -219,7 +229,17 @@ KnitStepActionDto _action(Object? json) {
     case 'Close':
       return KnitStepActionDto.close(
           method:
-              v['method'] == 'Graft' ? CloseMethodKind.graft : CloseMethodKind.threeNeedleBindOff);
+              v['method'] == 'Graft' ? CloseMethodKind.graft : CloseMethodKind.threeNeedleBindOff,
+          holds: [for (final h in v['holds'] as List? ?? const []) h as String]);
+    case 'Join':
+      final source = v['source'] as Map;
+      return KnitStepActionDto.join(
+        source: source.containsKey('Piece')
+            ? JoinSourceDto.piece(piece: source['Piece'] as String)
+            : JoinSourceDto.held(hold: source['Held'] as String),
+        stitch: _stitch(v['stitch'] as String),
+        resolveTurns: v['resolve_turns'] as bool,
+      );
   }
   throw FormatException('a step kind this build does not know: $kind');
 }
@@ -243,6 +263,38 @@ List<KnitIssueDto> oracleIssues(Map<String, dynamic> oracle) => [
 /// repeats come from validation alone and start "row N:", so they are not ledger problems).
 KnitConstructionDto oracleConstruction(KnitPatternDto p, Map<String, dynamic> oracle) {
   final titles = [for (var i = 0; i < p.sections.length; i++) knitSectionTitle(p, i)];
+  final pieceTitles = [for (var i = 0; i < p.pieces.length; i++) knitPieceTitle(p, i)];
+  // The construction's tables, as the engine fills them: the hold steps (by the oracle's group
+  // names, each the first hold step with that name) and the needle group names.
+  final holds = <KnitHoldNameDto>[];
+  final groupNames = <String>[];
+  int holdIndex(String name) {
+    final i = holds.indexWhere((h) => h.name == name);
+    if (i >= 0) return i;
+    for (var si = 0; si < p.sections.length; si++) {
+      for (var ti = 0; ti < p.sections[si].steps.length; ti++) {
+        if (p.sections[si].steps[ti].action case KnitStepActionDto_Hold(name: final n)
+            when n == name) {
+          holds.add(KnitHoldNameDto(
+              holdStepId: p.sections[si].steps[ti].id,
+              sectionIndex: si,
+              stepIndex: ti,
+              name: name));
+          return holds.length - 1;
+        }
+      }
+    }
+    holds.add(KnitHoldNameDto(holdStepId: '', sectionIndex: 0, stepIndex: 0, name: name));
+    return holds.length - 1;
+  }
+
+  int groupIndex(String name) {
+    final i = groupNames.indexOf(name);
+    if (i >= 0) return i;
+    groupNames.add(name);
+    return groupNames.length - 1;
+  }
+
   final lines = <KnitLedgerLineDto>[];
   for (final s in oracle['steps'] as List) {
     final si = titles.indexOf(s['section'] as String);
@@ -252,8 +304,6 @@ KnitConstructionDto oracleConstruction(KnitPatternDto p, Map<String, dynamic> or
     final open = written.lastIndexOf(' (');
     final labelled = _label.firstMatch(written.substring(0, open));
     lines.add(KnitLedgerLineDto(
-      sectionId: p.sections[si].id,
-      stepId: p.sections[si].steps[ti].id,
       sectionIndex: si,
       stepIndex: ti,
       chartRow: s['chart_row'] as int?,
@@ -274,7 +324,7 @@ KnitConstructionDto oracleConstruction(KnitPatternDto p, Map<String, dynamic> or
               pendingTurns: count['pending_turns'] as int,
               held: [
                 for (final h in count['held'] as List)
-                  KnitHeldCountDto(hold: '', name: h[0] as String, count: h[1] as int),
+                  KnitHeldCountDto(holdIndex: holdIndex(h[0] as String), count: h[1] as int),
               ],
               boundOff: count['bound_off'] as int,
               side: switch (count['side']) {
@@ -286,14 +336,25 @@ KnitConstructionDto oracleConstruction(KnitPatternDto p, Map<String, dynamic> or
               inRound: count['in_round'] as bool? ?? false,
               groups: [
                 for (final g in count['groups'] as List? ?? const [])
-                  KnitGroupCountDto(name: g[0] as String, count: g[1] as int),
+                  KnitGroupCountDto(nameIndex: groupIndex(g[0] as String), count: g[1] as int),
               ],
               flat: count['flat'] as int?,
               grafted: count['grafted'] as int? ?? 0,
+              // Added for several pieces; older oracles leave it out.
+              setAside: [
+                for (final a in count['set_aside'] as List? ?? const [])
+                  KnitPieceCountDto(
+                    pieceIndex: pieceTitles.indexOf(a[0] as String),
+                    count: a[1] as int?,
+                  ),
+              ],
+              boundOffTotal: count['bound_off_total'] as int? ?? count['bound_off'] as int,
+              graftedTotal: count['grafted_total'] as int? ?? count['grafted'] as int? ?? 0,
             )
           : null,
       countText: written.substring(open + 2, written.length - 1),
       written: written,
+      pieceIndex: s['piece'] == null ? null : pieceTitles.indexOf(s['piece'] as String),
     ));
   }
   final place = RegExp(r'^(.+?)(?:, step (\d+))?(?:, chart row (\d+))?: (.*)$');
@@ -310,8 +371,6 @@ KnitConstructionDto oracleConstruction(KnitPatternDto p, Map<String, dynamic> or
     final ti = step == null ? null : int.parse(step) - 1;
     issues.add(KnitSectionIssueDto(
       severity: i.severity,
-      sectionId: p.sections[si].id,
-      stepId: ti == null ? null : p.sections[si].steps[ti].id,
       sectionIndex: si,
       stepIndex: ti,
       chartRow: m.group(3) == null ? null : int.parse(m.group(3)!),
@@ -319,5 +378,26 @@ KnitConstructionDto oracleConstruction(KnitPatternDto p, Map<String, dynamic> or
       message: i.message,
     ));
   }
-  return KnitConstructionDto(lines: lines, issues: issues);
+  // How each piece ends: the oracle's words (`joined to the body at ...` names where).
+  final pieces = <KnitPieceSummaryDto>[];
+  final summaries = oracle['pieces'] as List? ?? const [];
+  for (var i = 0; i < summaries.length; i++) {
+    final text = summaries[i][1] as String;
+    final sections = [
+      for (var si = 0; si < p.sections.length; si++)
+        if (knitSectionPieceIndex(p, si) == i) si,
+    ];
+    pieces.add(KnitPieceSummaryDto(
+      id: p.pieces[i].id,
+      name: p.pieces[i].name,
+      index: i,
+      sectionIndices: Uint32List.fromList(sections),
+      live: RegExp(r'^(\d+) sts? left').firstMatch(text) == null
+          ? (text.startsWith('no stitches') || text.startsWith('joined') ? 0 : null)
+          : int.parse(RegExp(r'^(\d+)').firstMatch(text)!.group(1)!),
+      text: text,
+    ));
+  }
+  return KnitConstructionDto(
+      lines: lines, issues: issues, pieces: pieces, holds: holds, groupNames: groupNames);
 }

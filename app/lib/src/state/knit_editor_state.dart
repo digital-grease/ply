@@ -38,6 +38,7 @@ class KnitEditorState {
     chart: ChartDto(width: 0, rows: []),
     notes: '',
     sections: [],
+    pieces: [],
   );
 
   bool get canUndo => undo.isNotEmpty;
@@ -269,11 +270,74 @@ class KnitEditorState {
   // --- sections (the construction layer; see `ply_knit::sections`) ---------------------------------
 
   /// Append a new, empty section called [name] (trimmed) and return the new state. Its id is the
-  /// next free `section-N`, so it never clashes with an existing one.
+  /// next free `section-N`, so it never clashes with an existing one. It works the piece of the
+  /// section before it (the first piece when there is none).
   KnitEditorState addSection(String name) => _commit(_withSections(pattern, [
         ...pattern.sections,
-        KnitSectionDto(id: nextSectionId(pattern), name: name.trim(), notes: '', steps: const []),
+        KnitSectionDto(
+            id: nextSectionId(pattern),
+            name: name.trim(),
+            notes: '',
+            piece: pattern.sections.isEmpty ? null : pattern.sections.last.piece,
+            steps: const []),
       ]));
+
+  // --- pieces (ADR 0020: a garment in several pieces, each worked on its own needle) -----------
+
+  /// Add a piece called [name] (trimmed). The first piece added to a pattern of one piece comes
+  /// with the main piece, `main piece`, which every existing section keeps working (and the
+  /// pattern's cast-on is for). At most [kMaxKnitPieces]; past that, or with an empty name, a
+  /// no-op.
+  KnitEditorState addPiece(String name) {
+    final n = name.trim();
+    if (n.isEmpty || pattern.pieces.length >= kMaxKnitPieces) return this;
+    final pieces = [...pattern.pieces];
+    if (pieces.isEmpty) {
+      pieces.add(KnitPieceDto(id: nextPieceId(pattern), name: 'Main piece'));
+    }
+    final withMain = _copy(pattern, pieces: pieces);
+    pieces.add(KnitPieceDto(id: nextPieceId(withMain), name: n));
+    if (pieces.length > kMaxKnitPieces) return this;
+    return _commit(_copy(pattern, pieces: pieces));
+  }
+
+  /// Rename the piece at [pi]. Out of range, an empty name or no change is a no-op.
+  KnitEditorState renamePieceAt(int pi, String name) {
+    final n = name.trim();
+    if (pi < 0 || pi >= pattern.pieces.length || n.isEmpty || pattern.pieces[pi].name == n) {
+      return this;
+    }
+    final pieces = [...pattern.pieces]..[pi] = KnitPieceDto(id: pattern.pieces[pi].id, name: n);
+    return _commit(_copy(pattern, pieces: pieces));
+  }
+
+  /// Move the piece at [pi] by [delta] places, clamped. Moving a piece to the front makes it the
+  /// main piece (the one the cast-on is for); sections that named no piece keep working the piece
+  /// they worked (they are given its id first). No change is a no-op.
+  KnitEditorState movePieceAt(int pi, int delta) {
+    final list = [...pattern.pieces];
+    if (pi < 0 || pi >= list.length) return this;
+    final to = (pi + delta).clamp(0, list.length - 1);
+    if (to == pi) return this;
+    final moved = list.removeAt(pi);
+    list.insert(to, moved);
+    return _commit(_copy(_pinFirstPiece(pattern, list), pieces: list));
+  }
+
+  /// Remove the piece at [pi]. Sections and join steps that name it are left as they are: the
+  /// engine reports them, and Undo restores the piece. Sections that named no piece worked the
+  /// first one; when that is the piece removed, they are given its id first, so they are reported
+  /// too instead of quietly working the next piece. Out of range is a no-op.
+  KnitEditorState removePieceAt(int pi) {
+    if (pi < 0 || pi >= pattern.pieces.length) return this;
+    final list = [...pattern.pieces]..removeAt(pi);
+    return _commit(_copy(_pinFirstPiece(pattern, list), pieces: list));
+  }
+
+  /// Make the section at [si] work the piece with id [pieceId] (null: the first piece). Out of
+  /// range or no change is a no-op.
+  KnitEditorState setSectionPieceAt(int si, String? pieceId) => _editSectionAt(
+      si, (s) => s.piece == pieceId ? null : _section(s, replacePiece: true, piece: pieceId));
 
   // Every edit below works on POSITIONS (the section's index, the step's index in it): ids can
   // repeat in a hand-edited file (the engine reports it), and an edit must change exactly the item
@@ -436,6 +500,7 @@ KnitPatternDto _copy(
   ChartDto? chart,
   String? notes,
   List<KnitSectionDto>? sections,
+  List<KnitPieceDto>? pieces,
 }) =>
     KnitPatternDto(
       name: p.name,
@@ -448,6 +513,7 @@ KnitPatternDto _copy(
       chart: chart ?? p.chart,
       notes: notes ?? p.notes,
       sections: sections ?? p.sections,
+      pieces: pieces ?? p.pieces,
     );
 
 KnitPatternDto _withChart(KnitPatternDto p, ChartDto chart) => _copy(p, chart: chart);
@@ -472,6 +538,19 @@ KnitPatternDto _withLegend(KnitPatternDto p, List<StitchDefDto> stitches) =>
 
 KnitPatternDto _withSections(KnitPatternDto p, List<KnitSectionDto> sections) =>
     _copy(p, sections: sections);
+
+/// [p] with every section that names no piece given the id of [p]'s first piece, when [pieces]
+/// (the pieces after an edit) would put another piece first: a section that names none works the
+/// first piece, so without this it would silently change piece (ADR 0020 review).
+KnitPatternDto _pinFirstPiece(KnitPatternDto p, List<KnitPieceDto> pieces) {
+  if (p.pieces.isEmpty) return p;
+  final first = p.pieces.first.id;
+  if (pieces.isNotEmpty && pieces.first.id == first) return p;
+  if (!p.sections.any((s) => s.piece == null)) return p;
+  return _withSections(p, [
+    for (final s in p.sections) s.piece == null ? _section(s, replacePiece: true, piece: first) : s,
+  ]);
+}
 
 /// The span (front + back) of the cable at legend id [stitch], or null if [stitch] is out of range
 /// or not a cable. The one place "is this brush a cable, and how wide?" is answered.
@@ -643,18 +722,21 @@ bool _sameRepeats(List<RepeatSpanDto> a, List<RepeatSpanDto> b) {
   return true;
 }
 
-/// [s] with the given fields replaced (the construction only when [replaceConstruction], since
-/// null is a value it can take).
+/// [s] with the given fields replaced (the construction only when [replaceConstruction], and the
+/// piece only when [replacePiece], since null is a value each can take).
 KnitSectionDto _section(KnitSectionDto s,
         {String? name,
         String? notes,
         List<KnitStepDto>? steps,
         bool replaceConstruction = false,
-        ConstructionKind? construction}) =>
+        ConstructionKind? construction,
+        bool replacePiece = false,
+        String? piece}) =>
     KnitSectionDto(
       id: s.id,
       name: name ?? s.name,
       notes: notes ?? s.notes,
       construction: replaceConstruction ? construction : s.construction,
+      piece: replacePiece ? piece : s.piece,
       steps: steps ?? s.steps,
     );

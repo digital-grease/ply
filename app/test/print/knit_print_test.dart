@@ -102,6 +102,7 @@ KnitPatternDto _pattern({
       ),
       notes: notes,
       sections: const [],
+      pieces: const [],
     );
 
 /// Stands in for the engine: canned validation and written lines; rasters whose color depends on

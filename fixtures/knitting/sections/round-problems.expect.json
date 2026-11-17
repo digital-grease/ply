@@ -44,17 +44,17 @@
     "Work 1 rnd: knit. (not counted: see the problems)",
     "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
     "Work back and forth over the next 8 sts for the heel. (not counted: see the problems)",
-    "Decrease 1 st in every rnd, 1 time in all. (not counted: see the problems)",
+    "Decrease 1 st. (not counted: see the problems)",
     "Knit to end. (17 sts on the needle)",
     "Work 0 rnds: knit. (not counted: see the problems)",
     "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
-    "Next rnd: decrease 1 st in every rnd, 1 time in all. (16 sts on the needle)",
+    "Next rnd: decrease 1 st (16 sts). (16 sts on the needle)",
     "Divide the 16 sts into needle groups, starting at the beginning of the rnd: 6 instep, 5 sole, 5 heel. (16 sts on the needle: 6 instep, 5 sole, 5 heel)",
     "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
-    "Increase 0 sts on the instep in every rnd, 1 time in all. (not counted: see the problems)",
+    "Increase 0 sts on the instep. (not counted: see the problems)",
     "Decrease 1 st on the instep in every rnd, 1 time in all. (not counted: see the problems)",
-    "Decrease 1 st on each of the instep and the instep in every rnd, 1 time in all. (not counted: see the problems)",
-    "Decrease 1 st on the gusset in every rnd, 1 time in all. (not counted: see the problems)",
+    "Decrease 1 st on each of the instep and the instep. (not counted: see the problems)",
+    "Decrease 1 st on the gusset. (not counted: see the problems)",
     "Decrease 1 st on the instep in every rnd, 0 times in all. (not counted: see the problems)",
     "Decrease 1 st on the instep in every rnd until 16 sts remain. (not counted: see the problems)",
     "Decrease 1 st on the instep in every rnd until 20 sts remain. (not counted: see the problems)",
@@ -66,7 +66,7 @@
     "Pick up and knit 0 sts along the cast-on edge, adding them to the sole. (not counted: see the problems)",
     "Not checked by Ply: Knit 1 round, increasing 1 st in the instep. (17 sts on the needle)",
     "Pick up and knit 2 sts along the cast-on edge, adding them to the sole. (not counted: see the problems)",
-    "Decrease 1 st on the sole in every rnd, 1 time in all. (not counted: see the problems)",
+    "Decrease 1 st on the sole. (not counted: see the problems)",
     "Pick up and knit 2 sts along the side of the part worked flat. (not counted: see the problems)",
     "Pick up and knit 2 sts along the side of the part worked flat. (not counted: see the problems)",
     "Pick up and knit 2 sts along the side of the heel. (not counted: see the problems)",
@@ -400,7 +400,7 @@
       "section": "Groups",
       "step": 10,
       "chart_row": null,
-      "line": "Decrease 1 st in every rnd, 1 time in all. (not counted: see the problems)",
+      "line": "Decrease 1 st. (not counted: see the problems)",
       "count": "not counted"
     },
     {
@@ -441,7 +441,7 @@
       "section": "Groups",
       "step": 14,
       "chart_row": null,
-      "line": "Next rnd: decrease 1 st in every rnd, 1 time in all. (16 sts on the needle)",
+      "line": "Next rnd: decrease 1 st (16 sts). (16 sts on the needle)",
       "count": {
         "on_needle": 16,
         "to_work": 16,
@@ -501,7 +501,7 @@
       "section": "Groups",
       "step": 17,
       "chart_row": null,
-      "line": "Increase 0 sts on the instep in every rnd, 1 time in all. (not counted: see the problems)",
+      "line": "Increase 0 sts on the instep. (not counted: see the problems)",
       "count": "not counted"
     },
     {
@@ -515,14 +515,14 @@
       "section": "Groups",
       "step": 19,
       "chart_row": null,
-      "line": "Decrease 1 st on each of the instep and the instep in every rnd, 1 time in all. (not counted: see the problems)",
+      "line": "Decrease 1 st on each of the instep and the instep. (not counted: see the problems)",
       "count": "not counted"
     },
     {
       "section": "Groups",
       "step": 20,
       "chart_row": null,
-      "line": "Decrease 1 st on the gusset in every rnd, 1 time in all. (not counted: see the problems)",
+      "line": "Decrease 1 st on the gusset. (not counted: see the problems)",
       "count": "not counted"
     },
     {
@@ -619,7 +619,7 @@
       "section": "Groups",
       "step": 32,
       "chart_row": null,
-      "line": "Decrease 1 st on the sole in every rnd, 1 time in all. (not counted: see the problems)",
+      "line": "Decrease 1 st on the sole. (not counted: see the problems)",
       "count": "not counted"
     },
     {

@@ -1,0 +1,474 @@
+{
+  "format": "ply.knit",
+  "schema_version": 6,
+  "document": {
+    "name": "Mitten with a held-stitch thumb",
+    "construction": "InTheRound",
+    "first_row_side": "Rs",
+    "cast_on": 40,
+    "gauge": {
+      "sts": 24.0,
+      "rows": 32.0,
+      "unit": "Inches"
+    },
+    "palette": [
+      {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      }
+    ],
+    "legend": {
+      "stitches": [
+        {
+          "symbol": "ns",
+          "consumes": 0,
+          "produces": 0,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 2,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 1,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "yo",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssk",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 4,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "cdd",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1l",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1r",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k3tog",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sk2po",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssp",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kbf",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "pfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1p",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1lp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1rp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ktbl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        }
+      ]
+    },
+    "chart": {
+      "width": 4,
+      "rows": [
+        {
+          "cells": [
+            {
+              "stitch": 2,
+              "color": null
+            },
+            {
+              "stitch": 2,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            }
+          ],
+          "repeats": [
+            {
+              "start": 0,
+              "end": 4,
+              "count": "ToEnd"
+            }
+          ]
+        }
+      ]
+    },
+    "notes": "Worked from the cuff up on double-pointed needles or one long circular needle.",
+    "sections": [
+      {
+        "id": "section-1",
+        "name": "Cuff",
+        "notes": "",
+        "construction": "InTheRound",
+        "piece": null,
+        "steps": [
+          {
+            "id": "step-1",
+            "action": {
+              "ChartRows": {
+                "first": 1,
+                "last": 1
+              }
+            }
+          },
+          {
+            "id": "step-2",
+            "action": {
+              "Rows": {
+                "count": 19,
+                "text": "k2, p2 rib as set"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-2",
+        "name": "Hand",
+        "notes": "The thumb's 8 stitches go on a holder in the round after the 14 plain rounds; the 8 cast on over them close the opening.",
+        "construction": "InTheRound",
+        "piece": "piece-1",
+        "steps": [
+          {
+            "id": "step-3",
+            "action": {
+              "Rows": {
+                "count": 14,
+                "text": "knit"
+              }
+            }
+          },
+          {
+            "id": "step-4",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": {
+                  "Count": 2
+                },
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-5",
+            "action": {
+              "Hold": {
+                "count": 8,
+                "name": "thumb"
+              }
+            }
+          },
+          {
+            "id": "step-6",
+            "action": {
+              "CastOn": {
+                "count": 8
+              }
+            }
+          },
+          {
+            "id": "step-7",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-8",
+            "action": {
+              "Rows": {
+                "count": 22,
+                "text": "knit"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-3",
+        "name": "Top",
+        "notes": "",
+        "construction": "InTheRound",
+        "piece": "piece-1",
+        "steps": [
+          {
+            "id": "step-9",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "palm",
+                    "count": 20,
+                    "notes": "needles 1 and 2"
+                  },
+                  {
+                    "name": "back",
+                    "count": 20,
+                    "notes": "needles 3 and 4"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-10",
+            "action": {
+              "Shape": {
+                "change": -2,
+                "every": 2,
+                "until": {
+                  "Remain": 24
+                },
+                "groups": [
+                  "palm",
+                  "back"
+                ],
+                "text": "k1, ssk, knit to last 3 sts of the group, k2tog, k1"
+              }
+            }
+          },
+          {
+            "id": "step-11",
+            "action": {
+              "Shape": {
+                "change": -2,
+                "every": 1,
+                "until": {
+                  "Remain": 12
+                },
+                "groups": [
+                  "palm",
+                  "back"
+                ],
+                "text": "k1, ssk, knit to last 3 sts of the group, k2tog, k1"
+              }
+            }
+          },
+          {
+            "id": "step-12",
+            "action": {
+              "Close": {
+                "method": "Graft",
+                "holds": []
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-4",
+        "name": "Thumb",
+        "notes": "Pick up one stitch in each cast-on stitch and one in each corner of the opening.",
+        "construction": "InTheRound",
+        "piece": "piece-2",
+        "steps": [
+          {
+            "id": "step-13",
+            "action": {
+              "Join": {
+                "source": {
+                  "Held": "step-5"
+                },
+                "stitch": "Knit",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-14",
+            "action": {
+              "PickUp": {
+                "count": 10,
+                "along": {
+                  "Edge": "the cast-on edge of the thumb opening"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-15",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-16",
+            "action": {
+              "Rows": {
+                "count": 14,
+                "text": "knit"
+              }
+            }
+          },
+          {
+            "id": "step-17",
+            "action": {
+              "Shape": {
+                "change": -9,
+                "every": 1,
+                "until": {
+                  "Remain": 9
+                },
+                "groups": [],
+                "text": "k2tog around"
+              }
+            }
+          },
+          {
+            "id": "step-18",
+            "action": {
+              "Opaque": {
+                "text": "Break the yarn, draw it through the remaining 9 sts and pull tight.",
+                "stitch_change": -9
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "pieces": [
+      {
+        "id": "piece-1",
+        "name": "Hand"
+      },
+      {
+        "id": "piece-2",
+        "name": "Thumb"
+      }
+    ]
+  }
+}

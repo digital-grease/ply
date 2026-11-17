@@ -1,0 +1,562 @@
+{
+  "format": "ply.knit",
+  "schema_version": 6,
+  "document": {
+    "name": "Top-down raglan pullover",
+    "construction": "InTheRound",
+    "first_row_side": "Rs",
+    "cast_on": 96,
+    "gauge": {
+      "sts": 20.0,
+      "rows": 28.0,
+      "unit": "Inches"
+    },
+    "palette": [
+      {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      }
+    ],
+    "legend": {
+      "stitches": [
+        {
+          "symbol": "ns",
+          "consumes": 0,
+          "produces": 0,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 2,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 1,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "yo",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssk",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 4,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "cdd",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1l",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1r",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k3tog",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sk2po",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssp",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kbf",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "pfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1p",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1lp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1rp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ktbl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        }
+      ]
+    },
+    "chart": {
+      "width": 4,
+      "rows": [
+        {
+          "cells": [
+            {
+              "stitch": 2,
+              "color": null
+            },
+            {
+              "stitch": 2,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            }
+          ],
+          "repeats": [
+            {
+              "start": 0,
+              "end": 4,
+              "count": "ToEnd"
+            }
+          ]
+        }
+      ]
+    },
+    "notes": "Worked from the neck down in the round. The round starts at the right back raglan line: the back, the left sleeve, the front, then the right sleeve.",
+    "sections": [
+      {
+        "id": "section-1",
+        "name": "Neckband",
+        "notes": "",
+        "construction": "InTheRound",
+        "piece": null,
+        "steps": [
+          {
+            "id": "step-1",
+            "action": {
+              "ChartRows": {
+                "first": 1,
+                "last": 1
+              }
+            }
+          },
+          {
+            "id": "step-2",
+            "action": {
+              "Rows": {
+                "count": 7,
+                "text": "k2, p2 rib as set"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-2",
+        "name": "Raglan yoke",
+        "notes": "Place a marker at each raglan line: after 32 sts (back), 16 (left sleeve), 32 (front) and 16 (right sleeve).",
+        "construction": "InTheRound",
+        "piece": "piece-1",
+        "steps": [
+          {
+            "id": "step-3",
+            "action": {
+              "Shape": {
+                "change": 8,
+                "every": 2,
+                "until": {
+                  "Times": 16
+                },
+                "groups": [],
+                "text": "*knit to 1 st before the next marker, m1r, k1, slip the marker, k1, m1l; rep from * 3 more times"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-3",
+        "name": "Dividing round",
+        "notes": "Each sleeve's stitches go on hold, and 8 underarm stitches are cast on in their place; the right sleeve's are the last of the round.",
+        "construction": "InTheRound",
+        "piece": "piece-1",
+        "steps": [
+          {
+            "id": "step-4",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": {
+                  "Count": 64
+                },
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-5",
+            "action": {
+              "Hold": {
+                "count": 48,
+                "name": "left sleeve"
+              }
+            }
+          },
+          {
+            "id": "step-6",
+            "action": {
+              "CastOn": {
+                "count": 8
+              }
+            }
+          },
+          {
+            "id": "step-7",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": {
+                  "Count": 64
+                },
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-8",
+            "action": {
+              "Hold": {
+                "count": null,
+                "name": "right sleeve"
+              }
+            }
+          },
+          {
+            "id": "step-9",
+            "action": {
+              "CastOn": {
+                "count": 8
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-4",
+        "name": "Body",
+        "notes": "",
+        "construction": "InTheRound",
+        "piece": "piece-1",
+        "steps": [
+          {
+            "id": "step-10",
+            "action": {
+              "Rows": {
+                "count": 60,
+                "text": "knit"
+              }
+            }
+          },
+          {
+            "id": "step-11",
+            "action": {
+              "Rows": {
+                "count": 12,
+                "text": "k2, p2 rib"
+              }
+            }
+          },
+          {
+            "id": "step-12",
+            "action": {
+              "BindOff": {
+                "count": null,
+                "resolve_turns": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-5",
+        "name": "Left sleeve",
+        "notes": "The round starts at the center of the underarm.",
+        "construction": "InTheRound",
+        "piece": "piece-2",
+        "steps": [
+          {
+            "id": "step-13",
+            "action": {
+              "PickUp": {
+                "count": 4,
+                "along": {
+                  "Edge": "the underarm cast-on, from its center"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-14",
+            "action": {
+              "Join": {
+                "source": {
+                  "Held": "step-5"
+                },
+                "stitch": "Knit",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-15",
+            "action": {
+              "PickUp": {
+                "count": 4,
+                "along": {
+                  "Edge": "the underarm cast-on, to its center"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-16",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-17",
+            "action": {
+              "Shape": {
+                "change": -2,
+                "every": 8,
+                "until": {
+                  "Remain": 40
+                },
+                "groups": [],
+                "text": "k1, k2tog, knit to last 3 sts, ssk, k1"
+              }
+            }
+          },
+          {
+            "id": "step-18",
+            "action": {
+              "Rows": {
+                "count": 10,
+                "text": "k2, p2 rib"
+              }
+            }
+          },
+          {
+            "id": "step-19",
+            "action": {
+              "BindOff": {
+                "count": null,
+                "resolve_turns": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-6",
+        "name": "Right sleeve",
+        "notes": "The round starts at the center of the underarm.",
+        "construction": "InTheRound",
+        "piece": "piece-3",
+        "steps": [
+          {
+            "id": "step-20",
+            "action": {
+              "PickUp": {
+                "count": 4,
+                "along": {
+                  "Edge": "the underarm cast-on, from its center"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-21",
+            "action": {
+              "Join": {
+                "source": {
+                  "Held": "step-8"
+                },
+                "stitch": "Knit",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-22",
+            "action": {
+              "PickUp": {
+                "count": 4,
+                "along": {
+                  "Edge": "the underarm cast-on, to its center"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-23",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-24",
+            "action": {
+              "Shape": {
+                "change": -2,
+                "every": 8,
+                "until": {
+                  "Remain": 40
+                },
+                "groups": [],
+                "text": "k1, k2tog, knit to last 3 sts, ssk, k1"
+              }
+            }
+          },
+          {
+            "id": "step-25",
+            "action": {
+              "Rows": {
+                "count": 10,
+                "text": "k2, p2 rib"
+              }
+            }
+          },
+          {
+            "id": "step-26",
+            "action": {
+              "BindOff": {
+                "count": null,
+                "resolve_turns": false
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "pieces": [
+      {
+        "id": "piece-1",
+        "name": "Body"
+      },
+      {
+        "id": "piece-2",
+        "name": "Left sleeve"
+      },
+      {
+        "id": "piece-3",
+        "name": "Right sleeve"
+      }
+    ]
+  }
+}

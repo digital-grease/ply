@@ -144,6 +144,7 @@ class _NewKnitSetupScreenState extends ConsumerState<NewKnitSetupScreen> {
         ),
         notes: base.notes,
         sections: base.sections,
+        pieces: base.pieces,
       );
       if (!mounted) return;
       navigator.pop(pattern);

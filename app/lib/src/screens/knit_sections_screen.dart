@@ -13,7 +13,9 @@ import '../widgets/name_input_dialog.dart';
 /// rows, knit or purl across, rows or rounds, short rows, cast on, bind off, stitches put on hold and
 /// returned, joining in the round, working part of the round flat, picking up, needle groups,
 /// shaping, grafting, and written steps Ply does not check). A section can say whether it is worked
-/// flat or in the round. Every step shows its words and the stitch count after it from
+/// flat or in the round, and which of the garment's PIECES it works (ADR 0020: each piece on its
+/// own needle, a join step bringing one into another). Every step shows its words and the stitch
+/// count after it from
 /// the engine's ledger ([knitConstructionProvider]), with any problem right beneath it. Edits go
 /// through the knit editor's state, so Undo and Redo here and in the chart editor are one history.
 /// Optional: a pattern without sections shows a short explanation and works as a chart, as before.
@@ -29,7 +31,7 @@ class KnitSectionsScreen extends ConsumerWidget {
     final notifier = ref.read(knitEditorProvider.notifier);
     final general = [
       for (final i in construction?.issues ?? const <KnitSectionIssueDto>[])
-        if (i.sectionId == null) i,
+        if (i.sectionIndex == null) i,
     ];
     return Scaffold(
       appBar: AppBar(
@@ -67,6 +69,7 @@ class KnitSectionsScreen extends ConsumerWidget {
                   ),
                 ),
                 if (general.isNotEmpty) _IssueList(general),
+                _PiecesCard(pattern: pattern, construction: construction),
                 for (var i = 0; i < pattern.sections.length; i++)
                   _SectionCard(
                     index: i,
@@ -118,8 +121,10 @@ class _Intro extends StatelessWidget {
           'Sections describe how a piece is made, step by step: casting on, working rows of the '
           'chart, short rows, putting stitches on hold and returning them to the needle, binding '
           'off, and for socks and other work in the round, heel flaps, picking up stitches, needle '
-          'groups such as the instep and the sole, shaping and grafting. Ply counts the stitches '
-          'after every step and says when a step asks for more stitches than there are.',
+          'groups such as the instep and the sole, shaping and grafting. A garment can be made in '
+          'pieces, such as a body and two sleeves joined for a yoke, or a mitten and its thumb, '
+          'each knitted on its own needle. Ply counts the stitches after every step and says when '
+          'a step asks for more stitches than there are.',
         ),
         const SizedBox(height: 12),
         const Text(
@@ -142,7 +147,9 @@ class _Intro extends StatelessWidget {
   }
 }
 
-enum _SectionMenu { rename, notes, construction, up, down, delete }
+enum _SectionMenu { rename, notes, construction, piece, up, down, delete }
+
+enum _PieceMenu { rename, up, down, delete }
 
 enum _StepMenu { edit, up, down, delete }
 
@@ -174,7 +181,7 @@ class _SectionCard extends ConsumerWidget {
           children: [
             ListTile(
               title: Text('${index + 1}. $title', style: text.titleMedium),
-              subtitle: _sectionSubtitle(section),
+              subtitle: _sectionSubtitle(pattern, index),
               trailing: PopupMenuButton<_SectionMenu>(
                 tooltip: 'Section actions',
                 onSelected: (m) async {
@@ -194,6 +201,9 @@ class _SectionCard extends ConsumerWidget {
                     case _SectionMenu.construction:
                       final choice = await _askConstruction(context, section.construction);
                       if (choice != null) notifier.setSectionConstructionAt(index, choice.$1);
+                    case _SectionMenu.piece:
+                      final id = await _askPiece(context, pattern, index);
+                      if (id != null) notifier.setSectionPieceAt(index, id);
                     case _SectionMenu.up:
                       notifier.moveSectionAt(index, -1);
                     case _SectionMenu.down:
@@ -225,6 +235,8 @@ class _SectionCard extends ConsumerWidget {
                   const PopupMenuItem(value: _SectionMenu.notes, child: Text('Notes')),
                   const PopupMenuItem(
                       value: _SectionMenu.construction, child: Text('Flat or in the round')),
+                  if (pattern.pieces.isNotEmpty)
+                    const PopupMenuItem(value: _SectionMenu.piece, child: Text('Piece')),
                   PopupMenuItem(
                       value: _SectionMenu.up, enabled: index > 0, child: const Text('Move up')),
                   PopupMenuItem(
@@ -273,14 +285,208 @@ class _SectionCard extends ConsumerWidget {
 /// Why a section name cannot be saved (longer than a pattern file may hold), or null.
 String? _sectionNameProblem(String name) => knitTextTooLong(name) ? kKnitTextTooLong : null;
 
-/// The section's notes and, when it says, how it is worked.
-Widget? _sectionSubtitle(KnitSectionDto section) {
+/// The section's notes and, when it says, how it is worked; with pieces, the piece it works.
+Widget? _sectionSubtitle(KnitPatternDto p, int index) {
+  final section = p.sections[index];
+  final pi = knitSectionPieceIndex(p, index);
   final parts = [
+    if (p.pieces.isNotEmpty)
+      pi == null
+          ? 'Piece: not in the pattern (choose one)'
+          : 'Piece: ${knitCapitalized(knitPieceTitle(p, pi))}',
     if (section.construction != null) sectionConstructionLabel(section.construction),
     if (section.notes.trim().isNotEmpty) section.notes.trim(),
   ];
   return parts.isEmpty ? null : Text(parts.join('\n'));
 }
+
+/// Ask which piece the section at [si] works. Returns the chosen piece's id, or null on Cancel.
+Future<String?> _askPiece(BuildContext context, KnitPatternDto p, int si) {
+  final current = knitSectionPieceIndex(p, si);
+  return showDialog<String>(
+    context: context,
+    builder: (dialog) => SimpleDialog(
+      title: const Text('Which piece does this section work?'),
+      children: [
+        for (var i = 0; i < p.pieces.length; i++)
+          // The chosen piece is told to screen readers, not only drawn as a filled radio.
+          Semantics(
+            selected: i == current,
+            inMutuallyExclusiveGroup: true,
+            button: true,
+            child: SimpleDialogOption(
+              key: Key('knit-section-piece-$i'),
+              onPressed: () => Navigator.pop(dialog, p.pieces[i].id),
+              child: Row(
+                children: [
+                  ExcludeSemantics(
+                    child: Icon(
+                        i == current ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                        size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(knitCapitalized(knitPieceTitle(p, i)))),
+                ],
+              ),
+            ),
+          ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(24, 8, 24, 0),
+          child: Text('Each piece is knitted on its own needle. The steps of this section work '
+              'the piece chosen here; the others wait, set aside, until a section works them or a '
+              'join step brings them in.'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Why a piece's name cannot be saved, or null.
+String? _pieceNameProblem(String name) => knitPieceNameProblem(name);
+
+/// The garment's pieces (ADR 0020), each with how it ends by the ledger and the sections that work
+/// it; without pieces, a line saying every section works one piece, and "Add a piece".
+class _PiecesCard extends ConsumerWidget {
+  const _PiecesCard({required this.pattern, required this.construction});
+
+  final KnitPatternDto pattern;
+  final KnitConstructionDto? construction;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final text = Theme.of(context).textTheme;
+    final notifier = ref.read(knitEditorProvider.notifier);
+    final pieces = pattern.pieces;
+    return Card(
+      key: const Key('knit-pieces'),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              title: Semantics(header: true, child: Text('Pieces', style: text.titleMedium)),
+              subtitle: Text(pieces.isEmpty
+                  ? 'Every section works one piece. Add a piece for a sleeve, a thumb or any part '
+                      'knitted on its own needle; a join step then brings it into another piece.'
+                  : 'Each piece is knitted on its own needle. A section works the piece shown '
+                      'under its name; the first piece is the one the cast-on is for.'),
+            ),
+            for (var i = 0; i < pieces.length; i++) _pieceTile(context, ref, i),
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: TextButton.icon(
+                key: const Key('knit-add-piece'),
+                onPressed: pieces.length >= kMaxKnitPieces
+                    ? null
+                    : () async {
+                        final name = await promptForName(
+                          context,
+                          title: 'New piece',
+                          confirmLabel: 'Add',
+                          fieldLabel: 'Piece name',
+                          validator: _pieceNameProblem,
+                        );
+                        if (name != null) notifier.addPiece(name);
+                      },
+                icon: const Icon(Icons.add),
+                label: Text(pieces.isEmpty ? 'Add a piece' : 'Add another piece'),
+              ),
+            ),
+            if (pieces.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Text(
+                    'The sections you have now stay with the first piece, called "Main piece" '
+                    'until you rename it.',
+                    style: text.bodySmall),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pieceTile(BuildContext context, WidgetRef ref, int i) {
+    final notifier = ref.read(knitEditorProvider.notifier);
+    final piece = pattern.pieces[i];
+    final title = knitCapitalized(knitPieceTitle(pattern, i));
+    final summary = [
+      for (final s in construction?.pieces ?? const <KnitPieceSummaryDto>[])
+        if (s.index == i) s,
+    ].firstOrNull;
+    final sections = [
+      for (var si = 0; si < pattern.sections.length; si++)
+        if (knitSectionPieceIndex(pattern, si) == i) si + 1,
+    ];
+    final lines = [
+      if (summary != null) knitCapitalized(summary.text),
+      if (sections.isEmpty)
+        'No section works it yet'
+      else
+        '${sections.length == 1 ? 'Section' : 'Sections'} ${_numberList(sections)}',
+      if (i == 0 && pattern.castOn != null) 'The cast-on is for this piece',
+    ];
+    return ListTile(
+      key: Key('knit-piece-$i-${piece.id}'),
+      title: Text(title),
+      subtitle: Text(lines.join('\n')),
+      trailing: PopupMenuButton<_PieceMenu>(
+        tooltip: 'Piece actions: $title',
+        onSelected: (m) async {
+          switch (m) {
+            case _PieceMenu.rename:
+              final name = await promptForName(context,
+                  title: 'Rename piece',
+                  confirmLabel: 'Rename',
+                  initial: piece.name,
+                  fieldLabel: 'Piece name',
+                  validator: _pieceNameProblem);
+              if (name != null) notifier.renamePieceAt(i, name);
+            case _PieceMenu.up:
+              notifier.movePieceAt(i, -1);
+            case _PieceMenu.down:
+              notifier.movePieceAt(i, 1);
+            case _PieceMenu.delete:
+              final container = ProviderScope.containerOf(context, listen: false);
+              notifier.removePieceAt(i);
+              final deleted = container.read(knitEditorProvider).pattern;
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('Deleted the piece $title.'),
+                  action: SnackBarAction(
+                    label: 'Undo',
+                    onPressed: () {
+                      if (identical(container.read(knitEditorProvider).pattern, deleted)) {
+                        notifier.undo();
+                      }
+                    },
+                  ),
+                ));
+              }
+          }
+        },
+        itemBuilder: (_) => [
+          const PopupMenuItem(value: _PieceMenu.rename, child: Text('Rename')),
+          PopupMenuItem(value: _PieceMenu.up, enabled: i > 0, child: const Text('Move up')),
+          PopupMenuItem(
+              value: _PieceMenu.down,
+              enabled: i < pattern.pieces.length - 1,
+              child: const Text('Move down')),
+          const PopupMenuItem(value: _PieceMenu.delete, child: Text('Delete piece')),
+        ],
+      ),
+    );
+  }
+}
+
+/// `1`, `1 and 3`, `1, 2 and 4`.
+String _numberList(List<int> ns) => switch (ns.length) {
+      0 => '',
+      1 => '${ns.single}',
+      _ => '${ns.sublist(0, ns.length - 1).join(', ')} and ${ns.last}',
+    };
 
 /// Ask how a section is worked. Returns the choice (its value may be null: not stated), or null on
 /// Cancel.
@@ -340,6 +546,7 @@ Future<void> _addStep(BuildContext context, WidgetRef ref, int sectionIndex) asy
     context,
     kind: kind,
     pattern: ref.read(knitEditorProvider).pattern,
+    sectionIndex: sectionIndex,
   );
   if (action == null) return;
   ref.read(knitEditorProvider.notifier).addStepAt(sectionIndex, action);
@@ -424,6 +631,7 @@ class _StepTile extends ConsumerWidget {
                     kind: kind,
                     pattern: ref.read(knitEditorProvider).pattern,
                     initial: step.action,
+                    sectionIndex: sectionIndex,
                   );
                   if (action != null) notifier.replaceStepAt(sectionIndex, index, action);
                 case _StepMenu.up:
@@ -504,7 +712,7 @@ class _IssueList extends StatelessWidget {
 /// An issue as shown beside its step (without the place it already sits at, but with its chart
 /// row), or in full for the pattern as a whole.
 String _issueText(KnitSectionIssueDto i, {required bool dense}) {
-  final t = dense ? i.text : (i.sectionId == null ? i.message : i.text);
+  final t = dense ? i.text : (i.sectionIndex == null ? i.message : i.text);
   final sentence = t.isEmpty ? t : '${t[0].toUpperCase()}${t.substring(1)}';
   return i.chartRow == null || !dense ? sentence : 'Chart row ${i.chartRow}: $t';
 }

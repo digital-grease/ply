@@ -1,0 +1,902 @@
+{
+  "description": "Every refusal and warning of several pieces, each count worked out by hand from the steps before it (a refused step changes nothing). The front (the first piece, with the 20-stitch cast-on) works the chart row and a purl row, then 5 sts, and three joins are refused there (the front itself, a piece the pattern does not have, the back before any section works it); it knits to the end and puts all 20 sts on hold. The back casts on 20, turns a wrap-and-turn short row 4 sts from the end and refuses a join at the turn, works the short row back and a whole row working the wrap, purls 2 and refuses a join partway through a wrong-side row, then purls to the end. The front's next section knits the 20 held sts onto its empty needle (the back's 20 set aside); returning or joining them again is refused; it purls 5 and the section ends partway through that row (a warning). The back refuses joining the front partway through its row, a join naming a hold step that is gone and one naming a hold that comes later, then holds 2 sts (edge). The front purls to the end, the back knits a row and joins the front at the end of that right-side row (18 + 20 = 38); joining it again is refused, and every step of a section of the front after that is refused, since a piece joined to another cannot be worked again. A section naming a piece the pattern does not have is an error and its steps are not counted (nor is the back taken). The pocket casts on 6 and binds them off (its own 6 bound off: the cuff's lines count only the cuff's); the cuff casts on 8, then an unchecked step without a stated change makes its count unknown, and the pocket joining the cuff is unknown too. At the end: the 2 edge sts are still on hold, the back's 38 are still set aside, and no section works the collar or the sleeve (whose id repeats the back's).",
+  "covers": [
+    "a repeated piece id",
+    "a join of the piece itself, of a missing piece, of a piece not started",
+    "a join at a short-row turn and partway through a wrong-side row",
+    "a join onto an empty needle, and held stitches taken twice (by a return and by a join)",
+    "a join of a piece partway through a row, of a hold that is gone or comes later",
+    "a join at the end of a right-side row",
+    "a piece joined twice, and a section of a joined piece",
+    "a section naming a missing piece",
+    "a join of a piece whose count is unknown",
+    "held stitches and a piece left at the end, and pieces no section works"
+  ],
+  "conserves_stitches": false,
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "cast_on": 20,
+  "pieces": [
+    [
+      "Front",
+      "joined to Back at Join the front, step 2"
+    ],
+    [
+      "Back",
+      "38 sts left on the needle at the end"
+    ],
+    [
+      "Collar",
+      "no section works this piece"
+    ],
+    [
+      "Sleeve",
+      "no section works this piece"
+    ],
+    [
+      "Pocket",
+      "stitch count unknown at the end"
+    ],
+    [
+      "Cuff",
+      "joined to Pocket at Pocket edge, step 1"
+    ]
+  ],
+  "written": [
+    "Made in 6 pieces: Front, Back, Collar, Sleeve, Pocket and Cuff. The cast-on below is for Front.",
+    "Cast on 20 sts.",
+    "Section 1: Front (worked flat)",
+    "Row 1 (RS): k20 (20 sts on the needle)",
+    "Next row (WS): purl to end. (20 sts on the needle)",
+    "Next row (RS): knit 5 sts. (20 sts on the needle, 15 still to work in this row)",
+    "Knit across the sts of Front. (not counted: see the problems)",
+    "Knit across the sts of another piece. (not counted: see the problems)",
+    "Knit across the sts of Back. (not counted: see the problems)",
+    "Knit to end. (20 sts on the needle)",
+    "Place all 20 sts on a holder (front sts). (0 sts on the needle; 20 on hold)",
+    "Section 2: Back (worked flat)",
+    "Cast on 20 sts. (20 sts on the needle; 20 on hold)",
+    "Short row 1 (RS): knit to last 4 sts, wrap and turn. (20 sts on the needle, 4 waiting past a turn; 20 on hold)",
+    "Knit the sts on hold (front sts). (not counted: see the problems)",
+    "Short row 2 (WS): purl to end. (20 sts on the needle, 4 waiting past a turn; 20 on hold)",
+    "Next row (RS): knit to end, working each wrap together with its stitch. (20 sts on the needle; 20 on hold)",
+    "Next row (WS): purl 2 sts. (20 sts on the needle, 18 still to work in this row; 20 on hold)",
+    "Knit the sts on hold (front sts). (not counted: see the problems)",
+    "Purl to end. (20 sts on the needle; 20 on hold)",
+    "Section 3: Front again (Front)",
+    "With the RS facing, join the yarn and knit the 20 sts on hold (front sts). (20 sts on the needle; set aside: Back 20)",
+    "Return the 20 sts on hold (front sts) to the left needle. (not counted: see the problems)",
+    "Knit the sts on hold (front sts). (not counted: see the problems)",
+    "Next row (WS): purl 5 sts. (20 sts on the needle, 15 still to work in this row; set aside: Back 20)",
+    "Section 4: Join (Back)",
+    "Knit across the sts of Front. (not counted: see the problems)",
+    "Knit the held sts. (not counted: see the problems)",
+    "Knit the sts on hold (edge). (not counted: see the problems)",
+    "Place the next 2 sts on a holder (edge). (18 sts on the needle; 2 on hold; set aside: Front 20)",
+    "Section 5: Front, finished (Front)",
+    "Purl to end. (20 sts on the needle; 2 on hold; set aside: Back 18)",
+    "Section 6: Join the front (Back)",
+    "Next row (RS): knit to end. (18 sts on the needle; 2 on hold; set aside: Front 20)",
+    "Knit across the 20 sts of Front, joining it to Back. (38 sts on the needle; 2 on hold)",
+    "Knit across the sts of Front. (not counted: see the problems)",
+    "Section 7: Front once more (Front)",
+    "Knit to end. (not counted: see the problems)",
+    "Section 8: Lost",
+    "Cast on 4 sts. (stitch count unknown)",
+    "Knit across the sts of Back. (stitch count unknown)",
+    "Section 9: Pocket",
+    "Cast on 6 sts. (6 sts on the needle; 2 on hold; set aside: Back 38)",
+    "Next row (RS): bind off all sts. (0 sts on the needle; 2 on hold; set aside: Back 38; 6 bound off)",
+    "Section 10: Cuff",
+    "Cast on 8 sts. (8 sts on the needle; 2 on hold; set aside: Back 38)",
+    "Not checked by Ply: Work the cuff in seed stitch. (stitch count unknown)",
+    "Section 11: Pocket edge (Pocket)",
+    "Knit across the sts of Cuff. (stitch count unknown)"
+  ],
+  "steps": [
+    {
+      "section": "Front",
+      "step": 1,
+      "chart_row": 1,
+      "piece": "Front",
+      "line": "Row 1 (RS): k20 (20 sts on the needle)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Front",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Next row (WS): purl to end. (20 sts on the needle)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Front",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Next row (RS): knit 5 sts. (20 sts on the needle, 15 still to work in this row)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 15,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Front",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Knit across the sts of Front. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Front",
+      "step": 5,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Knit across the sts of another piece. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Front",
+      "step": 6,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Knit across the sts of Back. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Front",
+      "step": 7,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Knit to end. (20 sts on the needle)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Front",
+      "step": 8,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Place all 20 sts on a holder (front sts). (0 sts on the needle; 20 on hold)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "front sts",
+            20
+          ]
+        ],
+        "bound_off": 0,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Back",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Cast on 20 sts. (20 sts on the needle; 20 on hold)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "front sts",
+            20
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Back",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Short row 1 (RS): knit to last 4 sts, wrap and turn. (20 sts on the needle, 4 waiting past a turn; 20 on hold)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 4,
+        "pending_turns": 1,
+        "held": [
+          [
+            "front sts",
+            20
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Back",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Knit the sts on hold (front sts). (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Short row 2 (WS): purl to end. (20 sts on the needle, 4 waiting past a turn; 20 on hold)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 4,
+        "pending_turns": 1,
+        "held": [
+          [
+            "front sts",
+            20
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Back",
+      "step": 5,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Next row (RS): knit to end, working each wrap together with its stitch. (20 sts on the needle; 20 on hold)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "front sts",
+            20
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Back",
+      "step": 6,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Next row (WS): purl 2 sts. (20 sts on the needle, 18 still to work in this row; 20 on hold)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 18,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "front sts",
+            20
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Back",
+      "step": 7,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Knit the sts on hold (front sts). (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back",
+      "step": 8,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Purl to end. (20 sts on the needle; 20 on hold)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "front sts",
+            20
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Front again",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "With the RS facing, join the yarn and knit the 20 sts on hold (front sts). (20 sts on the needle; set aside: Back 20)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [
+          [
+            "Back",
+            20
+          ]
+        ],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Front again",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Return the 20 sts on hold (front sts) to the left needle. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Front again",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Knit the sts on hold (front sts). (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Front again",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Next row (WS): purl 5 sts. (20 sts on the needle, 15 still to work in this row; set aside: Back 20)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 15,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [
+          [
+            "Back",
+            20
+          ]
+        ],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Join",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Knit across the sts of Front. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Join",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Knit the held sts. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Join",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Knit the sts on hold (edge). (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Join",
+      "step": 4,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Place the next 2 sts on a holder (edge). (18 sts on the needle; 2 on hold; set aside: Front 20)",
+      "count": {
+        "on_needle": 18,
+        "to_work": 18,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "edge",
+            2
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [
+          [
+            "Front",
+            20
+          ]
+        ],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Front, finished",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Purl to end. (20 sts on the needle; 2 on hold; set aside: Back 18)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "edge",
+            2
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [
+          [
+            "Back",
+            18
+          ]
+        ],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Join the front",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Next row (RS): knit to end. (18 sts on the needle; 2 on hold; set aside: Front 20)",
+      "count": {
+        "on_needle": 18,
+        "to_work": 18,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "edge",
+            2
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [
+          [
+            "Front",
+            20
+          ]
+        ],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Join the front",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Knit across the 20 sts of Front, joining it to Back. (38 sts on the needle; 2 on hold)",
+      "count": {
+        "on_needle": 38,
+        "to_work": 38,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "edge",
+            2
+          ]
+        ],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Join the front",
+      "step": 3,
+      "chart_row": null,
+      "piece": "Back",
+      "line": "Knit across the sts of Front. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Front once more",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Front",
+      "line": "Knit to end. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Lost",
+      "step": 1,
+      "chart_row": null,
+      "piece": null,
+      "line": "Cast on 4 sts. (stitch count unknown)",
+      "count": "unknown"
+    },
+    {
+      "section": "Lost",
+      "step": 2,
+      "chart_row": null,
+      "piece": null,
+      "line": "Knit across the sts of Back. (stitch count unknown)",
+      "count": "unknown"
+    },
+    {
+      "section": "Pocket",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Pocket",
+      "line": "Cast on 6 sts. (6 sts on the needle; 2 on hold; set aside: Back 38)",
+      "count": {
+        "on_needle": 6,
+        "to_work": 6,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "edge",
+            2
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [
+          [
+            "Back",
+            38
+          ]
+        ],
+        "bound_off_total": 0,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Pocket",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Pocket",
+      "line": "Next row (RS): bind off all sts. (0 sts on the needle; 2 on hold; set aside: Back 38; 6 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "edge",
+            2
+          ]
+        ],
+        "bound_off": 6,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [
+          [
+            "Back",
+            38
+          ]
+        ],
+        "bound_off_total": 6,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Cuff",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Cuff",
+      "line": "Cast on 8 sts. (8 sts on the needle; 2 on hold; set aside: Back 38)",
+      "count": {
+        "on_needle": 8,
+        "to_work": 8,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "edge",
+            2
+          ]
+        ],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0,
+        "set_aside": [
+          [
+            "Back",
+            38
+          ]
+        ],
+        "bound_off_total": 6,
+        "grafted_total": 0
+      }
+    },
+    {
+      "section": "Cuff",
+      "step": 2,
+      "chart_row": null,
+      "piece": "Cuff",
+      "line": "Not checked by Ply: Work the cuff in seed stitch. (stitch count unknown)",
+      "count": "unknown"
+    },
+    {
+      "section": "Pocket edge",
+      "step": 1,
+      "chart_row": null,
+      "piece": "Pocket",
+      "line": "Knit across the sts of Cuff. (stitch count unknown)",
+      "count": "unknown"
+    }
+  ],
+  "issues": [
+    {
+      "severity": "error",
+      "message": "Back and Sleeve have the same id ('piece-2'), so a section or join naming it works Back"
+    },
+    {
+      "severity": "error",
+      "message": "Front, step 4: joins Front to itself; a join brings in the stitches of another piece or of a holder"
+    },
+    {
+      "severity": "error",
+      "message": "Front, step 5: joins a piece the pattern does not have (it may have been deleted); choose one of the pattern's pieces"
+    },
+    {
+      "severity": "error",
+      "message": "Front, step 6: Back has no stitches yet: no section before this one works it"
+    },
+    {
+      "severity": "error",
+      "message": "Back, step 3: joins at a short-row turn; join at the end of a row or at its start"
+    },
+    {
+      "severity": "error",
+      "message": "Back, step 7: joins with the right side facing, but the work is partway through a wrong-side row"
+    },
+    {
+      "severity": "error",
+      "message": "Front again, step 2: returns the stitches on hold (front sts), but Front again, step 1 already knitted them into the work"
+    },
+    {
+      "severity": "error",
+      "message": "Front again, step 3: joins the stitches on hold (front sts), but Front again, step 1 already took them off the holder"
+    },
+    {
+      "severity": "warning",
+      "message": "Front again: ends part way through a row, with 15 stitches still to work in it"
+    },
+    {
+      "severity": "error",
+      "message": "Join, step 1: Front is partway through a row (15 stitches still to work in it); finish the row in its own section first"
+    },
+    {
+      "severity": "error",
+      "message": "Join, step 2: joins held stitches, but the step that put them on hold is gone (it may have been deleted)"
+    },
+    {
+      "severity": "error",
+      "message": "Join, step 3: joins the stitches on hold (edge) before Join, step 4 puts them on hold; move this step after it"
+    },
+    {
+      "severity": "error",
+      "message": "Join the front, step 3: Front was already joined to Back at Join the front, step 2"
+    },
+    {
+      "severity": "error",
+      "message": "Front once more, step 1: Front was joined to Back at Join the front, step 2, so it cannot be worked again; start a new piece instead"
+    },
+    {
+      "severity": "error",
+      "message": "Lost: works a piece the pattern does not have (it may have been deleted), so its steps are not counted; choose one of the pattern's pieces"
+    },
+    {
+      "severity": "warning",
+      "message": "Cuff, step 2: Ply does not check this step, and it does not say how it changes the number of stitches, so the stitch counts after it are unknown; give the change (0 if it changes nothing) to keep counting"
+    },
+    {
+      "severity": "warning",
+      "message": "Pocket edge, step 1: the stitch count of Cuff is unknown, so the count after joining them is unknown too"
+    },
+    {
+      "severity": "warning",
+      "message": "Join, step 4: 2 stitches are still on hold (edge) at the end of the pattern; no step returns them to the needle"
+    },
+    {
+      "severity": "warning",
+      "message": "Join the front: 38 stitches of Back are still set aside at the end of the pattern; no step joins them to another piece or finishes them"
+    },
+    {
+      "severity": "warning",
+      "message": "no section works Collar"
+    },
+    {
+      "severity": "warning",
+      "message": "no section works Sleeve"
+    }
+  ]
+}

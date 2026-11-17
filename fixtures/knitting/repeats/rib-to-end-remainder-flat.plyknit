@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
     "name": "2x2 rib after an increase",
     "construction": "Flat",
@@ -295,6 +295,7 @@
       ]
     },
     "notes": "The kfb in row 1 leaves 7 stitches, which a 4-stitch rib with two edges cannot divide.",
-    "sections": []
+    "sections": [],
+    "pieces": []
   }
 }

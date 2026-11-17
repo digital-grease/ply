@@ -1,0 +1,30 @@
+# Fixture record for raglan-top-down-round (see fixtures/README.md).
+
+id = "knitting/sections/raglan-top-down-round"
+title = "Top-down raglan pullover: the yoke split into the body and two sleeves"
+technique = "pieces, working in the round, raglan increases, splitting a piece onto holders (one group the last stitches of the round), casting on over the gaps, sleeves made from held stitches plus picked-up stitches, sleeve decreases, per-piece bound-off counts"
+files = ["raglan-top-down-round.plyknit", "raglan-top-down-round.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written for Ply's tests (ADR 0020 review): the document was typed by hand and saved through the engine's own .plyknit writer (schema version 6). A plain adult pullover from the usual parts of a top-down raglan: 96 stitches cast on at the neck (back 32, sleeves 16, front 32), 8 rounds of rib, 8 stitches increased every other round 16 times to 224, then the dividing round, with the round starting at the right back raglan line so that the right sleeve's 48 stitches are the last of the round: the gap they leave is at the start of the round, which is what the review asked to have counted. The body goes on over 144 stitches; each sleeve picks up 4 stitches along the underarm cast-on, knits its 48 held stitches and picks up 4 more, joins in the round over 56 and decreases to 40. The counts were chosen for the test; no published pattern, chart or text was copied. The oracle (expect.json) was worked out by hand, round by round, before the engine was run on the file, and then compared with it: every line and count matched as worked out."""
+
+[sources]
+# Conventions the oracle's written text and ledger follow (cited, nothing reproduced).
+references = [
+  "The usual top-down raglan construction (general practice, no source text used): increases either side of four raglan markers every other round, then a dividing round that puts each sleeve's stitches on waste yarn and casts on underarm stitches, the body worked on, and each sleeve knitted from its held stitches with stitches picked up along the underarm cast-on.",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/section_fixtures.rs (section_fixtures_match_their_oracles): the file parses as \
+a current .plyknit envelope and re-saves to the same bytes; the written instructions equal the \
+oracle line for line; every ledger line has the oracle's text, place, piece and count (including \
+each group on hold, every other piece set aside, the piece's own and the whole pattern's stitches \
+bound off); each piece ends as the oracle says; validation reports exactly the oracle's issues \
+(none). app/test/knit_sections_fixture_test.dart reads the same files (the current schema version, \
+the sections' and pieces' shape, and the PDF and screen text built from the oracle)."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Gauge, yarn, lengths and any short rows across the back neck are not part of the fixture; the raglan increase round and the rows steps are in the pattern's own words (not checked). The first pick-up of each sleeve starts a right-side row on an empty needle, so the written line reads 'Next row (RS): pick up and knit...', as Ply writes any pick-up that starts a needle."

@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
     "name": "Working in the round: every refusal",
     "construction": "Flat",
@@ -287,6 +287,7 @@
         "name": "Flat start",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-1",
@@ -464,6 +465,7 @@
         "name": "Groups",
         "notes": "",
         "construction": "Flat",
+        "piece": null,
         "steps": [
           {
             "id": "step-17",
@@ -585,7 +587,8 @@
             "id": "step-24",
             "action": {
               "Close": {
-                "method": "Graft"
+                "method": "Graft",
+                "holds": []
               }
             }
           },
@@ -636,7 +639,8 @@
             "id": "step-29",
             "action": {
               "Close": {
-                "method": "Graft"
+                "method": "Graft",
+                "holds": []
               }
             }
           },
@@ -682,7 +686,8 @@
             "id": "step-32",
             "action": {
               "Close": {
-                "method": "Graft"
+                "method": "Graft",
+                "holds": []
               }
             }
           },
@@ -994,6 +999,7 @@
         "name": "Heel",
         "notes": "",
         "construction": "Flat",
+        "piece": null,
         "steps": [
           {
             "id": "step-55",
@@ -1033,7 +1039,8 @@
             "id": "step-58",
             "action": {
               "Close": {
-                "method": "Graft"
+                "method": "Graft",
+                "holds": []
               }
             }
           },
@@ -1277,6 +1284,7 @@
         "name": "Back in the round",
         "notes": "",
         "construction": "InTheRound",
+        "piece": null,
         "steps": [
           {
             "id": "step-78",
@@ -1334,7 +1342,8 @@
             "id": "step-84",
             "action": {
               "Close": {
-                "method": "Graft"
+                "method": "Graft",
+                "holds": []
               }
             }
           },
@@ -1432,6 +1441,7 @@
           }
         ]
       }
-    ]
+    ],
+    "pieces": []
   }
 }

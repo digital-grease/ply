@@ -143,6 +143,7 @@ void main() {
       chart: const ChartDto(width: 0, rows: []),
       notes: '',
       sections: const [],
+      pieces: const [],
     );
     await _open(tester, KnitStepKind.resume, pattern: noHolds);
     expect(find.text('No step puts stitches on hold yet. Add one first.'), findsOneWidget);

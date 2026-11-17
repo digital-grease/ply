@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/knit_repository.dart';
+import 'package:ply/src/models/knit_sections.dart';
 import 'package:ply/src/models/draft_doc.dart' show MeasureUnit;
 import 'package:ply/src/models/native_format.dart';
 import 'package:ply/src/print/knit_print.dart';
@@ -17,7 +18,7 @@ import 'knit_sections_test_support.dart';
 import 'print/print_test_support.dart';
 
 // The knitting section acceptance fixtures (fixtures/knitting/sections/, shared with the Rust tests)
-// as the app sees them: every one is a current (version 5) .plyknit envelope, and what the engine
+// as the app sees them: every one is a current (version 6) .plyknit envelope, and what the engine
 // says about it (its hand-derived oracle: the written instructions, the ledger and the problems)
 // reaches the written-instructions screen and the printed PDF intact: each section under its
 // heading, each step with its row label and its stitch count, uncounted steps flagged, and every
@@ -61,9 +62,9 @@ PrintSection _section(PrintDocument d, String heading) =>
     d.sections.firstWhere((s) => s.heading == heading);
 
 void main() {
-  test('every section fixture is a current (version 5) envelope', () {
+  test('every section fixture is a current (version 6) envelope', () {
     for (final name in kSectionFixtures) {
-      expect(plyknitSchemaVersion(sectionFixtureText(name, 'plyknit')), 5, reason: name);
+      expect(plyknitSchemaVersion(sectionFixtureText(name, 'plyknit')), 6, reason: name);
       final record = sectionFixtureText(name, 'fixture.toml');
       expect(record, contains('practitioner_knit_check = "pending"'), reason: name);
       expect(record, contains('license = "original"'), reason: name);
@@ -80,6 +81,16 @@ void main() {
       final facts = _section(d, 'Materials and gauge').blocks.whereType<PrintFacts>().single.facts;
       expect(facts.firstWhere((f) => f.label == 'Sections').value,
           [for (final s in p.sections) s.name].join(', '));
+      // A garment in several pieces lists them with how each ends (ADR 0020).
+      final pieces = oracle['pieces'] as List? ?? const [];
+      expect(facts.any((f) => f.label == 'Pieces'), pieces.isNotEmpty, reason: name);
+      if (pieces.isNotEmpty) {
+        final value = facts.firstWhere((f) => f.label == 'Pieces').value;
+        for (final x in pieces) {
+          expect(value, contains(knitCapitalized(x[0] as String)), reason: name);
+          expect(value, contains(': ${x[1]}'), reason: name);
+        }
+      }
 
       // Written instructions: the cast-on line, then per section its heading (bold), its notes and
       // its lines, in the oracle's order.
@@ -88,7 +99,8 @@ void main() {
       for (final b in blocks.skip(1)) {
         switch (b) {
           case PrintParagraph(:final text, :final style):
-            printed.add(style == PrintTextStyle.strong ? text : 'Notes: $text');
+            printed.add(
+                style == PrintTextStyle.strong || isKnitPiecesLine(text) ? text : 'Notes: $text');
           case PrintLines(:final lines):
             for (final l in lines) {
               printed.add(l.label == null ? l.text : '${l.label}: ${l.text}');

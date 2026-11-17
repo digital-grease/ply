@@ -92,7 +92,11 @@ void main() {
     test('section headings with how they are worked are headings', () {
       expect(isKnitSectionHeading('Section 3: Heel flap (worked flat)'), isTrue);
       expect(isKnitSectionHeading('Section 2 (worked in the round)'), isTrue);
-      expect(isKnitSectionHeading('Section 2 (anything else)'), isFalse);
+      // With pieces the heading names the piece in its brackets too (ADR 0020).
+      expect(isKnitSectionHeading('Section 2 (left sleeve, worked in the round)'), isTrue);
+      expect(isKnitSectionHeading('Section 4: Joining round (body)'), isTrue);
+      expect(isKnitSectionHeading('Section 2, then knit'), isFalse);
+      expect(isKnitSectionHeading('Section 2 ()'), isFalse);
       expect(isKnitSectionHeading('Next 18 rnds: knit.'), isFalse);
     });
 
@@ -285,7 +289,9 @@ void main() {
       await tester.tap(find.text('Three-needle bind-off'));
       await tester.pump();
       await _save(tester);
-      expect(r, [const KnitStepActionDto.close(method: CloseMethodKind.threeNeedleBindOff)]);
+      expect(r, [
+        const KnitStepActionDto.close(method: CloseMethodKind.threeNeedleBindOff, holds: []),
+      ]);
     });
   });
 
@@ -642,5 +648,6 @@ KnitPatternDto _noSteps() {
     chart: p.chart,
     notes: p.notes,
     sections: const [],
+    pieces: const [],
   );
 }

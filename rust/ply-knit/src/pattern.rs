@@ -351,6 +351,11 @@ pub struct KnitPattern {
     /// instructions follow the sections and a stitch ledger is kept step by step; see
     /// [`crate::sections`]. Added in `.plyknit` schema version 4 (older files load with none).
     pub sections: Vec<crate::sections::Section>,
+    /// The garment's pieces (the body, the left sleeve), each worked on its own needle by the
+    /// sections that name it; the first is the main piece, which the cast-on is for. Empty: the
+    /// pattern is one piece (every section works it). Added in `.plyknit` schema version 6 (older
+    /// files load with none); see [`crate::sections`] and ADR 0020.
+    pub pieces: Vec<crate::sections::Piece>,
 }
 
 impl KnitPattern {
@@ -413,6 +418,7 @@ mod tests {
             },
             notes: String::new(),
             sections: Vec::new(),
+            pieces: Vec::new(),
         }
     }
 

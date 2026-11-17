@@ -26,6 +26,7 @@ class FakeSetupRepo extends KnitRepository {
         chart: ChartDto(width: 0, rows: []),
         notes: '',
         sections: [],
+        pieces: [],
       );
 
   @override

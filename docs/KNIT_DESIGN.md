@@ -122,7 +122,7 @@ pub struct CableDef { pub front: u8, pub back: u8, pub direction: Cross, pub fro
 pub enum Cross { Right, Left }
 ```
 
-**Sections (the optional construction layer, `sections.rs`, `.plyknit` schema version 5).** A
+**Sections (the optional construction layer, `sections.rs`, `.plyknit` schema version 6).** A
 pattern may add named sections, each an ordered list of steps with stable ids, and each may say
 whether it is worked flat or in the round: work a range of the chart's rows, knit or purl across
 (to the end, to the last N stitches, or N stitches), work whole rows or rounds, a short row (wrap
@@ -140,8 +140,12 @@ and resting, waiting past a short-row turn, each group on hold, bound off, graft
 for more stitches than there are is reported and not applied; an unknown count stays unknown; Ply
 never guesses a pick-up rate or which group a change falls in. With sections, the written
 instructions follow them step by step with the count after each, and chart rows are checked where a
-section works them. A pattern with no sections is the chart exactly as before. Joining separate
-pieces and splitting one into several are later steps.
+section works them. A pattern with no sections is the chart exactly as before. A garment may be
+made in named pieces (a body and two sleeves, a mitten and its thumb): each section works one piece,
+the ledger keeps a needle per piece and lists the others' stitches as set aside, and a join step
+knits another piece's stitches, or a group on hold, into the row where the work is (sleeves onto a
+yoke, a thumb from its held stitches); a split puts each part's stitches on hold for the new pieces
+to take up. A join only ever moves stitches, and one that cannot be worked is refused.
 
 What the research forced (vs the first draft): **repeats are first-class** (`RepeatSpan`/`Repeat`),
 the **vocabulary is an open `StitchLegend`** not a closed enum, **cables are spanning cells**

@@ -89,6 +89,7 @@ void main() {
           ]),
           notes: '',
           sections: [],
+          pieces: [],
         ),
       );
       outputs.add(await buildPrintPdf(buildKnitPrintDocument(knit, withProblemsBox: false),

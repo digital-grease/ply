@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 5,
+  "schema_version": 6,
   "document": {
     "name": "2x2 rib from a 26-stitch cast-on",
     "construction": "Flat",
@@ -266,6 +266,7 @@
       ]
     },
     "notes": "Every row repeats to the end, so no row states a stitch count.",
-    "sections": []
+    "sections": [],
+    "pieces": []
   }
 }
