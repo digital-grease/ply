@@ -16,6 +16,11 @@ fixtures/
   nalbinding/recipes/<name>.plynal               # craft acceptance fixture: a project with a recipe
   nalbinding/recipes/<name>.expect.json          # its oracle (each step's report, every issue)
   nalbinding/recipes/<name>.fixture.toml         # its record
+  tablet/oracle/<name>.band.json                 # tablet weaving band: cards, starts, turning
+  tablet/oracle/<name>.expect.json               # its oracle (every card at every pick, faces, twist)
+  tablet/oracle/<name>.fixture.toml              # its record
+  tablet/invalid/<name>.band.json                # a band with one defect
+  tablet/invalid/cases.expect.json               # the diagnostics each one must give
   materials/materials.json                       # materials and swatches as Ply stores them
   materials/materials.expect.json                # their oracle: figures, diagnostics, estimates
   materials/diagnostics.json                     # records that cannot be true
@@ -169,3 +174,40 @@ files with the same name:
 | Folder | Contents | Tests |
 |---|---|---|
 | `nalbinding/recipes/` | A mitten worked from the cuff with a thumb opening and a thumb picked up around it (`mitten-cuff-up`, two parts, no problems), a hat from a centre start at the crown (`hat-centre-start`, one count Ply cannot follow, two steps ticked done), every check a saved recipe can give (`recipe-problems`) and a recipe with no steps yet (`recipe-empty`). | `rust/ply-nalbind/tests/recipe_fixtures.rs`; `app/test/nalbind_recipe_model_test.dart`, `app/test/nalbind_recipe_fixture_test.dart`, `app/test/nalbind_recipe_backup_test.dart` |
+
+## `tablet/`
+
+Tablet (card) weaving fixtures for the `ply-tablet` engine, following the conventions of ADR 0018:
+cards numbered from the weaver's left, corners named NT, FT, FB and NB as seen from the weaver's
+right, a forward turn moving the top edge away from the weaver, S and Z by the thread's path, Z
+twining counted positive. There is no native tablet file yet (`.plytab` comes with the editor), so a
+band is stored in the engine's own band form: `<name>.band.json` is exactly what
+`ply_tablet::TabletBand` reads and writes (palette as `#rrggbb`, each card's id, threads by hole
+with all four keys `A` to `D` present and `null` for an empty hole, threading, start by corner
+name; packs; the turning as segments of picks with one turn letter `F`, `B`, `I` or `?` per card,
+the words for each `?`, and the flips and twist releases before a pick; warning settings). Card and
+pack ids are 1 to 64 letters, digits, `-` or `_`, starting with a letter or digit. Unknown fields are
+refused.
+
+- `oracle/<name>.expect.json`: the oracle, transcribed from the hand-worked tables of ADR 0018 or
+  worked by hand from its rules (never from the engine). For every card and pick: the action,
+  threading, arrangement after the turn (`NT FT FB NB`), the hole and colour on the top face and on
+  the back (`X continues` for an idle card whose float carries on, `X or Y` for an ambiguous idle,
+  `X empty` with colour `none` for an empty hole), twining, reversal, `twist` and
+  `woven`, and whether the card was released or flipped before the pick; the drawn faces, one string
+  per pick with pick 1 first (top face card 1 at the left, back card 1 at the right; `?` for an
+  ambiguous cell, `-` for an empty hole) and the stitch slants (`/` Z, `\` S, `|` idle); every
+  diagnostic in order (code, severity, typed location); the final state.
+- `oracle/<name>.fixture.toml`: the record. Title, technique, license, provenance, the conventions
+  (cited, never copied), and the verification status: `automated_checks` and
+  `practitioner_tablet_check` (`pending` until a tablet weaver has woven or checked it).
+- `invalid/<name>.band.json`: one small band (two cards, two picks) with one defect each, and
+  `invalid/cases.expect.json`, written by hand from the rules: for each file whether it is refused
+  (with exactly which errors), simulates (with exactly which warnings), or cannot be read at all.
+  Bands that would be large files (1,001 cards, 10,001 segments, oversized text, a pack listing more
+  entries than a band can have cards) are built by the tests instead of stored.
+
+| Folder | Contents | Tests |
+|---|---|---|
+| `tablet/oracle/` | `band-1-threaded-in`: 8 cards (S and Z), all at home, 4 forward, 4 backward, then two packs turned opposite ways; twist +4 and -4, 0, then +4 on every card; the colour doubled at each reversal. `sampler-2-starts-idles-flip`: 4 cards with a start one quarter on, the printed-face-right lettering, an idle on pick 1 (ambiguous faces), idles that lengthen floats on both faces, a twist release and a flip that unwinds twist to 0. `sampler-3-flip-then-opposite`: 4 cards worked by hand from the rules, with a flip followed by the opposite direction (no reversal), an idle right after a flip, a twist release, and an empty hole that crosses both faces and is a candidate of an ambiguous idle. | `rust/ply-tablet/tests/oracle_fixtures.rs` |
+| `tablet/invalid/` | One case per structural error a small file can show: two diagonal holes on one edge, a repeated hole, a turn string one card short, an unknown letter, a `2` style half turn (pointed to `?`), `?` without words and words without `?`, words, a flip, a release or a pack naming an unknown card, one flip list naming a card twice, a colour past the palette, a segment repeated 0 times, repeats past the 200,000-pick cap and past `u32`, two cards with one id, a card id and a pack id outside the id grammar; a card in two packs and a card listed twice in one pack (warnings); an unknown field, a card without all four hole keys and an unknown threading letter (unreadable). | `rust/ply-tablet/tests/invalid_fixtures.rs` |

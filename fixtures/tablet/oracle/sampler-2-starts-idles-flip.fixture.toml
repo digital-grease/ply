@@ -1,0 +1,52 @@
+# Fixture record for sampler-2-starts-idles-flip (see fixtures/README.md).
+
+id = "tablet/oracle/sampler-2-starts-idles-flip"
+title = "Oracle sampler 2: four cards with different starts, idles, a twist release and a flip"
+technique = "tablet weaving test sampler: nonstandard starts, both letterings, idles, a reversal from a flip"
+files = ["sampler-2-starts-idles-flip.band.json", "sampler-2-starts-idles-flip.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+A test sampler made for Ply (ADR 0018 section 12, oracle sampler 2), not a design and not taken \
+from any source: every hole of a card is a different colour so that any slip in the hole cycle \
+shows. The band file was typed by hand from the ADR's card table and turning (picks 3 and 4, which \
+are the same written pick, are stored once and repeated twice). The oracle (expect.json) was \
+transcribed by a throwaway script from the ADR's hand-worked per-card tables, its expected top face \
+and its list of expected diagnostics and final state; the script checked the per-card tables \
+against the turning table, the top face grid and the final state before writing them. Nothing in \
+the oracle comes from the engine under test."""
+
+[band]
+cards = 4
+picks = 9
+cards_tested = [
+  "card 1: S, Ply home; idles that lengthen floats on both faces; a twist release before pick 6 that makes twist and woven differ",
+  "card 2: Z, started one quarter turn forward of home; a later idle; floats still going at the end of the band",
+  "card 3: S, printed face to the right with D at the near top, so forward turns show D, C, B, A",
+  "card 4: S, Ply home; an idle on pick 1 (ambiguous faces); a flip before pick 6 that makes it Z, so four more forward turns unwind its twist from +4 to 0",
+]
+palette = "K black, W white, R red, G gold"
+
+[sources]
+# The conventions the sampler and its oracle follow (cited, nothing reproduced).
+references = [
+  "Sarah Goslee, \"Tablet Weaving Structures: Theory and History\", 12 March 2004, https://www.stringpage.com/assets/other/structures.pdf (idling; starting positions out of step; flipping and reversing give the same cords).",
+  "Phiala's String Page (Sarah Goslee), \"Tablet Weaving Theory\", https://stringpage.com/tw/twtheory.html (the crossing rule; flipping a card about its vertical axis changes its threading).",
+  "Keith Weaves, \"Tablet Weaving Standard Terms and Notation\", https://www.keithweaves.com/tablet-weaving-standard-terms-and-notation/ (the printed-face-right home with D at the near top; releasing twist by untying and combing out).",
+  "LoftyFiber band loom documentation, \"A Note on Twist and Tilt\", https://tempoweave-loftyfiber.gitbook.io/loftybandloom/tablet-weaving-on-the-lofty-band-loom/tablet-weaving-on-a-loftyfiber-band-loom/a-note-on-twist-and-tilt (flipping a card can cancel the twist behind it).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-tablet/tests/oracle_fixtures.rs (oracle_bands_match_their_tables_cell_by_cell, \
+sampler_2_release_flip_and_floats): for every pick and card the action, threading (card 4 becomes Z \
+at its flip), arrangement after the turn, top-face and back threads and colours (continued floats \
+and the ambiguous idle included), twining, reversal, twist, woven, release and flip equal the \
+oracle; every cell of the drawn top face equals the oracle grid (? for the ambiguous cell); \
+validation lists exactly the six long floats, four reversal notes, the flip, the release (3 quarter \
+turns) and the ambiguous face, in order; the final state is as stated; picks 3 and 4 come from one \
+written pick worked twice."""
+practitioner_tablet_check = "pending"
+practitioner_reviewer = "a tablet weaver, arranged by the owner (ADR 0018 section 17)"
+known_limits = "The idle and ambiguity rules, the hand of the twist behind the cards and the claim that a flip alone leaves the twist unchanged are Ply's own reading and await the weaver's review. A colour chart, not a cloth image."

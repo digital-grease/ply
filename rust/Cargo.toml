@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["ply-common", "ply-weave", "ply-knit", "ply-nalbind", "ply-bridge"]
+members = ["ply-common", "ply-weave", "ply-knit", "ply-nalbind", "ply-tablet", "ply-bridge"]
 
 [workspace.package]
 edition = "2021"
@@ -14,6 +14,7 @@ ply-common = { path = "ply-common" }
 ply-weave = { path = "ply-weave" }
 ply-knit = { path = "ply-knit" }
 ply-nalbind = { path = "ply-nalbind" }
+ply-tablet = { path = "ply-tablet" }
 
 # Release builds normally WRAP on integer overflow. The engines size buffers from untrusted files,
 # and the tests (debug) always run with overflow checks, so keep that behavior in the shipped app:

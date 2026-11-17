@@ -1,0 +1,126 @@
+{
+  "palette": [
+    "#1a1a1a",
+    "#f2efe6",
+    "#b3262e",
+    "#d4a017"
+  ],
+  "weft": 0,
+  "cards": [
+    {
+      "id": "card-1",
+      "threads": {
+        "A": 2,
+        "B": 1,
+        "C": 0,
+        "D": 3
+      },
+      "threading": "S",
+      "start": {
+        "near_top": "A",
+        "far_top": "D",
+        "far_bottom": "C",
+        "near_bottom": "B"
+      }
+    },
+    {
+      "id": "card-2",
+      "threads": {
+        "A": 1,
+        "B": 2,
+        "C": 3,
+        "D": 0
+      },
+      "threading": "Z",
+      "start": {
+        "near_top": "B",
+        "far_top": "A",
+        "far_bottom": "D",
+        "near_bottom": "C"
+      }
+    },
+    {
+      "id": "card-3",
+      "threads": {
+        "A": 3,
+        "B": 0,
+        "C": 1,
+        "D": 2
+      },
+      "threading": "S",
+      "start": {
+        "near_top": "D",
+        "far_top": "A",
+        "far_bottom": "B",
+        "near_bottom": "C"
+      }
+    },
+    {
+      "id": "card-4",
+      "threads": {
+        "A": 0,
+        "B": 3,
+        "C": 2,
+        "D": 1
+      },
+      "threading": "S",
+      "start": {
+        "near_top": "A",
+        "far_top": "D",
+        "far_bottom": "C",
+        "near_bottom": "B"
+      }
+    }
+  ],
+  "turning": [
+    {
+      "repeat": 1,
+      "picks": [
+        {
+          "turns": "FFFI"
+        },
+        {
+          "turns": "FFFF"
+        }
+      ]
+    },
+    {
+      "repeat": 2,
+      "picks": [
+        {
+          "turns": "IFBF"
+        }
+      ]
+    },
+    {
+      "repeat": 1,
+      "picks": [
+        {
+          "turns": "FBBF"
+        },
+        {
+          "turns": "BBFF",
+          "release_twist": [
+            "card-1"
+          ],
+          "flip": [
+            "card-4"
+          ]
+        },
+        {
+          "turns": "BBFF"
+        },
+        {
+          "turns": "BIFF"
+        },
+        {
+          "turns": "FFFF"
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "twist_warning_quarters": 32,
+    "float_warning_picks": 3
+  }
+}

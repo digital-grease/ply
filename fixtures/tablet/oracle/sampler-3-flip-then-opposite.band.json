@@ -1,0 +1,115 @@
+{
+  "palette": [
+    "#000000",
+    "#ffffff",
+    "#ff0000",
+    "#ffcc00"
+  ],
+  "cards": [
+    {
+      "id": "c1",
+      "threads": {
+        "A": 2,
+        "B": 1,
+        "C": 0,
+        "D": 3
+      },
+      "threading": "S",
+      "start": {
+        "near_top": "A",
+        "far_top": "D",
+        "far_bottom": "C",
+        "near_bottom": "B"
+      }
+    },
+    {
+      "id": "c2",
+      "threads": {
+        "A": 1,
+        "B": 2,
+        "C": 3,
+        "D": 0
+      },
+      "threading": "Z",
+      "start": {
+        "near_top": "D",
+        "far_top": "C",
+        "far_bottom": "B",
+        "near_bottom": "A"
+      }
+    },
+    {
+      "id": "c3",
+      "threads": {
+        "A": 3,
+        "B": 0,
+        "C": 1,
+        "D": 2
+      },
+      "threading": "S",
+      "start": {
+        "near_top": "B",
+        "far_top": "C",
+        "far_bottom": "D",
+        "near_bottom": "A"
+      }
+    },
+    {
+      "id": "c4",
+      "threads": {
+        "A": 0,
+        "B": 3,
+        "C": null,
+        "D": 1
+      },
+      "threading": "Z",
+      "start": {
+        "near_top": "A",
+        "far_top": "D",
+        "far_bottom": "C",
+        "near_bottom": "B"
+      }
+    }
+  ],
+  "turning": [
+    {
+      "repeat": 1,
+      "picks": [
+        {
+          "turns": "FBFI"
+        },
+        {
+          "turns": "FBIF"
+        },
+        {
+          "turns": "BIFF"
+        },
+        {
+          "turns": "BFBF",
+          "release_twist": [
+            "c1"
+          ],
+          "flip": [
+            "c2"
+          ]
+        },
+        {
+          "turns": "IFBB"
+        },
+        {
+          "turns": "FFIB",
+          "flip": [
+            "c3"
+          ]
+        },
+        {
+          "turns": "FBFI"
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "twist_warning_quarters": 32,
+    "float_warning_picks": 3
+  }
+}

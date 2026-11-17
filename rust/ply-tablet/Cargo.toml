@@ -1,0 +1,17 @@
+[package]
+name = "ply-tablet"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+ply-common = { workspace = true }
+
+[dev-dependencies]
+# Property tests: no panic on arbitrary bands, determinism, and the card algebra (F^4, F then B,
+# a flip then the same turns).
+proptest = "1"
+# Reads the oracle bands and their expectations (fixtures/tablet/).
+serde_json = { workspace = true }

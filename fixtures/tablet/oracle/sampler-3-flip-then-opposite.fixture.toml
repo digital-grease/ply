@@ -1,0 +1,51 @@
+# Fixture record for sampler-3-flip-then-opposite (see fixtures/README.md).
+
+id = "tablet/oracle/sampler-3-flip-then-opposite"
+title = "Oracle sampler 3: flips followed by the opposite direction, a release, and an empty hole"
+technique = "tablet weaving test sampler: a flip then a turn the other way (no reversal), an idle after a flip, an empty hole"
+files = ["sampler-3-flip-then-opposite.band.json", "sampler-3-flip-then-opposite.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+A test sampler made for Ply, not a design and not taken from any source; it follows the shape of a \
+band an independent reviewer worked by hand. Every value of the oracle (expect.json) was worked out \
+by hand from the rules of ADR 0018 sections 4 to 7, pick by pick and card by card: each turn's \
+crossing holes from the corners before it, the arrangement after it, the twining from the card's \
+threading and the turn, reversals against the previous turned pick, every thread's layer after every \
+pick (for the runs), and the faces and colours. The hand tables were then typed into a throwaway \
+script that writes the file, and cross-checked against an independent simulator written from the \
+ADR text by the reviewer (not against this engine): every cell, run, reversal, face and the final \
+state agreed. Nothing in the oracle comes from the engine under test."""
+
+[band]
+cards = 4
+picks = 7
+cards_tested = [
+  "card 1: S, Ply home; a reversal, then a twist release before pick 4 (twist and woven differ from there), an idle, and a reversal back; floats of 4 picks on both faces",
+  "card 2: Z, started one quarter turn backward of home (D at NT); turned backward, idle, then flipped before pick 4 and turned forward: the flip and the change of direction cancel, so the twining stays Z and there is no reversal",
+  "card 3: S, printed-face-right lettering turned one quarter forward (B at NT); flipped before an idle on pick 6 (ambiguous faces), then turned forward: as a Z card that twines S, the same as its last turn before the flip, so again no reversal",
+  "card 4: Z, Ply home, hole C empty: an idle on pick 1 whose ambiguous back could show the empty hole, then the empty hole crossing the bottom (pick 2) and the top (picks 4 and 5)",
+]
+palette = "K black, W white, R red, G gold"
+
+[sources]
+# The conventions the sampler and its oracle follow (cited, nothing reproduced).
+references = [
+  "Sarah Goslee, \"Tablet Weaving Structures: Theory and History\", 12 March 2004, https://www.stringpage.com/assets/other/structures.pdf (flipping and reversing give the same cords; two-hole threadings).",
+  "Phiala's String Page (Sarah Goslee), \"Tablet Weaving Theory\", https://stringpage.com/tw/twtheory.html (the crossing rule; flipping a card about its vertical axis changes its threading).",
+  "LoftyFiber band loom documentation, \"A Note on Twist and Tilt\", https://tempoweave-loftyfiber.gitbook.io/loftybandloom/tablet-weaving-on-the-lofty-band-loom/tablet-weaving-on-a-loftyfiber-band-loom/a-note-on-twist-and-tilt (flipping a card changes which way later turns twist).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-tablet/tests/oracle_fixtures.rs (oracle_bands_match_their_tables_cell_by_cell): for every \
+pick and card the action, threading, arrangement after the turn, top-face and back threads and \
+colours (continued floats, ambiguous idles and the empty hole included), twining, reversal, twist, \
+woven, release and flip equal the oracle; every cell of the drawn top face and back and every \
+stitch slant equal the oracle grids; validation lists exactly the four long floats, four \
+not-modelled cells, five reversals, two flips, the release and two ambiguous faces, in order; the \
+final state is as stated."""
+practitioner_tablet_check = "pending"
+practitioner_reviewer = "a tablet weaver, arranged by the owner (ADR 0018 section 17)"
+known_limits = "The idle, ambiguity and empty-hole rules are Ply's own reading and await the weaver's review. A colour chart, not a cloth image."

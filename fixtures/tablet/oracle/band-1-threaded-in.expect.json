@@ -1,0 +1,230 @@
+{
+  "description": "ADR 0018 section 11 (oracle band 1), transcribed from its tables: step 1 (the rotation of a card that starts at home; the Left pack follows rows 1 to 4 again in picks 9 to 12, the Right pack rows 5 to 8), step 2 (colours), step 3 (twining, twist, reversals), step 4 (top and back holes and colours) and the expected top face and back grids. Faces: the hole whose thread crossed that edge. Grids: one string per pick, pick 1 first; the top face has card 1 at the left, the back (turned over sideways) card 8 at the left. Slants: / for Z twining, \\ for S.",
+  "palette_letters": [
+    "K",
+    "W",
+    "R",
+    "G"
+  ],
+  "picks": 12,
+  "cards": [
+    {
+      "card": 1,
+      "picks": [
+        {"pick": 1, "turn": "F", "threading": "S", "position": "B A D C", "top": "A", "top_color": "K", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 2, "turn": "F", "threading": "S", "position": "C B A D", "top": "B", "top_color": "K", "back": "D", "back_color": "K", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 3, "turn": "F", "threading": "S", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "K", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 4, "turn": "F", "threading": "S", "position": "A D C B", "top": "D", "top_color": "K", "back": "B", "back_color": "K", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false},
+        {"pick": 5, "turn": "B", "threading": "S", "position": "D C B A", "top": "D", "top_color": "K", "back": "B", "back_color": "K", "twining": "S", "reversal": true, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 6, "turn": "B", "threading": "S", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "K", "twining": "S", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 7, "turn": "B", "threading": "S", "position": "B A D C", "top": "B", "top_color": "K", "back": "D", "back_color": "K", "twining": "S", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 8, "turn": "B", "threading": "S", "position": "A D C B", "top": "A", "top_color": "K", "back": "C", "back_color": "K", "twining": "S", "reversal": false, "twist": 0, "woven": 0, "released": false, "flipped": false},
+        {"pick": 9, "turn": "F", "threading": "S", "position": "B A D C", "top": "A", "top_color": "K", "back": "C", "back_color": "K", "twining": "Z", "reversal": true, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 10, "turn": "F", "threading": "S", "position": "C B A D", "top": "B", "top_color": "K", "back": "D", "back_color": "K", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 11, "turn": "F", "threading": "S", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "K", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 12, "turn": "F", "threading": "S", "position": "A D C B", "top": "D", "top_color": "K", "back": "B", "back_color": "K", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false}
+      ]
+    },
+    {
+      "card": 2,
+      "picks": [
+        {"pick": 1, "turn": "F", "threading": "S", "position": "B A D C", "top": "A", "top_color": "W", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 2, "turn": "F", "threading": "S", "position": "C B A D", "top": "B", "top_color": "K", "back": "D", "back_color": "R", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 3, "turn": "F", "threading": "S", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "W", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 4, "turn": "F", "threading": "S", "position": "A D C B", "top": "D", "top_color": "R", "back": "B", "back_color": "K", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false},
+        {"pick": 5, "turn": "B", "threading": "S", "position": "D C B A", "top": "D", "top_color": "R", "back": "B", "back_color": "K", "twining": "S", "reversal": true, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 6, "turn": "B", "threading": "S", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "W", "twining": "S", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 7, "turn": "B", "threading": "S", "position": "B A D C", "top": "B", "top_color": "K", "back": "D", "back_color": "R", "twining": "S", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 8, "turn": "B", "threading": "S", "position": "A D C B", "top": "A", "top_color": "W", "back": "C", "back_color": "K", "twining": "S", "reversal": false, "twist": 0, "woven": 0, "released": false, "flipped": false},
+        {"pick": 9, "turn": "F", "threading": "S", "position": "B A D C", "top": "A", "top_color": "W", "back": "C", "back_color": "K", "twining": "Z", "reversal": true, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 10, "turn": "F", "threading": "S", "position": "C B A D", "top": "B", "top_color": "K", "back": "D", "back_color": "R", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 11, "turn": "F", "threading": "S", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "W", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 12, "turn": "F", "threading": "S", "position": "A D C B", "top": "D", "top_color": "R", "back": "B", "back_color": "K", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false}
+      ]
+    },
+    {
+      "card": 3,
+      "picks": [
+        {"pick": 1, "turn": "F", "threading": "S", "position": "B A D C", "top": "A", "top_color": "R", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 2, "turn": "F", "threading": "S", "position": "C B A D", "top": "B", "top_color": "W", "back": "D", "back_color": "K", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 3, "turn": "F", "threading": "S", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "R", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 4, "turn": "F", "threading": "S", "position": "A D C B", "top": "D", "top_color": "K", "back": "B", "back_color": "W", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false},
+        {"pick": 5, "turn": "B", "threading": "S", "position": "D C B A", "top": "D", "top_color": "K", "back": "B", "back_color": "W", "twining": "S", "reversal": true, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 6, "turn": "B", "threading": "S", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "R", "twining": "S", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 7, "turn": "B", "threading": "S", "position": "B A D C", "top": "B", "top_color": "W", "back": "D", "back_color": "K", "twining": "S", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 8, "turn": "B", "threading": "S", "position": "A D C B", "top": "A", "top_color": "R", "back": "C", "back_color": "K", "twining": "S", "reversal": false, "twist": 0, "woven": 0, "released": false, "flipped": false},
+        {"pick": 9, "turn": "F", "threading": "S", "position": "B A D C", "top": "A", "top_color": "R", "back": "C", "back_color": "K", "twining": "Z", "reversal": true, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 10, "turn": "F", "threading": "S", "position": "C B A D", "top": "B", "top_color": "W", "back": "D", "back_color": "K", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 11, "turn": "F", "threading": "S", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "R", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 12, "turn": "F", "threading": "S", "position": "A D C B", "top": "D", "top_color": "K", "back": "B", "back_color": "W", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false}
+      ]
+    },
+    {
+      "card": 4,
+      "picks": [
+        {"pick": 1, "turn": "F", "threading": "S", "position": "B A D C", "top": "A", "top_color": "K", "back": "C", "back_color": "W", "twining": "Z", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 2, "turn": "F", "threading": "S", "position": "C B A D", "top": "B", "top_color": "R", "back": "D", "back_color": "G", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 3, "turn": "F", "threading": "S", "position": "D C B A", "top": "C", "top_color": "W", "back": "A", "back_color": "K", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 4, "turn": "F", "threading": "S", "position": "A D C B", "top": "D", "top_color": "G", "back": "B", "back_color": "R", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false},
+        {"pick": 5, "turn": "B", "threading": "S", "position": "D C B A", "top": "D", "top_color": "G", "back": "B", "back_color": "R", "twining": "S", "reversal": true, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 6, "turn": "B", "threading": "S", "position": "C B A D", "top": "C", "top_color": "W", "back": "A", "back_color": "K", "twining": "S", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 7, "turn": "B", "threading": "S", "position": "B A D C", "top": "B", "top_color": "R", "back": "D", "back_color": "G", "twining": "S", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 8, "turn": "B", "threading": "S", "position": "A D C B", "top": "A", "top_color": "K", "back": "C", "back_color": "W", "twining": "S", "reversal": false, "twist": 0, "woven": 0, "released": false, "flipped": false},
+        {"pick": 9, "turn": "F", "threading": "S", "position": "B A D C", "top": "A", "top_color": "K", "back": "C", "back_color": "W", "twining": "Z", "reversal": true, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 10, "turn": "F", "threading": "S", "position": "C B A D", "top": "B", "top_color": "R", "back": "D", "back_color": "G", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 11, "turn": "F", "threading": "S", "position": "D C B A", "top": "C", "top_color": "W", "back": "A", "back_color": "K", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 12, "turn": "F", "threading": "S", "position": "A D C B", "top": "D", "top_color": "G", "back": "B", "back_color": "R", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false}
+      ]
+    },
+    {
+      "card": 5,
+      "picks": [
+        {"pick": 1, "turn": "F", "threading": "Z", "position": "B A D C", "top": "A", "top_color": "K", "back": "C", "back_color": "W", "twining": "S", "reversal": false, "twist": -1, "woven": -1, "released": false, "flipped": false},
+        {"pick": 2, "turn": "F", "threading": "Z", "position": "C B A D", "top": "B", "top_color": "R", "back": "D", "back_color": "G", "twining": "S", "reversal": false, "twist": -2, "woven": -2, "released": false, "flipped": false},
+        {"pick": 3, "turn": "F", "threading": "Z", "position": "D C B A", "top": "C", "top_color": "W", "back": "A", "back_color": "K", "twining": "S", "reversal": false, "twist": -3, "woven": -3, "released": false, "flipped": false},
+        {"pick": 4, "turn": "F", "threading": "Z", "position": "A D C B", "top": "D", "top_color": "G", "back": "B", "back_color": "R", "twining": "S", "reversal": false, "twist": -4, "woven": -4, "released": false, "flipped": false},
+        {"pick": 5, "turn": "B", "threading": "Z", "position": "D C B A", "top": "D", "top_color": "G", "back": "B", "back_color": "R", "twining": "Z", "reversal": true, "twist": -3, "woven": -3, "released": false, "flipped": false},
+        {"pick": 6, "turn": "B", "threading": "Z", "position": "C B A D", "top": "C", "top_color": "W", "back": "A", "back_color": "K", "twining": "Z", "reversal": false, "twist": -2, "woven": -2, "released": false, "flipped": false},
+        {"pick": 7, "turn": "B", "threading": "Z", "position": "B A D C", "top": "B", "top_color": "R", "back": "D", "back_color": "G", "twining": "Z", "reversal": false, "twist": -1, "woven": -1, "released": false, "flipped": false},
+        {"pick": 8, "turn": "B", "threading": "Z", "position": "A D C B", "top": "A", "top_color": "K", "back": "C", "back_color": "W", "twining": "Z", "reversal": false, "twist": 0, "woven": 0, "released": false, "flipped": false},
+        {"pick": 9, "turn": "B", "threading": "Z", "position": "D C B A", "top": "D", "top_color": "G", "back": "B", "back_color": "R", "twining": "Z", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 10, "turn": "B", "threading": "Z", "position": "C B A D", "top": "C", "top_color": "W", "back": "A", "back_color": "K", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 11, "turn": "B", "threading": "Z", "position": "B A D C", "top": "B", "top_color": "R", "back": "D", "back_color": "G", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 12, "turn": "B", "threading": "Z", "position": "A D C B", "top": "A", "top_color": "K", "back": "C", "back_color": "W", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false}
+      ]
+    },
+    {
+      "card": 6,
+      "picks": [
+        {"pick": 1, "turn": "F", "threading": "Z", "position": "B A D C", "top": "A", "top_color": "R", "back": "C", "back_color": "K", "twining": "S", "reversal": false, "twist": -1, "woven": -1, "released": false, "flipped": false},
+        {"pick": 2, "turn": "F", "threading": "Z", "position": "C B A D", "top": "B", "top_color": "W", "back": "D", "back_color": "K", "twining": "S", "reversal": false, "twist": -2, "woven": -2, "released": false, "flipped": false},
+        {"pick": 3, "turn": "F", "threading": "Z", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "R", "twining": "S", "reversal": false, "twist": -3, "woven": -3, "released": false, "flipped": false},
+        {"pick": 4, "turn": "F", "threading": "Z", "position": "A D C B", "top": "D", "top_color": "K", "back": "B", "back_color": "W", "twining": "S", "reversal": false, "twist": -4, "woven": -4, "released": false, "flipped": false},
+        {"pick": 5, "turn": "B", "threading": "Z", "position": "D C B A", "top": "D", "top_color": "K", "back": "B", "back_color": "W", "twining": "Z", "reversal": true, "twist": -3, "woven": -3, "released": false, "flipped": false},
+        {"pick": 6, "turn": "B", "threading": "Z", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "R", "twining": "Z", "reversal": false, "twist": -2, "woven": -2, "released": false, "flipped": false},
+        {"pick": 7, "turn": "B", "threading": "Z", "position": "B A D C", "top": "B", "top_color": "W", "back": "D", "back_color": "K", "twining": "Z", "reversal": false, "twist": -1, "woven": -1, "released": false, "flipped": false},
+        {"pick": 8, "turn": "B", "threading": "Z", "position": "A D C B", "top": "A", "top_color": "R", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 0, "woven": 0, "released": false, "flipped": false},
+        {"pick": 9, "turn": "B", "threading": "Z", "position": "D C B A", "top": "D", "top_color": "K", "back": "B", "back_color": "W", "twining": "Z", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 10, "turn": "B", "threading": "Z", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "R", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 11, "turn": "B", "threading": "Z", "position": "B A D C", "top": "B", "top_color": "W", "back": "D", "back_color": "K", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 12, "turn": "B", "threading": "Z", "position": "A D C B", "top": "A", "top_color": "R", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false}
+      ]
+    },
+    {
+      "card": 7,
+      "picks": [
+        {"pick": 1, "turn": "F", "threading": "Z", "position": "B A D C", "top": "A", "top_color": "W", "back": "C", "back_color": "K", "twining": "S", "reversal": false, "twist": -1, "woven": -1, "released": false, "flipped": false},
+        {"pick": 2, "turn": "F", "threading": "Z", "position": "C B A D", "top": "B", "top_color": "K", "back": "D", "back_color": "R", "twining": "S", "reversal": false, "twist": -2, "woven": -2, "released": false, "flipped": false},
+        {"pick": 3, "turn": "F", "threading": "Z", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "W", "twining": "S", "reversal": false, "twist": -3, "woven": -3, "released": false, "flipped": false},
+        {"pick": 4, "turn": "F", "threading": "Z", "position": "A D C B", "top": "D", "top_color": "R", "back": "B", "back_color": "K", "twining": "S", "reversal": false, "twist": -4, "woven": -4, "released": false, "flipped": false},
+        {"pick": 5, "turn": "B", "threading": "Z", "position": "D C B A", "top": "D", "top_color": "R", "back": "B", "back_color": "K", "twining": "Z", "reversal": true, "twist": -3, "woven": -3, "released": false, "flipped": false},
+        {"pick": 6, "turn": "B", "threading": "Z", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "W", "twining": "Z", "reversal": false, "twist": -2, "woven": -2, "released": false, "flipped": false},
+        {"pick": 7, "turn": "B", "threading": "Z", "position": "B A D C", "top": "B", "top_color": "K", "back": "D", "back_color": "R", "twining": "Z", "reversal": false, "twist": -1, "woven": -1, "released": false, "flipped": false},
+        {"pick": 8, "turn": "B", "threading": "Z", "position": "A D C B", "top": "A", "top_color": "W", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 0, "woven": 0, "released": false, "flipped": false},
+        {"pick": 9, "turn": "B", "threading": "Z", "position": "D C B A", "top": "D", "top_color": "R", "back": "B", "back_color": "K", "twining": "Z", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 10, "turn": "B", "threading": "Z", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "W", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 11, "turn": "B", "threading": "Z", "position": "B A D C", "top": "B", "top_color": "K", "back": "D", "back_color": "R", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 12, "turn": "B", "threading": "Z", "position": "A D C B", "top": "A", "top_color": "W", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false}
+      ]
+    },
+    {
+      "card": 8,
+      "picks": [
+        {"pick": 1, "turn": "F", "threading": "Z", "position": "B A D C", "top": "A", "top_color": "K", "back": "C", "back_color": "K", "twining": "S", "reversal": false, "twist": -1, "woven": -1, "released": false, "flipped": false},
+        {"pick": 2, "turn": "F", "threading": "Z", "position": "C B A D", "top": "B", "top_color": "K", "back": "D", "back_color": "K", "twining": "S", "reversal": false, "twist": -2, "woven": -2, "released": false, "flipped": false},
+        {"pick": 3, "turn": "F", "threading": "Z", "position": "D C B A", "top": "C", "top_color": "K", "back": "A", "back_color": "K", "twining": "S", "reversal": false, "twist": -3, "woven": -3, "released": false, "flipped": false},
+        {"pick": 4, "turn": "F", "threading": "Z", "position": "A D C B", "top": "D", "top_color": "K", "back": "B", "back_color": "K", "twining": "S", "reversal": false, "twist": -4, "woven": -4, "released": false, "flipped": false},
+        {"pick": 5, "turn": "B", "threading": "Z", "position": "D C B A", "top": "D", "top_color": "K", "back": "B", "back_color": "K", "twining": "Z", "reversal": true, "twist": -3, "woven": -3, "released": false, "flipped": false},
+        {"pick": 6, "turn": "B", "threading": "Z", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "K", "twining": "Z", "reversal": false, "twist": -2, "woven": -2, "released": false, "flipped": false},
+        {"pick": 7, "turn": "B", "threading": "Z", "position": "B A D C", "top": "B", "top_color": "K", "back": "D", "back_color": "K", "twining": "Z", "reversal": false, "twist": -1, "woven": -1, "released": false, "flipped": false},
+        {"pick": 8, "turn": "B", "threading": "Z", "position": "A D C B", "top": "A", "top_color": "K", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 0, "woven": 0, "released": false, "flipped": false},
+        {"pick": 9, "turn": "B", "threading": "Z", "position": "D C B A", "top": "D", "top_color": "K", "back": "B", "back_color": "K", "twining": "Z", "reversal": false, "twist": 1, "woven": 1, "released": false, "flipped": false},
+        {"pick": 10, "turn": "B", "threading": "Z", "position": "C B A D", "top": "C", "top_color": "K", "back": "A", "back_color": "K", "twining": "Z", "reversal": false, "twist": 2, "woven": 2, "released": false, "flipped": false},
+        {"pick": 11, "turn": "B", "threading": "Z", "position": "B A D C", "top": "B", "top_color": "K", "back": "D", "back_color": "K", "twining": "Z", "reversal": false, "twist": 3, "woven": 3, "released": false, "flipped": false},
+        {"pick": 12, "turn": "B", "threading": "Z", "position": "A D C B", "top": "A", "top_color": "K", "back": "C", "back_color": "K", "twining": "Z", "reversal": false, "twist": 4, "woven": 4, "released": false, "flipped": false}
+      ]
+    }
+  ],
+  "top_face": [
+    "K W R K K R W K",
+    "K K W R R W K K",
+    "K K K W W K K K",
+    "K R K G G K R K",
+    "K R K G G K R K",
+    "K K K W W K K K",
+    "K K W R R W K K",
+    "K W R K K R W K",
+    "K W R K G K R K",
+    "K K W R W K K K",
+    "K K K W R W K K",
+    "K R K G K R W K"
+  ],
+  "top_slant": [
+    "/ / / / \\ \\ \\ \\",
+    "/ / / / \\ \\ \\ \\",
+    "/ / / / \\ \\ \\ \\",
+    "/ / / / \\ \\ \\ \\",
+    "\\ \\ \\ \\ / / / /",
+    "\\ \\ \\ \\ / / / /",
+    "\\ \\ \\ \\ / / / /",
+    "\\ \\ \\ \\ / / / /",
+    "/ / / / / / / /",
+    "/ / / / / / / /",
+    "/ / / / / / / /",
+    "/ / / / / / / /"
+  ],
+  "back_face": [
+    "K K K W W K K K",
+    "K R K G G K R K",
+    "K W R K K R W K",
+    "K K W R R W K K",
+    "K K W R R W K K",
+    "K W R K K R W K",
+    "K R K G G K R K",
+    "K K K W W K K K",
+    "K K W R W K K K",
+    "K W R K G K R K",
+    "K R K G K R W K",
+    "K K K W R W K K"
+  ],
+  "diagnostics": [
+    {"code": "tablet.reversal", "severity": "info", "location": {"kind": "pick", "pick": 5, "cards": {"cards": [1, 2, 3, 4, 5, 6, 7, 8], "total": 8}, "face": null}},
+    {"code": "tablet.reversal", "severity": "info", "location": {"kind": "pick", "pick": 9, "cards": {"cards": [1, 2, 3, 4], "total": 4}, "face": null}}
+  ],
+  "runs_of_three": [
+    {"kind": "run", "card": 1, "hole": "D", "face": "top", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 1, "hole": "A", "face": "top", "first_pick": 7, "last_pick": 9, "end": "ended"},
+    {"kind": "run", "card": 1, "hole": "B", "face": "back", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 1, "hole": "C", "face": "back", "first_pick": 7, "last_pick": 9, "end": "ended"},
+    {"kind": "run", "card": 2, "hole": "D", "face": "top", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 2, "hole": "A", "face": "top", "first_pick": 7, "last_pick": 9, "end": "ended"},
+    {"kind": "run", "card": 2, "hole": "B", "face": "back", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 2, "hole": "C", "face": "back", "first_pick": 7, "last_pick": 9, "end": "ended"},
+    {"kind": "run", "card": 3, "hole": "D", "face": "top", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 3, "hole": "A", "face": "top", "first_pick": 7, "last_pick": 9, "end": "ended"},
+    {"kind": "run", "card": 3, "hole": "B", "face": "back", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 3, "hole": "C", "face": "back", "first_pick": 7, "last_pick": 9, "end": "ended"},
+    {"kind": "run", "card": 4, "hole": "D", "face": "top", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 4, "hole": "A", "face": "top", "first_pick": 7, "last_pick": 9, "end": "ended"},
+    {"kind": "run", "card": 4, "hole": "B", "face": "back", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 4, "hole": "C", "face": "back", "first_pick": 7, "last_pick": 9, "end": "ended"},
+    {"kind": "run", "card": 5, "hole": "D", "face": "top", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 5, "hole": "B", "face": "back", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 6, "hole": "D", "face": "top", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 6, "hole": "B", "face": "back", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 7, "hole": "D", "face": "top", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 7, "hole": "B", "face": "back", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 8, "hole": "D", "face": "top", "first_pick": 3, "last_pick": 5, "end": "ended"},
+    {"kind": "run", "card": 8, "hole": "B", "face": "back", "first_pick": 3, "last_pick": 5, "end": "ended"}
+  ],
+  "final": [
+    {"card": 1, "position": "A D C B", "threading": "S", "twist": 4, "woven": 4},
+    {"card": 2, "position": "A D C B", "threading": "S", "twist": 4, "woven": 4},
+    {"card": 3, "position": "A D C B", "threading": "S", "twist": 4, "woven": 4},
+    {"card": 4, "position": "A D C B", "threading": "S", "twist": 4, "woven": 4},
+    {"card": 5, "position": "A D C B", "threading": "Z", "twist": 4, "woven": 4},
+    {"card": 6, "position": "A D C B", "threading": "Z", "twist": 4, "woven": 4},
+    {"card": 7, "position": "A D C B", "threading": "Z", "twist": 4, "woven": 4},
+    {"card": 8, "position": "A D C B", "threading": "Z", "twist": 4, "woven": 4}
+  ]
+}

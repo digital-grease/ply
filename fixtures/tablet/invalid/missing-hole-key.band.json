@@ -1,0 +1,52 @@
+{
+  "palette": [
+    "#1a1a1a",
+    "#f2efe6"
+  ],
+  "cards": [
+    {
+      "id": "card-1",
+      "threads": {
+        "A": 0,
+        "B": 0,
+        "C": 0
+      },
+      "threading": "S",
+      "start": {
+        "near_top": "A",
+        "far_top": "D",
+        "far_bottom": "C",
+        "near_bottom": "B"
+      }
+    },
+    {
+      "id": "card-2",
+      "threads": {
+        "A": 1,
+        "B": 0,
+        "C": 0,
+        "D": 0
+      },
+      "threading": "Z",
+      "start": {
+        "near_top": "A",
+        "far_top": "D",
+        "far_bottom": "C",
+        "near_bottom": "B"
+      }
+    }
+  ],
+  "turning": [
+    {
+      "repeat": 1,
+      "picks": [
+        {
+          "turns": "FF"
+        },
+        {
+          "turns": "FF"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+# Fixture record for band-1-threaded-in (see fixtures/README.md).
+
+id = "tablet/oracle/band-1-threaded-in"
+title = "Oracle band 1: threaded-in diagonals on 8 cards, 4 forward, 4 backward, then two packs turned opposite ways"
+technique = "threaded-in tablet weaving: S and Z cards, a reversal, two packs"
+files = ["band-1-threaded-in.band.json", "band-1-threaded-in.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+An original band made for Ply's tests (ADR 0018 section 11, oracle band 1), not taken from any \
+source; its diagonal lines are a generic threaded-in effect. The band file was typed by hand from \
+the ADR's threading chart, starts, packs and turning. The oracle (expect.json) was transcribed by a \
+throwaway script from the ADR's hand-worked tables (the rotation of a card from home, the colours, \
+the twining and twist table, the per-pick top and back holes and colours, and the expected top face \
+and back), and the script checked those tables against one another before writing them. The runs \
+of three picks it lists were worked out by hand from the ADR's rotation table. Nothing in the \
+oracle comes from the engine under test."""
+
+[band]
+cards = 8
+picks = 12
+threading = "cards 1 to 4 S, cards 5 to 8 Z (the thread-path meaning)"
+start = "every card at Ply home: A at the near top, D at the far top, C at the far bottom, B at the near bottom"
+turning = "picks 1 to 4 every card forward; 5 to 8 every card backward; 9 to 12 Left (cards 1 to 4) forward and Right (cards 5 to 8) backward"
+palette = "K black, W white, R red, G gold"
+expected = "twist +4 (S cards) and -4 (Z cards) after pick 4, every card 0 and home after pick 8, every card +4 and home after pick 12; reversals at pick 5 (all cards) and pick 9 (cards 1 to 4); no run longer than 3 picks"
+
+[sources]
+# The conventions the band and its oracle follow (cited, nothing reproduced).
+references = [
+  "Sarah Goslee, \"Tablet Weaving Structures: Theory and History\", 12 March 2004, https://www.stringpage.com/assets/other/structures.pdf (holes A to D from the near top, forward turns bring A, B, C, D across the top; S and Z by the thread's path; the twining of S and Z cards turned forward and backward).",
+  "Phiala's String Page (Sarah Goslee), \"Tablet Weaving Theory\", https://stringpage.com/tw/twtheory.html (the thread that moves over the top of the card shows on the top face).",
+  "Keith Weaves, \"Tablet Weaving Standard Terms and Notation\", https://www.keithweaves.com/tablet-weaving-standard-terms-and-notation/ (four forward then four backward turns repeat the colour at the reversal; twist behind the cards).",
+  "Keith Weaves, \"Tablet Weaving Diagramming Conventions\", https://www.keithweaves.com/tablet-weaving-diagramming-conventions/ (cards numbered from the weaver's left; charts read from the bottom).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-tablet/tests/oracle_fixtures.rs (oracle_bands_match_their_tables_cell_by_cell, \
+band_1_headline_results, band_1_runs_are_at_most_three_picks): the band reads through the engine's \
+band shape and round-trips; for every pick and card the action, threading, arrangement after the \
+turn, top-face and back threads and colours, twining, reversal, twist and woven equal the oracle; \
+every cell of the drawn top face (card 1 at the left) and back (card 8 at the left) and every stitch \
+slant equal the oracle grids; validation lists exactly the two reversal notes; the state after picks \
+0, 4, 8 and 12 is as stated; with the float threshold lowered to 2 the long floats are exactly the \
+runs of three listed."""
+practitioner_tablet_check = "pending"
+practitioner_reviewer = "a tablet weaver, arranged by the owner (ADR 0018 section 17)"
+known_limits = "A colour chart (one cell per card per pick, given to the thread that crossed the top in the turn before the pick), not a cloth image: no weft, cord width, beat or draw-in. The hand of the twist behind the cards and the warning thresholds await the weaver's review."
