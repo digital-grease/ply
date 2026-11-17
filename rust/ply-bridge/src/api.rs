@@ -874,6 +874,27 @@ pub fn weave_weft_traced(
     })
 }
 
+// ---------------------------------------------------------------------------
+// M8-03 WARP, WEFT AND FINISHING PLANNING (ADR 0019; DTOs in `weave_plan_dto.rs`, flat enums only,
+// so no freezed rebuild). The app owns the plan record in the draft's sidecar (`weavePlan`); the
+// engine works out the whole worksheet in one call.
+// ---------------------------------------------------------------------------
+
+pub use crate::weave_plan_dto::{
+    DentingPlanDto, InputNoteDto, PlanCheckDto, PlanDraftFactsDto, PlanFigureDto,
+    PlanFigureUnitKind, PlanIssueDto, PlanIssueKind, PlanOverridesDto, PlanStructureKind,
+    SupplyLineDto, SupplyRoleKind, WeavePlanDto, WeavePlanRequestDto, WorksheetDto,
+};
+
+/// The warp, weft and finishing worksheet for a draft's plan, with the swatch, yarns and loom it
+/// uses and the draft's facts (its ends, strands per pick and file sett, not the whole draft):
+/// every input with its source, every figure with its working, the denting, the loom checks, the
+/// yarn against what is on hand, and typed issues for whatever cannot be worked out. `Err` (a
+/// sentence) only when the loom profile is outside the engine's limits.
+pub fn weave_plan_worksheet(req: WeavePlanRequestDto) -> Result<WorksheetDto, String> {
+    crate::weave_plan_dto::worksheet(req)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

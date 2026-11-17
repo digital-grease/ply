@@ -1,0 +1,783 @@
+{
+  "tolerance": 1e-06,
+  "cases": {
+    "from_swatch": {
+      "inputs": [
+        {
+          "key": "finished_width",
+          "label": "Finished width",
+          "source": "entered",
+          "value": "18 in",
+          "basis": "you entered it"
+        },
+        {
+          "key": "finished_length",
+          "label": "Finished length",
+          "source": "entered",
+          "value": "30 in",
+          "basis": "you entered it"
+        },
+        {
+          "key": "items",
+          "label": "Items",
+          "source": "entered",
+          "value": "4",
+          "basis": "you entered it"
+        },
+        {
+          "key": "hems",
+          "label": "Hems",
+          "source": "entered",
+          "value": "4 in of finished cloth for each item, both ends",
+          "basis": "you entered it"
+        },
+        {
+          "key": "length_loss",
+          "label": "Take-up and shrinkage",
+          "source": "measured",
+          "value": "10% of the length on the loom, from the loom to finished",
+          "basis": "from 20 in on the loom and 18 in after wet finishing (measured), swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "width_loss",
+          "label": "Draw-in and shrinkage",
+          "source": "entered",
+          "value": "12.5% of the width in the reed, from the reed to finished",
+          "basis": "from 12 in in the reed and 10.5 in after wet finishing (entered), swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "weft_allowance",
+          "label": "Weft allowance",
+          "source": "default",
+          "value": "10% of the width in the reed, added to each pick",
+          "basis": "Ply's starting estimate for twill (for the weft's crimp and the turns at the selvedges)"
+        },
+        {
+          "key": "loom_waste",
+          "label": "Loom waste",
+          "source": "entered",
+          "value": "27 in for the whole warp",
+          "basis": "you entered it"
+        },
+        {
+          "key": "sett",
+          "label": "Sett",
+          "source": "entered",
+          "value": "24 ends per in",
+          "basis": "the sett in the reed, entered, swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "ppi",
+          "label": "Picks",
+          "source": "measured",
+          "value": "24 picks per in",
+          "basis": "measured on the loom, swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "end_multiple",
+          "label": "Ends in a repeat",
+          "source": "entered",
+          "value": "4",
+          "basis": "you entered it"
+        },
+        {
+          "key": "extra_ends",
+          "label": "Extra ends",
+          "source": "entered",
+          "value": "2",
+          "basis": "you entered it"
+        },
+        {
+          "key": "reed",
+          "label": "Reed",
+          "source": "entered",
+          "value": "12 dents per inch",
+          "basis": "the best of Four-shaft jack loom's reeds for the sett (Loom for this draft)"
+        },
+        {
+          "key": "warp_length_per_mass",
+          "label": "Warp length per mass",
+          "source": "entered",
+          "value": "3360 yd per 1 lb",
+          "basis": "entered, material 8/2 cotton, natural"
+        },
+        {
+          "key": "warp_on_hand",
+          "label": "Warp on hand",
+          "source": "entered",
+          "value": "4200 yd",
+          "basis": "entered, material 8/2 cotton, natural"
+        },
+        {
+          "key": "weft_length_per_mass",
+          "label": "Weft length per mass",
+          "source": "entered",
+          "value": "3360 yd per 1 lb",
+          "basis": "entered, material 8/2 cotton, blue"
+        },
+        {
+          "key": "weft_on_hand",
+          "label": "Weft on hand",
+          "source": "measured",
+          "value": "1 lb (about 3360 yd)",
+          "basis": "measured, at 3360 yd per 1 lb (entered), material 8/2 cotton, blue"
+        }
+      ],
+      "figures": [
+        {
+          "key": "width_in_reed_target",
+          "label": "Width in the reed for the finished width",
+          "value": 20.571428571428573,
+          "unit": "in",
+          "text": "20.57 in (52.25 cm)",
+          "assumed": false
+        },
+        {
+          "key": "warp_ends",
+          "label": "Warp ends",
+          "value": 494,
+          "unit": "count",
+          "text": "494 ends",
+          "assumed": false
+        },
+        {
+          "key": "width_in_reed",
+          "label": "Width in the reed",
+          "value": 20.583333333333332,
+          "unit": "in",
+          "text": "20.58 in (52.28 cm)",
+          "assumed": false
+        },
+        {
+          "key": "finished_width",
+          "label": "Finished width, expected",
+          "value": 18.010416666666664,
+          "unit": "in",
+          "text": "18.01 in (45.75 cm)",
+          "assumed": false
+        },
+        {
+          "key": "woven_length",
+          "label": "Woven on the loom, each item",
+          "value": 37.77777777777778,
+          "unit": "in",
+          "text": "37.78 in (95.96 cm)",
+          "assumed": false
+        },
+        {
+          "key": "warp_length",
+          "label": "Warp length",
+          "value": 4.947530864197531,
+          "unit": "yd",
+          "text": "4.95 yd (4.52 m)",
+          "assumed": false
+        },
+        {
+          "key": "warp_yarn",
+          "label": "Warp yarn",
+          "value": 2444.08024691358,
+          "unit": "yd",
+          "text": "2444.08 yd (2234.87 m)",
+          "assumed": false
+        },
+        {
+          "key": "weft_picks",
+          "label": "Picks",
+          "value": 3628,
+          "unit": "count",
+          "text": "3628 picks",
+          "assumed": false
+        },
+        {
+          "key": "weft_per_pick",
+          "label": "Weft in each pick",
+          "value": 22.641666666666666,
+          "unit": "in",
+          "text": "22.64 in (57.51 cm)",
+          "assumed": true
+        },
+        {
+          "key": "weft_yarn",
+          "label": "Weft yarn",
+          "value": 2281.7768518518515,
+          "unit": "yd",
+          "text": "2281.78 yd (2086.46 m)",
+          "assumed": true
+        }
+      ],
+      "denting": {
+        "reed": {
+          "dents": 12.0,
+          "per": "inch"
+        },
+        "order": [
+          2
+        ],
+        "dents": 247,
+        "width": {
+          "value": 20.583333333333332,
+          "unit": "in"
+        },
+        "text": "Sley the 12-dent reed 2 per dent for 24 ends per in: 494 ends fill 247 dents, about 20.58 in (52.28 cm)."
+      },
+      "checks": [
+        {
+          "code": "plan.reed_fits",
+          "severity": "fits",
+          "message": "Sley the 12-dent reed 2 per dent for 24 ends per in."
+        },
+        {
+          "code": "plan.loom_width_fits",
+          "severity": "fits",
+          "message": "20.58 in (52.28 cm) in the reed fits Four-shaft jack loom's 24 in weaving width."
+        }
+      ],
+      "supply": [
+        {
+          "role": "warp",
+          "material_id": "cotton-natural",
+          "need": {
+            "value": 2444.08024691358,
+            "unit": "yd"
+          },
+          "need_mass": {
+            "value": 0.7274048353909465,
+            "unit": "lb"
+          },
+          "on_hand": {
+            "value": 4200.0,
+            "unit": "yd"
+          },
+          "on_hand_about": false,
+          "remaining": {
+            "value": 1755.9197530864199,
+            "unit": "yd"
+          },
+          "text": "8/2 cotton, natural for warp: needs about 2444.08 yd (0.73 lb, 329.95 g). About 1755.92 yd left over.",
+          "assumed": false
+        },
+        {
+          "role": "weft",
+          "material_id": "cotton-blue",
+          "need": {
+            "value": 2281.7768518518515,
+            "unit": "yd"
+          },
+          "need_mass": {
+            "value": 0.6791002535273367,
+            "unit": "lb"
+          },
+          "on_hand": {
+            "value": 3360.0,
+            "unit": "yd"
+          },
+          "on_hand_about": true,
+          "remaining": {
+            "value": 1078.2231481481485,
+            "unit": "yd"
+          },
+          "text": "8/2 cotton, blue for weft: needs about 2281.78 yd (0.68 lb, 308.03 g). About 1078.22 yd left over.",
+          "assumed": true
+        }
+      ],
+      "issues": [],
+      "notes": [
+        "This draft threads 8 ends; the plan needs 494. The plan does not change the draft.",
+        "Inputs marked as Ply's starting estimates are rules of thumb, not measurements. A sample woven and finished like the project gives better numbers."
+      ],
+      "hand": {
+        "per_item_in": 37.77777777777778,
+        "warp_in": 178.11111111111111,
+        "item_picks": 907
+      },
+      "input_notes": [
+        {
+          "key": "length_loss",
+          "text": "Of that, swatch Towel sample 2026-11-03 measured take-up 5% of the length on the loom (20 in to 19 in) and length shrinkage 5.3% of the length off the loom (19 in to 18 in)."
+        },
+        {
+          "key": "width_loss",
+          "text": "Of that, swatch Towel sample 2026-11-03 measured draw-in 5% of the width in the reed (12 in to 11.4 in) and width shrinkage 4.5% of the width off the loom (11 in to 10.5 in). The total also counts its change from 11.4 in on the loom to 11 in off it."
+        }
+      ]
+    },
+    "take_up_overridden": {
+      "inputs": [
+        {
+          "key": "finished_width",
+          "label": "Finished width",
+          "source": "entered",
+          "value": "18 in",
+          "basis": "you entered it"
+        },
+        {
+          "key": "finished_length",
+          "label": "Finished length",
+          "source": "entered",
+          "value": "30 in",
+          "basis": "you entered it"
+        },
+        {
+          "key": "items",
+          "label": "Items",
+          "source": "entered",
+          "value": "4",
+          "basis": "you entered it"
+        },
+        {
+          "key": "hems",
+          "label": "Hems",
+          "source": "entered",
+          "value": "4 in of finished cloth for each item, both ends",
+          "basis": "you entered it"
+        },
+        {
+          "key": "take_up",
+          "label": "Take-up",
+          "source": "entered",
+          "value": "12% of the length on the loom",
+          "basis": "you entered it"
+        },
+        {
+          "key": "length_shrinkage",
+          "label": "Length shrinkage",
+          "source": "measured",
+          "value": "5.3% of the length off the loom",
+          "basis": "from 19 in off the loom and 18 in after wet finishing (measured), swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "width_loss",
+          "label": "Draw-in and shrinkage",
+          "source": "entered",
+          "value": "12.5% of the width in the reed, from the reed to finished",
+          "basis": "from 12 in in the reed and 10.5 in after wet finishing (entered), swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "weft_allowance",
+          "label": "Weft allowance",
+          "source": "default",
+          "value": "10% of the width in the reed, added to each pick",
+          "basis": "Ply's starting estimate for twill (for the weft's crimp and the turns at the selvedges)"
+        },
+        {
+          "key": "loom_waste",
+          "label": "Loom waste",
+          "source": "entered",
+          "value": "27 in for the whole warp",
+          "basis": "you entered it"
+        },
+        {
+          "key": "sett",
+          "label": "Sett",
+          "source": "entered",
+          "value": "24 ends per in",
+          "basis": "the sett in the reed, entered, swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "ppi",
+          "label": "Picks",
+          "source": "measured",
+          "value": "24 picks per in",
+          "basis": "measured on the loom, swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "end_multiple",
+          "label": "Ends in a repeat",
+          "source": "entered",
+          "value": "4",
+          "basis": "you entered it"
+        },
+        {
+          "key": "extra_ends",
+          "label": "Extra ends",
+          "source": "entered",
+          "value": "2",
+          "basis": "you entered it"
+        },
+        {
+          "key": "reed",
+          "label": "Reed",
+          "source": "entered",
+          "value": "12 dents per inch",
+          "basis": "the best of Four-shaft jack loom's reeds for the sett (Loom for this draft)"
+        },
+        {
+          "key": "warp_length_per_mass",
+          "label": "Warp length per mass",
+          "source": "entered",
+          "value": "3360 yd per 1 lb",
+          "basis": "entered, material 8/2 cotton, natural"
+        },
+        {
+          "key": "warp_on_hand",
+          "label": "Warp on hand",
+          "source": "entered",
+          "value": "4200 yd",
+          "basis": "entered, material 8/2 cotton, natural"
+        },
+        {
+          "key": "weft_length_per_mass",
+          "label": "Weft length per mass",
+          "source": "entered",
+          "value": "3360 yd per 1 lb",
+          "basis": "entered, material 8/2 cotton, blue"
+        },
+        {
+          "key": "weft_on_hand",
+          "label": "Weft on hand",
+          "source": "measured",
+          "value": "1 lb (about 3360 yd)",
+          "basis": "measured, at 3360 yd per 1 lb (entered), material 8/2 cotton, blue"
+        }
+      ],
+      "figures": [
+        {
+          "key": "width_in_reed_target",
+          "label": "Width in the reed for the finished width",
+          "value": 20.571428571428573,
+          "unit": "in",
+          "text": "20.57 in (52.25 cm)",
+          "assumed": false
+        },
+        {
+          "key": "warp_ends",
+          "label": "Warp ends",
+          "value": 494,
+          "unit": "count",
+          "text": "494 ends",
+          "assumed": false
+        },
+        {
+          "key": "width_in_reed",
+          "label": "Width in the reed",
+          "value": 20.583333333333332,
+          "unit": "in",
+          "text": "20.58 in (52.28 cm)",
+          "assumed": false
+        },
+        {
+          "key": "finished_width",
+          "label": "Finished width, expected",
+          "value": 18.010416666666664,
+          "unit": "in",
+          "text": "18.01 in (45.75 cm)",
+          "assumed": false
+        },
+        {
+          "key": "woven_length",
+          "label": "Woven on the loom, each item",
+          "value": 40.78282828282829,
+          "unit": "in",
+          "text": "40.78 in (103.59 cm)",
+          "assumed": false
+        },
+        {
+          "key": "warp_length",
+          "label": "Warp length",
+          "value": 5.281425364758699,
+          "unit": "yd",
+          "text": "5.28 yd (4.83 m)",
+          "assumed": false
+        },
+        {
+          "key": "warp_yarn",
+          "label": "Warp yarn",
+          "value": 2609.024130190797,
+          "unit": "yd",
+          "text": "2609.02 yd (2385.69 m)",
+          "assumed": false
+        },
+        {
+          "key": "weft_picks",
+          "label": "Picks",
+          "value": 3916,
+          "unit": "count",
+          "text": "3916 picks",
+          "assumed": false
+        },
+        {
+          "key": "weft_per_pick",
+          "label": "Weft in each pick",
+          "value": 22.641666666666666,
+          "unit": "in",
+          "text": "22.64 in (57.51 cm)",
+          "assumed": true
+        },
+        {
+          "key": "weft_yarn",
+          "label": "Weft yarn",
+          "value": 2462.910185185185,
+          "unit": "yd",
+          "text": "2462.91 yd (2252.09 m)",
+          "assumed": true
+        }
+      ],
+      "denting": {
+        "reed": {
+          "dents": 12.0,
+          "per": "inch"
+        },
+        "order": [
+          2
+        ],
+        "dents": 247,
+        "width": {
+          "value": 20.583333333333332,
+          "unit": "in"
+        },
+        "text": "Sley the 12-dent reed 2 per dent for 24 ends per in: 494 ends fill 247 dents, about 20.58 in (52.28 cm)."
+      },
+      "checks": [
+        {
+          "code": "plan.reed_fits",
+          "severity": "fits",
+          "message": "Sley the 12-dent reed 2 per dent for 24 ends per in."
+        },
+        {
+          "code": "plan.loom_width_fits",
+          "severity": "fits",
+          "message": "20.58 in (52.28 cm) in the reed fits Four-shaft jack loom's 24 in weaving width."
+        }
+      ],
+      "supply": [
+        {
+          "role": "warp",
+          "material_id": "cotton-natural",
+          "need": {
+            "value": 2609.024130190797,
+            "unit": "yd"
+          },
+          "need_mass": {
+            "value": 0.7764952768424992,
+            "unit": "lb"
+          },
+          "on_hand": {
+            "value": 4200.0,
+            "unit": "yd"
+          },
+          "on_hand_about": false,
+          "remaining": {
+            "value": 1590.9758698092028,
+            "unit": "yd"
+          },
+          "text": "8/2 cotton, natural for warp: needs about 2609.02 yd (0.78 lb, 352.21 g). About 1590.98 yd left over.",
+          "assumed": false
+        },
+        {
+          "role": "weft",
+          "material_id": "cotton-blue",
+          "need": {
+            "value": 2462.910185185185,
+            "unit": "yd"
+          },
+          "need_mass": {
+            "value": 0.733008983686067,
+            "unit": "lb"
+          },
+          "on_hand": {
+            "value": 3360.0,
+            "unit": "yd"
+          },
+          "on_hand_about": true,
+          "remaining": {
+            "value": 897.0898148148149,
+            "unit": "yd"
+          },
+          "text": "8/2 cotton, blue for weft: needs about 2462.91 yd (0.73 lb, 332.49 g). About 897.09 yd left over.",
+          "assumed": true
+        }
+      ],
+      "issues": [],
+      "notes": [
+        "This draft threads 8 ends; the plan needs 494. The plan does not change the draft.",
+        "Inputs marked as Ply's starting estimates are rules of thumb, not measurements. A sample woven and finished like the project gives better numbers."
+      ],
+      "hand": {
+        "per_item_in": 40.78282828282829,
+        "warp_in": 190.13131313131316,
+        "item_picks": 979
+      },
+      "input_notes": [
+        {
+          "key": "width_loss",
+          "text": "Of that, swatch Towel sample 2026-11-03 measured draw-in 5% of the width in the reed (12 in to 11.4 in) and width shrinkage 4.5% of the width off the loom (11 in to 10.5 in). The total also counts its change from 11.4 in on the loom to 11 in off it."
+        }
+      ]
+    },
+    "take_up_impossible": {
+      "inputs": [
+        {
+          "key": "finished_width",
+          "label": "Finished width",
+          "source": "entered",
+          "value": "18 in",
+          "basis": "you entered it"
+        },
+        {
+          "key": "finished_length",
+          "label": "Finished length",
+          "source": "entered",
+          "value": "30 in",
+          "basis": "you entered it"
+        },
+        {
+          "key": "items",
+          "label": "Items",
+          "source": "entered",
+          "value": "4",
+          "basis": "you entered it"
+        },
+        {
+          "key": "hems",
+          "label": "Hems",
+          "source": "entered",
+          "value": "4 in of finished cloth for each item, both ends",
+          "basis": "you entered it"
+        },
+        {
+          "key": "length_shrinkage",
+          "label": "Length shrinkage",
+          "source": "measured",
+          "value": "5.3% of the length off the loom",
+          "basis": "from 19 in off the loom and 18 in after wet finishing (measured), swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "width_loss",
+          "label": "Draw-in and shrinkage",
+          "source": "entered",
+          "value": "12.5% of the width in the reed, from the reed to finished",
+          "basis": "from 12 in in the reed and 10.5 in after wet finishing (entered), swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "weft_allowance",
+          "label": "Weft allowance",
+          "source": "default",
+          "value": "10% of the width in the reed, added to each pick",
+          "basis": "Ply's starting estimate for twill (for the weft's crimp and the turns at the selvedges)"
+        },
+        {
+          "key": "loom_waste",
+          "label": "Loom waste",
+          "source": "entered",
+          "value": "27 in for the whole warp",
+          "basis": "you entered it"
+        },
+        {
+          "key": "sett",
+          "label": "Sett",
+          "source": "entered",
+          "value": "24 ends per in",
+          "basis": "the sett in the reed, entered, swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "ppi",
+          "label": "Picks",
+          "source": "measured",
+          "value": "24 picks per in",
+          "basis": "measured on the loom, swatch Towel sample 2026-11-03"
+        },
+        {
+          "key": "end_multiple",
+          "label": "Ends in a repeat",
+          "source": "entered",
+          "value": "4",
+          "basis": "you entered it"
+        },
+        {
+          "key": "extra_ends",
+          "label": "Extra ends",
+          "source": "entered",
+          "value": "2",
+          "basis": "you entered it"
+        },
+        {
+          "key": "reed",
+          "label": "Reed",
+          "source": "entered",
+          "value": "12 dents per inch",
+          "basis": "the best of Four-shaft jack loom's reeds for the sett (Loom for this draft)"
+        }
+      ],
+      "figures": [
+        {
+          "key": "width_in_reed_target",
+          "label": "Width in the reed for the finished width",
+          "value": 20.571428571428573,
+          "unit": "in",
+          "text": "20.57 in (52.25 cm)",
+          "assumed": false
+        },
+        {
+          "key": "warp_ends",
+          "label": "Warp ends",
+          "value": 494,
+          "unit": "count",
+          "text": "494 ends",
+          "assumed": false
+        },
+        {
+          "key": "width_in_reed",
+          "label": "Width in the reed",
+          "value": 20.583333333333332,
+          "unit": "in",
+          "text": "20.58 in (52.28 cm)",
+          "assumed": false
+        },
+        {
+          "key": "finished_width",
+          "label": "Finished width, expected",
+          "value": 18.010416666666664,
+          "unit": "in",
+          "text": "18.01 in (45.75 cm)",
+          "assumed": false
+        }
+      ],
+      "denting": {
+        "reed": {
+          "dents": 12.0,
+          "per": "inch"
+        },
+        "order": [
+          2
+        ],
+        "dents": 247,
+        "width": {
+          "value": 20.583333333333332,
+          "unit": "in"
+        },
+        "text": "Sley the 12-dent reed 2 per dent for 24 ends per in: 494 ends fill 247 dents, about 20.58 in (52.28 cm)."
+      },
+      "checks": [
+        {
+          "code": "plan.reed_fits",
+          "severity": "fits",
+          "message": "Sley the 12-dent reed 2 per dent for 24 ends per in."
+        },
+        {
+          "code": "plan.loom_width_fits",
+          "severity": "fits",
+          "message": "20.58 in (52.28 cm) in the reed fits Four-shaft jack loom's 24 in weaving width."
+        }
+      ],
+      "supply": [],
+      "issues": [
+        {
+          "code": "plan.out_of_range",
+          "kind": "invalid",
+          "field": "take_up",
+          "message": "The take-up must be from -50% to 90% of the length on the loom."
+        }
+      ],
+      "notes": [
+        "This draft threads 8 ends; the plan needs 494. The plan does not change the draft.",
+        "Inputs marked as Ply's starting estimates are rules of thumb, not measurements. A sample woven and finished like the project gives better numbers."
+      ],
+      "input_notes": [
+        {
+          "key": "width_loss",
+          "text": "Of that, swatch Towel sample 2026-11-03 measured draw-in 5% of the width in the reed (12 in to 11.4 in) and width shrinkage 4.5% of the width off the loom (11 in to 10.5 in). The total also counts its change from 11.4 in on the loom to 11 in off it."
+        }
+      ]
+    }
+  }
+}

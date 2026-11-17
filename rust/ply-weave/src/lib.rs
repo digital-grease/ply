@@ -21,6 +21,7 @@ pub mod shadow;
 pub mod structure;
 pub mod validate;
 pub mod wif;
+pub mod worksheet;
 
 pub use construction::{derive_edges, Construction, EdgeBehavior, Edges, MissingEdgeData, Turn};
 pub use draft::{

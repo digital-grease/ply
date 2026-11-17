@@ -1,0 +1,242 @@
+{
+  "about": "A plain weave wool scarf, 25 cm by 180 cm after finishing, with 12 cm of fringe at each end, planned first from Ply's starting estimates and the yarn's wraps per cm, then again once a sample was woven and fulled. See scarf.fixture.toml for the working.",
+  "materials": {
+    "format": "ply.materials",
+    "schema_version": 1,
+    "materials": [
+      {
+        "id": "wool-2-8",
+        "name": "2/8 wool, heather",
+        "maker": "",
+        "fibers": [
+          {
+            "fiber": "wool",
+            "percent": 100.0
+          }
+        ],
+        "weight": null,
+        "structure": "2/8, worsted-spun",
+        "length_per_mass": {
+          "value": {
+            "length": {
+              "value": 450.0,
+              "unit": "m"
+            },
+            "mass": {
+              "value": 100.0,
+              "unit": "g"
+            }
+          },
+          "source": "entered"
+        },
+        "wpi": {
+          "value": {
+            "count": 12.0,
+            "over": {
+              "value": 1.0,
+              "unit": "cm"
+            }
+          },
+          "source": "measured"
+        },
+        "color": "Heather",
+        "dye_lot": "",
+        "available_mass": {
+          "value": {
+            "value": 300.0,
+            "unit": "g"
+          },
+          "source": "measured"
+        },
+        "available_length": null,
+        "notes": "Invented for Ply's tests."
+      }
+    ],
+    "swatches": [
+      {
+        "id": "sw-scarf",
+        "name": "Scarf sample",
+        "craft": "weaving",
+        "technique": "plain weave",
+        "date": "2026-11-08",
+        "yarns": [
+          {
+            "material_id": "wool-2-8",
+            "name": "2/8 wool, heather",
+            "role": "warp"
+          },
+          {
+            "material_id": "wool-2-8",
+            "name": "2/8 wool, heather",
+            "role": "weft"
+          }
+        ],
+        "tools": "countermarch loom, 40/10 reed, 2, 1",
+        "sett": {
+          "value": {
+            "count": 6.0,
+            "over": {
+              "value": 1.0,
+              "unit": "cm"
+            }
+          },
+          "source": "entered"
+        },
+        "width_in_reed": {
+          "value": {
+            "value": 25.0,
+            "unit": "cm"
+          },
+          "source": "entered"
+        },
+        "on_loom": {
+          "width": null,
+          "length": {
+            "value": {
+              "value": 50.0,
+              "unit": "cm"
+            },
+            "source": "measured"
+          },
+          "across": null,
+          "along": {
+            "value": {
+              "count": 6.0,
+              "over": {
+                "value": 1.0,
+                "unit": "cm"
+              }
+            },
+            "source": "measured"
+          },
+          "conditions": "under weaving tension"
+        },
+        "before": {
+          "width": null,
+          "length": null,
+          "across": null,
+          "along": null,
+          "conditions": ""
+        },
+        "after": {
+          "width": {
+            "value": {
+              "value": 21.0,
+              "unit": "cm"
+            },
+            "source": "measured"
+          },
+          "length": {
+            "value": {
+              "value": 44.0,
+              "unit": "cm"
+            },
+            "source": "measured"
+          },
+          "across": null,
+          "along": null,
+          "conditions": "dry, after a day flat"
+        },
+        "finishing": "hand washed warm, lightly fulled, dried flat",
+        "mass": null,
+        "tension": "",
+        "provenance": "Invented for Ply's tests.",
+        "notes": ""
+      }
+    ]
+  },
+  "loom": {
+    "id": "fixture-eight-shaft-countermarch",
+    "name": "Eight-shaft countermarch",
+    "kind": "countermarch",
+    "shafts": 8,
+    "treadles": 10,
+    "weaving_width": {
+      "value": 100.0,
+      "unit": "centimeters"
+    },
+    "reeds": [
+      {
+        "dents": 40.0,
+        "per": "10cm"
+      },
+      {
+        "dents": 50.0,
+        "per": "10cm"
+      }
+    ],
+    "treadles_at_once": 2,
+    "notes": "Fixture: a metric countermarch loom."
+  },
+  "loomSett": null,
+  "draft": {
+    "ends": 4,
+    "meanStrands": 1.0,
+    "fileSett": null
+  },
+  "metric": true,
+  "cases": [
+    {
+      "name": "before_sampling",
+      "about": "No swatch yet: every loss is Ply's starting estimate for plain weave, and the sett is a starting approximation from the yarn's wraps.",
+      "plan": {
+        "version": 1,
+        "structure": "plain",
+        "items": 1,
+        "finishedWidth": {
+          "value": 25.0,
+          "unit": "cm"
+        },
+        "finishedLength": {
+          "value": 180.0,
+          "unit": "cm"
+        },
+        "fringe": {
+          "value": 24.0,
+          "unit": "cm"
+        },
+        "sampling": {
+          "value": 30.0,
+          "unit": "cm"
+        },
+        "warpMaterialId": "wool-2-8",
+        "weftMaterialId": "wool-2-8",
+        "overrides": {},
+        "warpMaterialName": "2/8 wool, heather",
+        "weftMaterialName": "2/8 wool, heather"
+      }
+    },
+    {
+      "name": "after_sampling",
+      "about": "The same plan with the sample chosen: its losses, sett and picks replace the estimates.",
+      "plan": {
+        "version": 1,
+        "structure": "plain",
+        "items": 1,
+        "finishedWidth": {
+          "value": 25.0,
+          "unit": "cm"
+        },
+        "finishedLength": {
+          "value": 180.0,
+          "unit": "cm"
+        },
+        "fringe": {
+          "value": 24.0,
+          "unit": "cm"
+        },
+        "sampling": {
+          "value": 30.0,
+          "unit": "cm"
+        },
+        "warpMaterialId": "wool-2-8",
+        "weftMaterialId": "wool-2-8",
+        "overrides": {},
+        "swatchId": "sw-scarf",
+        "warpMaterialName": "2/8 wool, heather",
+        "weftMaterialName": "2/8 wool, heather",
+        "swatchName": "Scarf sample"
+      }
+    }
+  ]
+}

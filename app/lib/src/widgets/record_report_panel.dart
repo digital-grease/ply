@@ -94,7 +94,7 @@ class EstimateTrace extends StatelessWidget {
                 children: [
                   Padding(
                     padding: const EdgeInsets.only(top: 2, right: PlySpacing.xs),
-                    child: _SourceBadge(i.source),
+                    child: SourceBadge(i.source),
                   ),
                   Expanded(
                     child: Text('${i.label}: ${i.sentence}',
@@ -124,8 +124,10 @@ class EstimateTrace extends StatelessWidget {
   }
 }
 
-class _SourceBadge extends StatelessWidget {
-  const _SourceBadge(this.source);
+/// A small "Measured", "Entered" or "Ply default" badge for where a value came from (also used by
+/// the warp and weft plan, ADR 0019).
+class SourceBadge extends StatelessWidget {
+  const SourceBadge(this.source, {super.key});
 
   final ValueSource source;
 

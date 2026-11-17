@@ -25,6 +25,7 @@ import 'package:collection/collection.dart';
 
 import 'loom_check.dart';
 import 'loom_type.dart';
+import 'weave_plan.dart';
 
 /// Metadata describing one saved draft, serialized to `<id>.json`.
 class DraftMeta {
@@ -36,6 +37,7 @@ class DraftMeta {
     this.loomType = LoomType.jack,
     this.overshotTreadling = false,
     this.loomPlan,
+    this.weavePlan,
     required DateTime savedAt,
     required DateTime lastOpened,
     this.schemaVersion = currentSchemaVersion,
@@ -79,6 +81,15 @@ class DraftMeta {
   /// `loomPlan`, written only when set, and a value this build cannot read is kept in [extra].
   final LoomPlan? loomPlan;
 
+  /// The draft's warp, weft and finishing plan (ADR 0019), or null when it has none. App-only (never
+  /// in the WIF); stored under `weavePlan`, written only when set, and a plan this build cannot read
+  /// (a newer version) is kept in [extra] as it is.
+  final WeavePlan? weavePlan;
+
+  /// Whether the sidecar holds a plan this build cannot read (kept in [extra]): the worksheet then
+  /// refuses to replace it.
+  bool get hasUnreadablePlan => extra.containsKey(WeavePlan.key);
+
   /// When the draft was first saved.
   final DateTime savedAt;
 
@@ -108,6 +119,7 @@ class DraftMeta {
     'loomType',
     'overshotTreadling',
     'loomPlan',
+    WeavePlan.key,
     'savedAt',
     'lastOpened',
     'schemaVersion',
@@ -122,6 +134,8 @@ class DraftMeta {
     bool? overshotTreadling,
     LoomPlan? loomPlan,
     bool clearLoomPlan = false,
+    WeavePlan? weavePlan,
+    bool clearWeavePlan = false,
     DateTime? savedAt,
     DateTime? lastOpened,
     int? schemaVersion,
@@ -136,6 +150,7 @@ class DraftMeta {
             'loomType' => loomType != null,
             'overshotTreadling' => overshotTreadling != null,
             'loomPlan' => loomPlan != null || clearLoomPlan,
+            WeavePlan.key => weavePlan != null || clearWeavePlan,
             'savedAt' => savedAt != null,
             'lastOpened' => lastOpened != null,
             'schemaVersion' => schemaVersion != null,
@@ -149,6 +164,7 @@ class DraftMeta {
       loomType: loomType ?? this.loomType,
       overshotTreadling: overshotTreadling ?? this.overshotTreadling,
       loomPlan: clearLoomPlan ? null : (loomPlan ?? this.loomPlan),
+      weavePlan: clearWeavePlan ? null : (weavePlan ?? this.weavePlan),
       savedAt: savedAt ?? this.savedAt,
       lastOpened: lastOpened ?? this.lastOpened,
       schemaVersion: schemaVersion ?? this.schemaVersion,
@@ -167,6 +183,7 @@ class DraftMeta {
         'loomType': loomType.serialName,
         'overshotTreadling': overshotTreadling,
         if (loomPlan != null) 'loomPlan': loomPlan!.toJson(),
+        if (weavePlan != null) WeavePlan.key: weavePlan!.toJson(),
         'savedAt': savedAt.toIso8601String(),
         'lastOpened': lastOpened.toIso8601String(),
         'schemaVersion': schemaVersion,
@@ -203,6 +220,7 @@ class DraftMeta {
           LoomType.jack,
       overshotTreadling: read('overshotTreadling', (raw) => raw is bool ? raw : null) ?? false,
       loomPlan: read('loomPlan', LoomPlan.fromJson),
+      weavePlan: read(WeavePlan.key, WeavePlan.fromJson),
       savedAt: savedAt,
       // Fall back to savedAt so sort order is still sensible if lastOpened is absent.
       lastOpened: read('lastOpened', date) ?? savedAt,
@@ -223,6 +241,7 @@ class DraftMeta {
           loomType == other.loomType &&
           overshotTreadling == other.overshotTreadling &&
           loomPlan == other.loomPlan &&
+          weavePlan == other.weavePlan &&
           savedAt == other.savedAt &&
           lastOpened == other.lastOpened &&
           schemaVersion == other.schemaVersion &&
@@ -237,6 +256,7 @@ class DraftMeta {
         loomType,
         overshotTreadling,
         loomPlan,
+        weavePlan,
         savedAt,
         lastOpened,
         schemaVersion,

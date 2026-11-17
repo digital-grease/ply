@@ -1,0 +1,74 @@
+# Fixture record for towel.plan.json (see fixtures/README.md).
+
+id = "weaving/plans/towel"
+title = "Four cotton tea towels in 2/2 twill, planned from a washed sample"
+technique = "warp, weft and finishing plan (ADR 0019)"
+files = ["towel.plan.json", "towel.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Invented for Ply's tests: the towel, the sample, the two 8/2 cottons and their amounts on hand. The \
+loom is the four-shaft jack loom of weaving/looms/looms.json (24 in weaving width, a 12-dent and a \
+10-dent reed). The sample was woven 12 in wide in the reed at 24 ends per inch and measured on the \
+loom (11.4 in at the fell, 20 in long, 24 picks per inch), off the loom (11 in by 19 in) and after a \
+warm machine wash, tumble dry and press (10.5 in by 18 in). The draft threads one 8-end repeat."""
+oracle = """
+towel.expect.json was written by hand from the formulas of ADR 0019, not dumped from the code: \
+every loss is a share of the earlier, larger measurement and planning divides by (1 - loss); the \
+exact factors 1 in = 2.54 cm, 1 yd = 36 in = 0.9144 m, 1 lb = 453.59237 g; numbers shown to two \
+decimals. The working is below."""
+
+[sources]
+take_up_and_shrinkage = "Weavers' sampling practice: measure on the loom, off the loom and after wet finishing; losses as a share of the earlier measurement; plan by the ratio, not by adding the percentage"
+starting_estimates = "Ply's starting estimates (ADR 0019 section 4): 10% weft allowance; loom waste here is the weaver's own"
+
+[working.from_swatch]
+width = """
+Both width losses come from the sample together: from 12 in in the reed to 10.5 in finished is \
+(12 - 10.5) / 12 = 12.5% of the width in the reed. Width in the reed for 18 in finished: 18 / (1 - \
+0.125) = 18 / 0.875 = 20.571 in. Ends: 20.571 x 24 = 493.71, to the nearest multiple of 4 (the 2/2 \
+twill repeat) = 492, plus 2 floating selvedges = 494 ends. Width in the reed: 494 / 24 = 20.583 in \
+(52.28 cm). Expected finished width: 20.583 x 0.875 = 18.01 in."""
+denting = """
+24 ends per inch in the 12-dent reed is 2 per dent: 494 / 2 = 247 dents, 247 / 12 = 20.58 in. It \
+fits the loom's 24 in weaving width."""
+length = """
+Both length losses come from the sample together: from 20 in on the loom to 18 in finished is (20 - \
+18) / 20 = 10% of the length on the loom. (Separately: take-up 20 to 19 in = 5%, shrinkage 19 to \
+18 in = 5.3% of the length off the loom; 0.95 x 18/19 = 0.9, the same.) Each towel is 30 in plus 4 \
+in of hems = 34 in finished, woven at 34 / 0.9 = 37.778 in on the loom. Warp: 4 x 37.778 + 27 in \
+loom waste = 178.111 in = 4.9475 yd. Warp yarn: 4.9475 yd x 494 ends = 2444.08 yd."""
+weft = """
+Picks: 24 per inch (counted on the loom) x 37.778 in = 906.67, so 907 picks a towel; x 4 = 3628 \
+picks. Each pick is the width in the reed plus 10% (Ply's starting estimate): 20.583 x 1.1 = \
+22.642 in. Weft: 3628 x 22.642 = 82143.97 in = 2281.78 yd."""
+supply = """
+Warp, 8/2 cotton natural at 3360 yd per lb: 2444.08 / 3360 = 0.727 lb (329.95 g); 4200 yd on hand \
+leaves 1755.92 yd. Weft, 8/2 cotton blue: 2281.78 / 3360 = 0.679 lb (308.03 g); 1 lb on hand is \
+about 3360 yd and leaves about 1078.22 yd."""
+
+[working.take_up_overridden]
+change = """
+The weaver enters 12% take-up. Length shrinkage still comes from the sample on its own: (19 - 18) / \
+19 = 5.263% of the length off the loom. Factor: (1 - 0.12) x (1 - 0.05263) = 0.83368. Each towel: \
+34 / 0.83368 = 40.783 in. Warp: 4 x 40.783 + 27 = 190.131 in = 5.2814 yd; x 494 = 2609.02 yd. \
+Picks: 24 x 40.783 = 978.79, so 979 a towel, 3916 in all; weft 3916 x 22.642 / 36 = 2462.91 yd. The \
+width, the ends and the denting do not change, and the sample is not changed."""
+
+[working.take_up_impossible]
+change = """
+A take-up of 100% cannot be true: plan.out_of_range on take_up. The width is still worked out (494 \
+ends, 20.58 in in the reed); the length, the warp, the weft and the yarn are not."""
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/plan_fixtures.rs: every case matches the oracle (inputs with source and words, \
+figures, denting, loom checks, supply, issues, notes), the plan record round-trips, the records are \
+never changed, and the take-up override moves only the length figures. \
+app/test/weave_plan_test.dart: the app's plan model reads and writes every case exactly. \
+app/test/weave_plan_screen_test.dart: the worksheet screen shows the oracle and overrides one \
+assumption and sets it back without writing the swatch."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "One layer; the starting estimates are Ply's own rules of thumb, not measurements."

@@ -227,6 +227,27 @@ plain so it can double as user-facing help content.
   it (from a label, a pattern or your setup), or it is Ply's starting value or rule of thumb. Every
   estimate made with a swatch says which of its inputs are which.
 
+### Warp and weft planning
+- **Warp and weft plan**: in Ply, a draft's planning worksheet. From the finished size of each item
+  it works back through draw-in, take-up, shrinkage and loom waste to the warp ends, the width in the
+  reed and the denting, the warp length, the picks and the weft, and the yarn against what you have,
+  and says where every number came from. It is saved with the draft.
+- **Starting estimate**: in Ply, a rule of thumb used for an assumption until a swatch measures it,
+  such as 10% take-up for plain weave. It is marked Ply default and is never a measurement; a sample
+  woven and finished like the project gives a better number.
+- **Width allowance**: in Ply, the share to add to a finished width so the warp in the reed covers
+  draw-in and width shrinkage together, worked out from a sample as its width in the reed over its
+  width after wet finishing, minus one.
+- **Weft allowance** (weft take-up): the extra weft each pick takes beyond the width in the reed, for
+  its bending over and under the warp and its turn at each selvedge, as a share of the width in the
+  reed.
+- **Hems and fringe**: in a warp plan, the cloth each item folds into its hems (woven, so it shrinks
+  with the rest) and the unwoven warp it keeps for fringe, both ends together.
+- **Sampling allowance**: extra warp woven at the start of a warp to check the sett, the beat and the
+  colors before weaving the project, measured on the loom.
+- **Denting** (denting plan): how the warp is spread in the reed: which reed, how many ends go in
+  each dent in a repeating order, and how many dents the ends fill.
+
 ### Nalbinding
 - **Nalbinding** (nålbinding) — an ancient single-needle looping craft, worked in a spiral with
   short lengths of yarn; predates knitting and crochet, and does not unravel when cut.

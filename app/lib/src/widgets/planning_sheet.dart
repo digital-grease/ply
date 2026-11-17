@@ -26,8 +26,9 @@ import 'swatch_choice.dart';
 /// systems (8/2 = size 8, 2-ply), NOT the knitting CYC weights — and the SAME count is a different
 /// size in different fibers (cotton, linen, and wool use different count bases), so each fiber is
 /// listed separately. WPI is approximate (sources: the Handwoven Master Yarn Chart, Schacht's sett
-/// chart, Gist Yarn); adjust to your actual yarn.
-const List<(String, double)> _yarnCountWpi = [
+/// chart, Gist Yarn); adjust to your actual yarn. Also offered by the warp and weft plan (ADR 0019)
+/// as typical values to start from, never as a measurement.
+const List<(String, double)> kYarnCountWpi = [
   // Cotton (cotton count; the most common weaving yarn).
   ('3/2 cotton', 21),
   ('5/2 cotton', 26),
@@ -390,11 +391,11 @@ class _PlanningSheetState extends ConsumerState<PlanningSheet> {
               value: null,
               hint: const Text('Seed WPI from yarn size (optional)'),
               items: [
-                for (var i = 0; i < _yarnCountWpi.length; i++)
-                  DropdownMenuItem(value: i, child: Text(_yarnCountWpi[i].$1)),
+                for (var i = 0; i < kYarnCountWpi.length; i++)
+                  DropdownMenuItem(value: i, child: Text(kYarnCountWpi[i].$1)),
               ],
               onChanged: (i) {
-                if (i != null) setState(() => _wpi.text = _fmt(_yarnCountWpi[i].$2));
+                if (i != null) setState(() => _wpi.text = _fmt(kYarnCountWpi[i].$2));
               },
             ),
             const SizedBox(height: 4),

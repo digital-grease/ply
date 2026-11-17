@@ -46,6 +46,7 @@ import '../models/material_record.dart';
 import '../models/nalbind_project.dart';
 import '../models/native_format.dart';
 import '../models/project_materials.dart';
+import '../models/weave_plan.dart' show WeavePlan;
 import 'app_settings_repository.dart';
 import 'loom_repository.dart' show LoomFileException, LoomFileProblem;
 import 'materials_repository.dart'
@@ -1785,8 +1786,13 @@ class LibraryBackup {
       acc.loomPlanId = plan['loomId'] as String;
     }
     final links = ProjectMaterials.idsIn(json);
-    acc.linkedMaterials = links.materials;
-    acc.linkedSwatches = links.swatches;
+    // A weaving draft's plan names records too (ADR 0019): they count as records it uses, so a
+    // restore that adds one as a copy points the plan at the copy, as it does the links.
+    final planned = acc.craft == BackupCraft.weaving
+        ? WeavePlan.idsIn(json)
+        : (materials: const <String>{}, swatches: const <String>{});
+    acc.linkedMaterials = {...links.materials, ...planned.materials};
+    acc.linkedSwatches = {...links.swatches, ...planned.swatches};
     final version = json['schemaVersion'];
     if (version is int && version > DraftMeta.currentSchemaVersion) {
       return RestoreRefusal.newerVersion;
@@ -1925,7 +1931,9 @@ class LibraryBackup {
   static Map<String, dynamic> _rewrittenSidecar(Map<String, dynamic> json,
       (String, String)? relink, _MaterialRelinks materialRelinks) {
     final looms = relink == null ? json : _relinked(json, relink.$1, relink.$2);
-    return ProjectMaterials.relinked(looms, materialRelinks.materials, materialRelinks.swatches);
+    final linked =
+        ProjectMaterials.relinked(looms, materialRelinks.materials, materialRelinks.swatches);
+    return WeavePlan.relinked(linked, materialRelinks.materials, materialRelinks.swatches);
   }
 
   /// Whether a project linking [materialIds] and [swatchIds] links a record restored as a copy.

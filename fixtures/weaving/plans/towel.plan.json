@@ -1,0 +1,334 @@
+{
+  "about": "Four cotton tea towels in 2/2 twill, 18 in by 30 in after washing, planned from a woven and washed sample on a four-shaft jack loom. See towel.fixture.toml for the working.",
+  "materials": {
+    "format": "ply.materials",
+    "schema_version": 1,
+    "materials": [
+      {
+        "id": "cotton-natural",
+        "name": "8/2 cotton, natural",
+        "maker": "",
+        "fibers": [
+          {
+            "fiber": "cotton",
+            "percent": 100.0
+          }
+        ],
+        "weight": null,
+        "structure": "8/2, unmercerized",
+        "length_per_mass": {
+          "value": {
+            "length": {
+              "value": 3360.0,
+              "unit": "yd"
+            },
+            "mass": {
+              "value": 1.0,
+              "unit": "lb"
+            }
+          },
+          "source": "entered"
+        },
+        "wpi": null,
+        "color": "",
+        "dye_lot": "",
+        "available_mass": null,
+        "available_length": {
+          "value": {
+            "value": 4200.0,
+            "unit": "yd"
+          },
+          "source": "entered"
+        },
+        "notes": "Invented for Ply's tests."
+      },
+      {
+        "id": "cotton-blue",
+        "name": "8/2 cotton, blue",
+        "maker": "",
+        "fibers": [
+          {
+            "fiber": "cotton",
+            "percent": 100.0
+          }
+        ],
+        "weight": null,
+        "structure": "8/2, unmercerized",
+        "length_per_mass": {
+          "value": {
+            "length": {
+              "value": 3360.0,
+              "unit": "yd"
+            },
+            "mass": {
+              "value": 1.0,
+              "unit": "lb"
+            }
+          },
+          "source": "entered"
+        },
+        "wpi": null,
+        "color": "Blue",
+        "dye_lot": "",
+        "available_mass": {
+          "value": {
+            "value": 1.0,
+            "unit": "lb"
+          },
+          "source": "measured"
+        },
+        "available_length": null,
+        "notes": "Invented for Ply's tests."
+      }
+    ],
+    "swatches": [
+      {
+        "id": "sw-towel-plan",
+        "name": "Towel sample",
+        "craft": "weaving",
+        "technique": "2/2 twill",
+        "date": "2026-11-03",
+        "yarns": [
+          {
+            "material_id": "cotton-natural",
+            "name": "8/2 cotton, natural",
+            "role": "warp"
+          },
+          {
+            "material_id": "cotton-blue",
+            "name": "8/2 cotton, blue",
+            "role": "weft"
+          }
+        ],
+        "tools": "jack loom, 12-dent reed, 2 per dent",
+        "sett": {
+          "value": {
+            "count": 24.0,
+            "over": {
+              "value": 1.0,
+              "unit": "in"
+            }
+          },
+          "source": "entered"
+        },
+        "width_in_reed": {
+          "value": {
+            "value": 12.0,
+            "unit": "in"
+          },
+          "source": "entered"
+        },
+        "on_loom": {
+          "width": {
+            "value": {
+              "value": 11.4,
+              "unit": "in"
+            },
+            "source": "measured"
+          },
+          "length": {
+            "value": {
+              "value": 20.0,
+              "unit": "in"
+            },
+            "source": "measured"
+          },
+          "across": null,
+          "along": {
+            "value": {
+              "count": 24.0,
+              "over": {
+                "value": 1.0,
+                "unit": "in"
+              }
+            },
+            "source": "measured"
+          },
+          "conditions": "under weaving tension, at the fell"
+        },
+        "before": {
+          "width": {
+            "value": {
+              "value": 11.0,
+              "unit": "in"
+            },
+            "source": "measured"
+          },
+          "length": {
+            "value": {
+              "value": 19.0,
+              "unit": "in"
+            },
+            "source": "measured"
+          },
+          "across": null,
+          "along": null,
+          "conditions": "relaxed for an hour"
+        },
+        "after": {
+          "width": {
+            "value": {
+              "value": 10.5,
+              "unit": "in"
+            },
+            "source": "measured"
+          },
+          "length": {
+            "value": {
+              "value": 18.0,
+              "unit": "in"
+            },
+            "source": "measured"
+          },
+          "across": null,
+          "along": null,
+          "conditions": "dry, pressed"
+        },
+        "finishing": "machine washed warm, tumble dried, pressed",
+        "mass": null,
+        "tension": "",
+        "provenance": "Invented for Ply's tests.",
+        "notes": ""
+      }
+    ]
+  },
+  "loom": {
+    "id": "fixture-four-shaft-jack",
+    "name": "Four-shaft jack loom",
+    "kind": "jack",
+    "shafts": 4,
+    "treadles": 6,
+    "weaving_width": {
+      "value": 24.0,
+      "unit": "inches"
+    },
+    "reeds": [
+      {
+        "dents": 12.0,
+        "per": "inch"
+      },
+      {
+        "dents": 10.0,
+        "per": "inch"
+      }
+    ],
+    "treadles_at_once": 2,
+    "notes": "Fixture: a small jack floor loom."
+  },
+  "loomSett": null,
+  "draft": {
+    "ends": 8,
+    "meanStrands": 1.0,
+    "fileSett": null
+  },
+  "metric": false,
+  "cases": [
+    {
+      "name": "from_swatch",
+      "about": "Every assumption the swatch measured is taken from it; the weaver entered their loom's waste.",
+      "plan": {
+        "version": 1,
+        "structure": "twill",
+        "items": 4,
+        "finishedWidth": {
+          "value": 18.0,
+          "unit": "in"
+        },
+        "finishedLength": {
+          "value": 30.0,
+          "unit": "in"
+        },
+        "hems": {
+          "value": 4.0,
+          "unit": "in"
+        },
+        "endMultiple": 4,
+        "extraEnds": 2,
+        "swatchId": "sw-towel-plan",
+        "warpMaterialId": "cotton-natural",
+        "weftMaterialId": "cotton-blue",
+        "overrides": {
+          "loomWaste": {
+            "value": 27.0,
+            "unit": "in"
+          }
+        },
+        "swatchName": "Towel sample",
+        "warpMaterialName": "8/2 cotton, natural",
+        "weftMaterialName": "8/2 cotton, blue"
+      }
+    },
+    {
+      "name": "take_up_overridden",
+      "about": "The weaver overrides the take-up alone (12%). The shrinkage still comes from the swatch, and the swatch is unchanged.",
+      "plan": {
+        "version": 1,
+        "structure": "twill",
+        "items": 4,
+        "finishedWidth": {
+          "value": 18.0,
+          "unit": "in"
+        },
+        "finishedLength": {
+          "value": 30.0,
+          "unit": "in"
+        },
+        "hems": {
+          "value": 4.0,
+          "unit": "in"
+        },
+        "endMultiple": 4,
+        "extraEnds": 2,
+        "swatchId": "sw-towel-plan",
+        "warpMaterialId": "cotton-natural",
+        "weftMaterialId": "cotton-blue",
+        "overrides": {
+          "loomWaste": {
+            "value": 27.0,
+            "unit": "in"
+          },
+          "takeUp": 0.12
+        },
+        "swatchName": "Towel sample",
+        "warpMaterialName": "8/2 cotton, natural",
+        "weftMaterialName": "8/2 cotton, blue"
+      }
+    },
+    {
+      "name": "take_up_impossible",
+      "about": "A take-up of 100% cannot be true: an issue names it, the width is still worked out, the length and weft are not.",
+      "plan": {
+        "version": 1,
+        "structure": "twill",
+        "items": 4,
+        "finishedWidth": {
+          "value": 18.0,
+          "unit": "in"
+        },
+        "finishedLength": {
+          "value": 30.0,
+          "unit": "in"
+        },
+        "hems": {
+          "value": 4.0,
+          "unit": "in"
+        },
+        "endMultiple": 4,
+        "extraEnds": 2,
+        "swatchId": "sw-towel-plan",
+        "warpMaterialId": "cotton-natural",
+        "weftMaterialId": "cotton-blue",
+        "overrides": {
+          "loomWaste": {
+            "value": 27.0,
+            "unit": "in"
+          },
+          "takeUp": 1.0
+        },
+        "swatchName": "Towel sample",
+        "warpMaterialName": "8/2 cotton, natural",
+        "weftMaterialName": "8/2 cotton, blue"
+      }
+    }
+  ]
+}

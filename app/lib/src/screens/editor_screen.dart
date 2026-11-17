@@ -13,6 +13,7 @@ import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../state/loom_providers.dart';
 import '../state/material_providers.dart' show openProjectProvider;
+import '../state/weave_plan_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/book_view_sheet.dart';
 import '../widgets/dimensions_bar.dart';
@@ -27,6 +28,7 @@ import '../widgets/unsaved_changes_guard.dart';
 import '../widgets/validation_panel.dart';
 import '../widgets/woven_preview.dart';
 import 'layer_inspector_screen.dart';
+import 'weave_plan_screen.dart';
 
 /// The less-frequent AppBar actions tucked into the overflow (⋮) menu. The `toggle*` entries are
 /// switches (shed direction, and the gridline / long-float / texture view chrome) rather than
@@ -36,6 +38,7 @@ enum _OverflowAction {
   zoomOut,
   loomType,
   loomPlan,
+  weavePlan,
   materials,
   convert,
   viewLayers,
@@ -164,6 +167,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // loom group starts collapsed for each session.
       ref.read(draftLoomPlanProvider.notifier).state = widget.meta?.loomPlan;
       ref.read(loomCheckExpandedProvider.notifier).state = false;
+      // Seed the warp and weft plan (ADR 0019) from the sidecar; saved back on save. A plan this build
+      // cannot read stays in the sidecar as it is, and the worksheet does not offer to replace it.
+      ref.read(draftWeavePlanProvider.notifier).state = widget.meta?.weavePlan;
+      ref.read(draftWeavePlanLockedProvider.notifier).state =
+          widget.meta?.hasUnreadablePlan ?? false;
       // The project the planning calculator offers linked swatches for (ADR 0016).
       ref.read(openProjectProvider.notifier).state =
           (craft: BackupCraft.weaving, id: widget.id);
@@ -257,6 +265,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       final loomType = ref.read(loomTypeProvider);
       final overshotTreadling = ref.read(overshotTreadlingProvider);
       final loomPlan = ref.read(draftLoomPlanProvider);
+      final weavePlan = ref.read(draftWeavePlanProvider);
       if (widget.meta != null) {
         // Pass a field only when this session changed it: an untouched one keeps whatever the sidecar
         // held, including a value written by a newer build that this one could not interpret.
@@ -266,6 +275,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             overshotTreadling: overshotTreadling == old.overshotTreadling ? null : overshotTreadling,
             loomPlan: loomPlan == old.loomPlan ? null : loomPlan,
             clearLoomPlan: loomPlan == null && old.loomPlan != null,
+            weavePlan: weavePlan == old.weavePlan ? null : weavePlan,
+            clearWeavePlan: weavePlan == null && old.weavePlan != null,
             lastOpened: DateTime.now());
       } else {
         final input = await showSaveDraftDialog(context, initialName: widget.title);
@@ -279,6 +290,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           loomType: loomType,
           overshotTreadling: overshotTreadling,
           loomPlan: loomPlan,
+          weavePlan: weavePlan,
           savedAt: now,
           lastOpened: now,
         );
@@ -569,6 +581,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // A changed loom choice is unsaved work too (it is saved with the draft). Only once loaded: the
     // plan provider still holds the previous session's value until _load seeds it.
     final planChanged = ready && ref.watch(draftLoomPlanProvider) != widget.meta?.loomPlan;
+    // So is a changed warp and weft plan (ADR 0019), saved with the draft the same way.
+    final weavePlanChanged = ready && ref.watch(draftWeavePlanProvider) != widget.meta?.weavePlan;
     // "Loom for this draft" is offered once the weaver has a loom, or when the draft names one; with
     // neither, the menu looks as it always did.
     final hasLooms =
@@ -578,7 +592,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     final offerMaterials = ref.watch(
         offerProjectMaterialsProvider((craft: BackupCraft.weaving, id: widget.id)));
     return PopScope<bool>(
-      canPop: !dirty && !planChanged,
+      canPop: !dirty && !planChanged && !weavePlanChanged,
       onPopInvokedWithResult: _onLeave,
       child: Scaffold(
       appBar: AppBar(
@@ -629,6 +643,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _chooseLoomType();
                       case _OverflowAction.loomPlan:
                         chooseLoomForDraft(context, ref);
+                      case _OverflowAction.weavePlan:
+                        Navigator.of(context).push(MaterialPageRoute<void>(
+                            builder: (_) => WeavePlanScreen(projectId: widget.id)));
                       case _OverflowAction.materials:
                         showProjectMaterials(context,
                             craft: BackupCraft.weaving, id: widget.id);
@@ -683,6 +700,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             leading: Icon(Icons.fact_check_outlined),
                             title: Text('$kLoomForDraftTitle…')),
                       ),
+                    // The warp, weft and finishing worksheet (ADR 0019), offered for every draft.
+                    const PopupMenuItem(
+                      value: _OverflowAction.weavePlan,
+                      child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.straighten),
+                          title: Text('$kWeavePlanTitle…')),
+                    ),
                     // The draft's links to the library's materials and swatches (ADR 0016).
                     if (offerMaterials)
                       const PopupMenuItem(

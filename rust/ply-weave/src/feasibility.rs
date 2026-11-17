@@ -1439,7 +1439,7 @@ impl Checker<'_> {
 // ---------------------------------------------------------------------------------------------
 
 /// The most ends per dent that still counts as fitting (more can leave reed marks).
-const MAX_EVEN_PER_DENT: u32 = 4;
+pub const MAX_EVEN_PER_DENT: u32 = 4;
 /// The most ends in one dent Ply will suggest at all.
 const MAX_PER_DENT: u32 = 6;
 /// The longest repeating sleying order Ply looks for, in dents.
@@ -1447,21 +1447,22 @@ const MAX_ORDER_DENTS: u32 = 6;
 /// How far the reed's sett may be from the draft's and still count as giving it.
 const SETT_TOLERANCE: f64 = 0.02;
 
-/// A way to sley one reed for a sett.
+/// A way to sley one reed for a sett. Public so the warp planner (ADR 0019) makes the same choice
+/// as the loom check.
 #[derive(Debug, Clone, PartialEq)]
-struct Sleying {
-    reed: Reed,
+pub struct Sleying {
+    pub reed: Reed,
     /// Ends in each dent of the repeating order, most first (one entry = the same in every dent).
-    pattern: Vec<u32>,
+    pub pattern: Vec<u32>,
     /// The sett it gives, in ends per inch.
-    achieved_per_inch: f64,
+    pub achieved_per_inch: f64,
     /// Whether that is the sett asked for (within 0.1%).
-    exact: bool,
+    pub exact: bool,
 }
 
 impl Sleying {
     /// The sett this sleying gives, in the reed's own unit and, for a metric reed, in `per` too.
-    fn achieved(&self, per: Unit) -> String {
+    pub fn achieved(&self, per: Unit) -> String {
         match self.reed.per {
             DentUnit::PerInch => format!("{} ends per inch", number(self.achieved_per_inch)),
             DentUnit::Per10Cm => {
@@ -1481,7 +1482,7 @@ impl Sleying {
 /// The best way to sley one of `reeds` for `sett`, or `None` when none gives it (see ADR 0014): the
 /// same number in every dent (1 to 4) first, then the shortest repeating order (up to 6 dents, most 4
 /// per dent), then 5 or 6 per dent; ties go to the closer sett, then the reed listed first.
-fn best_sleying(reeds: &[Reed], sett: Sett) -> Option<Sleying> {
+pub fn best_sleying(reeds: &[Reed], sett: Sett) -> Option<Sleying> {
     let want = sett.per_inch();
     if !(want.is_finite() && want > 0.0) {
         return None;

@@ -1,0 +1,75 @@
+# Fixture record for scarf.plan.json (see fixtures/README.md).
+
+id = "weaving/plans/scarf"
+title = "A plain weave wool scarf, planned before and after sampling"
+technique = "warp, weft and finishing plan (ADR 0019)"
+files = ["scarf.plan.json", "scarf.expect.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Invented for Ply's tests: the scarf, the sample and the 2/8 wool (450 m per 100 g from its label, 12 \
+wraps per cm measured, 300 g on hand). The loom is the metric eight-shaft countermarch loom of \
+weaving/looms/looms.json (100 cm weaving width, 40/10 and 50/10 reeds). The scarf is 25 cm by 180 cm \
+finished with 12 cm of fringe at each end, and the warp leaves 30 cm to weave a check sample at the \
+start. The sample was woven 25 cm wide in the reed at 6 ends per cm, measured on the loom (50 cm \
+long, 6 picks per cm) and after a warm hand wash, light fulling and drying flat (21 cm by 44 cm); \
+it was not measured off the loom. The draft threads one 4-end repeat. The same yarn is warp and \
+weft, so its need is one line."""
+oracle = """
+scarf.expect.json was written by hand from the formulas of ADR 0019, not dumped from the code (exact \
+factors 1 in = 2.54 cm, 1 yd = 0.9144 m, 1 oz = 28.349523125 g; numbers shown to two decimals). The \
+working is below."""
+
+[sources]
+starting_estimates = "Ply's starting estimates for plain weave (ADR 0019 section 4): 10% take-up, 10% draw-in, 10% shrinkage each way, 10% weft allowance, 60 cm loom waste, a sett of half the wraps, as many picks as ends"
+
+[working.before_sampling]
+width = """
+No sample yet: draw-in 10% of the width in the reed and width shrinkage 10% of the width off the \
+loom, both Ply's starting estimates. The sett is a starting approximation: half of 12 wraps per cm \
+= 6 ends per cm. Width in the reed for 25 cm finished: 25 / 0.9 / 0.9 = 30.864 cm. Ends: 30.864 x 6 \
+= 185.19, so 185 ends; width in the reed 185 / 6 = 30.833 cm. Expected finished width: 30.833 x \
+0.81 = 24.98 cm."""
+denting = """
+6 ends per cm in the 40/10 reed (4 dents per cm) is 1.5 per dent: sley 2, 1, repeated. 185 ends are \
+61 repeats of 3 ends in 2 dents (183 ends, 122 dents) and 2 more ends in one dent: 123 dents, about \
+30.75 cm. The 50/10 reed would need 2, 1, 1, 1, 1, a longer order, so the 40/10 reed is chosen. It \
+fits the loom's 100 cm weaving width."""
+length = """
+Take-up 10% and shrinkage 10% (estimates): 180 / 0.9 / 0.9 = 222.222 cm woven on the loom. Warp: \
+222.222 + 24 cm fringe + 30 cm sampling + 60 cm loom waste (estimate) = 336.222 cm = 3.362 m. Warp \
+yarn: 3.362 m x 185 = 622.01 m."""
+weft = """
+Picks: 6 per cm (as many as ends, an estimate) x 222.222 = 1333.33, so 1333; the sampling adds 6 x \
+30 = 180: 1513 picks. Each pick: 30.833 x 1.1 = 33.917 cm. Weft: 1513 x 33.917 = 51315.92 cm = \
+513.16 m."""
+supply = """
+Warp and weft together: 622.01 + 513.16 = 1135.17 m, at 450 m per 100 g = 252.26 g (8.9 oz). 300 g \
+on hand is about 1350 m, which leaves about 214.83 m."""
+
+[working.after_sampling]
+width = """
+From the sample: 25 cm in the reed to 21 cm finished is (25 - 21) / 25 = 16% of the width in the \
+reed. Its sett, 6 ends per cm, is used. Width in the reed for 25 cm: 25 / 0.84 = 29.762 cm; x 6 = \
+178.57, so 179 ends; 179 / 6 = 29.833 cm in the reed; finished about 29.833 x 0.84 = 25.06 cm. \
+Denting: 59 repeats (177 ends, 118 dents) and 2 more ends in one dent: 119 dents, about 29.75 cm."""
+length = """
+From the sample: 50 cm on the loom to 44 cm finished is (50 - 44) / 50 = 12% of the length on the \
+loom. Woven: 180 / 0.88 = 204.545 cm. Warp: 204.545 + 24 + 30 + 60 = 318.545 cm = 3.185 m; x 179 = \
+570.20 m."""
+weft = """
+Picks counted on the sample's loom: 6 per cm x 204.545 = 1227.27, so 1227, plus 180 for sampling = \
+1407. Each pick 29.833 x 1.1 = 32.817 cm; 1407 x 32.817 = 46173.05 cm = 461.73 m."""
+supply = """
+570.20 + 461.73 = 1031.93 m = 229.32 g (8.09 oz); about 1350 m on hand leaves about 318.07 m. The \
+sample needs less warp than the estimates guessed, and the loom waste and weft allowance are still \
+Ply's estimates."""
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/plan_fixtures.rs: both cases match the oracle in full. \
+app/test/weave_plan_test.dart: the app's plan model reads and writes both cases exactly."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Fringe is planned as unwoven warp only (no twisting take-up); fulling is in the sample's numbers, not modelled."

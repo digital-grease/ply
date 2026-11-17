@@ -1,0 +1,526 @@
+{
+  "tolerance": 1e-06,
+  "cases": {
+    "before_sampling": {
+      "inputs": [
+        {
+          "key": "finished_width",
+          "label": "Finished width",
+          "source": "entered",
+          "value": "25 cm",
+          "basis": "you entered it"
+        },
+        {
+          "key": "finished_length",
+          "label": "Finished length",
+          "source": "entered",
+          "value": "180 cm",
+          "basis": "you entered it"
+        },
+        {
+          "key": "items",
+          "label": "Items",
+          "source": "entered",
+          "value": "1",
+          "basis": "you entered it"
+        },
+        {
+          "key": "fringe",
+          "label": "Fringe",
+          "source": "entered",
+          "value": "24 cm of unwoven warp for each item, both ends",
+          "basis": "you entered it"
+        },
+        {
+          "key": "sampling",
+          "label": "Sampling",
+          "source": "entered",
+          "value": "30 cm woven on the loom for a sample",
+          "basis": "you entered it"
+        },
+        {
+          "key": "take_up",
+          "label": "Take-up",
+          "source": "default",
+          "value": "10% of the length on the loom",
+          "basis": "Ply's starting estimate for plain weave"
+        },
+        {
+          "key": "length_shrinkage",
+          "label": "Length shrinkage",
+          "source": "default",
+          "value": "10% of the length off the loom",
+          "basis": "Ply's starting estimate for plain weave"
+        },
+        {
+          "key": "draw_in",
+          "label": "Draw-in",
+          "source": "default",
+          "value": "10% of the width in the reed",
+          "basis": "Ply's starting estimate for plain weave"
+        },
+        {
+          "key": "width_shrinkage",
+          "label": "Width shrinkage",
+          "source": "default",
+          "value": "10% of the width off the loom",
+          "basis": "Ply's starting estimate for plain weave"
+        },
+        {
+          "key": "weft_allowance",
+          "label": "Weft allowance",
+          "source": "default",
+          "value": "10% of the width in the reed, added to each pick",
+          "basis": "Ply's starting estimate for plain weave (for the weft's crimp and the turns at the selvedges)"
+        },
+        {
+          "key": "loom_waste",
+          "label": "Loom waste",
+          "source": "default",
+          "value": "60 cm for the whole warp",
+          "basis": "Ply's starting estimate; your own loom's waste is better"
+        },
+        {
+          "key": "wpi",
+          "label": "Wraps per inch",
+          "source": "measured",
+          "value": "12 wraps per cm",
+          "basis": "measured, material 2/8 wool, heather"
+        },
+        {
+          "key": "sett",
+          "label": "Sett",
+          "source": "default",
+          "value": "6 ends per cm",
+          "basis": "Ply's starting approximation for plain weave: 0.5 of 12 wraps per cm"
+        },
+        {
+          "key": "ppi",
+          "label": "Picks",
+          "source": "default",
+          "value": "6 picks per cm",
+          "basis": "Ply's starting estimate: as many picks as ends, a balanced weave"
+        },
+        {
+          "key": "reed",
+          "label": "Reed",
+          "source": "entered",
+          "value": "40 dents per 10 cm",
+          "basis": "the best of Eight-shaft countermarch's reeds for the sett (Loom for this draft)"
+        },
+        {
+          "key": "yarn_length_per_mass",
+          "label": "Warp and weft length per mass",
+          "source": "entered",
+          "value": "450 m per 100 g",
+          "basis": "entered, material 2/8 wool, heather"
+        },
+        {
+          "key": "yarn_on_hand",
+          "label": "Warp and weft on hand",
+          "source": "measured",
+          "value": "300 g (about 1350 m)",
+          "basis": "measured, at 450 m per 100 g (entered), material 2/8 wool, heather"
+        }
+      ],
+      "figures": [
+        {
+          "key": "width_in_reed_target",
+          "label": "Width in the reed for the finished width",
+          "value": 30.864197530864196,
+          "unit": "cm",
+          "text": "30.86 cm (12.15 in)",
+          "assumed": true
+        },
+        {
+          "key": "warp_ends",
+          "label": "Warp ends",
+          "value": 185,
+          "unit": "count",
+          "text": "185 ends",
+          "assumed": true
+        },
+        {
+          "key": "width_in_reed",
+          "label": "Width in the reed",
+          "value": 30.833333333333332,
+          "unit": "cm",
+          "text": "30.83 cm (12.14 in)",
+          "assumed": true
+        },
+        {
+          "key": "finished_width",
+          "label": "Finished width, expected",
+          "value": 24.975,
+          "unit": "cm",
+          "text": "24.98 cm (9.83 in)",
+          "assumed": true
+        },
+        {
+          "key": "woven_length",
+          "label": "Woven on the loom, each item",
+          "value": 222.2222222222222,
+          "unit": "cm",
+          "text": "222.22 cm (87.49 in)",
+          "assumed": true
+        },
+        {
+          "key": "warp_length",
+          "label": "Warp length",
+          "value": 3.3622222222222216,
+          "unit": "m",
+          "text": "3.36 m (3.68 yd)",
+          "assumed": true
+        },
+        {
+          "key": "warp_yarn",
+          "label": "Warp yarn",
+          "value": 622.011111111111,
+          "unit": "m",
+          "text": "622.01 m (680.24 yd)",
+          "assumed": true
+        },
+        {
+          "key": "weft_picks",
+          "label": "Picks",
+          "value": 1513,
+          "unit": "count",
+          "text": "1513 picks",
+          "assumed": true
+        },
+        {
+          "key": "weft_per_pick",
+          "label": "Weft in each pick",
+          "value": 33.91666666666667,
+          "unit": "cm",
+          "text": "33.92 cm (13.35 in)",
+          "assumed": true
+        },
+        {
+          "key": "weft_yarn",
+          "label": "Weft yarn",
+          "value": 513.1591666666667,
+          "unit": "m",
+          "text": "513.16 m (561.2 yd)",
+          "assumed": true
+        }
+      ],
+      "denting": {
+        "reed": {
+          "dents": 40.0,
+          "per": "10cm"
+        },
+        "order": [
+          2,
+          1
+        ],
+        "dents": 123,
+        "width": {
+          "value": 30.75,
+          "unit": "cm"
+        },
+        "text": "Sley the 40/10 reed 2, 1, repeated for 6 ends per cm: 185 ends fill 123 dents, about 30.75 cm (12.11 in)."
+      },
+      "checks": [
+        {
+          "code": "plan.reed_irregular",
+          "severity": "advice",
+          "message": "No reed gives 6 ends per cm with the same number of ends in every dent. Sley the 40/10 reed 2, 1, repeated across the warp, for 6 ends per cm."
+        },
+        {
+          "code": "plan.loom_width_fits",
+          "severity": "fits",
+          "message": "30.83 cm (12.14 in) in the reed fits Eight-shaft countermarch's 100 cm weaving width."
+        }
+      ],
+      "supply": [
+        {
+          "role": "warp_and_weft",
+          "material_id": "wool-2-8",
+          "need": {
+            "value": 1135.1702777777778,
+            "unit": "m"
+          },
+          "need_mass": {
+            "value": 252.26006172839504,
+            "unit": "g"
+          },
+          "on_hand": {
+            "value": 1350.0,
+            "unit": "m"
+          },
+          "on_hand_about": true,
+          "remaining": {
+            "value": 214.82972222222224,
+            "unit": "m"
+          },
+          "text": "2/8 wool, heather for warp and weft: needs about 1135.17 m (252.26 g, 8.9 oz). About 214.83 m left over.",
+          "assumed": true
+        }
+      ],
+      "issues": [],
+      "notes": [
+        "This draft threads 4 ends; the plan needs 185. The plan does not change the draft.",
+        "Inputs marked as Ply's starting estimates are rules of thumb, not measurements. A sample woven and finished like the project gives better numbers."
+      ],
+      "hand": {
+        "ends_raw": 185.18518518518516,
+        "per_item_cm": 222.2222222222222,
+        "warp_cm": 336.2222222222222,
+        "item_picks": 1333,
+        "sampling_picks": 180
+      },
+      "input_notes": []
+    },
+    "after_sampling": {
+      "inputs": [
+        {
+          "key": "finished_width",
+          "label": "Finished width",
+          "source": "entered",
+          "value": "25 cm",
+          "basis": "you entered it"
+        },
+        {
+          "key": "finished_length",
+          "label": "Finished length",
+          "source": "entered",
+          "value": "180 cm",
+          "basis": "you entered it"
+        },
+        {
+          "key": "items",
+          "label": "Items",
+          "source": "entered",
+          "value": "1",
+          "basis": "you entered it"
+        },
+        {
+          "key": "fringe",
+          "label": "Fringe",
+          "source": "entered",
+          "value": "24 cm of unwoven warp for each item, both ends",
+          "basis": "you entered it"
+        },
+        {
+          "key": "sampling",
+          "label": "Sampling",
+          "source": "entered",
+          "value": "30 cm woven on the loom for a sample",
+          "basis": "you entered it"
+        },
+        {
+          "key": "length_loss",
+          "label": "Take-up and shrinkage",
+          "source": "measured",
+          "value": "12% of the length on the loom, from the loom to finished",
+          "basis": "from 50 cm on the loom and 44 cm after wet finishing (measured), swatch Scarf sample 2026-11-08"
+        },
+        {
+          "key": "width_loss",
+          "label": "Draw-in and shrinkage",
+          "source": "entered",
+          "value": "16% of the width in the reed, from the reed to finished",
+          "basis": "from 25 cm in the reed and 21 cm after wet finishing (entered), swatch Scarf sample 2026-11-08"
+        },
+        {
+          "key": "weft_allowance",
+          "label": "Weft allowance",
+          "source": "default",
+          "value": "10% of the width in the reed, added to each pick",
+          "basis": "Ply's starting estimate for plain weave (for the weft's crimp and the turns at the selvedges)"
+        },
+        {
+          "key": "loom_waste",
+          "label": "Loom waste",
+          "source": "default",
+          "value": "60 cm for the whole warp",
+          "basis": "Ply's starting estimate; your own loom's waste is better"
+        },
+        {
+          "key": "sett",
+          "label": "Sett",
+          "source": "entered",
+          "value": "6 ends per cm",
+          "basis": "the sett in the reed, entered, swatch Scarf sample 2026-11-08"
+        },
+        {
+          "key": "ppi",
+          "label": "Picks",
+          "source": "measured",
+          "value": "6 picks per cm",
+          "basis": "measured on the loom, swatch Scarf sample 2026-11-08"
+        },
+        {
+          "key": "reed",
+          "label": "Reed",
+          "source": "entered",
+          "value": "40 dents per 10 cm",
+          "basis": "the best of Eight-shaft countermarch's reeds for the sett (Loom for this draft)"
+        },
+        {
+          "key": "yarn_length_per_mass",
+          "label": "Warp and weft length per mass",
+          "source": "entered",
+          "value": "450 m per 100 g",
+          "basis": "entered, material 2/8 wool, heather"
+        },
+        {
+          "key": "yarn_on_hand",
+          "label": "Warp and weft on hand",
+          "source": "measured",
+          "value": "300 g (about 1350 m)",
+          "basis": "measured, at 450 m per 100 g (entered), material 2/8 wool, heather"
+        }
+      ],
+      "figures": [
+        {
+          "key": "width_in_reed_target",
+          "label": "Width in the reed for the finished width",
+          "value": 29.761904761904763,
+          "unit": "cm",
+          "text": "29.76 cm (11.72 in)",
+          "assumed": false
+        },
+        {
+          "key": "warp_ends",
+          "label": "Warp ends",
+          "value": 179,
+          "unit": "count",
+          "text": "179 ends",
+          "assumed": false
+        },
+        {
+          "key": "width_in_reed",
+          "label": "Width in the reed",
+          "value": 29.833333333333332,
+          "unit": "cm",
+          "text": "29.83 cm (11.75 in)",
+          "assumed": false
+        },
+        {
+          "key": "finished_width",
+          "label": "Finished width, expected",
+          "value": 25.06,
+          "unit": "cm",
+          "text": "25.06 cm (9.87 in)",
+          "assumed": false
+        },
+        {
+          "key": "woven_length",
+          "label": "Woven on the loom, each item",
+          "value": 204.54545454545453,
+          "unit": "cm",
+          "text": "204.55 cm (80.53 in)",
+          "assumed": false
+        },
+        {
+          "key": "warp_length",
+          "label": "Warp length",
+          "value": 3.185454545454545,
+          "unit": "m",
+          "text": "3.19 m (3.48 yd)",
+          "assumed": true
+        },
+        {
+          "key": "warp_yarn",
+          "label": "Warp yarn",
+          "value": 570.1963636363636,
+          "unit": "m",
+          "text": "570.2 m (623.57 yd)",
+          "assumed": true
+        },
+        {
+          "key": "weft_picks",
+          "label": "Picks",
+          "value": 1407,
+          "unit": "count",
+          "text": "1407 picks",
+          "assumed": false
+        },
+        {
+          "key": "weft_per_pick",
+          "label": "Weft in each pick",
+          "value": 32.81666666666667,
+          "unit": "cm",
+          "text": "32.82 cm (12.92 in)",
+          "assumed": true
+        },
+        {
+          "key": "weft_yarn",
+          "label": "Weft yarn",
+          "value": 461.7305,
+          "unit": "m",
+          "text": "461.73 m (504.95 yd)",
+          "assumed": true
+        }
+      ],
+      "denting": {
+        "reed": {
+          "dents": 40.0,
+          "per": "10cm"
+        },
+        "order": [
+          2,
+          1
+        ],
+        "dents": 119,
+        "width": {
+          "value": 29.75,
+          "unit": "cm"
+        },
+        "text": "Sley the 40/10 reed 2, 1, repeated for 6 ends per cm: 179 ends fill 119 dents, about 29.75 cm (11.71 in)."
+      },
+      "checks": [
+        {
+          "code": "plan.reed_irregular",
+          "severity": "advice",
+          "message": "No reed gives 6 ends per cm with the same number of ends in every dent. Sley the 40/10 reed 2, 1, repeated across the warp, for 6 ends per cm."
+        },
+        {
+          "code": "plan.loom_width_fits",
+          "severity": "fits",
+          "message": "29.83 cm (11.75 in) in the reed fits Eight-shaft countermarch's 100 cm weaving width."
+        }
+      ],
+      "supply": [
+        {
+          "role": "warp_and_weft",
+          "material_id": "wool-2-8",
+          "need": {
+            "value": 1031.9268636363636,
+            "unit": "m"
+          },
+          "need_mass": {
+            "value": 229.3170808080808,
+            "unit": "g"
+          },
+          "on_hand": {
+            "value": 1350.0,
+            "unit": "m"
+          },
+          "on_hand_about": true,
+          "remaining": {
+            "value": 318.0731363636364,
+            "unit": "m"
+          },
+          "text": "2/8 wool, heather for warp and weft: needs about 1031.93 m (229.32 g, 8.09 oz). About 318.07 m left over.",
+          "assumed": true
+        }
+      ],
+      "issues": [],
+      "notes": [
+        "This draft threads 4 ends; the plan needs 179. The plan does not change the draft.",
+        "Inputs marked as Ply's starting estimates are rules of thumb, not measurements. A sample woven and finished like the project gives better numbers."
+      ],
+      "hand": {
+        "ends_raw": 178.57142857142858,
+        "per_item_cm": 204.54545454545453,
+        "warp_cm": 318.5454545454545,
+        "item_picks": 1227,
+        "sampling_picks": 180
+      },
+      "input_notes": []
+    }
+  }
+}
