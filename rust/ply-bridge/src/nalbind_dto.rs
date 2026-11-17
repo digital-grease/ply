@@ -16,7 +16,7 @@ use ply_nalbind::notation::{
     ParsedNotation, Span,
 };
 use ply_nalbind::stitch::{ConnSide, Connection, Pass, PublishedCode, Step, StitchType, Twist};
-use ply_nalbind::validate::{NalbindIssue, Severity};
+use ply_nalbind::validate::{NalbindIssue, NalbindLocation};
 
 use crate::dto::SeverityKind;
 
@@ -103,9 +103,16 @@ pub struct DiagramDto {
     pub connections: Vec<ConnArrowDto>,
 }
 
+/// One stitch validation problem, with its stable code and where it is (ADR 0021).
 pub struct NalbindIssueDto {
     pub severity: SeverityKind,
     pub message: String,
+    /// The stable code (`stitch-no-needle-path`, `connection-no-loops`).
+    pub code: String,
+    /// Where it is, in words ("Connection 2"); `None` for the stitch as a whole.
+    pub place: Option<String>,
+    /// The 0-based connection it is about, when it is about one.
+    pub connection: Option<u32>,
 }
 
 // --- notation analysis (M7-04) -------------------------------------------------------------------
@@ -377,11 +384,19 @@ impl From<Diagram> for DiagramDto {
 impl From<&NalbindIssue> for NalbindIssueDto {
     fn from(i: &NalbindIssue) -> Self {
         NalbindIssueDto {
-            severity: match i.severity {
-                Severity::Error => SeverityKind::Error,
-                Severity::Warning => SeverityKind::Warning,
-            },
+            severity: SeverityKind::from(i.severity),
             message: i.message.clone(),
+            code: i.code.to_string(),
+            place: match i.location {
+                NalbindLocation::Stitch => None,
+                l => Some(l.text()),
+            },
+            connection: match i.location {
+                NalbindLocation::Connection { index } => {
+                    Some(u32::try_from(index).unwrap_or(u32::MAX))
+                }
+                NalbindLocation::Stitch => None,
+            },
         }
     }
 }

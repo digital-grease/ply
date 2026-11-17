@@ -907,6 +907,43 @@ pub fn weave_plan_worksheet(req: WeavePlanRequestDto) -> Result<WorksheetDto, St
     crate::weave_plan_dto::worksheet(req)
 }
 
+// ---------------------------------------------------------------------------
+// M7-05 READY TO MAKE OR SHARE (ADR 0021; DTOs in `readiness_dto.rs`, flat enums only, so no
+// freezed rebuild). One readiness report per craft for the outputs someone makes from or receives
+// (the PDF); saving never asks it. A new craft adds one call returning `ReadinessDto`.
+// ---------------------------------------------------------------------------
+
+pub use crate::dto::{WeaveLocationDto, WeaveLocationKind};
+pub use crate::knit_dto::{KnitLocationDto, KnitLocationKind};
+pub use crate::readiness_dto::{
+    ReadinessCheckKind, ReadinessDto, ReadinessItemDto, ReadinessVerdictKind,
+};
+
+/// Is the editor's draft ready to make or share? Its structural validation, the loom chosen for it
+/// (`loom`, with the weaver's `sett` for this draft) and its warp and weft plan (`plan`, with the
+/// records it uses), in one call. `Err` only when the draft DTO cannot convert; a loom profile or a
+/// plan Ply cannot use is listed as not checked.
+pub fn weave_readiness(
+    draft: DraftDto,
+    loom: Option<LoomProfileDto>,
+    sett: Option<SettDto>,
+    plan: Option<WeavePlanRequestDto>,
+) -> Result<ReadinessDto, String> {
+    crate::readiness_dto::weave(draft, loom, sett, plan)
+}
+
+/// Is the knitting pattern ready to make or share? Its chart, its sections and their stitch ledger,
+/// and the steps in the pattern's own words.
+pub fn knit_readiness(pattern: KnitPatternDto) -> ReadinessDto {
+    crate::readiness_dto::knit(pattern)
+}
+
+/// Is the nalbinding project ready to make or share? Its `notation` (read strictly, as the project
+/// screen reads it) and its `recipe`, when it has one.
+pub fn nalbind_readiness(notation: String, recipe: Option<RecipeDto>) -> ReadinessDto {
+    crate::readiness_dto::nalbind(&notation, recipe)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -35,6 +35,9 @@ const double _small = 8.5;
 /// Height reserved for the page footer (the MultiPage footer widget is laid out inside it).
 const double _footerHeight = 22;
 
+/// Height reserved for a draft copy's band at the top of every page (ADR 0021).
+const double _draftBandHeight = 26;
+
 /// Chart gutters: room for a three-digit row number either side and a stitch number below.
 const double _rowGutter = 17;
 const double _colGutter = 12;
@@ -52,11 +55,13 @@ Future<Uint8List> buildPrintPdf(
 }) async {
   final pdf = pw.Document(
     compress: compress,
-    title: doc.title,
+    // A draft copy says so in the file's own title too, not only on its pages.
+    title: doc.draftCopy == null ? doc.title : '${doc.title} (draft copy)',
     subject: doc.kind,
     creator: 'Ply',
   );
-  final builder = _Builder(pdf.document, page, fonts);
+  final builder = _Builder(pdf.document, page, fonts,
+      headerHeight: doc.draftCopy == null ? 0 : _draftBandHeight);
   final missing = fonts.unsupportedIn(doc.allText);
   final children = <pw.Widget>[
     ...builder.titleBlock(doc),
@@ -87,6 +92,8 @@ Future<Uint8List> buildPrintPdf(
     // A real pattern can run long (a 200-row chart, its written rows); the package's default cap of
     // 20 pages is a debugging guard, not a layout rule.
     maxPages: 5000,
+    // A draft copy says so at the top of EVERY page, not only above the problems box on page 1.
+    header: doc.draftCopy == null ? null : (_) => builder.draftBand(doc.draftCopy!),
     footer: (ctx) => builder.footer(doc.title, ctx.pageNumber, ctx.pagesCount),
     build: (_) => children,
   ));
@@ -94,15 +101,34 @@ Future<Uint8List> buildPrintPdf(
 }
 
 class _Builder {
-  _Builder(this.document, this.page, this.fonts);
+  _Builder(this.document, this.page, this.fonts, {this.headerHeight = 0});
   final PdfDocument document;
   final PrintPageSetup page;
   final PlyPdfFonts fonts;
 
+  /// Room the page header takes (a draft copy's band), 0 without one.
+  final double headerHeight;
+
   double get _width => page.contentWidth;
 
-  /// The tallest single block that is guaranteed to fit on one page under the footer.
-  double get _pageRoom => page.contentHeight - _footerHeight - 4;
+  /// The tallest single block that is guaranteed to fit on one page under the header and above
+  /// the footer.
+  double get _pageRoom => page.contentHeight - headerHeight - _footerHeight - 4;
+
+  /// A draft copy's band: a bold, boxed line at the top of every page.
+  pw.Widget draftBand(PrintDraftCopy copy) => pw.Container(
+        height: _draftBandHeight,
+        alignment: pw.Alignment.topLeft,
+        child: pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: pw.BoxDecoration(border: pw.Border.all(color: _problem, width: 1.6)),
+          child: pw.Text(copy.text,
+              style: pw.TextStyle(font: fonts.bold, fontBold: fonts.bold, fontSize: _body),
+              maxLines: 1,
+              overflow: pw.TextOverflow.clip),
+        ),
+      );
 
   pw.TextStyle get _mutedStyle => const pw.TextStyle(fontSize: _small, color: _muted);
   pw.TextStyle get _boldStyle => pw.TextStyle(font: fonts.bold, fontBold: fonts.bold);
@@ -300,6 +326,7 @@ class _Builder {
     String severity(PrintIssueSeverity s) => switch (s) {
           PrintIssueSeverity.error => 'Error',
           PrintIssueSeverity.warning => 'Warning',
+          PrintIssueSeverity.notChecked => 'Not checked',
           PrintIssueSeverity.note => 'Note',
         };
     pw.Widget cell(String text, {pw.TextStyle? style}) => pw.Padding(

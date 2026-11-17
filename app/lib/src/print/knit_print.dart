@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/knit_repository.dart';
+import '../data/readiness_repository.dart';
 import '../models/knit_sections.dart';
 import '../models/knit_stitches.dart';
 import '../rust/dto.dart' show ColorDto, SeverityKind, UnitKind;
@@ -185,8 +186,8 @@ List<String> knitPrintErrors(KnitPrintSource s) => [
         if (i.severity == SeverityKind.error) knitIssueText(i),
     ];
 
-/// The document for [s]. [withProblemsBox] is the user's "print anyway" choice: when the pattern
-/// has errors, a box at the top lists them. Without errors there is never a box.
+/// The document for [s]. [withProblemsBox] is the user's draft-copy choice (ADR 0021): when the
+/// pattern has errors, a box at the top lists them. Without errors there is never a box.
 PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProblemsBox}) {
   final p = s.pattern;
   final flat = p.construction == ConstructionKind.flat;
@@ -225,6 +226,10 @@ PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProbl
       printNotes
           .add('The chart uses stitch #$id, which is not in the pattern\'s stitch list, so this '
               'PDF cannot say what it is.');
+    } else if (s.chart != null && !s.glyphs.containsKey(id)) {
+      // Never a key entry silently without its picture (ADR 0021): say it could not be drawn.
+      printNotes.add('Ply could not draw the symbol of ${codes[id]} for the stitch key, so its '
+          'entry has no picture; the chart shows it.');
     }
   }
   final colorEntries = labels == null
@@ -525,10 +530,13 @@ String isoDate(DateTime d) {
   return '${l.year}-${two(l.month)}-${two(l.day)}';
 }
 
-/// Run the print-or-share flow for the knit editor's open pattern, shown as [name].
+/// Run the print-or-share flow for the knit editor's open pattern, shown as [name]: the engine's
+/// readiness report (ADR 0021) decides whether it prints straight away, after an acknowledgement,
+/// or only as a draft copy.
 Future<void> printOrShareKnitPdf(BuildContext context, WidgetRef ref, {required String name}) {
   // Read everything from providers now: the flow has async gaps, and the screen may be gone after.
   final repo = ref.read(knitRepositoryProvider);
+  final readiness = ref.read(readinessRepositoryProvider);
   final pattern = ref.read(knitEditorProvider).pattern;
   return printOrSharePdf(
     context,
@@ -538,7 +546,8 @@ Future<void> printOrShareKnitPdf(BuildContext context, WidgetRef ref, {required 
       final source = await gatherKnitPrint(repo, name: name, pattern: pattern);
       return PdfExportJob(
         fileStem: name,
-        errors: knitPrintErrors(source),
+        readiness: await readiness.knit(pattern),
+        listNotChecked: true,
         document: ({required withProblemsBox}) =>
             buildKnitPrintDocument(source, withProblemsBox: withProblemsBox),
       );
@@ -555,9 +564,12 @@ PrintIssue _issue(KnitIssueDto i, Map<String, (String, String)> places) {
     severity: switch (i.severity) {
       SeverityKind.error => PrintIssueSeverity.error,
       SeverityKind.warning => PrintIssueSeverity.warning,
+      SeverityKind.unsupported => PrintIssueSeverity.notChecked,
       SeverityKind.info => PrintIssueSeverity.note,
     },
-    where: place?.$1 ?? (row == null ? 'Whole pattern' : 'Row ${row.group(1)}'),
+    // The ledger's place first (it names the section and step), then the engine's typed place
+    // (ADR 0021), then one read from the words of an issue that carries none.
+    where: place?.$1 ?? i.place ?? (row == null ? 'Whole pattern' : 'Row ${row.group(1)}'),
     message: place == null ? knitIssueText(i) : _sentence(place.$2),
   );
 }

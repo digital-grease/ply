@@ -62,8 +62,7 @@ class ValidationPanel extends ConsumerWidget {
             Semantics(
               liveRegion: true,
               child: InkWell(
-                onTap: () =>
-                    ref.read(editorIssuesExpandedProvider.notifier).state = !expanded,
+                onTap: () => ref.read(editorIssuesExpandedProvider.notifier).state = !expanded,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Row(
@@ -156,28 +155,36 @@ class ValidationPanel extends ConsumerWidget {
   }
 }
 
-class _IssueRow extends StatelessWidget {
+class _IssueRow extends ConsumerWidget {
   const _IssueRow({required this.issue, required this.amber});
 
   final DraftIssue issue;
   final Color amber;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final tone = switch (issue.severity) {
       IssueSeverity.error => colors.error,
       IssueSeverity.warning => amber,
+      IssueSeverity.unsupported => colors.onSurfaceVariant,
       IssueSeverity.info => colors.primary,
     };
     final icon = switch (issue.severity) {
       IssueSeverity.error => Icons.error,
       IssueSeverity.warning => Icons.warning_amber_rounded,
+      IssueSeverity.unsupported => Icons.help_outline,
       IssueSeverity.info => Icons.info_outline,
     };
-    // Color is not the only signal: screen readers get an explicit severity prefix.
+    final place = issue.place;
+    final location = issue.location;
+    // A place the draft view can show (every place but a shuttle, which has no cell of its own).
+    final showable = location != null && location.kind != DraftPlaceKind.shuttle;
+    // Color is not the only signal: screen readers get an explicit severity prefix, and the place.
     return Semantics(
-      label: '${severityWord(issue)}: ${issue.message}',
+      label: place == null
+          ? '${severityWord(issue)}: ${issue.message}'
+          : '${severityWord(issue)}, $place: ${issue.message}',
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Row(
@@ -186,9 +193,32 @@ class _IssueRow extends StatelessWidget {
             Icon(icon, color: tone, size: 18),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(issue.message,
-                  softWrap: true, style: Theme.of(context).textTheme.bodySmall),
+              child: ExcludeSemantics(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // The place in words (ADR 0021), so a finding says where it is.
+                    if (place != null)
+                      Text(place,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                    Text(issue.message,
+                        softWrap: true, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
             ),
+            if (showable)
+              TextButton(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => showDraftPlace(ref, location),
+                child: Text('Show', semanticsLabel: 'Show ${place ?? 'it'} in the draft'),
+              ),
           ],
         ),
       ),
@@ -200,5 +230,6 @@ class _IssueRow extends StatelessWidget {
 String severityWord(DraftIssue issue) => switch (issue.severity) {
       IssueSeverity.error => 'Error',
       IssueSeverity.warning => 'Warning',
+      IssueSeverity.unsupported => 'Not checked',
       IssueSeverity.info => 'Note',
     };

@@ -15,6 +15,8 @@ pub mod instruction;
 pub mod native;
 pub mod pattern;
 pub mod plan;
+// Is a pattern ready to make or share (ADR 0021)?
+pub mod readiness;
 pub mod render;
 pub mod sections;
 pub mod validate;

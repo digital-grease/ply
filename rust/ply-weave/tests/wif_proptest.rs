@@ -14,6 +14,18 @@ use proptest::prelude::*;
 /// list sized to its header count. Retained sections are VENDOR-prefixed; pick roles, shuttles, starting
 /// sides, and strands are arbitrary (an all-unknown draw is normalized to the empty "nothing recorded"
 /// form a read returns), and shot groups are drawn at random and kept where they are sound.
+/// A list's ids, each once in first-seen order: a shaft listed twice in one WIF entry reads as listed
+/// once (ADR 0021), so a draft with repeats is not one a file can carry.
+fn distinct(row: Vec<u16>) -> Vec<u16> {
+    let mut out: Vec<u16> = Vec::with_capacity(row.len());
+    for id in row {
+        if !out.contains(&id) {
+            out.push(id);
+        }
+    }
+    out
+}
+
 fn arb_draft() -> impl Strategy<Value = Draft> {
     (1u16..=6, 1u16..=6, 0usize..=10, 0usize..=10, 1usize..=4).prop_flat_map(
         |(shafts, treadles, ends, picks, ncol)| {
@@ -88,14 +100,14 @@ fn arb_draft() -> impl Strategy<Value = Draft> {
                             threading: Threading(
                                 threading
                                     .into_iter()
-                                    .map(|row| row.into_iter().map(ShaftId).collect())
+                                    .map(|row| distinct(row).into_iter().map(ShaftId).collect())
                                     .collect(),
                             ),
                             drive: Drive::Treadled {
                                 tieup: TieUp(
                                     tieup
                                         .into_iter()
-                                        .map(|row| row.into_iter().map(ShaftId).collect())
+                                        .map(|row| distinct(row).into_iter().map(ShaftId).collect())
                                         .collect(),
                                 ),
                                 treadling: Treadling(

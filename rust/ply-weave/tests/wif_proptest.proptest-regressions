@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 858378f28c7809b66f0fb46b16244ef04ffa7f0352493c4a181a30cee843f1ec # shrinks to d = Draft { name: "A", shafts: 1, treadles: 1, shed: Sinking, unit: Centimeters, threading: Threading([[ShaftId(1), ShaftId(1)]]), drive: Treadled { tieup: TieUp([[]]), treadling: Treadling([[TreadleId(1)]]) }, colors: ColorPlan { palette: [Color { r: 0, g: 0, b: 121 }, Color { r: 84, g: 188, b: 208 }, Color { r: 176, g: 111, b: 213 }], warp: [2], weft: [0] }, warp_thickness: [], weft_thickness: [], notes: "", retained: [RetainedSection { name: "VENDOR93", entries: [] }, RetainedSection { name: "VENDORH684", entries: [] }], pick_roles: [Tabby], weft_work: WeftWork { shuttles: [], shuttle_starts: {ShuttleId(2): Left, ShuttleId(3): Right}, strands: [2], shot_groups: [], construction: Some(DoubleWidth { fold: Left }) } }

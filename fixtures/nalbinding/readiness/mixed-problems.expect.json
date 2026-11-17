@@ -1,0 +1,50 @@
+{
+  "description": "A mitten in Oslo stitch, its notation typed in lower case (uo/uoo f1), with a recipe in working order: a foundation chain of 36 joined into a ring, 12 cuff rounds, a thumb opening that skips 6 loops and works 6 stitches across, 20 rounds for the hand, a tip decreased by 10 stitches in each of 4 rounds, a finish, then a free-text care step outside the part. The strict reading accepts the notation and reports each lower-case run (uo, uoo, f) as a formatting note, so the stitch itself is checked and is clean. The recipe counts 36 stitches to the tip, where 4 rounds of 10 decreases would remove 40: an error; the thumb opening is never worked or closed: a warning; the care step is free text Ply does not read: not checked. Readiness: the decrease blocks, the opening warns, the free text is listed as not checked, the formatting notes are information.",
+  "verdict": "not_ready",
+  "checked": ["notation", "stitch", "recipe"],
+  "errors": 1,
+  "items": [
+    {
+      "check": "recipe",
+      "code": "decrease-too-many",
+      "severity": "error",
+      "place": "Step 5 (Tip)",
+      "message": "Removes 40 stitches (10 in each of 4 rounds), but the round has only 36"
+    },
+    {
+      "check": "recipe",
+      "code": "opening-not-used",
+      "severity": "warning",
+      "place": "Step 3 (Thumb gap)",
+      "message": "This opening is never worked or closed: add a pick-up that starts from it, or a join that closes it"
+    },
+    {
+      "check": "recipe",
+      "code": "free-text-step",
+      "severity": "unsupported",
+      "place": "Step 7 (Fulling)",
+      "message": "Ply did not check this step: it is free text, which Ply does not read, and it is printed as written."
+    },
+    {
+      "check": "notation",
+      "code": "case-normalized",
+      "severity": "info",
+      "place": "Notation, at \"uo\"",
+      "message": "Lowercase `uo` is read as uppercase"
+    },
+    {
+      "check": "notation",
+      "code": "case-normalized",
+      "severity": "info",
+      "place": "Notation, at \"uoo\"",
+      "message": "Lowercase `uoo` is read as uppercase"
+    },
+    {
+      "check": "notation",
+      "code": "case-normalized",
+      "severity": "info",
+      "place": "Notation, at \"f\"",
+      "message": "Lowercase `f` is read as uppercase"
+    }
+  ]
+}

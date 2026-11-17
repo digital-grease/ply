@@ -13,6 +13,8 @@ pub mod materials;
 pub mod materials_file;
 pub mod provenance;
 pub mod quantity;
+// The severity vocabulary every craft shares and the "ready to make or share" report (ADR 0021).
+pub mod readiness;
 
 /// The three fiber crafts Ply targets. Present from day one so the multi-engine
 /// seam is visible even while only weaving is implemented.

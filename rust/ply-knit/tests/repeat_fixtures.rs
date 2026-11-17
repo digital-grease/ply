@@ -12,7 +12,7 @@
 //! Run: `cargo test -p ply-knit --test repeat_fixtures`
 
 use ply_knit::instruction::op_totals;
-use ply_knit::{native, stitch_flow, to_written, validate, Construction, Severity};
+use ply_knit::{native, stitch_flow, to_written, validate, Construction};
 use serde_json::Value;
 
 const DIR: &str = concat!(
@@ -171,10 +171,7 @@ fn repeat_fixtures_match_their_oracles() {
         let issues: Vec<(String, String)> = validate(&p)
             .into_iter()
             .map(|i| {
-                let severity = match i.severity {
-                    Severity::Error => "error",
-                    Severity::Warning => "warning",
-                };
+                let severity = i.severity.as_str();
                 (severity.to_string(), i.message)
             })
             .collect();

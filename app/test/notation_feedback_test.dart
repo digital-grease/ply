@@ -50,7 +50,8 @@ class _ReadRepo extends NalbindRepository {
   @override
   Future<List<NalbindIssueDto>> validate(NalbindStitchDto dto) async {
     validateCount++;
-    return const [NalbindIssueDto(severity: SeverityKind.warning, message: 'checked')];
+    return const [NalbindIssueDto(
+        code: 'test', severity: SeverityKind.warning, message: 'checked')];
   }
 }
 
@@ -95,8 +96,8 @@ void main() {
     testWidgets('errors come first, then warnings, validation issues at their own severity',
         (tester) async {
       await pumpFeedback(tester, badReading(_stitch, strict: false), issues: const [
-        NalbindIssueDto(severity: SeverityKind.error, message: 'issue error'),
-        NalbindIssueDto(severity: SeverityKind.warning, message: 'issue warning'),
+        NalbindIssueDto(code: 'test', severity: SeverityKind.error, message: 'issue error'),
+        NalbindIssueDto(code: 'test', severity: SeverityKind.warning, message: 'issue warning'),
       ]);
       final order = [
         find.text(shownFinding(

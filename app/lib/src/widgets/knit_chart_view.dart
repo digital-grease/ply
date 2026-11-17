@@ -101,11 +101,53 @@ String describeRepeatBox(RepeatBox b, int width) {
 /// order), so a tap's pixel row is flipped back to a chart row. Numbered gutters sit to the RIGHT (row
 /// numbers, 1 at the bottom) and ALONG THE BOTTOM (stitch numbers, 1 at the right — the RS reading
 /// start), keeping the chart itself at the top-left origin so the tap math is unchanged.
-class KnitChartView extends ConsumerWidget {
+class KnitChartView extends ConsumerStatefulWidget {
   const KnitChartView({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<KnitChartView> createState() => _KnitChartViewState();
+}
+
+class _KnitChartViewState extends ConsumerState<KnitChartView> {
+  /// The two scroll views, so a validation finding's "Show" can bring its place into view.
+  final ScrollController _vCtrl = ScrollController();
+  final ScrollController _hCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _vCtrl.dispose();
+    _hCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Scroll [r] into view, centred where the chart can scroll that far (ADR 0021: Show goes to the
+  /// place). After the frame, so the chart has its size.
+  void _reveal(KnitReveal r) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final chart = ref.read(knitEditorProvider).pattern.chart;
+      final rows = chart.rows.length;
+      if (rows == 0 || chart.width == 0) return;
+      final cell = ref.read(knitZoomProvider).toDouble();
+      final row = r.row.clamp(0, rows - 1);
+      final centreY = (rows - 1 - row) * cell + cell / 2;
+      final centreX = (r.colFrom + r.colTo + 1) / 2 * cell;
+      void centre(ScrollController c, double at) {
+        if (!c.hasClients || !c.position.hasContentDimensions) return;
+        final p = c.position;
+        c.jumpTo((at - p.viewportDimension / 2).clamp(0.0, p.maxScrollExtent));
+      }
+
+      centre(_vCtrl, centreY);
+      centre(_hCtrl, centreX);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<KnitReveal?>(knitRevealProvider, (_, r) {
+      if (r != null) _reveal(r);
+    });
     final dims = ref.watch(knitEditorProvider
         .select((s) => (s.pattern.chart.width, s.pattern.chart.rows.length)));
     final cell = ref.watch(knitZoomProvider);
@@ -146,11 +188,13 @@ class KnitChartView extends ConsumerWidget {
     }
 
     return SingleChildScrollView(
+      controller: _vCtrl,
       scrollDirection: Axis.vertical,
       // SELECT freezes the scroll so a drag selects a region instead of scrolling.
       physics: select ? const NeverScrollableScrollPhysics() : null,
       padding: EdgeInsets.only(bottom: bottomClearance),
       child: SingleChildScrollView(
+        controller: _hCtrl,
         scrollDirection: Axis.horizontal,
         physics: select ? const NeverScrollableScrollPhysics() : null,
         child: SizedBox(
@@ -219,6 +263,7 @@ class KnitChartView extends ConsumerWidget {
               // The selection rectangle (SELECT tool), drawn over the cloth and ignoring pointers.
               if (selection != null)
                 Positioned(
+                  key: const ValueKey('knit-selection'),
                   left: selection.colMin.clamp(0, cols - 1) * cell.toDouble(),
                   top: (rows - 1 - selection.rowMax.clamp(0, rows - 1)) * cell.toDouble(),
                   width: (selection.colMax.clamp(0, cols - 1) - selection.colMin.clamp(0, cols - 1) + 1) *
@@ -408,7 +453,30 @@ class _KnitChartImage extends ConsumerWidget {
         isAntiAlias: false,
       ),
       loading: () => ColoredBox(color: colors.surfaceContainerHighest),
-      error: (e, _) => ColoredBox(color: colors.errorContainer),
+      // Never a silent blank chart (ADR 0021): say it could not be drawn, and why.
+      error: (e, _) => ColoredBox(
+        color: colors.errorContainer,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              knitPreviewErrorMessage(e),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.onErrorContainer),
+            ),
+          ),
+        ),
+      ),
     );
   }
+}
+
+/// Why the chart preview could not be drawn, in a sentence for the chart area.
+String knitPreviewErrorMessage(Object e) {
+  final why = e.toString().trim().replaceAll(RegExp(r'[.\s]+$'), '');
+  return why.isEmpty
+      ? 'The chart could not be drawn. Your pattern is unchanged; the written instructions still '
+          'describe every row.'
+      : 'The chart could not be drawn: $why. Your pattern is unchanged; the written instructions '
+          'still describe every row.';
 }

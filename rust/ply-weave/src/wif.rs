@@ -116,6 +116,53 @@ fn parse_indexed_lists(section: &Section, count_hint: usize) -> Vec<Vec<u16>> {
     out
 }
 
+/// The fewest different shafts (or treadles) one `[THREADING]`, `[TIEUP]`, `[TREADLING]` or
+/// `[LIFTPLAN]` entry may always list (ADR 0021): the limit is this or the count the file's
+/// `[WEAVING]` section declares for that axis (`Shafts`, or `Treadles` for the treadling), whichever
+/// is larger, so a Jacquard-style draft declaring 2,000 shafts opens as before. An entry over its
+/// limit lists more ids than the draft has and than any loom has: only a damaged or hostile file has
+/// it, and it is refused with the entry named rather than turned into findings the size of the file.
+pub const MAX_IDS_PER_ENTRY: usize = 1_024;
+
+/// The most different ids one entry of an axis may list: [`MAX_IDS_PER_ENTRY`], or the count the
+/// file declares for the axis when that is larger (itself capped at [`MAX_THREADS`]).
+fn entry_limit(declared: usize) -> usize {
+    MAX_IDS_PER_ENTRY.max(declared.min(MAX_THREADS))
+}
+
+/// [`parse_indexed_lists`] for a section of shaft or treadle ids (`what`: "shafts", "treadles";
+/// `declared`: the file's own count for that axis, 0 when it gives none). A repeated id in one entry
+/// means nothing more than listing it once (an end on shaft 3 twice is on shaft 3), so repeats are
+/// collapsed, the first of each kept in order. An entry listing more different ids than
+/// [`entry_limit`] allows is refused. An entry with more different shafts than the draft has, within
+/// that limit, is kept: validation names each shaft outside the draft once, as an error.
+fn parse_id_lists(
+    section: &Section,
+    count_hint: usize,
+    name: &str,
+    what: &str,
+    declared: usize,
+) -> Result<Vec<Vec<u16>>> {
+    let limit = entry_limit(declared);
+    let mut lists = parse_indexed_lists(section, count_hint);
+    for (i, ids) in lists.iter_mut().enumerate() {
+        if ids.len() < 2 {
+            continue;
+        }
+        let mut seen = std::collections::HashSet::with_capacity(ids.len().min(limit));
+        ids.retain(|&id| seen.insert(id));
+        if ids.len() > limit {
+            return Err(WeaveError::WifParse(format!(
+                "[{name}] entry {} lists {} different {what}; Ply opens at most {limit} in one \
+                 entry (the file declares {declared} {what})",
+                i + 1,
+                ids.len()
+            )));
+        }
+    }
+    Ok(lists)
+}
+
 /// Read a `[NOTES]` section. WIF stores free text as numbered lines (`1=first`, `2=second`);
 /// collect them in numeric-key order and join with newlines. Comma-SAFE (unlike
 /// `parse_indexed_lists`), so a note containing commas survives.
@@ -179,10 +226,12 @@ pub fn parse(text: &str) -> Result<Draft> {
         _ => Unit::Inches,
     };
 
-    // Threading
+    // Threading. `shafts` and `treadles` above come from the whole parsed file (`Ini::parse` reads
+    // every section first), so the id sections' limits know them whatever the order of sections.
     let threading = Threading(
         ini.section("THREADING")
-            .map(|s| parse_indexed_lists(s, warp_threads))
+            .map(|s| parse_id_lists(s, warp_threads, "THREADING", "shafts", usize::from(shafts)))
+            .transpose()?
             .unwrap_or_default()
             .into_iter()
             .map(|v| v.into_iter().map(ShaftId).collect())
@@ -198,7 +247,8 @@ pub fn parse(text: &str) -> Result<Draft> {
     // [WEFT] Threads recovery.
     let tieup = TieUp(
         ini.section("TIEUP")
-            .map(|s| parse_indexed_lists(s, treadles as usize))
+            .map(|s| parse_id_lists(s, treadles as usize, "TIEUP", "shafts", usize::from(shafts)))
+            .transpose()?
             .unwrap_or_default()
             .into_iter()
             .map(|v| v.into_iter().map(ShaftId).collect())
@@ -206,7 +256,16 @@ pub fn parse(text: &str) -> Result<Draft> {
     );
     let treadling = Treadling(
         ini.section("TREADLING")
-            .map(|s| parse_indexed_lists(s, weft_threads))
+            .map(|s| {
+                parse_id_lists(
+                    s,
+                    weft_threads,
+                    "TREADLING",
+                    "treadles",
+                    usize::from(treadles),
+                )
+            })
+            .transpose()?
             .unwrap_or_default()
             .into_iter()
             .map(|v| v.into_iter().map(TreadleId).collect())
@@ -217,10 +276,16 @@ pub fn parse(text: &str) -> Result<Draft> {
         Drive::Treadled { tieup, treadling }
     } else {
         Drive::Liftplan(Liftplan(
-            parse_indexed_lists(ini.section("LIFTPLAN").unwrap(), weft_threads)
-                .into_iter()
-                .map(|v| v.into_iter().map(ShaftId).collect())
-                .collect(),
+            parse_id_lists(
+                ini.section("LIFTPLAN").unwrap(),
+                weft_threads,
+                "LIFTPLAN",
+                "shafts",
+                usize::from(shafts),
+            )?
+            .into_iter()
+            .map(|v| v.into_iter().map(ShaftId).collect())
+            .collect(),
         ))
     };
 
@@ -2167,5 +2232,141 @@ Threads=4
         let d2 = parse("[WEAVING]\nShafts=2\n[THREADING]\n5=1\n").unwrap();
         assert_eq!(d2.threading.0.len(), 5);
         assert_eq!(d2.threading.0[4], vec![ShaftId(1)]);
+    }
+
+    // --- bounded id lists (ADR 0021) ---
+
+    /// A repeated shaft or treadle in one entry means nothing more than listing it once: collapsed,
+    /// first of each kept in order, so a 300 KB entry of one shaft is one shaft (and one finding).
+    #[test]
+    fn repeated_ids_in_one_entry_collapse() {
+        let mut wif = String::from("[WEAVING]\nShafts=4\nTreadles=4\n[THREADING]\n2=1,2\n1=");
+        wif.push_str(&vec!["9"; 150_000].join(","));
+        wif.push_str(",3,9\n[TIEUP]\n1=1,1,2\n[TREADLING]\n1=1,1\n");
+        let d = parse(&wif).unwrap();
+        assert_eq!(d.threading.0[0], vec![ShaftId(9), ShaftId(3)]);
+        assert_eq!(d.threading.0[1], vec![ShaftId(1), ShaftId(2)]);
+        let Drive::Treadled { tieup, treadling } = &d.drive else {
+            panic!("treadled")
+        };
+        assert_eq!(tieup.0[0], vec![ShaftId(1), ShaftId(2)]);
+        assert_eq!(treadling.0[0], vec![TreadleId(1)]);
+        // Shaft 9 of 4 is reported once, as an error at end 1.
+        let found: Vec<_> = crate::validate::validate(&d)
+            .into_iter()
+            .filter(|i| i.code == crate::validate::WeaveCode::ThreadingShaft)
+            .collect();
+        assert_eq!(found.len(), 1, "{found:?}");
+        // A colour table keeps its repeated components: they are not ids.
+        let colors =
+            parse("[WEAVING]\nShafts=1\n[THREADING]\n1=1\n[COLOR TABLE]\n1=255,255,255\n").unwrap();
+        assert_eq!(colors.colors.palette[0], Color::WHITE);
+    }
+
+    /// An entry listing more different ids than any loom has is refused, with the entry named.
+    #[test]
+    fn an_entry_past_the_id_cap_is_refused() {
+        let ids: Vec<String> = (1..=(MAX_IDS_PER_ENTRY as u32 + 1))
+            .map(|i| i.to_string())
+            .collect();
+        let wif = format!(
+            "[WEAVING]\nShafts=4\nTreadles=4\n[THREADING]\n1=1\n2={}\n",
+            ids.join(",")
+        );
+        let err = parse(&wif).unwrap_err().to_string();
+        assert!(
+            err.contains("[THREADING] entry 2 lists 1025 different shafts"),
+            "{err}"
+        );
+        let wif = format!(
+            "[WEAVING]\nShafts=4\nTreadles=4\n[THREADING]\n1=1\n[TREADLING]\n3={}\n",
+            ids.join(",")
+        );
+        assert!(parse(&wif)
+            .unwrap_err()
+            .to_string()
+            .contains("[TREADLING] entry 3 lists 1025 different treadles"));
+        // At the cap it opens; the shafts past the draft's are one validation error for the end,
+        // naming each once.
+        let at_cap: Vec<String> = (1..=MAX_IDS_PER_ENTRY as u32)
+            .map(|i| i.to_string())
+            .collect();
+        let d = parse(&format!(
+            "[WEAVING]\nShafts=4\nTreadles=4\n[THREADING]\n1={}\n",
+            at_cap.join(",")
+        ))
+        .unwrap();
+        assert_eq!(d.threading.0[0].len(), MAX_IDS_PER_ENTRY);
+        let errors = crate::validate::validate(&d)
+            .into_iter()
+            .filter(|i| i.code == crate::validate::WeaveCode::ThreadingShaft)
+            .count();
+        assert_eq!(errors, 1);
+    }
+
+    /// A draft that declares many shafts (a Jacquard-style export) may list as many in one entry:
+    /// a 2,000-shaft lift plan whose pick raises 1,500 shafts opens and round-trips, as before.
+    #[test]
+    fn an_entry_may_list_as_many_ids_as_the_file_declares() {
+        let lift: Vec<String> = (1..=1_500u32).map(|i| i.to_string()).collect();
+        let wif = format!(
+            "[WIF]\nVersion=1.1\n[TEXT]\nTitle=Damask\n[LIFTPLAN]\n1={}\n2=1,2000\n\
+             [THREADING]\n1=1\n2=1500\n3=2000\n[WEAVING]\nShafts=2000\nRising Shed=true\n",
+            lift.join(",")
+        );
+        let d = parse(&wif).expect("a declared 2,000-shaft draft opens");
+        assert_eq!(d.shafts, 2000);
+        assert_eq!(d.picks(), 2);
+        assert_eq!(d.raised_shafts(0).len(), 1_500);
+        assert_eq!(parse(&write(&d)).unwrap(), d, "round-trips");
+        assert!(crate::validate::validate(&d)
+            .iter()
+            .all(|i| i.code != crate::validate::WeaveCode::LiftPlanShaft));
+        // The declared count is read wherever [WEAVING] sits in the file.
+        assert_eq!(entry_limit(2000), 2000);
+        assert_eq!(entry_limit(4), MAX_IDS_PER_ENTRY);
+        assert_eq!(entry_limit(usize::MAX), MAX_THREADS);
+    }
+
+    /// Past both 1,024 and the declared count, an entry is refused with the section and entry named;
+    /// a file that declares no count keeps the 1,024 limit; repeats still collapse.
+    #[test]
+    fn an_entry_past_both_limits_is_refused() {
+        let ids: Vec<String> = (1..=1_500u32).map(|i| i.to_string()).collect();
+        let four = format!(
+            "[WEAVING]\nShafts=4\nTreadles=4\n[THREADING]\n1=1\n2={}\n",
+            ids.join(",")
+        );
+        let err = parse(&four).unwrap_err().to_string();
+        assert!(
+            err.contains("[THREADING] entry 2 lists 1500 different shafts; Ply opens at most 1024"),
+            "{err}"
+        );
+        // Treadling follows the declared treadles, not the shafts.
+        let many_shafts = format!(
+            "[WEAVING]\nShafts=2000\nTreadles=4\n[THREADING]\n1=1\n[TREADLING]\n1={}\n",
+            ids.join(",")
+        );
+        assert!(parse(&many_shafts)
+            .unwrap_err()
+            .to_string()
+            .contains("[TREADLING] entry 1 lists 1500 different treadles"));
+        // No declared count (no [WEAVING], or no Shafts in it): the 1,024 limit, as before.
+        let cap: Vec<String> = (1..=MAX_IDS_PER_ENTRY as u32)
+            .map(|i| i.to_string())
+            .collect();
+        let past: Vec<String> = (1..=MAX_IDS_PER_ENTRY as u32 + 1)
+            .map(|i| i.to_string())
+            .collect();
+        for head in ["", "[WEAVING]\nRising Shed=true\n"] {
+            assert!(parse(&format!("{head}[THREADING]\n1={}\n", cap.join(","))).is_ok());
+            assert!(parse(&format!("{head}[THREADING]\n1={}\n", past.join(",")))
+                .unwrap_err()
+                .to_string()
+                .contains("[THREADING] entry 1 lists 1025 different shafts"));
+        }
+        // Repeats still collapse, under any limit.
+        let d = parse("[WEAVING]\nShafts=2000\n[THREADING]\n1=7,7,7,1999,7\n").unwrap();
+        assert_eq!(d.threading.0[0], vec![ShaftId(7), ShaftId(1999)]);
     }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/knit_sections.dart';
@@ -19,11 +20,43 @@ import '../widgets/name_input_dialog.dart';
 /// the engine's ledger ([knitConstructionProvider]), with any problem right beneath it. Edits go
 /// through the knit editor's state, so Undo and Redo here and in the chart editor are one history.
 /// Optional: a pattern without sections shows a short explanation and works as a chart, as before.
-class KnitSectionsScreen extends ConsumerWidget {
-  const KnitSectionsScreen({super.key});
+class KnitSectionsScreen extends ConsumerStatefulWidget {
+  const KnitSectionsScreen({this.focusSection, this.focusStep, super.key});
+
+  /// A section (and step) to open at, outlined and scrolled into view: where a validation finding
+  /// the editor's Show was asked about is (ADR 0021). Null opens at the top.
+  final int? focusSection;
+  final int? focusStep;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<KnitSectionsScreen> createState() => _KnitSectionsScreenState();
+}
+
+/// The focused section or step, as the tiles read it.
+typedef _Focus = ({int section, int? step});
+
+class _KnitSectionsScreenState extends ConsumerState<KnitSectionsScreen> {
+  /// The focused tile, scrolled into view once after the first frame.
+  final GlobalKey _focusKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focusSection != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final target = _focusKey.currentContext;
+        if (mounted && target != null) {
+          Scrollable.ensureVisible(target, alignment: 0.3);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final _Focus? focus = widget.focusSection == null
+        ? null
+        : (section: widget.focusSection!, step: widget.focusStep);
     final pattern = ref.watch(knitEditorProvider.select((s) => s.pattern));
     final canUndo = ref.watch(knitEditorProvider.select((s) => s.canUndo));
     final canRedo = ref.watch(knitEditorProvider.select((s) => s.canRedo));
@@ -58,6 +91,9 @@ class KnitSectionsScreen extends ConsumerWidget {
       body: pattern.sections.isEmpty
           ? _Intro(onAdd: () => _addSection(context, ref))
           : ListView(
+              // Opened at a finding: every card is built at once so the focused one can be
+              // scrolled to (a pattern's sections are a short list).
+              scrollCacheExtent: focus == null ? null : const ScrollCacheExtent.pixels(1e7),
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
               children: [
                 Padding(
@@ -75,6 +111,8 @@ class KnitSectionsScreen extends ConsumerWidget {
                     index: i,
                     pattern: pattern,
                     construction: construction,
+                    focus: focus?.section == i ? focus : null,
+                    focusKey: _focusKey,
                   ),
                 const SizedBox(height: 8),
                 Align(
@@ -154,11 +192,21 @@ enum _PieceMenu { rename, up, down, delete }
 enum _StepMenu { edit, up, down, delete }
 
 class _SectionCard extends ConsumerWidget {
-  const _SectionCard({required this.index, required this.pattern, required this.construction});
+  const _SectionCard({
+    required this.index,
+    required this.pattern,
+    required this.construction,
+    this.focus,
+    required this.focusKey,
+  });
 
   final int index;
   final KnitPatternDto pattern;
   final KnitConstructionDto? construction;
+
+  /// Set when this section (or one of its steps) is the place a finding's Show opened.
+  final _Focus? focus;
+  final GlobalKey focusKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -170,10 +218,18 @@ class _SectionCard extends ConsumerWidget {
       for (final i in construction?.issues ?? const <KnitSectionIssueDto>[])
         if (i.sectionIndex == index && i.stepIndex == null) i,
     ];
-    return Card(
+    // A finding about the section as a whole outlines the card; one about a step, the step.
+    final cardFocused = focus != null && focus!.step == null;
+    final card = Card(
       // Position and id: ids can repeat in a hand-edited file, positions cannot.
       key: Key('knit-section-$index-${section.id}'),
       margin: const EdgeInsets.symmetric(vertical: 6),
+      shape: cardFocused
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Theme.of(context).colorScheme.error, width: 2),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
         child: Column(
@@ -260,11 +316,13 @@ class _SectionCard extends ConsumerWidget {
               ),
             for (var j = 0; j < section.steps.length; j++)
               _StepTile(
+                key: focus?.step == j ? focusKey : null,
                 pattern: pattern,
                 sectionIndex: index,
                 section: section,
                 index: j,
                 construction: construction,
+                focused: focus?.step == j,
               ),
             Padding(
               padding: const EdgeInsets.only(left: 8),
@@ -279,6 +337,7 @@ class _SectionCard extends ConsumerWidget {
         ),
       ),
     );
+    return cardFocused ? KeyedSubtree(key: focusKey, child: card) : card;
   }
 }
 
@@ -554,12 +613,17 @@ Future<void> _addStep(BuildContext context, WidgetRef ref, int sectionIndex) asy
 
 class _StepTile extends ConsumerWidget {
   const _StepTile({
+    super.key,
     required this.pattern,
     required this.sectionIndex,
     required this.section,
     required this.index,
     required this.construction,
+    this.focused = false,
   });
+
+  /// The step a finding's Show opened: outlined.
+  final bool focused;
 
   final KnitPatternDto pattern;
 
@@ -584,7 +648,7 @@ class _StepTile extends ConsumerWidget {
       for (final i in construction?.issues ?? const <KnitSectionIssueDto>[])
         if (i.sectionIndex == sectionIndex && i.stepIndex == index) i,
     ];
-    return Padding(
+    final tile = Padding(
       key: Key('knit-step-$sectionIndex-$index-${step.id}'),
       padding: const EdgeInsets.fromLTRB(16, 4, 0, 4),
       child: Row(
@@ -654,6 +718,14 @@ class _StepTile extends ConsumerWidget {
           ),
         ],
       ),
+    );
+    if (!focused) return tile;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.error, width: 2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: tile,
     );
   }
 }

@@ -704,7 +704,7 @@ mod tests {
     /// The one wording change: the first-row warning now points at the cast-on setting.
     #[test]
     fn schema_v2_fixtures_count_write_and_validate_as_before() {
-        use crate::{stitch_flow, to_written, validate, Severity};
+        use crate::{stitch_flow, to_written, validate};
         type Expect = (
             &'static str,
             &'static [&'static str],
@@ -779,10 +779,7 @@ mod tests {
             let got: Vec<(&str, String)> = validate(&p)
                 .into_iter()
                 .map(|i| {
-                    let s = match i.severity {
-                        Severity::Error => "error",
-                        Severity::Warning => "warning",
-                    };
+                    let s = i.severity.as_str();
                     (s, i.message)
                 })
                 .collect();
@@ -841,7 +838,7 @@ mod tests {
     /// (the oracle results recorded in `fixtures/knitting/repeats/` when these bytes were written).
     #[test]
     fn schema_v3_fixtures_count_write_and_validate_as_before() {
-        use crate::{stitch_flow, to_written, validate, Severity};
+        use crate::{stitch_flow, to_written, validate};
         let expect = |name: &str| -> Value {
             let path = format!(
                 "{}/../../fixtures/knitting/repeats/{name}.expect.json",
@@ -873,10 +870,7 @@ mod tests {
             let got: Vec<(String, String)> = validate(&p)
                 .into_iter()
                 .map(|i| {
-                    let s = match i.severity {
-                        Severity::Error => "error",
-                        Severity::Warning => "warning",
-                    };
+                    let s = i.severity.as_str();
                     (s.to_string(), i.message)
                 })
                 .collect();
@@ -962,7 +956,7 @@ mod tests {
     #[test]
     fn schema_v4_fixtures_count_write_and_validate_as_before() {
         use crate::sections::{ledger, LedgerLine};
-        use crate::{stitch_flow, to_written, validate, Severity};
+        use crate::{stitch_flow, to_written, validate};
         let oracle = |name: &str| -> Value {
             let topic = if name.ends_with("-round") {
                 "repeats"
@@ -1013,10 +1007,7 @@ mod tests {
             let got: Vec<(String, String)> = validate(&p)
                 .into_iter()
                 .map(|i| {
-                    let s = match i.severity {
-                        Severity::Error => "error",
-                        Severity::Warning => "warning",
-                    };
+                    let s = i.severity.as_str();
                     (s.to_string(), i.message)
                 })
                 .collect();
@@ -1434,7 +1425,7 @@ mod tests {
     #[test]
     fn schema_v5_fixtures_count_write_and_validate_as_before() {
         use crate::sections::{ledger, LedgerLine};
-        use crate::{to_written, validate, Severity};
+        use crate::{to_written, validate};
         for name in SCHEMA_V5 {
             let p = read(&fixture(&format!("schema-v5/{name}.plyknit")))
                 .unwrap()
@@ -1466,10 +1457,7 @@ mod tests {
             let got: Vec<(String, String)> = validate(&p)
                 .into_iter()
                 .map(|i| {
-                    let s = match i.severity {
-                        Severity::Error => "error",
-                        Severity::Warning => "warning",
-                    };
+                    let s = i.severity.as_str();
                     (s.to_string(), i.message)
                 })
                 .collect();

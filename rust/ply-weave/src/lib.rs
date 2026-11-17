@@ -17,6 +17,8 @@ pub mod loom;
 pub mod loom_file;
 pub mod plan;
 pub mod profile;
+// Is a draft ready to make or share (ADR 0021)?
+pub mod readiness;
 pub mod shadow;
 pub mod structure;
 pub mod validate;

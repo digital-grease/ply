@@ -31,6 +31,8 @@ mod tests;
 
 use serde::{Deserialize, Serialize};
 
+/// A step's place in words, `Step 3 (Cuff)` (readiness names unchecked steps the way issues do).
+pub(crate) use check::place_of;
 pub use check::{
     check, Count, NotationSummary, RecipeCode, RecipeIssue, RecipeReport, RecipeSeverity,
     SegmentReport, StitchReading, StitchUse,

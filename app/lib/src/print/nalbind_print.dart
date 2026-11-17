@@ -12,6 +12,7 @@ import 'package:flutter/widgets.dart' show BuildContext, StringCharacters;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/nalbind_repository.dart';
+import '../data/readiness_repository.dart';
 import '../data/photo_store.dart';
 import '../models/nalbind_diagram_shapes.dart';
 import '../models/nalbind_project.dart';
@@ -259,8 +260,8 @@ PrintDrawing nalbindDrawing(DiagramDto diagram, {required bool approximate}) {
   );
 }
 
-/// The document for [s]. [withProblemsBox] is the user's "print anyway" choice: when the notation
-/// has errors, a box at the top lists them. Without errors there is never a box.
+/// The document for [s]. [withProblemsBox] is the user's draft-copy choice (ADR 0021): when the
+/// notation has errors, a box at the top lists them. Without errors there is never a box.
 PrintDocument buildNalbindPrintDocument(NalbindPrintSource s, {required bool withProblemsBox}) {
   final p = s.project;
   final r = s.reading;
@@ -357,7 +358,9 @@ PrintDocument buildNalbindPrintDocument(NalbindPrintSource s, {required bool wit
   );
 }
 
-/// Run the print-or-share flow for the project the form holds ([id] when it has been saved).
+/// Run the print-or-share flow for the project the form holds ([id] when it has been saved): the
+/// engine's readiness report (ADR 0021) decides whether it prints straight away, after an
+/// acknowledgement, or only as a draft copy.
 Future<void> printOrShareNalbindPdf(
   BuildContext context,
   WidgetRef ref, {
@@ -365,6 +368,7 @@ Future<void> printOrShareNalbindPdf(
   String? id,
 }) {
   final repo = ref.read(nalbindRepositoryProvider);
+  final readiness = ref.read(readinessRepositoryProvider);
   return printOrSharePdf(
     context,
     ref,
@@ -373,7 +377,8 @@ Future<void> printOrShareNalbindPdf(
       final source = await gatherNalbindPrint(repo, project: project, id: id);
       return PdfExportJob(
         fileStem: project.name,
-        errors: nalbindPrintErrors(source),
+        readiness: await readiness.nalbind(project.notation, project.recipe),
+        listNotChecked: true,
         document: ({required withProblemsBox}) =>
             buildNalbindPrintDocument(source, withProblemsBox: withProblemsBox),
       );

@@ -1,0 +1,37 @@
+# Fixture record for weaving/readiness/mixed-problems (see fixtures/README.md).
+
+id = "weaving/readiness/mixed-problems"
+title = "A twill sampler with the slips a weaver makes, checked for readiness against a small loom"
+technique = "readiness to make or share (ADR 0021): structural validation and the loom check"
+files = ["mixed-problems.wif", "mixed-problems.expect.json"]
+uses = ["../looms/looms.json"]
+created = "2026-11-17"
+license = "original"
+provenance = """
+Written for Ply's tests through the engine's own WIF writer (rust/ply-weave/tests/readiness_fixtures.rs, \
+write_the_fixture, run on purpose only). An eight-shaft 4/4 straight twill, 16 ends by 16 picks, \
+with three deliberate slips: pick 5 presses treadle 9 (the tie-up has 8), pick 2 is marked tabby on \
+a twill shed, and picks 15 and 16 (treadle 7 twice) are grouped as a double shot. It is checked \
+against the four-shaft jack loom of weaving/looms/looms.json with no sett. No published draft was \
+used. The oracle was derived by hand from the rules in rust/ply-weave/src/validate.rs, \
+rust/ply-weave/src/feasibility.rs and rust/ply-weave/src/readiness.rs: the treadle error blocks; \
+the tabby role, 8 shafts on a 4-shaft loom and 9 distinct treadles pressed on a 6-treadle loom \
+(treadles 7 to 9 past it) warn; the width and the reed are not checked without a sett (the file \
+gives no warp spacing); the double shot gets the selvedge advice; the fits are not listed."""
+
+[sources]
+references = [
+  "WIF 1.1 specification, https://www.mhsoft.com/wif/wif1-1.txt (the sections the file uses).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-weave/tests/readiness_fixtures.rs: the file is the drawn draft and re-saves to the same \
+bytes; readiness against the jack loom gives exactly the oracle's verdict, checks and items, and its \
+errors are exactly the structural errors (what the PDF's problems box lists). \
+app/test/readiness_fixture_test.dart runs the weaving print flow on the oracle's report: the draft is \
+not ready, the errors are listed with their places, and a draft copy is marked on every page."""
+practitioner_weave_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Not a cloth anyone would weave: the slips are deliberate. The physical check is of the wording: does each finding say plainly what is wrong, where, and whether it blocks."

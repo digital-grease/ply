@@ -33,6 +33,17 @@ pub enum RecipeSeverity {
     Error,
 }
 
+impl RecipeSeverity {
+    /// The same finding in the vocabulary every craft shares (ADR 0021): one to one.
+    pub const fn level(self) -> ply_common::readiness::Severity {
+        match self {
+            RecipeSeverity::Info => ply_common::readiness::Severity::Info,
+            RecipeSeverity::Warning => ply_common::readiness::Severity::Warning,
+            RecipeSeverity::Error => ply_common::readiness::Severity::Error,
+        }
+    }
+}
+
 /// A stable machine code for one kind of recipe issue. The strings from [`RecipeCode::as_str`] are a
 /// contract (tests and the UI key on them): never renamed or reused. New codes may be added.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -439,7 +450,7 @@ pub(super) fn shorten(s: &str) -> String {
 }
 
 /// `Step 3 (Cuff)`, with the title shortened.
-fn place_of(s: &Segment, i: usize) -> String {
+pub(crate) fn place_of(s: &Segment, i: usize) -> String {
     let title = s.title.trim();
     if title.is_empty() {
         format!("Step {}", i + 1)

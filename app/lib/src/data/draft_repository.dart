@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -715,6 +716,53 @@ class DraftRepository {
     await _writeThumbnail(dir, id, wifText);
   }
 
+  /// Whether saved draft [id] has a cloth to draw (at least one warp end and one pick), read from its
+  /// WIF without the engine; null when the file cannot be read. A draft with none keeps the plain
+  /// placeholder in the library: there is nothing to draw, which is not a failure (ADR 0021).
+  Future<bool?> hasCloth(String id) async {
+    try {
+      return wifHasCloth(await File(_wifPath(await _draftsDir(), id)).readAsString());
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// [hasCloth] for WIF text, sized as the engine sizes a draft: the ends are the `[THREADING]`
+  /// entries (up to `[WARP] Threads`, or the highest numbered entry), the picks those of
+  /// `[TREADLING]`, or of `[LIFTPLAN]` when the treadling has none.
+  static bool wifHasCloth(String wif) {
+    String? section;
+    final threads = <String, int>{};
+    final top = <String, int>{};
+    final data = <String>{};
+    for (final raw in const LineSplitter().convert(wif)) {
+      final line = raw.trim();
+      if (line.isEmpty || line.startsWith(';')) continue;
+      if (line.startsWith('[') && line.endsWith(']')) {
+        section = line.substring(1, line.length - 1).trim().toUpperCase();
+        top.putIfAbsent(section, () => 0);
+        continue;
+      }
+      final eq = line.indexOf('=');
+      if (eq < 0 || section == null) continue;
+      final key = line.substring(0, eq).trim();
+      final value = line.substring(eq + 1).trim();
+      if ((section == 'WARP' || section == 'WEFT') && key.toLowerCase() == 'threads') {
+        threads[section] = int.tryParse(value) ?? 0;
+      } else if (int.tryParse(key) case final n?) {
+        if (n > (top[section] ?? 0)) top[section] = n;
+        if (value.isNotEmpty) data.add(section);
+      }
+    }
+    int count(String s, String sized) =>
+        top.containsKey(s) ? math.max(top[s]!, threads[sized] ?? 0) : 0;
+    final ends = count('THREADING', 'WARP');
+    final picks = data.contains('TREADLING') || !top.containsKey('LIFTPLAN')
+        ? count('TREADLING', 'WEFT')
+        : count('LIFTPLAN', 'WEFT');
+    return ends > 0 && picks > 0;
+  }
+
   /// Render a small PNG thumbnail next to the draft. Best-effort: a null PNG encode
   /// or any render error is swallowed (the Library then shows a placeholder; only a save or a
   /// library restore writes the thumbnail again).
@@ -1055,13 +1103,46 @@ class DraftRepository {
     );
   }
 
-  DraftIssue _issueFromDto(ValidationIssueDto issue) => DraftIssue(
+  DraftIssue _issueFromDto(ValidationIssueDto issue) => issueFromDto(issue);
+
+  /// The wire issue as the editor's [DraftIssue]: its severity, words, code, place and location
+  /// (ADR 0021).
+  static DraftIssue issueFromDto(ValidationIssueDto issue) => DraftIssue(
         severity: switch (issue.severity) {
           SeverityKind.error => IssueSeverity.error,
           SeverityKind.warning => IssueSeverity.warning,
+          SeverityKind.unsupported => IssueSeverity.unsupported,
           SeverityKind.info => IssueSeverity.info,
         },
         message: issue.message,
+        code: issue.code,
+        place: issue.place,
+        location: switch (issue.location) {
+          null => null,
+          final l => DraftPlace(
+              kind: switch (l.kind) {
+                WeaveLocationKind.threading => DraftPlaceKind.threading,
+                WeaveLocationKind.tieUp => DraftPlaceKind.tieUp,
+                WeaveLocationKind.treadling => DraftPlaceKind.treadling,
+                WeaveLocationKind.liftPlan => DraftPlaceKind.liftPlan,
+                WeaveLocationKind.warpColor => DraftPlaceKind.warpColor,
+                WeaveLocationKind.weftColor => DraftPlaceKind.weftColor,
+                WeaveLocationKind.pick => DraftPlaceKind.pick,
+                WeaveLocationKind.picks => DraftPlaceKind.picks,
+                WeaveLocationKind.pickList => DraftPlaceKind.pickList,
+                WeaveLocationKind.pickRanges => DraftPlaceKind.pickRanges,
+                WeaveLocationKind.shaft => DraftPlaceKind.shaft,
+                WeaveLocationKind.shuttle => DraftPlaceKind.shuttle,
+              },
+              end: l.end,
+              pick: l.pick,
+              lastPick: l.lastPick,
+              shaft: l.shaft,
+              treadle: l.treadle,
+              color: l.color,
+              shuttle: l.shuttle,
+            ),
+        },
       );
 
   /// Clamp a color channel to the wire's 0..255 (u8) range (see the mapping note above).

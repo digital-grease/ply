@@ -19,7 +19,7 @@ use ply_knit::sections::{
     NeedleGroup, PickUpAlong, Piece, PieceSummary, Section, SectionIssue, ShapeUntil, Step,
     StepAction, TurnAt, TurnDecrease, TurnMethod, WorkStitch, WorkTo,
 };
-use ply_knit::validate::{KnitIssue, Severity};
+use ply_knit::validate::{KnitIssue, KnitLocation, Severity};
 use ply_knit::KnitError;
 
 use crate::dto::{ColorDto, SeverityKind, UnitKind};
@@ -453,10 +453,89 @@ pub struct KnitPatternDto {
     pub pieces: Vec<KnitPieceDto>,
 }
 
-/// One validation problem, severity preserved (reuses the weave `SeverityKind`).
+/// One validation problem, severity preserved (reuses the shared `SeverityKind`), with its stable
+/// code, its place in words and where it is (ADR 0021).
 pub struct KnitIssueDto {
     pub severity: SeverityKind,
     pub message: String,
+    /// The stable code (`unknown-stitch`, `stitch-count-mismatch`, `section-step`, ...).
+    pub code: String,
+    /// Where it is, in words ("Row 3, column 4", "Back, step 2"); `None` for the whole pattern.
+    pub place: Option<String>,
+    /// Where it is, for the editor to go there; `None` for the whole pattern.
+    pub location: Option<KnitLocationDto>,
+}
+
+/// What a [`KnitLocationDto`] names (mirrors `validate::KnitLocation`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KnitLocationKind {
+    Row,
+    Cell,
+    Repeat,
+    Step,
+}
+
+/// Where a knitting finding is, by 0-based position: `row` is the chart row (for a step, the chart
+/// row it works, if any), `column` the storage column of a cell or the first of a repeat and
+/// `end_column` one past a repeat's last; `section`, `step` and `piece` place a section finding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KnitLocationDto {
+    pub kind: KnitLocationKind,
+    pub row: Option<u32>,
+    pub column: Option<u32>,
+    pub end_column: Option<u32>,
+    pub section: Option<u32>,
+    pub step: Option<u32>,
+    pub piece: Option<u32>,
+}
+
+impl KnitLocationDto {
+    /// `None` for the whole pattern.
+    pub fn of(l: &KnitLocation) -> Option<Self> {
+        let n = |v: usize| Some(sat(v as u64));
+        let blank = |kind| KnitLocationDto {
+            kind,
+            row: None,
+            column: None,
+            end_column: None,
+            section: None,
+            step: None,
+            piece: None,
+        };
+        Some(match *l {
+            KnitLocation::Pattern => return None,
+            KnitLocation::Row { row } => KnitLocationDto {
+                row: n(row),
+                ..blank(KnitLocationKind::Row)
+            },
+            KnitLocation::Cell { row, column, .. } => KnitLocationDto {
+                row: n(row),
+                column: n(column),
+                ..blank(KnitLocationKind::Cell)
+            },
+            KnitLocation::Repeat {
+                row, start, end, ..
+            } => KnitLocationDto {
+                row: n(row),
+                column: n(start),
+                end_column: n(end),
+                ..blank(KnitLocationKind::Repeat)
+            },
+            KnitLocation::Step {
+                section,
+                step,
+                chart_row,
+                piece,
+                ..
+            } => KnitLocationDto {
+                row: chart_row.and_then(n),
+                section: n(section),
+                step: step.and_then(n),
+                piece: piece.and_then(n),
+                ..blank(KnitLocationKind::Step)
+            },
+        })
+    }
 }
 
 /// Why a `.plyknit` file could not be opened (see [`KnitFormatFailure`]).
@@ -1288,10 +1367,7 @@ impl From<&NeedleCount> for KnitNeedleCountDto {
 }
 
 fn severity_to_dto(s: Severity) -> SeverityKind {
-    match s {
-        Severity::Error => SeverityKind::Error,
-        Severity::Warning => SeverityKind::Warning,
-    }
+    SeverityKind::from(s)
 }
 
 impl KnitConstructionDto {
@@ -1370,6 +1446,12 @@ impl From<&KnitIssue> for KnitIssueDto {
         KnitIssueDto {
             severity: severity_to_dto(i.severity),
             message: i.message.clone(),
+            code: i.code.to_string(),
+            place: match i.location {
+                KnitLocation::Pattern => None,
+                ref l => Some(l.text()),
+            },
+            location: KnitLocationDto::of(&i.location),
         }
     }
 }

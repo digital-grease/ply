@@ -6154,7 +6154,7 @@ fn display_name(name: &str) -> String {
 }
 
 /// `text` cut to at most `max` characters, ending `...` when it was longer.
-fn short(text: &str, max: usize) -> String {
+pub(crate) fn short(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
     }

@@ -394,6 +394,11 @@ impl From<&Worksheet> for WorksheetDto {
 /// Work out the whole worksheet for `req`. `Err` only when the loom profile is outside the
 /// engine's limits; every unusable number is an issue instead.
 pub fn worksheet(req: WeavePlanRequestDto) -> Result<WorksheetDto, String> {
+    work_out(req).map(|w| WorksheetDto::from(&w))
+}
+
+/// The engine's worksheet for `req` (what [`worksheet`] mirrors, and what readiness reads).
+pub(crate) fn work_out(req: WeavePlanRequestDto) -> Result<worksheet::Worksheet, String> {
     let plan = WeavePlan::from(req.plan);
     let swatch = req.swatch.map(ply_common::materials::Swatch::from);
     let warp = req.warp.map(ply_common::materials::Material::from);
@@ -418,7 +423,7 @@ pub fn worksheet(req: WeavePlanRequestDto) -> Result<WorksheetDto, String> {
         },
         None => DraftFacts::default(),
     };
-    let w = worksheet::work_out(&worksheet::WorksheetRequest {
+    Ok(worksheet::work_out(&worksheet::WorksheetRequest {
         plan: &plan,
         swatch: swatch.as_ref(),
         warp: warp.as_ref(),
@@ -427,8 +432,7 @@ pub fn worksheet(req: WeavePlanRequestDto) -> Result<WorksheetDto, String> {
         loom_sett: req.loom_sett.map(Sett::from),
         draft,
         metric: req.metric,
-    });
-    Ok(WorksheetDto::from(&w))
+    }))
 }
 
 #[cfg(test)]

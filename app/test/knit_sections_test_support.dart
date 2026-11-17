@@ -253,6 +253,7 @@ final _label = RegExp(r'^(Row \d+ \((?:RS|WS)\)|Round \d+|Short row \d+(?: \((?:
 List<KnitIssueDto> oracleIssues(Map<String, dynamic> oracle) => [
       for (final i in oracle['issues'] as List)
         KnitIssueDto(
+          code: 'test',
           severity: i['severity'] == 'error' ? SeverityKind.error : SeverityKind.warning,
           message: i['message'] as String,
         ),

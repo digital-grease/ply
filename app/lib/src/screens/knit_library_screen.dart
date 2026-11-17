@@ -13,6 +13,7 @@ import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/name_input_dialog.dart';
 import '../widgets/project_export.dart';
+import '../widgets/thumb_unavailable.dart';
 import 'knit_editor_screen.dart';
 import 'new_knit_setup_screen.dart';
 
@@ -365,7 +366,7 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
         File(path),
         fit: BoxFit.contain,
         gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => _thumbPlaceholder(),
+        errorBuilder: (_, __, ___) => thumbUnavailable(context),
       );
     }
     return _thumbPlaceholder();

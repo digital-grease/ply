@@ -441,3 +441,22 @@ class ValidationController extends AutoDisposeAsyncNotifier<List<DraftIssue>> {
 /// survive a validate re-resolve AND be settable cross-widget from the Save-with-errors dialog's
 /// "Show me" action.
 final editorIssuesExpandedProvider = StateProvider<bool>((ref) => false);
+
+/// A place in the draft the editor was asked to show (ADR 0021): a validation finding's "Show". The
+/// draft view scrolls it into view and outlines it. [serial] changes on every request, so asking
+/// for the same place twice shows it twice.
+class DraftFocus {
+  const DraftFocus(this.place, this.serial);
+
+  final DraftPlace place;
+  final int serial;
+}
+
+/// The latest [DraftFocus] asked for (null = none since the editor opened).
+final draftFocusProvider = StateProvider<DraftFocus?>((ref) => null);
+
+/// Ask the draft view to show [place].
+void showDraftPlace(WidgetRef ref, DraftPlace place) {
+  final p = ref.read(draftFocusProvider.notifier);
+  p.state = DraftFocus(place, (p.state?.serial ?? 0) + 1);
+}

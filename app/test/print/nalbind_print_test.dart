@@ -189,7 +189,8 @@ void main() {
 
     test('the stitch\'s own validation issues join at their severity', () async {
       final repo = FakeReadRepo(issues: const [
-        NalbindIssueDto(severity: SeverityKind.warning, message: 'a pass has no engaged loop'),
+        NalbindIssueDto(
+            code: 'test', severity: SeverityKind.warning, message: 'a pass has no engaged loop'),
       ]);
       final doc =
           buildNalbindPrintDocument(await _source(_project(), repo: repo), withProblemsBox: false);

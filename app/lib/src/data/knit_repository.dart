@@ -30,7 +30,13 @@ class KnitRepository {
   /// Render a knitting chart to a decoded [ui.Image] at [cellPx] pixels per cell (symbols +
   /// colorwork + cable spans, bottom-to-top). The live editor calls this on every edit.
   Future<ui.Image> render(KnitPatternDto pattern, {required int cellPx}) async {
-    final preview = await renderKnitPreview(dto: pattern, cellPx: cellPx);
+    final preview = await renderPixels(pattern, cellPx: cellPx);
+    final rows = pattern.chart.rows.length, cols = pattern.chart.width;
+    if ((preview.width == 0 || preview.height == 0) && rows > 0 && cols > 0) {
+      // The engine draws nothing for a chart past its raster budget: say so, never "empty".
+      throw KnitChartNotDrawn('it is too large to draw at this zoom ($cols stitches by $rows '
+          'rows at $cellPx pixels each); zoom out to see it');
+    }
     return _decodePreview(preview);
   }
 
@@ -423,3 +429,12 @@ NativeFormatException nativeFormatExceptionFromKnit(KnitFormatFailure failure) =
       document: NativeDocument.knitPattern,
       detail: failure.message,
     );
+
+/// The chart could not be drawn, and why in words (ADR 0021: a chart is never left blank silently).
+class KnitChartNotDrawn implements Exception {
+  const KnitChartNotDrawn(this.reason);
+  final String reason;
+
+  @override
+  String toString() => reason;
+}

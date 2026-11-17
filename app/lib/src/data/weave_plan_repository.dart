@@ -43,20 +43,14 @@ class WeavePlanRepository {
   }) async {
     try {
       final w = await api.weavePlanWorksheet(
-        req: wire.WeavePlanRequestDto(
-          plan: planToDto(plan),
-          swatch: swatch == null ? null : MaterialsRepository.swatchToDto(swatch),
-          warp: warp == null ? null : MaterialsRepository.materialToDto(warp),
-          weft: weft == null ? null : MaterialsRepository.materialToDto(weft),
-          loom: loom == null ? null : LoomRepository.loomToDto(loom),
-          loomSett: loomSett == null ? null : LoomRepository.settToDto(loomSett),
-          draft: draft == null
-              ? null
-              : wire.PlanDraftFactsDto(
-                  ends: draft.ends.clamp(0, 0xFFFFFFFF),
-                  meanStrands: draft.meanStrands,
-                  fileSett:
-                      draft.fileSett == null ? null : LoomRepository.settToDto(draft.fileSett!)),
+        req: requestToDto(
+          plan: plan,
+          swatch: swatch,
+          warp: warp,
+          weft: weft,
+          loom: loom,
+          loomSett: loomSett,
+          draft: draft,
           metric: metric,
         ),
       );
@@ -65,6 +59,35 @@ class WeavePlanRepository {
       throw WorksheetException(e);
     }
   }
+
+  /// The whole plan request as the bridge takes it (the worksheet and the readiness check of a
+  /// draft read the same request).
+  static wire.WeavePlanRequestDto requestToDto({
+    required WeavePlan plan,
+    SwatchRecord? swatch,
+    MaterialRecord? warp,
+    MaterialRecord? weft,
+    LoomProfile? loom,
+    Sett? loomSett,
+    PlanDraftFacts? draft,
+    required bool metric,
+  }) =>
+      wire.WeavePlanRequestDto(
+        plan: planToDto(plan),
+        swatch: swatch == null ? null : MaterialsRepository.swatchToDto(swatch),
+        warp: warp == null ? null : MaterialsRepository.materialToDto(warp),
+        weft: weft == null ? null : MaterialsRepository.materialToDto(weft),
+        loom: loom == null ? null : LoomRepository.loomToDto(loom),
+        loomSett: loomSett == null ? null : LoomRepository.settToDto(loomSett),
+        draft: draft == null
+            ? null
+            : wire.PlanDraftFactsDto(
+                ends: draft.ends.clamp(0, 0xFFFFFFFF),
+                meanStrands: draft.meanStrands,
+                fileSett:
+                    draft.fileSett == null ? null : LoomRepository.settToDto(draft.fileSett!)),
+        metric: metric,
+      );
 
   /// The plan as the bridge takes it. A count the engine does not take (negative, or past its limit)
   /// goes as one past the limit, so the engine reports it as out of range instead of a clamped value

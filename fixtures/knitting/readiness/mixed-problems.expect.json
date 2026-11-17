@@ -1,0 +1,43 @@
+{
+  "description": "A flat k2, p2 ribbed brim, worked in one section from a stated cast-on of 22 stitches, with the slips a knitter makes. Step 1 works chart row 1, whose 4-stitch rib is repeated to the end of the row, over the 22 stitches waiting: 22 is not a multiple of 4, so the row cannot be worked as charted and is refused (nothing is applied). Step 2 is in the pattern's own words with no change to the count (0). Step 3 binds off 30 stitches when only the 22 are left to work in the row: refused. Step 4 is in the pattern's own words and does not say how it changes the count, so the counts after it are unknown. Readiness: the two refused steps block (the written instructions and the counts would be wrong), the unknown change only warns, and both steps in the pattern's own words are listed as not checked. Each finding is placed at its section and step (the chart row too, for step 1), and the sentence is the finding without its place.",
+  "verdict": "not_ready",
+  "checked": ["chart", "sections"],
+  "errors": 2,
+  "items": [
+    {
+      "check": "sections",
+      "code": "section-step",
+      "severity": "error",
+      "place": "Brim, step 1, chart row 1",
+      "message": "The repeat over cols 1-4 cannot be worked to the end: 22 stitches are left to work in this row, the rest of the row uses 0, and the 22 left are not a multiple of 4"
+    },
+    {
+      "check": "sections",
+      "code": "section-step",
+      "severity": "error",
+      "place": "Brim, step 3",
+      "message": "Binds off 30 stitches, but only 22 stitches are left to work in this row"
+    },
+    {
+      "check": "sections",
+      "code": "section-step",
+      "severity": "warning",
+      "place": "Brim, step 4",
+      "message": "Ply does not check this step, and it does not say how it changes the number of stitches, so the stitch counts after it are unknown; give the change (0 if it changes nothing) to keep counting"
+    },
+    {
+      "check": "sections",
+      "code": "unchecked-step",
+      "severity": "unsupported",
+      "place": "Brim, step 2",
+      "message": "Ply did not check this step: it is in the pattern's own words (\"Work 6 more rows of rib as set.\") and is printed as written."
+    },
+    {
+      "check": "sections",
+      "code": "unchecked-step",
+      "severity": "unsupported",
+      "place": "Brim, step 4",
+      "message": "Ply did not check this step: it is in the pattern's own words (\"Change to the larger needles.\") and is printed as written."
+    }
+  ]
+}

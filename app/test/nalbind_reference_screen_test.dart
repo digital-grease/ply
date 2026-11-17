@@ -193,7 +193,8 @@ void main() {
   testWidgets("an exact reading lists the stitch's validation issues", (tester) async {
     final repo = FakeNalbindRepo()
       ..issues = const [
-        NalbindIssueDto(severity: SeverityKind.warning, message: 'connection 1 engages 0 loops'),
+        NalbindIssueDto(
+            code: 'test', severity: SeverityKind.warning, message: 'connection 1 engages 0 loops'),
       ];
     await pump(tester, repo);
     await typeNotation(tester, 'UO/UOO F0');

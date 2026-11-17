@@ -24,7 +24,7 @@ use ply_weave::shadow::{
     ShadowBlock, ShadowError, ShadowLayout, ShadowParams, ShadowShafts, ShadowSystem,
     TwillDirection, WeftPhase,
 };
-use ply_weave::validate::{Severity, ValidationIssue};
+use ply_weave::validate::{Severity, ValidationIssue, WeaveLocation};
 use ply_weave::{DrawdownRegion, RenderError, RenderOptions};
 
 /// An sRGB color. No alpha — the engine/WIF `Color` is RGB only.
@@ -279,21 +279,134 @@ pub enum DriveDto {
     },
 }
 
-/// Severity of a validation issue. Flat C-like enum so frb mirrors it transparently; it
-/// preserves the engine `Severity` the M1 bridge flattened into a string.
+/// The severity vocabulary every craft shares (`ply_common::readiness::Severity`, ADR 0021). Flat
+/// C-like enum so frb mirrors it transparently; it preserves the engine severity the M1 bridge
+/// flattened into a string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeverityKind {
     Error,
     Warning,
-    /// Advice about a deliberate instruction (weaving validation only; knitting and nalbinding never
-    /// report it).
+    /// Something Ply cannot check or represent, listed as such (readiness; a validator that has
+    /// nothing it cannot check never reports it).
+    Unsupported,
+    /// Advice or a fact (weaving's advice about a deliberate instruction, a notation's formatting).
     Info,
 }
 
+impl From<Severity> for SeverityKind {
+    fn from(s: Severity) -> Self {
+        match s {
+            Severity::Error => SeverityKind::Error,
+            Severity::Warning => SeverityKind::Warning,
+            Severity::Unsupported => SeverityKind::Unsupported,
+            Severity::Info => SeverityKind::Info,
+        }
+    }
+}
+
 /// One validation problem, with its severity preserved (not flattened into the message) so
-/// the editor can color Errors red vs Warnings amber and gate Save on Errors.
+/// the editor can color Errors red vs Warnings amber, plus its stable code, its place in words and
+/// where it is (ADR 0021).
 pub struct ValidationIssueDto {
+    /// The stable code (`weave.treadle_untied`, ...). Tests and navigation key on it.
+    pub code: String,
     pub severity: SeverityKind,
     pub message: String,
+    /// Where it is, in words ("Pick 3, treadle 9"); `None` for the whole draft.
+    pub place: Option<String>,
+    /// Where it is, for the editor to go there; `None` for the whole draft.
+    pub location: Option<WeaveLocationDto>,
+}
+
+/// What a [`WeaveLocationDto`] names (mirrors `validate::WeaveLocation`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeaveLocationKind {
+    Threading,
+    TieUp,
+    Treadling,
+    LiftPlan,
+    WarpColor,
+    WeftColor,
+    Pick,
+    Picks,
+    PickList,
+    PickRanges,
+    Shaft,
+    Shuttle,
+}
+
+/// Where a weaving finding is, in the weaver's 1-based numbers: the cell or the first of the picks
+/// it names (a list or several ranges keep only their first pick or range here; the words in
+/// `ValidationIssueDto::place` name them all). `color` is the 0-based palette index named.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WeaveLocationDto {
+    pub kind: WeaveLocationKind,
+    pub end: Option<u32>,
+    pub pick: Option<u32>,
+    /// The last pick of the first range named (equal to `pick` for one pick).
+    pub last_pick: Option<u32>,
+    pub shaft: Option<u32>,
+    pub treadle: Option<u32>,
+    pub color: Option<u32>,
+    pub shuttle: Option<u32>,
+}
+
+impl WeaveLocationDto {
+    /// `None` for the whole draft.
+    pub fn of(l: &WeaveLocation) -> Option<Self> {
+        let blank = |kind| WeaveLocationDto {
+            kind,
+            end: None,
+            pick: l.first_pick(),
+            last_pick: l.last_pick(),
+            shaft: None,
+            treadle: None,
+            color: None,
+            shuttle: None,
+        };
+        Some(match *l {
+            WeaveLocation::Draft => return None,
+            WeaveLocation::Threading { end, shaft } => WeaveLocationDto {
+                end: Some(end),
+                shaft: Some(shaft),
+                ..blank(WeaveLocationKind::Threading)
+            },
+            WeaveLocation::TieUp { treadle, shaft } => WeaveLocationDto {
+                treadle: Some(treadle),
+                shaft: Some(shaft),
+                ..blank(WeaveLocationKind::TieUp)
+            },
+            WeaveLocation::Treadling { treadle, .. } => WeaveLocationDto {
+                treadle: Some(treadle),
+                ..blank(WeaveLocationKind::Treadling)
+            },
+            WeaveLocation::LiftPlan { shaft, .. } => WeaveLocationDto {
+                shaft: Some(shaft),
+                ..blank(WeaveLocationKind::LiftPlan)
+            },
+            WeaveLocation::WarpColor { end, color } => WeaveLocationDto {
+                end: Some(end),
+                color: Some(color),
+                ..blank(WeaveLocationKind::WarpColor)
+            },
+            WeaveLocation::WeftColor { color, .. } => WeaveLocationDto {
+                color: Some(color),
+                ..blank(WeaveLocationKind::WeftColor)
+            },
+            WeaveLocation::Pick { .. } => blank(WeaveLocationKind::Pick),
+            WeaveLocation::Picks { .. } => blank(WeaveLocationKind::Picks),
+            WeaveLocation::PickList { .. } => blank(WeaveLocationKind::PickList),
+            WeaveLocation::PickRanges { .. } => blank(WeaveLocationKind::PickRanges),
+            WeaveLocation::Shaft { shaft } => WeaveLocationDto {
+                shaft: Some(shaft),
+                ..blank(WeaveLocationKind::Shaft)
+            },
+            WeaveLocation::Shuttle { shuttle } => WeaveLocationDto {
+                shuttle: Some(shuttle),
+                ..blank(WeaveLocationKind::Shuttle)
+            },
+        })
+    }
 }
 
 /// Inputs to the warp-yarn estimate, mirroring `calc::WarpPlan` transparently (the engine
@@ -552,12 +665,14 @@ fn treadle_rows_in(rows: &[Vec<u16>]) -> Vec<Vec<TreadleId>> {
 impl From<&ValidationIssue> for ValidationIssueDto {
     fn from(i: &ValidationIssue) -> Self {
         ValidationIssueDto {
-            severity: match i.severity {
-                Severity::Error => SeverityKind::Error,
-                Severity::Warning => SeverityKind::Warning,
-                Severity::Info => SeverityKind::Info,
-            },
+            code: i.code.as_str().to_string(),
+            severity: i.severity.into(),
             message: i.message.clone(),
+            place: match i.location {
+                WeaveLocation::Draft => None,
+                ref l => Some(l.text()),
+            },
+            location: WeaveLocationDto::of(&i.location),
         }
     }
 }

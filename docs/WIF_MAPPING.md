@@ -129,7 +129,18 @@ any reader), only the working data is lost. The earlier `[PRIVATE PLY PICK ROLES
   looms is written to a `.wif`, so another program sees the same file as before.
 - **Leniency over strictness.** The parser never panics on imperfect files — missing
   sections default sensibly; unknown keys are ignored. It errors only when there's no
-  recognizable draft data at all.
+  recognizable draft data at all, or when one entry is past the id cap below.
+- **Repeated and excess ids in one entry.** In `[THREADING]`, `[TIEUP]`, `[TREADLING]` and
+  `[LIFTPLAN]`, an id repeated within one entry (`1=3,3`) means nothing more than listing it once,
+  so it is read once (the first of each kept, in order); a re-save after a structural edit writes it
+  once. An entry may list as many different ids as the larger of 1,024 and the count the file's
+  `[WEAVING]` section declares for that axis (`Shafts` for threading, tie-up and lift plan entries,
+  `Treadles` for treadling entries), so a Jacquard-style draft declaring 2,000 shafts opens as
+  before; with no declared count the limit is 1,024. An entry past its limit lists more ids than
+  the draft and any loom have, so the file can only be damaged or hostile, and it is refused with
+  the section and entry named (ADR 0021). An entry with more shafts than the draft's `Shafts` count,
+  but within its limit, is kept, and validation names each shaft outside the draft once, in one
+  finding for the end (or treadle or pick).
 - **iOS file association.** Registering `.wif` as an openable type on iOS requires a custom
   **UTI** (`Info.plist` `CFBundleDocumentTypes` / `UTExportedTypeDeclarations`). This is a
   known iOS headache, separate from the parser. Tracked for M3.

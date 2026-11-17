@@ -9,7 +9,8 @@ import '../models/native_format.dart';
 import '../print/knit_print.dart';
 import '../print/print_export.dart' show PdfExportText;
 import '../rust/dto.dart' show ColorDto, SeverityKind;
-import '../rust/knit_dto.dart' show KnitIssueDto, KnitPatternDto, RepeatDto;
+import '../rust/knit_dto.dart'
+    show KnitIssueDto, KnitLocationDto, KnitLocationKind, KnitPatternDto, RepeatDto;
 import '../state/knit_editor_providers.dart';
 import '../state/knit_editor_state.dart';
 import '../state/material_providers.dart' show openProjectProvider;
@@ -519,6 +520,8 @@ class _KnitValidationBar extends ConsumerWidget {
                 itemBuilder: (_, i) {
                   final issue = sorted[i];
                   final isErr = issue.severity == SeverityKind.error;
+                  final place = issue.place;
+                  final location = issue.location;
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -526,8 +529,30 @@ class _KnitValidationBar extends ConsumerWidget {
                           size: 16, color: isErr ? colors.error : warning),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(issue.message, style: Theme.of(context).textTheme.bodySmall),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // The place in words (ADR 0021), so a finding says where it is.
+                            if (place != null)
+                              Text(place,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(fontWeight: FontWeight.bold)),
+                            Text(issue.message, style: Theme.of(context).textTheme.bodySmall),
+                          ],
+                        ),
                       ),
+                      if (location != null)
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () => showKnitPlace(context, ref, location),
+                          child:
+                              Text('Show', semanticsLabel: 'Show ${place ?? 'it'} in the pattern'),
+                        ),
                     ],
                   );
                 },
@@ -543,6 +568,34 @@ class _KnitValidationBar extends ConsumerWidget {
     if (errors > 0) parts.add('$errors ${errors == 1 ? 'error' : 'errors'}');
     if (warnings > 0) parts.add('$warnings ${warnings == 1 ? 'warning' : 'warnings'}');
     return parts.isEmpty ? 'No issues' : parts.join(', ');
+  }
+}
+
+/// Go to a validation finding's place (ADR 0021): a chart cell, row or repeat is selected and brought
+/// into view, in whichever tool is in use (the chart keeps scrolling; the select tool's Fill and Mark
+/// repeat then work on it); a section finding opens the Sections screen at its step, outlined.
+void showKnitPlace(BuildContext context, WidgetRef ref, KnitLocationDto location) {
+  final row = location.row;
+  switch (location.kind) {
+    case KnitLocationKind.step:
+      final section = location.section;
+      Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => KnitSectionsScreen(focusSection: section, focusStep: location.step)));
+      return;
+    case KnitLocationKind.cell || KnitLocationKind.row || KnitLocationKind.repeat:
+      final chart = ref.read(knitEditorProvider).pattern.chart;
+      if (row == null || row < 0 || row >= chart.rows.length || chart.width == 0) return;
+      final last = chart.width - 1;
+      final (from, to) = switch (location.kind) {
+        KnitLocationKind.cell => (location.column ?? 0, location.column ?? 0),
+        KnitLocationKind.repeat => (location.column ?? 0, (location.endColumn ?? 1) - 1),
+        _ => (0, last),
+      };
+      int clamp(int c) => c < 0 ? 0 : (c > last ? last : c);
+      final a = clamp(from), b = clamp(to < from ? from : to);
+      ref.read(knitSelectionProvider.notifier).state = KnitSelection(row, a, row, b);
+      final reveal = ref.read(knitRevealProvider.notifier);
+      reveal.state = KnitReveal(row, a, b, (reveal.state?.serial ?? 0) + 1);
   }
 }
 

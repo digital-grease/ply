@@ -14,6 +14,7 @@ import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/loom_type_picker.dart';
 import '../widgets/project_export.dart';
+import '../widgets/thumb_unavailable.dart';
 import 'editor_screen.dart';
 import 'preview_screen.dart';
 
@@ -33,11 +34,20 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 enum _TileAction { open, rename, export, delete }
 
+/// Why an imported file that is not UTF-8 text cannot be read.
+const String kImportNotUtf8 = 'Ply could not read that file: a WIF file is text, and this one is '
+    'not UTF-8 text (older weaving programs may save in another text encoding). Nothing was '
+    'imported.';
+
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   late Future<List<DraftEntry>> _entriesFuture;
 
   /// Drafts listed without a thumbnail whose thumbnail has since been rebuilt.
   final Set<String> _rebuiltThumbs = {};
+
+  /// Drafts whose thumbnail could not be rebuilt (the draft could not be read or drawn): their tile
+  /// says so instead of showing the ordinary empty placeholder (ADR 0021, no silent blank image).
+  final Set<String> _failedThumbs = {};
 
   @override
   void initState() {
@@ -68,10 +78,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       regenerator.request('weaving/$id', () async {
         await repository.rebuildThumbnail(id); // best-effort: writes nothing it cannot draw
         return File(thumb).existsSync();
-      }).then((rebuilt) {
-        if (!rebuilt || !mounted) return;
+      }).then((rebuilt) async {
+        // A draft with no ends or no picks has nothing to draw: the plain placeholder, not a failure.
+        final failed = !rebuilt && await repository.hasCloth(id) != false;
+        if (!mounted) return;
         setState(() {
-          _rebuiltThumbs.add(id);
+          if (rebuilt) _rebuiltThumbs.add(id);
+          if (failed) _failedThumbs.add(id);
         });
       });
     }
@@ -116,7 +129,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         _snack('Could not read the selected file.');
         return;
       }
-      final text = utf8.decode(bytes); // WIF is INI-style text
+      // WIF is INI-style text. A file that is not UTF-8 says so with its reason (ADR 0021): it is
+      // not "not a weaving pattern", Ply just cannot read it as text.
+      final String text;
+      try {
+        text = utf8.decode(bytes);
+      } on FormatException {
+        _snack(kImportNotUtf8);
+        return;
+      }
       final stem = p.basenameWithoutExtension(picked.name);
       if (!mounted) return;
       final saved = await Navigator.of(context).push<bool>(
@@ -513,9 +534,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         File(path),
         fit: BoxFit.contain,
         gaplessPlayback: true,
-        errorBuilder: (_, __, ___) => _thumbPlaceholder(),
+        errorBuilder: (_, __, ___) => thumbUnavailable(context),
       );
     }
+    if (_failedThumbs.contains(entry.id)) return thumbUnavailable(context);
     return _thumbPlaceholder();
   }
 

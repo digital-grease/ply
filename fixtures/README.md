@@ -218,3 +218,32 @@ refused.
 |---|---|---|
 | `tablet/oracle/` | `band-1-threaded-in`: 8 cards (S and Z), all at home, 4 forward, 4 backward, then two packs turned opposite ways; twist +4 and -4, 0, then +4 on every card; the colour doubled at each reversal. `sampler-2-starts-idles-flip`: 4 cards with a start one quarter on, the printed-face-right lettering, an idle on pick 1 (ambiguous faces), idles that lengthen floats on both faces, a twist release and a flip that unwinds twist to 0. `sampler-3-flip-then-opposite`: 4 cards worked by hand from the rules, with a flip followed by the opposite direction (no reversal), an idle right after a flip, a twist release, and an empty hole that crosses both faces and is a candidate of an ambiguous idle. | `rust/ply-tablet/tests/oracle_fixtures.rs` |
 | `tablet/invalid/` | One case per structural error a small file can show: two diagonal holes on one edge, a repeated hole, a turn string one card short, an unknown letter, a `2` style half turn (pointed to `?`), `?` without words and words without `?`, words, a flip, a release or a pack naming an unknown card, one flip list naming a card twice, a colour past the palette, a segment repeated 0 times, repeats past the 200,000-pick cap and past `u32`, two cards with one id, a card id and a pack id outside the id grammar; a card in two packs and a card listed twice in one pack (warnings); an unknown field, a card without all four hole keys and an unknown threading letter (unreadable). | `rust/ply-tablet/tests/invalid_fixtures.rs` |
+
+## Readiness fixtures (ADR 0021)
+
+One fixture per craft for "ready to make or share": a realistic document with a deliberate mix of
+problems, and an oracle of what readiness must report, derived by hand from the rules (never dumped
+from the engine). Each is three files with the same name in its craft's tree:
+
+```text
+weaving/readiness/mixed-problems.wif            # the draft (the engine's WIF writer)
+knitting/readiness/mixed-problems.plyknit       # the pattern (the engine's .plyknit writer)
+nalbinding/readiness/mixed-problems.plynal      # the project (the app's .plynal layout)
+<craft>/readiness/mixed-problems.expect.json    # the readiness oracle
+<craft>/readiness/mixed-problems.fixture.toml   # the record
+```
+
+- `<name>.expect.json`: the verdict (`ready`, `needs_acknowledgement` or `not_ready`), the checks
+  that ran in order (`draft`, `loom`, `chart`, `sections`, `notation`, `stitch`, `recipe`, ...), the
+  number of errors (always what the PDF's problems box lists), and every item in order (most serious
+  first): its check, its stable code, its severity (`error`, `warning`, `unsupported`, `info`), its
+  place in words (`null` for the whole document) and its exact sentence. A weaving oracle also names
+  the loom of `weaving/looms/looms.json` it is checked against.
+- `<name>.fixture.toml`: the record, as for the other craft fixtures, with a `practitioner_*_check`
+  of the wording (`pending`).
+
+| Folder | Contents | Tests |
+|---|---|---|
+| `weaving/readiness/` | `mixed-problems`: an eight-shaft twill sampler with a treadle the tie-up does not have (blocks), a pick marked tabby on a twill shed (warns), a double shot (advice), checked against the four-shaft jack loom (8 shafts and 9 treadles on 4 and 6: warnings, never errors; width and reed not checked without a sett). | `rust/ply-weave/tests/readiness_fixtures.rs`; `app/test/readiness_fixture_test.dart` |
+| `knitting/readiness/` | `mixed-problems`: a flat k2, p2 brim cast on 22 (not a multiple of 4: the chart row is refused), a bind-off of 30 of 22 (refused), a step that does not say how it changes the count (warns), and two steps in the pattern's own words (not checked). | `rust/ply-knit/tests/readiness_fixtures.rs`; `app/test/readiness_fixture_test.dart` |
+| `nalbinding/readiness/` | `mixed-problems`: a mitten whose lower-case notation gives three formatting notes, a thumb opening never worked (warns), a tip decreased by more than the round has (blocks) and a free-text care step (not checked). | `rust/ply-nalbind/tests/readiness_fixtures.rs`; `app/test/readiness_fixture_test.dart` |

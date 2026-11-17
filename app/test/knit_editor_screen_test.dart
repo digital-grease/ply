@@ -220,8 +220,8 @@ void main() {
     await pumpEditor(
       tester,
       FakeEditorRepo(issues: const [
-        KnitIssueDto(severity: SeverityKind.error, message: 'row 1 is too short'),
-        KnitIssueDto(severity: SeverityKind.warning, message: 'odd repeat span'),
+        KnitIssueDto(code: 'test', severity: SeverityKind.error, message: 'row 1 is too short'),
+        KnitIssueDto(code: 'test', severity: SeverityKind.warning, message: 'odd repeat span'),
       ]),
     );
 
@@ -240,7 +240,8 @@ void main() {
     await pumpEditor(
       tester,
       FakeEditorRepo(issues: const [
-        KnitIssueDto(severity: SeverityKind.error, message: 'cable span runs off the edge'),
+        KnitIssueDto(
+            code: 'test', severity: SeverityKind.error, message: 'cable span runs off the edge'),
       ]),
     );
     expect(find.text('cable span runs off the edge'), findsOneWidget);
@@ -403,12 +404,14 @@ void main() {
         tester,
         FakeEditorRepo(issues: const [
           KnitIssueDto(
+            code: 'test',
             severity: SeverityKind.error,
             message:
                 'row 2: the repeat over cols 2-5 cannot be worked to the end: row 1 produced 7 '
                 'stitches, the rest of the row uses 2, and the 5 left are not a multiple of 4',
           ),
           KnitIssueDto(
+            code: 'test',
             severity: SeverityKind.warning,
             message:
                 'row 1: the repeat over cols 2-5 is worked to the end of the row, but the pattern '

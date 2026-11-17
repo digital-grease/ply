@@ -295,3 +295,19 @@ plain so it can double as user-facing help content.
   from the loops around it.
 - **Pick up loops**: start a new part from loops of earlier work, such as a thumb started at a
   corner of the thumb opening, connecting into the loops along its edge.
+
+### Ready to make or share
+- **Ready to make or share**: in Ply, a pattern with no errors, ready to print or share. Before Ply
+  prints or shares a pattern it checks everything the PDF depends on: a weaving draft's structure,
+  the loom chosen for it and its warp and weft plan; a knitting pattern's chart and sections; a
+  nalbinding project's notation and recipe. Errors keep a pattern from being ready; warnings, and
+  anything Ply could not check, are listed first and you acknowledge them once. Saving never checks:
+  an unfinished pattern always saves.
+- **Draft copy**: in Ply, a PDF of a pattern that still has errors, printed or shared only when you
+  choose it. Every page says "Draft copy, not ready to make or share" with the number of errors, the
+  first page lists them, and the file name ends in "(draft copy)". Not to be confused with a weaving
+  draft, the pattern itself.
+- **Not checked by Ply** (unsupported): something in a pattern that Ply cannot check or represent,
+  such as a step in the pattern's own words, free text in a recipe, or a loom setting the loom
+  profile does not record. Ply keeps it as written and says what it did not check, rather than
+  guessing.

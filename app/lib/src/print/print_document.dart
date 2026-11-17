@@ -15,6 +15,7 @@ class PrintDocument {
     this.titleFacts = const [],
     this.problemsBox,
     this.sections = const [],
+    this.draftCopy,
   });
 
   /// The pattern or project name, the document's main heading (and the PDF title).
@@ -32,9 +33,35 @@ class PrintDocument {
 
   final List<PrintSection> sections;
 
+  /// Present only on a DRAFT COPY (ADR 0021): a pattern the user chose to print or share while it
+  /// still has errors. Every page then carries a band saying so, with the number of errors.
+  final PrintDraftCopy? draftCopy;
+
+  /// This document marked as a draft copy with [errors] errors on every page (everything else is
+  /// kept, including the problems box).
+  PrintDocument asDraftCopy(int errors) => PrintDocument(
+        title: title,
+        kind: kind,
+        titleFacts: titleFacts,
+        problemsBox: problemsBox,
+        sections: sections,
+        draftCopy: PrintDraftCopy(errors: errors),
+      );
+
+  /// This document with [section] added at the end.
+  PrintDocument withSection(PrintSection section) => PrintDocument(
+        title: title,
+        kind: kind,
+        titleFacts: titleFacts,
+        problemsBox: problemsBox,
+        sections: [...sections, section],
+        draftCopy: draftCopy,
+      );
+
   /// Every piece of text the document prints, so the builder can find characters the print font
   /// cannot show (they are flagged on the page, never silently dropped).
   Iterable<String> get allText sync* {
+    if (draftCopy != null) yield draftCopy!.text;
     yield title;
     yield kind;
     for (final f in titleFacts) {
@@ -48,6 +75,18 @@ class PrintDocument {
       }
     }
   }
+}
+
+/// The marking of a draft copy (ADR 0021): printed in a band at the top of every page.
+class PrintDraftCopy {
+  const PrintDraftCopy({required this.errors});
+
+  /// How many errors the pattern has (its readiness report's errors).
+  final int errors;
+
+  /// "Draft copy, not ready to make or share: 2 errors".
+  String get text =>
+      'Draft copy, not ready to make or share: ${errors == 1 ? '1 error' : '$errors errors'}';
 }
 
 /// One headed section ("Stitch key", "Chart", "Written instructions", ...).
@@ -236,8 +275,8 @@ final class PrintNotice extends PrintBlock {
   Iterable<String> get allText => [title, if (intro != null) intro!, ...lines];
 }
 
-/// The severity of a [PrintIssue].
-enum PrintIssueSeverity { error, warning, note }
+/// The severity of a [PrintIssue]. [notChecked] is something Ply could not check (ADR 0021).
+enum PrintIssueSeverity { error, warning, notChecked, note }
 
 /// One validation finding: severity, where it is (a row, "Notation", "Whole pattern"), and what.
 class PrintIssue {

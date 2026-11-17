@@ -33,6 +33,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/draft_repository.dart' show previewErrorMessage, regionPreviewErrorMessage;
 import '../models/double_weave_layers.dart' show hasLayerRoles;
+import '../models/draft_issue.dart' show DraftPlace, DraftPlaceKind;
 import '../models/draft_doc.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
@@ -84,6 +85,32 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
 
   /// A post-frame viewport settle is already queued for this frame.
   bool _settleQueued = false;
+
+  /// The place a validation finding's "Show" outlines (ADR 0021), until the next touch. Kept as a
+  /// place, not a rect: every build works out its cells from the current layout, so a zoom or a
+  /// resize moves the outline with them.
+  DraftPlace? _focusPlace;
+
+  /// Scroll [place] into view and outline it. A place the draft cannot show outlines nothing.
+  void _reveal(DraftPlace place) {
+    final layout = _layout;
+    final viewport = _viewport;
+    if (layout == null || viewport == null) return;
+    final rect = draftPlaceRect(layout, place);
+    setState(() => _focusPlace = rect == null ? null : place);
+    if (rect == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      void centre(ScrollController c, double at, double extent) {
+        if (!c.hasClients || !c.position.hasContentDimensions) return;
+        final target = (at - extent / 2).clamp(0.0, c.position.maxScrollExtent);
+        c.jumpTo(target);
+      }
+
+      centre(_hCtrl, rect.center.dx, viewport.width);
+      centre(_vCtrl, rect.center.dy, viewport.height);
+    });
+  }
 
   @override
   void initState() {
@@ -165,6 +192,11 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
         _activePointer = null;
         ref.read(draftEditorProvider.notifier).endStroke();
       }
+    });
+
+    // A validation finding's "Show" (ADR 0021): scroll to the place and outline it.
+    ref.listen<DraftFocus?>(draftFocusProvider, (_, focus) {
+      if (focus != null) _reveal(focus.place);
     });
 
     // Watch ONLY what changes the geometry; cell pitch + tool from their own providers.
@@ -350,6 +382,22 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
                     ),
                   ),
                 ),
+                // The place a validation finding's "Show" asked for, outlined until the next touch,
+                // at the current zoom.
+                if (_focusPlace == null ? null : draftPlaceRect(layout, _focusPlace!)
+                    case final rect?)
+                  Positioned.fromRect(
+                    key: const ValueKey('draft-focus'),
+                    rect: rect.inflate(2),
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                              color: Theme.of(context).colorScheme.error, width: 3),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -363,6 +411,7 @@ class _IntegratedDraftViewState extends ConsumerState<IntegratedDraftView> {
   void _onPointerDown(
       PointerDownEvent e, DraftLayout layout, bool pencil, DraftEditorNotifier notifier) {
     _pointers[e.pointer] = e.position; // global (scroll-invariant) — for the navigate gesture
+    if (_focusPlace != null) setState(() => _focusPlace = null); // a touch ends the "Show" outline
     if (_pointers.length >= 2) {
       // Two fingers anywhere on the cloth = navigate (pinch-zoom + pan), in ANY tool. Seal an open
       // paint stroke first so its cells commit as their own undo entry instead of dangling.
@@ -543,6 +592,59 @@ class _DrawdownChild extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// The canvas rect of a validation finding's [place] (ADR 0021), or null when the view cannot show
+/// it (a shuttle, or a region the draft does not have). A number past the grid (a dangling shaft or
+/// treadle) is clamped to the grid's last row or column, so the end or pick it belongs to is still
+/// shown. A run of picks is its rows across the treadling or lift plan; a shaft is its threading
+/// row.
+Rect? draftPlaceRect(DraftLayout l, DraftPlace place) {
+  int clamp(int? v, int lo, int hi) => (v ?? lo) < lo ? lo : ((v ?? lo) > hi ? hi : (v ?? lo));
+  Rect at(Rect region, RegionGeom g, int col, int row) =>
+      g.rectFor(col, row).shift(region.topLeft);
+  final ends = l.ends, picks = l.picks, shafts = l.shafts, right = l.rightCols;
+  Rect? picksRect(int? first, int? last) {
+    if (picks == 0 || right == 0) return null;
+    final a = clamp((first ?? 1) - 1, 0, picks - 1);
+    final b = clamp((last ?? first ?? 1) - 1, a, picks - 1);
+    return at(l.rightRect, l.right, 1, a).expandToInclude(at(l.rightRect, l.right, right, b));
+  }
+
+  switch (place.kind) {
+    case DraftPlaceKind.threading:
+      if (ends == 0 || shafts == 0) return null;
+      return at(l.threadingRect, l.threading, clamp(place.end, 1, ends),
+          clamp(place.shaft, 1, shafts));
+    case DraftPlaceKind.tieUp:
+      if (!l.hasTieup || l.treadles == 0 || shafts == 0) return null;
+      return at(l.tieupRect, l.tieup, clamp(place.treadle, 1, l.treadles),
+          clamp(place.shaft, 1, shafts));
+    case DraftPlaceKind.treadling:
+    case DraftPlaceKind.liftPlan:
+      if (picks == 0 || right == 0) return null;
+      final col = place.kind == DraftPlaceKind.treadling ? place.treadle : place.shaft;
+      return at(l.rightRect, l.right, clamp(col, 1, right),
+          clamp((place.pick ?? 1) - 1, 0, picks - 1));
+    case DraftPlaceKind.warpColor:
+      if (ends == 0) return null;
+      return at(l.warpColorRect, l.warpColor, clamp(place.end, 1, ends), 0);
+    case DraftPlaceKind.weftColor:
+      if (picks == 0) return null;
+      return at(l.weftColorRect, l.weftColor, 1, clamp((place.pick ?? 1) - 1, 0, picks - 1));
+    case DraftPlaceKind.pick:
+    case DraftPlaceKind.picks:
+    case DraftPlaceKind.pickList:
+    case DraftPlaceKind.pickRanges:
+      return picksRect(place.pick, place.lastPick);
+    case DraftPlaceKind.shaft:
+      if (ends == 0 || shafts == 0) return null;
+      final row = clamp(place.shaft, 1, shafts);
+      return at(l.threadingRect, l.threading, 1, row)
+          .expandToInclude(at(l.threadingRect, l.threading, ends, row));
+    case DraftPlaceKind.shuttle:
+      return null;
   }
 }
 

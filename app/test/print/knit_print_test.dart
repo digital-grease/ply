@@ -359,10 +359,13 @@ void main() {
 
   group('problems', () {
     const issues = [
-      KnitIssueDto(severity: SeverityKind.warning, message: 'row 3 is wider than the cast-on'),
       KnitIssueDto(
+          code: 'test', severity: SeverityKind.warning, message: 'row 3 is wider than the cast-on'),
+      KnitIssueDto(
+          code: 'test',
           severity: SeverityKind.error, message: 'row 2 consumes 6 stitches but row 1 produced 7'),
       KnitIssueDto(
+          code: 'test',
           severity: SeverityKind.error,
           message: 'the cast-on is 0 stitches; cast on at least 1 stitch'),
     ];
@@ -406,7 +409,7 @@ void main() {
 
       final warningsOnly = await _source(_pattern(),
           repo: FakePrintRepo(issues: const [
-            KnitIssueDto(severity: SeverityKind.warning, message: 'row 3 is wide'),
+            KnitIssueDto(code: 'test', severity: SeverityKind.warning, message: 'row 3 is wide'),
           ]));
       expect(knitPrintErrors(warningsOnly), isEmpty);
       expect(buildKnitPrintDocument(warningsOnly, withProblemsBox: true).problemsBox, isNull);
@@ -417,6 +420,7 @@ void main() {
     final source = await _source(_pattern(),
         repo: FakePrintRepo(issues: const [
           KnitIssueDto(
+              code: 'test',
               severity: SeverityKind.error,
               message: 'row 2 consumes 6 stitches but row 1 produced 7'),
         ]));

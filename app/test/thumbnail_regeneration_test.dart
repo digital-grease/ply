@@ -33,6 +33,9 @@ Finder _thumbAt(String path) => find.byWidgetPredicate(
 /// The tiles still showing the placeholder.
 Finder get _placeholders => find.byIcon(Icons.grid_on);
 
+/// The tiles saying their picture could not be drawn (ADR 0021: never a silent blank tile).
+Finder get _unavailable => find.byIcon(Icons.broken_image_outlined);
+
 /// A valid 1x1 PNG, so a tile that loads it shows an image, never the placeholder.
 final List<int> _png = base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
@@ -125,7 +128,11 @@ void main() {
       expect(File(good).existsSync(), isTrue);
       expect(_thumbAt(good), findsOneWidget);
       expect(_thumbAt(p.join(dir.path, 'saved.png')), findsOneWidget);
-      expect(_placeholders, findsOneWidget, reason: 'the broken draft shows the placeholder');
+      expect(_placeholders, findsNothing);
+      expect(_unavailable, findsOneWidget,
+          reason: 'the broken draft says Ply could not draw it, instead of an empty placeholder');
+      expect(find.byTooltip('No preview: Ply could not draw this project. Open it to see why.'),
+          findsOneWidget);
       expect(repo.calls, ['good', 'bad']);
 
       // Shown again (as after a restore or a tab reload), with the stand-in still listing both
@@ -136,7 +143,28 @@ void main() {
       }
       expect(repo.calls, ['good', 'bad']);
       expect(_thumbAt(good), findsOneWidget);
-      expect(_placeholders, findsOneWidget);
+      expect(_unavailable, findsOneWidget, reason: 'the remembered outcome is shown again');
+    });
+  });
+
+  group('a draft with nothing to draw', () {
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('thumbs_empty'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    testWidgets('keeps the plain placeholder: nothing to draw is not a failure', (t) async {
+      final repo = _Drafts(dir, broken: {})..empty = {'good', 'bad'};
+      repo.gate.complete();
+      final c = ProviderContainer(overrides: [repositoryProvider.overrideWithValue(repo)]);
+      addTearDown(c.dispose);
+      await t.pumpWidget(UncontrolledProviderScope(
+        container: c,
+        child: MaterialApp(home: LibraryScreen(repository: repo)),
+      ));
+      await t.pumpAndSettle();
+      expect(repo.calls, ['good', 'bad']);
+      expect(_unavailable, findsNothing);
+      expect(_placeholders, findsNWidgets(2));
     });
   });
 
@@ -223,9 +251,16 @@ class _Drafts extends DraftRepository {
   Future<void> rebuildThumbnail(String id) async {
     calls.add(id);
     if (calls.length == 1) await gate.future;
-    if (broken.contains(id)) return;
+    if (broken.contains(id) || empty.contains(id)) return;
     File(p.join(dir.path, '$id.png')).writeAsBytesSync(_png);
   }
+
+  /// Drafts with no ends or no picks: nothing to draw (read from the WIF in the app; stood in here,
+  /// as these drafts have no files).
+  Set<String> empty = {};
+
+  @override
+  Future<bool?> hasCloth(String id) async => !empty.contains(id);
 }
 
 /// Patterns "good" and "bad" listed without a thumbnail. Reading a [broken] one fails, as for a

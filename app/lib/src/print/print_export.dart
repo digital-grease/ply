@@ -1,8 +1,16 @@
-// The "Print or share PDF" flow every craft uses: choose Print or Share, gather the pattern, ask
-// before exporting a pattern with errors (roadmap M7-05: blocking problems are never ignored
-// silently), build the PDF, and hand it to the phone's own print dialog (`Printing.layoutPdf`) or
-// share sheet (`Printing.sharePdf`). One entry point with both choices keeps each screen's menu
-// short; the two system dialogs serve different needs (paper, or a file to send or save).
+// The "Print or share PDF" flow every craft uses: choose Print or Share, gather the pattern and its
+// readiness report, follow the report's verdict (ADR 0021), build the PDF, and hand it to the
+// phone's own print dialog (`Printing.layoutPdf`) or share sheet (`Printing.sharePdf`). One entry
+// point with both choices keeps each screen's menu short; the two system dialogs serve different
+// needs (paper, or a file to send or save).
+//
+// READY TO MAKE OR SHARE (ADR 0021). A pattern that is ready prints straight away. Warnings and
+// things Ply could not check are listed once and acknowledged in one step ("Acknowledge and
+// print"). A pattern with errors is never printed as ready: the dialog's default is "Go back", and
+// only the separate "Print a draft copy" choice makes a PDF, which then says on EVERY page that it
+// is a draft copy, not ready to make or share, with the number of errors (the problems box on the
+// first page stays), and whose file name ends in "(draft copy)". Nothing here is remembered between
+// exports: each one asks about the pattern as it is now.
 
 import 'dart:typed_data';
 
@@ -12,6 +20,7 @@ import 'package:pdf/pdf.dart' show PdfPageFormat;
 import 'package:printing/printing.dart';
 
 import '../diagnostics/log_buffer.dart';
+import '../models/readiness.dart';
 import '../state/theme_providers.dart';
 import '../widgets/progress_dialog.dart';
 import 'pdf_builder.dart';
@@ -55,18 +64,33 @@ class SystemPdfOutput implements PdfOutput {
 
 final pdfOutputProvider = Provider<PdfOutput>((_) => const SystemPdfOutput());
 
-/// One prepared export: the pattern's blocking errors and how to build its document.
+/// Whether the flow compresses the PDF it hands to the print and share dialogs. Always true in the
+/// app; tests read the exported bytes back uncompressed.
+final pdfCompressProvider = Provider<bool>((_) => true);
+
+/// One prepared export: the pattern's readiness report and how to build its document.
 class PdfExportJob {
-  const PdfExportJob({required this.fileStem, required this.errors, required this.document});
+  const PdfExportJob({
+    required this.fileStem,
+    required this.readiness,
+    required this.document,
+    this.listNotChecked = false,
+  });
 
   /// The file name before ".pdf" (the pattern or project name).
   final String fileStem;
 
-  /// Errors that make the export ask first. Warnings are not here: they never block.
-  final List<String> errors;
+  /// The engine's readiness report for the pattern as it is now (ADR 0021): its verdict decides
+  /// whether the PDF is made straight away, after an acknowledgement, or only as a draft copy.
+  final ReadinessReport readiness;
 
-  /// The document, with or without the "has problems" box.
+  /// The document, with or without the "has problems" box (a draft copy carries it).
   final PrintDocument Function({required bool withProblemsBox}) document;
+
+  /// Whether the flow ends the PDF with a "Not checked by Ply" table of the readiness report's
+  /// unsupported items (ADR 0021). Weaving, knitting and nalbinding set it; a craft whose own
+  /// findings table already lists them (tablet weaving) leaves it off.
+  final bool listNotChecked;
 }
 
 /// The user-visible labels of the flow.
@@ -80,31 +104,50 @@ class PdfExportText {
   static const preparing = 'Preparing the PDF...';
   static const making = 'Making the PDF...';
   static const cancel = 'Cancel';
-  static const printAnyway = 'Print anyway';
-  static const shareAnyway = 'Share anyway';
+  static const goBack = 'Go back';
+  static const printDraftCopy = 'Print a draft copy';
+  static const shareDraftCopy = 'Share a draft copy';
+  static const acknowledgePrint = 'Acknowledge and print';
+  static const acknowledgeShare = 'Acknowledge and share';
+  static const warnings = 'Warnings';
+  static const notChecked = 'Ply could not check';
+  static const notCheckedSection = 'Not checked by Ply';
+  static String notCheckedIntro(String noun) => 'Ply could not check these parts of this $noun, '
+      'so they are printed as they are. Check them yourself before you rely on them.';
+
+  /// What a draft copy's file name ends with (before ".pdf").
+  static const draftCopySuffix = ' (draft copy)';
   static String problemsTitle(String noun) => 'This $noun has problems';
+  static String notReadyTitle(String noun) => 'This $noun is not ready to make or share';
+  static String checkTitle(String noun, PdfAction action) =>
+      'Check this $noun before you ${action == PdfAction.print ? 'print' : 'share'} it';
   static String failed(Object e) => 'Could not make the PDF: $e';
 }
 
 /// [name] as a PDF file name every platform accepts: path separators, reserved and control
 /// characters become '-', runs of white space one space, no leading or trailing dots or spaces, at
-/// most 60 characters; "pattern" when nothing is left.
-String pdfFileName(String name) {
+/// most 60 characters; "pattern" when nothing is left. A [draftCopy] ends in "(draft copy)", which
+/// is never cut off.
+String pdfFileName(String name, {bool draftCopy = false}) {
+  final suffix = draftCopy ? PdfExportText.draftCopySuffix : '';
+  final room = 60 - suffix.length;
   var s = name
       .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F\x7F]'), '-')
       .replaceAll(RegExp(r'\s+'), ' ')
       .replaceAll(RegExp(r'^[\s.]+|[\s.]+$'), '');
-  if (s.runes.length > 60) {
-    s = String.fromCharCodes(s.runes.take(60)).replaceAll(RegExp(r'[\s.]+$'), '');
+  if (s.runes.length > room) {
+    s = String.fromCharCodes(s.runes.take(room)).replaceAll(RegExp(r'[\s.]+$'), '');
   }
-  return '${s.isEmpty ? 'pattern' : s}.pdf';
+  return '${s.isEmpty ? 'pattern' : s}$suffix.pdf';
 }
 
-/// The full flow: ask Print or Share, [prepare] the job (behind a progress dialog), confirm a
-/// pattern with errors (cancel exports nothing; "anyway" prints the problems box), build, output.
-/// [noun] names the thing in the dialog ("pattern", "project", "draft"). [options] is shown in the
-/// Print / Share sheet above the two choices (a weaving draft's book layout); it holds its own state,
-/// which [prepare] reads after the sheet closes.
+/// The full flow: ask Print or Share, [prepare] the job (behind a progress dialog), follow its
+/// readiness verdict (ready: straight on; warnings or things Ply could not check: one
+/// acknowledgement; errors: only an explicitly chosen draft copy, marked on every page), build,
+/// output. [noun] names the thing in the dialogs ("pattern", "project", "draft"). [options] is
+/// shown in the Print / Share sheet above the two choices (a weaving draft's book layout); it holds
+/// its own state, which [prepare] reads after the sheet closes. A failure (the readiness check
+/// included) is reported and nothing is exported.
 Future<void> printOrSharePdf(
   BuildContext context,
   WidgetRef ref, {
@@ -116,35 +159,50 @@ Future<void> printOrSharePdf(
   final output = ref.read(pdfOutputProvider);
   final setup = PrintPageSetup.forUnit(ref.read(appSettingsProvider).unit);
   final fonts = ref.read(plyPdfFontsProvider.future);
+  final compress = ref.read(pdfCompressProvider);
   final messenger = ScaffoldMessenger.of(context);
 
   final action = await choosePdfAction(context, options: options);
   if (action == null || !context.mounted) return;
   try {
-    final job = await showProgressWhile(context, PdfExportText.preparing, prepare);
-    if (!context.mounted) return;
-    if (job.errors.isNotEmpty) {
-      final go =
-          await confirmExportWithProblems(context, noun: noun, errors: job.errors, action: action);
-      if (!go || !context.mounted) return;
+    // Gathering and checking a large pattern can take a while: it can be cancelled (an engine call
+    // already running is abandoned, never used).
+    final job = await showCancellableProgressWhile(context, PdfExportText.preparing, prepare);
+    if (job == null || !context.mounted) return;
+    final readiness = job.readiness;
+    var draftCopy = false;
+    switch (readiness.verdict) {
+      case ReadinessVerdict.ready:
+        break;
+      case ReadinessVerdict.needsAcknowledgement:
+        final go = await confirmReadyWithWarnings(context,
+            noun: noun, readiness: readiness, action: action);
+        if (!go || !context.mounted) return;
+      case ReadinessVerdict.notReady:
+        final copy =
+            await chooseDraftCopy(context, noun: noun, readiness: readiness, action: action);
+        if (!copy || !context.mounted) return;
+        draftCopy = true;
     }
-    final doc = job.document(withProblemsBox: job.errors.isNotEmpty);
+    var doc = job.document(withProblemsBox: draftCopy);
+    if (job.listNotChecked) doc = withNotChecked(doc, readiness, noun: noun);
+    if (draftCopy) doc = doc.asDraftCopy(readiness.errorCount);
     final loaded = await fonts;
-    final file = pdfFileName(job.fileStem);
+    final file = pdfFileName(job.fileStem, draftCopy: draftCopy);
     if (!context.mounted) return;
     switch (action) {
       case PdfAction.print:
         await output.print(
           name: file,
           format: setup.format,
-          build: (format) =>
-              buildPrintPdf(doc, page: PrintPageSetup.forFormat(format), fonts: loaded),
+          build: (format) => buildPrintPdf(doc,
+              page: PrintPageSetup.forFormat(format), fonts: loaded, compress: compress),
         );
       case PdfAction.share:
         final bytes = await showProgressWhile(
           context,
           PdfExportText.making,
-          () => buildPrintPdf(doc, page: setup, fonts: loaded),
+          () => buildPrintPdf(doc, page: setup, fonts: loaded, compress: compress),
         );
         await output.share(filename: file, bytes: bytes);
     }
@@ -152,6 +210,24 @@ Future<void> printOrSharePdf(
     PlyLog.instance.error('PDF export failed: $e');
     messenger.showSnackBar(SnackBar(content: Text(PdfExportText.failed(e))));
   }
+}
+
+/// [doc] ending with a "Not checked by Ply" table of [readiness]'s unsupported items (ADR 0021), or
+/// [doc] itself when there are none.
+PrintDocument withNotChecked(PrintDocument doc, ReadinessReport readiness, {required String noun}) {
+  final items = readiness.unsupported;
+  if (items.isEmpty) return doc;
+  return doc.withSection(PrintSection(PdfExportText.notCheckedSection, [
+    PrintParagraph(PdfExportText.notCheckedIntro(noun), style: PrintTextStyle.muted),
+    PrintIssues([
+      for (final i in items)
+        PrintIssue(
+          severity: PrintIssueSeverity.notChecked,
+          where: i.place ?? 'Whole $noun',
+          message: i.message,
+        ),
+    ], emptyText: ''),
+  ]));
 }
 
 /// The Print / Share choice, as a bottom sheet, with [options] (if any) under its title. Null when
@@ -187,38 +263,63 @@ Future<PdfAction?> choosePdfAction(BuildContext context, {Widget? options}) =>
       ),
     );
 
-/// The export-readiness question for a pattern with [errors]: export anyway (the PDF then carries a
-/// box listing them) or cancel. True to go ahead.
-Future<bool> confirmExportWithProblems(
+const int _shownItems = 6;
+
+/// Bullets for [items] (each with its place): every one when [all], else up to [_shownItems], then
+/// "and N more." (the draft copy's first page lists them all).
+List<Widget> _itemLines(List<ReadinessItem> items, {bool all = false}) {
+  final shown = all ? items : items.take(_shownItems).toList();
+  final more = [for (final i in items.skip(shown.length)) i.weight].fold(0, (a, b) => a + b);
+  return [
+    for (final i in shown)
+      Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text('• ${i.text}'),
+      ),
+    if (more > 0) Text('and $more more.'),
+  ];
+}
+
+String _count(int n, String one, String many) => n == 1 ? '1 $one' : '$n $many';
+
+/// The acknowledgement for a pattern with warnings or things Ply could not check, and no errors:
+/// every warning, then what Ply could not check, and one step to go ahead. True to go ahead.
+Future<bool> confirmReadyWithWarnings(
   BuildContext context, {
   required String noun,
-  required List<String> errors,
+  required ReadinessReport readiness,
   required PdfAction action,
 }) async {
-  const shown = 5;
-  final verb = action == PdfAction.print ? 'Print' : 'Share';
-  final n = errors.length;
+  final warnings = readiness.warnings;
+  final unchecked = readiness.unsupported;
+  final checked = readiness.checkedWords;
+  final theme = Theme.of(context);
   final result = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      icon: const Icon(Icons.error_outline),
-      title: Text(PdfExportText.problemsTitle(noun)),
+      icon: const Icon(Icons.warning_amber_rounded),
+      title: Text(PdfExportText.checkTitle(noun, action)),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Ply found $n ${n == 1 ? 'error' : 'errors'} in this $noun:'),
-            const SizedBox(height: 8),
-            for (final e in errors.take(shown))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('• $e'),
-              ),
-            if (n > shown) Text('and ${n - shown} more.'),
-            const SizedBox(height: 8),
-            Text('$verb it anyway and the PDF lists the problems in a box at the top, or cancel '
-                'and fix them first.'),
+            // Every item the acknowledgement covers is shown: nothing is acknowledged unseen. The
+            // engine's cap (200 of a kind, the rest counted in one line) keeps the list bounded.
+            if (warnings.isNotEmpty) ...[
+              Text(PdfExportText.warnings, style: theme.textTheme.titleSmall),
+              const SizedBox(height: 4),
+              ..._itemLines(warnings, all: true),
+              const SizedBox(height: 8),
+            ],
+            if (unchecked.isNotEmpty) ...[
+              Text(PdfExportText.notChecked, style: theme.textTheme.titleSmall),
+              const SizedBox(height: 4),
+              ..._itemLines(unchecked, all: true),
+              const SizedBox(height: 8),
+            ],
+            Text('Ply found no errors${checked == null ? '' : ' in $checked'}. Read these, then '
+                'go ahead, or cancel and look at them first.'),
           ],
         ),
       ),
@@ -229,8 +330,69 @@ Future<bool> confirmExportWithProblems(
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: Text(
-              action == PdfAction.print ? PdfExportText.printAnyway : PdfExportText.shareAnyway),
+          child: Text(action == PdfAction.print
+              ? PdfExportText.acknowledgePrint
+              : PdfExportText.acknowledgeShare),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+
+/// The question for a pattern with errors: it is not ready to make or share. The default is to go
+/// back (nothing is exported); a separate text button makes a DRAFT COPY instead, which says so on
+/// every page. True for the draft copy.
+Future<bool> chooseDraftCopy(
+  BuildContext context, {
+  required String noun,
+  required ReadinessReport readiness,
+  required PdfAction action,
+}) async {
+  final errors = readiness.errors;
+  final errorCount = readiness.errorCount;
+  final warningCount = readiness.count(ReadinessLevel.warning);
+  final uncheckedCount = readiness.count(ReadinessLevel.unsupported);
+  final others = [
+    if (warningCount > 0) _count(warningCount, 'warning', 'warnings'),
+    if (uncheckedCount > 0)
+      _count(uncheckedCount, 'thing Ply could not check', 'things Ply could not check'),
+  ];
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.error_outline),
+      title: Text(PdfExportText.notReadyTitle(noun)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Ply found ${_count(errorCount, 'error', 'errors')} in this $noun:'),
+            const SizedBox(height: 8),
+            ..._itemLines(errors),
+            if (others.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('It also has ${others.join(' and ')}.'),
+            ],
+            const SizedBox(height: 8),
+            Text('Go back and fix ${errorCount == 1 ? 'it' : 'them'}, or make a draft copy: '
+                'every page of a draft copy says it is not ready to make or share, with the number '
+                'of errors, and its first page lists them.'),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(action == PdfAction.print
+              ? PdfExportText.printDraftCopy
+              : PdfExportText.shareDraftCopy),
+        ),
+        FilledButton(
+          autofocus: true,
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text(PdfExportText.goBack),
         ),
       ],
     ),

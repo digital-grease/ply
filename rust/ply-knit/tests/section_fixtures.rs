@@ -12,7 +12,7 @@
 //! Run: `cargo test -p ply-knit --test section_fixtures`
 
 use ply_knit::sections::{ledger, piece_title, section_title, LineCount};
-use ply_knit::{native, to_written, validate, Construction, Severity, Side};
+use ply_knit::{native, to_written, validate, Construction, Side};
 use serde_json::Value;
 
 const DIR: &str = concat!(
@@ -270,10 +270,7 @@ fn section_fixtures_match_their_oracles() {
         let issues: Vec<(String, String)> = validate(&p)
             .into_iter()
             .map(|i| {
-                let severity = match i.severity {
-                    Severity::Error => "error",
-                    Severity::Warning => "warning",
-                };
+                let severity = i.severity.as_str();
                 (severity.to_string(), i.message)
             })
             .collect();

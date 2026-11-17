@@ -62,6 +62,18 @@ pub enum NotationSeverity {
     Error,
 }
 
+impl NotationSeverity {
+    /// The same finding in the vocabulary every craft shares (ADR 0021): one to one. (A strict
+    /// reading has already turned every non-`Info` finding into an `Error`.)
+    pub const fn level(self) -> ply_common::readiness::Severity {
+        match self {
+            NotationSeverity::Info => ply_common::readiness::Severity::Info,
+            NotationSeverity::Warning => ply_common::readiness::Severity::Warning,
+            NotationSeverity::Error => ply_common::readiness::Severity::Error,
+        }
+    }
+}
+
 /// A stable machine code identifying one kind of notation finding. See the module docs of
 /// [`notation`](crate::notation) for the grammar each code refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

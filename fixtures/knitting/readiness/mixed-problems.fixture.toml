@@ -1,0 +1,34 @@
+# Fixture record for knitting/readiness/mixed-problems (see fixtures/README.md).
+
+id = "knitting/readiness/mixed-problems"
+title = "A ribbed brim with the slips a knitter makes, checked for readiness"
+technique = "readiness to make or share (ADR 0021): chart validation, the stitch ledger, unchecked steps"
+files = ["mixed-problems.plyknit", "mixed-problems.expect.json"]
+created = "2026-11-17"
+license = "original"
+provenance = """
+Written for Ply's tests through the engine's own .plyknit writer (schema version 6; \
+rust/ply-knit/tests/readiness_fixtures.rs, write_the_fixture, run on purpose only). A flat k2, p2 \
+rib charted as one 4-stitch row worked to the end of the row, cast on 22 stitches, in one section: \
+the chart row, a step in the pattern's own words with no change, a bind-off of 30, and a step in the \
+pattern's own words that does not say how it changes the count. No published pattern was used. \
+The oracle was derived by hand from the ledger rules in rust/ply-knit/src/sections.rs and \
+rust/ply-knit/src/readiness.rs: 22 is not a multiple of 4 (the chart row is refused), 30 is more \
+than the 22 left in the row (refused), the last step makes the counts unknown (a warning), and both \
+steps in the pattern's own words are not checked."""
+
+[sources]
+references = [
+  "Craft Yarn Council, \"Knitting abbreviations\", https://www.craftyarncouncil.com/standards/knitting-abbreviations (k, p, rib).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/readiness_fixtures.rs: the file opens as a current .plyknit, is the written \
+pattern and re-saves to the same bytes; readiness gives exactly the oracle's verdict, checks and \
+items, and its errors are exactly validation's errors (what the PDF's problems box lists). \
+app/test/readiness_fixture_test.dart runs the knitting print flow on the oracle's report."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Not a pattern anyone would knit: the slips are deliberate. The physical check is of the wording."

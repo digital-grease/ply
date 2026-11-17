@@ -416,6 +416,16 @@ pub enum Severity {
     Warning,
 }
 
+impl Severity {
+    /// The same finding in the vocabulary every craft shares (ADR 0021).
+    pub const fn level(self) -> crate::readiness::Severity {
+        match self {
+            Severity::Error => crate::readiness::Severity::Error,
+            Severity::Warning => crate::readiness::Severity::Warning,
+        }
+    }
+}
+
 /// One finding about a record. `code` is stable; `field` is the value's path in the record
 /// (`after.width`, `fibers[1].percent`); `message` is for people.
 #[derive(Debug, Clone, PartialEq, Serialize)]

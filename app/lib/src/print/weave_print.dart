@@ -24,6 +24,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/draft_repository.dart';
+import '../data/readiness_repository.dart';
+import '../data/weave_plan_repository.dart';
+import '../diagnostics/log_buffer.dart';
+import '../models/loom_check.dart' show LoomPlan, Sett;
+import '../models/loom_profile.dart';
+import '../models/readiness.dart';
+import '../models/weave_plan.dart';
+import '../rust/weave_plan_dto.dart' show WeavePlanRequestDto;
+import '../state/loom_providers.dart';
+import '../state/material_providers.dart';
+import '../state/theme_providers.dart' show appSettingsProvider;
+import '../state/weave_plan_providers.dart'
+    show draftWeavePlanLockedProvider, draftWeavePlanProvider;
 import '../models/double_weave_construction.dart';
 import '../models/double_weave_layers.dart' show hasLayerRoles, maxLayerShaft;
 import '../models/draft_doc.dart';
@@ -550,7 +563,7 @@ List<String> weavePrintErrors(WeavePrintSource s) => [
   }
 }
 
-/// The document for [s] in the [corner] layout. [withProblemsBox] is the user's "print anyway" choice:
+/// The document for [s] in the [corner] layout. [withProblemsBox] is the user's draft-copy choice:
 /// when the draft has errors, a box at the top lists them. Without errors there is never a box.
 PrintDocument buildWeavePrintDocument(
   WeavePrintSource s, {
@@ -1150,14 +1163,19 @@ String _colorName(DraftDoc doc, int i) => 'Color ${i + 1} (${_paletteColor(doc, 
 final _where = RegExp(r'^(pick|end|treadle|shaft) (\d+)\b', caseSensitive: false);
 
 PrintIssue _issue(DraftIssue i) {
+  // The engine's typed place (ADR 0021); an issue without one is placed from its words.
   final m = _where.firstMatch(i.message);
   return PrintIssue(
     severity: switch (i.severity) {
       IssueSeverity.error => PrintIssueSeverity.error,
       IssueSeverity.warning => PrintIssueSeverity.warning,
+      IssueSeverity.unsupported => PrintIssueSeverity.notChecked,
       IssueSeverity.info => PrintIssueSeverity.note,
     },
-    where: m == null ? 'Whole draft' : '${_upperFirst(m[1]!.toLowerCase())} ${m[2]}',
+    where: i.place ??
+        (m == null || i.code.isNotEmpty
+            ? 'Whole draft'
+            : '${_upperFirst(m[1]!.toLowerCase())} ${m[2]}'),
     message: _upperFirst(i.message),
   );
 }
@@ -1219,8 +1237,10 @@ class BookLayoutChoice extends ConsumerWidget {
   }
 }
 
-/// Run the print-or-share flow for the weaving editor's open draft (unsaved edits included), shown as
-/// [name]; [credit] is the author saved with the draft in Ply, if any.
+/// Run the print-or-share flow for the weaving editor's open draft (unsaved edits included), shown
+/// as [name]; [credit] is the author saved with the draft in Ply, if any. The engine's readiness
+/// report (ADR 0021: the draft, the loom chosen for it and its warp and weft plan) decides whether
+/// it prints straight away, after an acknowledgement, or only as a draft copy.
 Future<void> printOrShareWeavePdf(
   BuildContext context,
   WidgetRef ref, {
@@ -1232,6 +1252,10 @@ Future<void> printOrShareWeavePdf(
   final state = ref.read(draftEditorProvider);
   final doc = state.draft;
   final sourceWif = state.sourceWif;
+  final loomPlan = ref.read(draftLoomPlanProvider);
+  final weavePlan = ref.read(draftWeavePlanProvider);
+  final planLocked = ref.read(draftWeavePlanLockedProvider);
+  final metric = ref.read(appSettingsProvider).unit == MeasureUnit.centimeters;
   final container = ProviderScope.containerOf(context, listen: false);
   return printOrSharePdf(
     context,
@@ -1244,10 +1268,173 @@ Future<void> printOrShareWeavePdf(
           await gatherWeavePrint(repo, name: name, doc: doc, sourceWif: sourceWif, credit: credit);
       return PdfExportJob(
         fileStem: name,
-        errors: weavePrintErrors(source),
+        readiness: await gatherWeaveReadiness(container,
+            drafts: repo,
+            doc: doc,
+            loomPlan: loomPlan,
+            weavePlan: weavePlan,
+            planLocked: planLocked,
+            metric: metric),
+        listNotChecked: true,
         document: ({required withProblemsBox}) =>
             buildWeavePrintDocument(source, withProblemsBox: withProblemsBox, corner: corner),
       );
     },
   );
+}
+
+/// The open draft's readiness (ADR 0021): its structure, the loom chosen for it ([loomPlan], read
+/// from My looms) and its warp and weft plan ([weavePlan], with the records it names), in one engine
+/// call. What the engine cannot know is added as "not checked", never left out silently: a chosen
+/// loom that is not in My looms (or My looms cannot be read), a plan saved by a newer Ply
+/// ([planLocked]), materials and swatches that cannot be read, and a swatch or yarn the plan names
+/// that is no longer in them (the engine would otherwise see "none chosen").
+Future<ReadinessReport> gatherWeaveReadiness(
+  ProviderContainer container, {
+  required DraftRepository drafts,
+  required DraftDoc doc,
+  LoomPlan? loomPlan,
+  WeavePlan? weavePlan,
+  bool planLocked = false,
+  required bool metric,
+}) async {
+  final extra = <ReadinessItem>[];
+  LoomProfile? loom;
+  if (loomPlan != null) {
+    String? why;
+    try {
+      final library = await container.read(loomLibraryProvider.future);
+      loom = library.byId(loomPlan.loomId);
+      if (loom == null) {
+        why = library.readOnly
+            ? (library.readOnlyReason ?? 'My looms cannot be used on this device')
+            : 'it is not in My looms';
+      }
+    } catch (e) {
+      PlyLog.instance.warn('Readiness: My looms could not be read: $e');
+      why = 'My looms could not be read on this device';
+    }
+    if (why != null) extra.add(loomNotAvailableItem(loomPlan.loomName, why));
+  }
+  if (planLocked) {
+    extra.add(const ReadinessItem(
+      check: ReadinessCheck.plan,
+      code: 'plan.newer_version',
+      level: ReadinessLevel.unsupported,
+      message: "This draft's warp and weft plan was saved by a newer version of Ply, so this "
+          'version could not check it.',
+    ));
+  }
+  WeavePlanRequestDto? plan;
+  if (weavePlan != null) {
+    MaterialLibraryState? library;
+    String? materialsWhy;
+    try {
+      final read = await container.read(materialLibraryProvider.future);
+      library = read;
+      if (read.readOnly) {
+        materialsWhy =
+            read.readOnlyReason ?? 'your materials and swatches cannot be used on this device';
+      }
+    } catch (e) {
+      PlyLog.instance.warn('Readiness: materials could not be read: $e');
+      materialsWhy = 'your materials and swatches could not be read on this device';
+    }
+    final swatch = weavePlan.swatchId == null ? null : library?.swatch(weavePlan.swatchId!);
+    final warp =
+        weavePlan.warpMaterialId == null ? null : library?.material(weavePlan.warpMaterialId!);
+    final weft =
+        weavePlan.weftMaterialId == null ? null : library?.material(weavePlan.weftMaterialId!);
+    extra.addAll(planRecordItems(weavePlan,
+        swatchFound: swatch != null,
+        warpFound: warp != null,
+        weftFound: weft != null,
+        materialsWhy: materialsWhy));
+    Sett? fileSett;
+    try {
+      fileSett = await container.read(loomRepositoryProvider).fileSett(doc);
+    } catch (_) {
+      // The file's sett is only a hint the worksheet also does without: the plan's own sett, the
+      // loom's or the swatch's is used, and a missing one is the worksheet's finding.
+    }
+    plan = WeavePlanRepository.requestToDto(
+      plan: weavePlan,
+      swatch: swatch,
+      warp: warp,
+      weft: weft,
+      loom: loom,
+      loomSett: loomPlan?.sett,
+      draft: PlanDraftFacts(ends: doc.ends, meanStrands: meanStrands(doc), fileSett: fileSett),
+      metric: metric,
+    );
+  }
+  final report = await container
+      .read(readinessRepositoryProvider)
+      .weave(drafts.toDto(doc), loom: loom, sett: loomPlan?.sett, plan: plan);
+  return report.withItems(extra, checks: [
+    for (final i in extra) i.check,
+  ]);
+}
+
+/// [why] as the end of a sentence: trimmed, without its own closing full stop.
+String _clause(String why) => why.trim().replaceAll(RegExp(r'[.\s]+$'), '');
+
+/// The chosen loom Ply could not check the draft against, and [why].
+ReadinessItem loomNotAvailableItem(String loomName, String why) {
+  final name = loomName.trim();
+  final loom = name.isEmpty ? 'the loom chosen for it' : '$name, the loom chosen for it';
+  return ReadinessItem(
+    check: ReadinessCheck.loom,
+    code: 'loom.not_available',
+    level: ReadinessLevel.unsupported,
+    message: 'Ply could not check the draft against $loom: ${_clause(why)}.',
+  );
+}
+
+/// What the plan names that Ply could not use: every record when [materialsWhy] says the materials
+/// and swatches cannot be read, else each named record that is no longer in them (deleted, or from
+/// another device). Without these the engine would see "no swatch or yarn chosen" and say nothing.
+List<ReadinessItem> planRecordItems(
+  WeavePlan plan, {
+  required bool swatchFound,
+  required bool warpFound,
+  required bool weftFound,
+  String? materialsWhy,
+}) {
+  final named = [
+    if (plan.swatchId != null) ('the swatch', plan.swatchName, swatchFound),
+    if (plan.warpMaterialId != null) ('the warp yarn', plan.warpMaterialName, warpFound),
+    if (plan.weftMaterialId != null && plan.weftMaterialId != plan.warpMaterialId)
+      ('the weft yarn', plan.weftMaterialName, weftFound),
+  ];
+  String what((String, String?, bool) r) {
+    final name = r.$2?.trim() ?? '';
+    return name.isEmpty ? r.$1 : '${r.$1} "$name"';
+  }
+
+  if (materialsWhy != null) {
+    if (named.isEmpty) return const [];
+    return [
+      ReadinessItem(
+        check: ReadinessCheck.plan,
+        code: 'plan.materials_unavailable',
+        level: ReadinessLevel.unsupported,
+        message: 'Ply could not check the warp and weft plan with ${_and([
+          for (final r in named) what(r)
+        ])}: ${_clause(materialsWhy)}.',
+      ),
+    ];
+  }
+  return [
+    for (final r in named)
+      if (!r.$3)
+        ReadinessItem(
+          check: ReadinessCheck.plan,
+          code: 'plan.record_missing',
+          level: ReadinessLevel.unsupported,
+          message: 'The warp and weft plan names ${what(r)}, which is no longer in your materials '
+              'and swatches, so Ply could not check the plan with it'
+              '${r.$1 == 'the swatch' ? '' : ' or the yarn on hand'}.',
+        ),
+  ];
 }

@@ -1,0 +1,58 @@
+{
+  "description": "An eight-shaft 4/4 straight twill sampler, 16 ends by 16 picks, rising shed, treadled 1 to 8 and back up, with the slips a weaver makes: pick 5 presses treadle 9, which the 8-treadle tie-up does not have; pick 2 is marked tabby, but its shed is a twill shed, not plain weave (every other pick is a pattern pick); picks 15 and 16 are one shed (treadle 7 twice), grouped as a double shot. Checked against the four-shaft jack loom of fixtures/weaving/looms/looms.json (4 shafts, 6 treadles, 24 in wide, 12- and 10-dent reeds) with no sett entered and none in the file. Readiness: the treadle error blocks (the drawdown and the printed directions would be wrong); the tabby role and the two loom conflicts (8 shafts on 4, 9 treadles on 6) only warn, since the draft may be right for another loom; the width and the reed are not checked without a sett; the double shot's selvedge advice is information. Fits (the treadles pressed one at a time, the rising shed on a jack loom) are not listed.",
+  "loom": "fixture-four-shaft-jack",
+  "verdict": "not_ready",
+  "checked": ["draft", "loom"],
+  "errors": 1,
+  "items": [
+    {
+      "check": "draft",
+      "code": "weave.treadle_untied",
+      "severity": "error",
+      "place": "Pick 5, treadle 9",
+      "message": "Pick 5 presses treadle 9 which has no tie-up"
+    },
+    {
+      "check": "draft",
+      "code": "weave.tabby_off_shed",
+      "severity": "warning",
+      "place": "Pick 2",
+      "message": "Pick 2 marked tabby but its shed does not weave plain weave"
+    },
+    {
+      "check": "loom",
+      "code": "loom.shafts_exceeded",
+      "severity": "warning",
+      "place": "Shafts 5 to 8",
+      "message": "Does not fit Four-shaft jack loom, the loom chosen for this draft: This draft threads 8 shafts; Four-shaft jack loom has 4."
+    },
+    {
+      "check": "loom",
+      "code": "loom.treadles_exceeded",
+      "severity": "warning",
+      "place": "Treadles 7 to 9",
+      "message": "Does not fit Four-shaft jack loom, the loom chosen for this draft: This draft uses 9 treadles; Four-shaft jack loom has 6."
+    },
+    {
+      "check": "loom",
+      "code": "loom.width_unknown_sett",
+      "severity": "unsupported",
+      "place": null,
+      "message": "The sett is not known, so the width was not checked: the file gives no warp spacing."
+    },
+    {
+      "check": "loom",
+      "code": "loom.reed_no_sett",
+      "severity": "unsupported",
+      "place": null,
+      "message": "The sett is not known, so no reed was chosen."
+    },
+    {
+      "check": "draft",
+      "code": "weave.shot_group_catch",
+      "severity": "info",
+      "place": "Picks 15 and 16",
+      "message": "Picks 15 and 16 are a double shot: a shuttle that passes again in the same shed needs the weft caught at the selvedge, for example with a floating selvedge"
+    }
+  ]
+}

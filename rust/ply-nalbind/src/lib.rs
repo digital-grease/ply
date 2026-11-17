@@ -12,6 +12,8 @@ pub mod dictionary;
 pub mod error;
 pub mod notation;
 pub mod recipe;
+// Is a project ready to make or share (ADR 0021)?
+pub mod readiness;
 pub mod stitch;
 pub mod validate;
 
@@ -23,4 +25,4 @@ pub use notation::{
     ParseMode, ParsedNotation, StrictRejection,
 };
 pub use stitch::{ConnSide, Connection, Pass, PublishedCode, Step, StitchType, Twist};
-pub use validate::{validate, NalbindIssue, Severity};
+pub use validate::{validate, NalbindIssue, NalbindLocation, Severity};

@@ -1,0 +1,34 @@
+# Fixture record for nalbinding/readiness/mixed-problems (see fixtures/README.md).
+
+id = "nalbinding/readiness/mixed-problems"
+title = "A mitten with the slips a nalbinder makes, checked for readiness"
+technique = "readiness to make or share (ADR 0021): the strict notation reading, the stitch, the recipe"
+files = ["mixed-problems.plynal", "mixed-problems.expect.json"]
+created = "2026-11-17"
+license = "original"
+provenance = """
+Written for Ply's tests in the app's .plynal format (schema version 3), in the byte layout the app's \
+own writer gives (app/test/readiness_fixture_test.dart decodes and re-encodes it byte for byte). A \
+mitten in Oslo stitch typed in lower case, with a cuff, a thumb opening that is never worked, a hand, \
+a tip decreased by more than the round has, a finish and a free-text care step. No published pattern \
+was used. The oracle was derived by hand from the rules in rust/ply-nalbind/src/notation, \
+rust/ply-nalbind/src/recipe/check.rs and rust/ply-nalbind/src/readiness.rs: the notation is \
+accepted with three formatting notes (one per lower-case run), 36 stitches reach the tip where 4 \
+rounds of 10 decreases would remove 40 (an error), the opening is never worked or closed (a \
+warning), and the care step is free text (not checked)."""
+
+[sources]
+references = [
+  "Nalbinding Handbook, \"Notation systems\", https://nalbinding.net/about-nalbinding/notation-systems/ (Hansen notation and the F connection).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-nalbind/tests/readiness_fixtures.rs: readiness of the file's notation and recipe gives \
+exactly the oracle's verdict, checks and items, and its errors are exactly the recipe's errors (what \
+the PDF's problems box lists with the notation's). app/test/readiness_fixture_test.dart re-encodes \
+the file byte for byte and runs the nalbinding print flow on the oracle's report."""
+practitioner_nalbind_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Not a mitten anyone would make: the slips are deliberate. The physical check is of the wording."

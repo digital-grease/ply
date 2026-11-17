@@ -85,6 +85,20 @@ class KnitSelection {
 /// The current rectangular selection (SELECT tool), or null.
 final knitSelectionProvider = StateProvider<KnitSelection?>((ref) => null);
 
+/// A chart place a validation finding's "Show" asked the chart to bring into view (ADR 0021): chart
+/// row [row] (0-based, 0 at the bottom), storage columns [colFrom]..[colTo]. [serial] changes on every
+/// request, so showing the same place twice scrolls twice.
+class KnitReveal {
+  const KnitReveal(this.row, this.colFrom, this.colTo, this.serial);
+  final int row;
+  final int colFrom;
+  final int colTo;
+  final int serial;
+}
+
+/// The latest [KnitReveal] asked for (null = none since the editor opened).
+final knitRevealProvider = StateProvider<KnitReveal?>((ref) => null);
+
 /// The single source of truth for the open pattern + its undo history.
 class KnitEditorNotifier extends Notifier<KnitEditorState> {
   @override
