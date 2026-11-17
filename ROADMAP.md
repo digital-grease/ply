@@ -3,7 +3,7 @@
 Milestones are roughly ordered. The guiding principle: **make one craft excellent end to
 end (weaving) to harden the shared shell before fanning out.**
 
-## Current state (verified 2026-11-15)
+## Current state (verified 2026-11-16)
 
 M0 to M6 have shipped. Status words: **Verified** (works in the current checkout), **Partial**
 (exists, but important behavior is missing), **Not built**.
@@ -20,11 +20,12 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 | Knitting chart editor, written instructions, validation | Verified | Every built-in stitch has its own chart symbol. Repeats (worked N times or to the end of the row) drive written instructions, stitch counts and validation; an optional cast-on count checks row 1 and opens the written instructions; save does not validate |
 | Knitting sections (construction) | Partial | Optional named sections of steps, flat or in the round: chart rows, knitting or purling across, rows or rounds, short rows (wrap and turn, German, or a plain turn, including turns at the gap with a decrease for a heel turn), cast on, bind off, stitches put on hold and returned, working flat over part of the stitches (a heel flap), picking up stitches along an edge, needle groups such as instep and sole, repeated shaping until a count remains, moving the start of the round, grafting or a three-needle bind-off, and written steps Ply does not check. Ply counts the stitches after every step, for each needle group too, and refuses a step that asks for stitches the needle does not have instead of guessing; the written instructions and the PDF follow the sections. A sock from cuff to toe can be written; joining separate pieces (a garment in several parts) is not built, and the wording awaits a knitter's check |
 | Nalbinding reference, notation playground, loop diagram | Partial | Notation is read strictly or leniently with every problem listed at its position, and nothing is dropped silently; the loop diagram is labelled as a one-stitch sketch and marked approximate when the notation was not read exactly. Multi-round and fabric views are not built |
-| Nalbinding projects (notation, notes, photos) | Verified | Notation is checked strictly as you type and problems stay listed, but saving is still allowed (a project is a draft); no structured recipe model yet |
-| Native file formats | Verified | `.plyknit` and `.plynal` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten; the loom profiles file follows the same rules. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead) |
-| Library backup and restore | Verified | Settings saves every project (with photos and your loom profiles, and optionally app settings) to one `.plybackup` file wherever you choose; any single project can be exported the same way. Restore checks every file first, previews new, identical and differing projects, adds differing ones as copies without replacing anything, and restores settings only if ticked |
+| Nalbinding projects (notation, notes, photos, recipes) | Verified | Notation is checked strictly as you type and problems stay listed, but saving is still allowed (a project is a draft). An optional recipe lists the piece as steps in working order (start, body, shaping, finish, and free text Ply does not read), each with its own stitch if needed; Ply checks the order, the numbers and each notation and counts the stitches from the recipe's own numbers, but does not simulate the fabric. A follow view ticks steps done. The step names and wording await a nalbinder's check |
+| Materials and swatches | Verified | Yarns and measured swatches for every craft, with every number in its unit and marked measured or entered; what Ply works out from a swatch (gauge, shrinkage, take-up, draw-in) is shown, never saved over the measurements. Projects link to them, one swatch can serve many projects, and the knitting and weaving calculators can use a swatch and list where each input came from. There is no nalbinding calculator, and the warp, weft and finishing planner that will use them is not built yet |
+| Native file formats | Verified | `.plyknit` and `.plynal` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten; the loom profiles and materials files follow the same rules. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead) |
+| Library backup and restore | Verified | Settings saves every project (with photos, your loom profiles, and your materials and swatches with their photos, and optionally app settings) to one `.plybackup` file wherever you choose; any single project can be exported the same way. Restore checks every file first, previews new, identical and differing projects, adds differing ones as copies without replacing anything, and restores settings only if ticked |
 | Printable patterns (PDF) | Partial | Weaving drafts (a four-quadrant book draft with the tie-up in any corner, split into numbered parts when large; the colored drawdown; Use tabby when exact; role letters, shot groups, shuttles and pass directions, fold and open edges; written directions), knitting patterns (gauge, cast-on, stitch key, chart with numbers and repeat boxes, written instructions, problems) and nalbinding projects (notation, loop diagram, findings, notes, photos) print or share as PDF, offline, A4 or US Letter by your units; a pattern with errors asks first and says so in the PDF. Printed weaving drafts still await a weaver's comparison with reference patterns; threading repeats and profile blocks are not printed because drafts do not record them |
-| Engineering gates | Verified | 552 Rust + 1253 Flutter host tests and 59 device integration tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings`. The Android build uses Gradle 9 and AGP 9, so it runs on current JDKs |
+| Engineering gates | Verified | 647 Rust + 1397 Flutter host tests and 61 device integration tests green; CI also gates on `cargo fmt` and `cargo clippy -D warnings`. The Android build uses Gradle 9 and AGP 9, so it runs on current JDKs |
 
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
@@ -171,10 +172,18 @@ M9 garment construction and print, M10 tablet weaving, M11 crochet.
 - ✅ Knitting sections, second slice (M9-01): a sock heel and gusset, with work in the round, a heel
   flap and heel turn, picked-up stitches, needle groups, repeated shaping and a grafted toe, in knit
   format v5 (older files migrate with the old meaning).
+- ✅ Materials and swatch records (M8-01): yarns and measured swatches shared by every craft, linked
+  from any project, and calculator estimates that list where each input came from; full backups
+  carry them with the swatches' photos.
+- ✅ Nalbinding recipes (M8-04): an optional step-by-step recipe with checked stitches and counts and
+  a follow view, in nalbinding format v3 (older projects open unchanged).
+- ✅ Photos lose their location, camera and time details when they are added (JPEG and PNG).
+- ✅ Tablet weaving conventions (M10-00): the viewpoint, hole labels, threading, turns and twist are
+  decided with a worked example, awaiting a tablet weaver's review before the engine is built.
 - ⬜ Next: a weaver's check of the printed drafts, the shadow-weave and double-weave fixtures and
-  the loom checks, and a knitter's check of the section wording and the sock fixtures; then the
-  remaining P1 work (materials and swatches, warp and weft planning, nalbinding recipes, and knitting
-  sections across several pieces).
+  the loom checks; a knitter's check of the section wording and the sock fixtures; a nalbinder's
+  check of the recipes; then the remaining P1 work (warp, weft and finishing planning, ready to make
+  or share checks, knitting sections across several pieces, and the tablet weaving engine).
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.
