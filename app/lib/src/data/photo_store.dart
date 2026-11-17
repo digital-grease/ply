@@ -4,6 +4,19 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import 'photo_metadata.dart';
+
+/// A photo that could not be read as an image, so it was not stored (it might have held metadata Ply
+/// could not remove).
+class PhotoNotReadableException implements Exception {
+  const PhotoNotReadableException();
+
+  String get message => 'This photo could not be read, so it was not added.';
+
+  @override
+  String toString() => message;
+}
+
 /// On-device storage for a pattern's PROJECT PHOTOS: `<documents>/<subdir>/<id>.photos/*.jpg`, kept
 /// beside the pattern's sidecar. Craft-agnostic — the editor passes its craft [subdir] (e.g. 'knits')
 /// and the pattern [id]. Photos NEVER leave the device. Pure `dart:io`; tests set [docsOverride] to
@@ -48,6 +61,11 @@ class PhotoStore {
   /// Copy [source] (a freshly captured / picked image) into the store, returning the stored file.
   /// Keeps the source extension (defaults to `.jpg`).
   ///
+  /// The photo's metadata is removed first ([cleanPhoto], ADR 0016): a JPEG loses its EXIF (GPS
+  /// position, device, time), XMP, IPTC and comments but keeps its orientation, and a PNG its text,
+  /// EXIF and time chunks; a WebP or HEIC is kept as it is. A JPEG or PNG that cannot be read is not
+  /// stored ([PhotoNotReadableException]). Photos already in the store are never touched.
+  ///
   /// Atomic: the bytes go to `<name>.tmp` (not an image extension, so [list] never shows it), are
   /// flushed to disk, and only then renamed to the final name. A failed or interrupted copy therefore
   /// never leaves a truncated photo in the store; a failed copy also removes its temp file.
@@ -57,26 +75,15 @@ class PhotoStore {
     final dest = File(p.join(dir.path, '${_uuid.v4()}${ext.isEmpty ? '.jpg' : ext}'));
     final tmp = File('${dest.path}.tmp');
     try {
-      await _copyFlushed(source, tmp);
+      final cleaned = cleanPhoto(await source.readAsBytes());
+      if (cleaned == null) throw const PhotoNotReadableException();
+      await tmp.writeAsBytes(cleaned.bytes, flush: true);
       return await tmp.rename(dest.path);
     } catch (_) {
       try {
         if (await tmp.exists()) await tmp.delete();
       } catch (_) {/* best effort; a stray .tmp is never listed and goes with the folder */}
       rethrow;
-    }
-  }
-
-  /// Stream [source] into [target] and flush it to disk before returning (no whole-photo buffer).
-  static Future<void> _copyFlushed(File source, File target) async {
-    final out = await target.open(mode: FileMode.writeOnly);
-    try {
-      await for (final chunk in source.openRead()) {
-        await out.writeFrom(chunk);
-      }
-      await out.flush();
-    } finally {
-      await out.close();
     }
   }
 

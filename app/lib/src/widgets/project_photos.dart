@@ -82,7 +82,9 @@ class _ProjectPhotosState extends State<ProjectPhotos> {
       _refresh();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not add the photo: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                e is PhotoNotReadableException ? e.message : 'Could not add the photo: $e')));
       }
     }
   }
