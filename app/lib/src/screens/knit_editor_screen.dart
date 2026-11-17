@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/library_backup.dart' show BackupCraft;
 import '../models/draft_doc.dart' show DraftColor;
 import '../models/draft_meta.dart';
 import '../models/knit_stitches.dart';
@@ -11,6 +12,7 @@ import '../rust/dto.dart' show ColorDto, SeverityKind;
 import '../rust/knit_dto.dart' show KnitIssueDto, KnitPatternDto, RepeatDto;
 import '../state/knit_editor_providers.dart';
 import '../state/knit_editor_state.dart';
+import '../state/material_providers.dart' show openProjectProvider;
 import '../theme/ply_colors.dart';
 import '../widgets/cable_builder_dialog.dart';
 import '../widgets/knit_chart_view.dart';
@@ -19,13 +21,14 @@ import '../widgets/knit_planning_sheet.dart';
 import '../widgets/knit_repeat_dialog.dart';
 import '../widgets/knit_settings_sheet.dart';
 import '../widgets/name_input_dialog.dart';
+import '../widgets/project_materials_sheet.dart';
 import '../widgets/rgb_color_picker.dart';
 import '../widgets/unsaved_changes_guard.dart';
 import 'knit_sections_screen.dart';
 import 'knit_written_screen.dart';
 
 /// The knit editor's overflow-menu actions.
-enum _EditorMenu { zoomIn, zoomOut, written, sections, pdf, legend, planning, settings }
+enum _EditorMenu { zoomIn, zoomOut, written, sections, pdf, legend, planning, materials, settings }
 
 /// The knitting chart editor (M5): paint a chart of stitch symbols, resize the grid, undo/redo, see
 /// live stitch-count validation, and save to the on-device knit library. The knit analog of the
@@ -71,6 +74,8 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
         if (!mounted) return;
         _id = entry.id;
         _name = entry.meta.name;
+        // The project the planning calculator offers linked swatches for (ADR 0016).
+        ref.read(openProjectProvider.notifier).state = (craft: BackupCraft.knitting, id: _id);
         _savedAt = entry.meta.savedAt;
         ref.read(knitEditorProvider.notifier).load(pattern);
       } else if (widget.initialPattern != null) {
@@ -89,6 +94,9 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
         if (!mounted) return;
         final starter = KnitEditorState(pattern: blank).resizeChart(8, 8).pattern;
         ref.read(knitEditorProvider.notifier).load(starter);
+      }
+      if (widget.openId == null) {
+        ref.read(openProjectProvider.notifier).state = (craft: BackupCraft.knitting, id: null);
       }
       setState(() => _loading = false);
     } catch (e) {
@@ -156,6 +164,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
       // unusable once disposed, and the next session's load resets the baseline anyway.
       if (!mounted) return true;
       ref.read(knitEditorProvider.notifier).markSaved(pattern);
+      ref.read(openProjectProvider.notifier).state = (craft: BackupCraft.knitting, id: id);
       setState(() {
         _id = id;
         _name = name;
@@ -255,6 +264,9 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     // Dirty-on-exit guard: canPop=false routes the back button / system back through the leave
     // prompt. Selecting the bool keeps the rebuild to when it flips, not every paint.
     final edited = ref.watch(knitEditorProvider.select((s) => s.isDirty));
+    // Offered once the knitter has a material or swatch, or the pattern links one (ADR 0016).
+    final offerMaterials =
+        ref.watch(offerProjectMaterialsProvider((craft: BackupCraft.knitting, id: _id)));
     return PopScope<Object?>(
       canPop: _loading || _error != null || !edited,
       onPopInvokedWithResult: onLeaveRequested,
@@ -324,6 +336,8 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                 _EditorMenu.pdf => printOrShareKnitPdf(context, ref, name: _name),
                 _EditorMenu.legend => showKnitLegendSheet(context),
                 _EditorMenu.planning => showKnitPlanningSheet(context),
+                _EditorMenu.materials =>
+                  showProjectMaterials(context, craft: BackupCraft.knitting, id: _id),
                 _EditorMenu.settings => showKnitSettingsSheet(context),
               },
               itemBuilder: (_) => [
@@ -390,6 +404,15 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
+                if (offerMaterials)
+                  const PopupMenuItem(
+                    value: _EditorMenu.materials,
+                    child: ListTile(
+                      leading: Icon(Icons.inventory_2_outlined),
+                      title: Text('$kProjectMaterialsTitle…'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
                 const PopupMenuItem(
                   value: _EditorMenu.settings,
                   child: ListTile(

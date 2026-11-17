@@ -13,10 +13,12 @@ import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
 import '../models/drawdown_region.dart';
+import '../models/project_materials.dart' show ProjectMaterials;
 import '../models/shadow_weave_params.dart';
 import '../models/weft_work.dart' show withSoundShotGroups;
 import '../rust/api.dart';
 import '../rust/dto.dart';
+import 'sidecar_writes.dart';
 
 /// The one place the app touches `dart:io` and the generated bridge symbols.
 ///
@@ -661,8 +663,12 @@ class DraftRepository {
       await _atomicWriteString(File(_wifPath(dir, draftId)), wifText);
       // 2. Best-effort thumbnail (non-fatal).
       await _writeThumbnail(dir, draftId, wifText);
-      // 3. Sidecar last — its presence signals "this draft is complete".
-      await _writeSidecar(dir, draftId, meta);
+      // 3. Sidecar last — its presence signals "this draft is complete". The draft's links to the
+      // library's materials and swatches are written by the materials sheet as they change (ADR
+      // 0016), so a save carries them forward from the sidecar on disk rather than from the meta
+      // the editor opened with.
+      await SidecarWrites.run(_jsonPath(dir, draftId),
+          () async => _writeSidecar(dir, draftId, await _withLinksOnDisk(dir, draftId, meta)));
       return draftId;
     } on FileSystemException catch (e) {
       throw Exception('Could not save the draft: ${e.message}');
@@ -774,9 +780,13 @@ class DraftRepository {
   /// refreshed entry. Used when navigating into a saved draft.
   Future<DraftEntry> open(String id) async {
     final dir = await _draftsDir();
-    final meta = await _readSidecar(dir, id);
-    final bumped = meta.copyWith(lastOpened: DateTime.now());
-    await _writeSidecar(dir, id, bumped);
+    // Under the sidecar lock (ADR 0016), so a link written at the same moment is not lost.
+    final bumped = await SidecarWrites.run(_jsonPath(dir, id), () async {
+      final meta = await _readSidecar(dir, id);
+      final bumped = meta.copyWith(lastOpened: DateTime.now());
+      await _writeSidecar(dir, id, bumped);
+      return bumped;
+    });
     final pngFile = File(_pngPath(dir, id));
     return DraftEntry(
       id: id,
@@ -789,8 +799,10 @@ class DraftRepository {
   /// Rename a draft (display name only; the uuid filename never changes).
   Future<void> rename(String id, String newName) async {
     final dir = await _draftsDir();
-    final meta = await _readSidecar(dir, id);
-    await _writeSidecar(dir, id, meta.copyWith(name: newName));
+    await SidecarWrites.run(_jsonPath(dir, id), () async {
+      final meta = await _readSidecar(dir, id);
+      await _writeSidecar(dir, id, meta.copyWith(name: newName));
+    });
   }
 
   /// Delete a draft's whole triplet. Tolerates already-missing files.
@@ -801,18 +813,25 @@ class DraftRepository {
   Future<void> delete(String id) async {
     final dir = await _draftsDir();
     final owned = [_jsonPath(dir, id), _wifPath(dir, id), _pngPath(dir, id)];
-    // Also any `.tmp` an interrupted atomic save left behind: it holds draft content too, and the
-    // delete promises the draft is gone.
-    for (final path in [...owned, for (final o in owned) '$o.tmp']) {
-      final f = File(path);
-      if (await f.exists()) {
-        try {
-          await f.delete();
-        } catch (_) {
-          // Tolerate races / permission quirks; a leftover file is harmless.
+    // Also any `.tmp` an interrupted atomic save (or links write, ADR 0016) left behind: it holds
+    // draft content too, and the delete promises the draft is gone. The sidecar goes first, under
+    // the sidecar lock, so a link being written cannot bring it back.
+    Future<void> remove(Iterable<String> paths) async {
+      for (final path in paths) {
+        final f = File(path);
+        if (await f.exists()) {
+          try {
+            await f.delete();
+          } catch (_) {
+            // Tolerate races / permission quirks; a leftover file is harmless.
+          }
         }
       }
     }
+
+    final json = owned.first;
+    await SidecarWrites.run(json, () => remove([json, '$json.tmp', '$json.links.tmp']));
+    await remove([for (final o in owned.skip(1)) ...[o, '$o.tmp']]);
   }
 
   // ---------------------------------------------------------------------------
@@ -828,6 +847,24 @@ class DraftRepository {
 
   Future<void> _writeSidecar(Directory dir, String id, DraftMeta meta) async {
     await _atomicWriteString(File(_jsonPath(dir, id)), jsonEncode(meta.toJson()));
+  }
+
+  /// [meta] with the `materials` links the sidecar on disk holds now (or without any, when it holds
+  /// none). A missing or unreadable sidecar leaves [meta] as it is.
+  Future<DraftMeta> _withLinksOnDisk(Directory dir, String id, DraftMeta meta) async {
+    final file = File(_jsonPath(dir, id));
+    if (!await file.exists()) return meta;
+    try {
+      final disk = jsonDecode(await file.readAsString());
+      if (disk is! Map<String, dynamic>) return meta;
+      final json = meta.toJson()..remove(ProjectMaterials.key);
+      if (disk.containsKey(ProjectMaterials.key)) {
+        json[ProjectMaterials.key] = disk[ProjectMaterials.key];
+      }
+      return DraftMeta.fromJson(json);
+    } catch (_) {
+      return meta;
+    }
   }
 
   /// Write [contents] durably and atomically: flush to `<path>.tmp`, then rename

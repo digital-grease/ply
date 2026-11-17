@@ -1,0 +1,493 @@
+{
+  "format": "ply.materials",
+  "schema_version": 1,
+  "materials": [
+    {
+      "id": "grey-wool",
+      "name": "Grey wool",
+      "maker": "Invented Mill, Fell DK",
+      "fibers": [
+        {
+          "fiber": "wool",
+          "percent": 80.0
+        },
+        {
+          "fiber": "nylon",
+          "percent": 20.0
+        }
+      ],
+      "weight": "light",
+      "structure": "4-ply, worsted-spun",
+      "length_per_mass": {
+        "value": {
+          "length": {
+            "value": 200.0,
+            "unit": "m"
+          },
+          "mass": {
+            "value": 100.0,
+            "unit": "g"
+          }
+        },
+        "source": "entered"
+      },
+      "wpi": {
+        "value": {
+          "count": 11.0,
+          "over": {
+            "value": 1.0,
+            "unit": "in"
+          }
+        },
+        "source": "measured"
+      },
+      "color": "Heather grey",
+      "dye_lot": "A12",
+      "available_mass": {
+        "value": {
+          "value": 450.0,
+          "unit": "g"
+        },
+        "source": "measured"
+      },
+      "available_length": null,
+      "notes": "Invented for Ply's tests."
+    },
+    {
+      "id": "cotton-8-2",
+      "name": "8/2 cotton, natural",
+      "maker": "",
+      "fibers": [
+        {
+          "fiber": "cotton",
+          "percent": 100.0
+        }
+      ],
+      "weight": null,
+      "structure": "8/2, unmercerized",
+      "length_per_mass": {
+        "value": {
+          "length": {
+            "value": 3360.0,
+            "unit": "yd"
+          },
+          "mass": {
+            "value": 1.0,
+            "unit": "lb"
+          }
+        },
+        "source": "entered"
+      },
+      "wpi": null,
+      "color": "",
+      "dye_lot": "",
+      "available_mass": null,
+      "available_length": {
+        "value": {
+          "value": 1680.0,
+          "unit": "yd"
+        },
+        "source": "entered"
+      },
+      "notes": ""
+    },
+    {
+      "id": "mystery",
+      "name": "Mystery grey",
+      "maker": "",
+      "fibers": [],
+      "weight": null,
+      "structure": "",
+      "length_per_mass": null,
+      "wpi": null,
+      "color": "",
+      "dye_lot": "",
+      "available_mass": null,
+      "available_length": null,
+      "notes": ""
+    }
+  ],
+  "swatches": [
+    {
+      "id": "sw-knit",
+      "name": "Grey wool stockinette",
+      "craft": "knitting",
+      "technique": "stockinette",
+      "date": "2026-11-10",
+      "yarns": [
+        {
+          "material_id": "grey-wool",
+          "name": "Grey wool",
+          "role": "main"
+        }
+      ],
+      "tools": "4 mm circular needle",
+      "sett": null,
+      "width_in_reed": null,
+      "on_loom": {
+        "width": null,
+        "length": null,
+        "across": null,
+        "along": null,
+        "conditions": ""
+      },
+      "before": {
+        "width": {
+          "value": {
+            "value": 13.5,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 16.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "across": {
+          "value": {
+            "count": 22.0,
+            "over": {
+              "value": 10.0,
+              "unit": "cm"
+            }
+          },
+          "source": "measured"
+        },
+        "along": {
+          "value": {
+            "count": 30.0,
+            "over": {
+              "value": 10.0,
+              "unit": "cm"
+            }
+          },
+          "source": "measured"
+        },
+        "conditions": "flat, before washing"
+      },
+      "after": {
+        "width": {
+          "value": {
+            "value": 15.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 15.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "across": {
+          "value": {
+            "count": 20.0,
+            "over": {
+              "value": 10.0,
+              "unit": "cm"
+            }
+          },
+          "source": "measured"
+        },
+        "along": {
+          "value": {
+            "count": 32.0,
+            "over": {
+              "value": 10.0,
+              "unit": "cm"
+            }
+          },
+          "source": "measured"
+        },
+        "conditions": "flat, unpinned, after a day"
+      },
+      "finishing": "washed in cool water, dried flat",
+      "mass": {
+        "value": {
+          "value": 9.0,
+          "unit": "g"
+        },
+        "source": "measured"
+      },
+      "tension": "",
+      "provenance": "knitted and measured by the tester",
+      "notes": ""
+    },
+    {
+      "id": "sw-towel",
+      "name": "Towel sample",
+      "craft": "weaving",
+      "technique": "2/2 twill",
+      "date": "2026-11-02",
+      "yarns": [
+        {
+          "material_id": "cotton-8-2",
+          "name": "8/2 cotton, natural",
+          "role": "warp"
+        },
+        {
+          "material_id": "cotton-8-2",
+          "name": "8/2 cotton, natural",
+          "role": "weft"
+        }
+      ],
+      "tools": "table loom, 12-dent reed, 2 per dent",
+      "sett": {
+        "value": {
+          "count": 24.0,
+          "over": {
+            "value": 1.0,
+            "unit": "in"
+          }
+        },
+        "source": "entered"
+      },
+      "width_in_reed": {
+        "value": {
+          "value": 12.0,
+          "unit": "in"
+        },
+        "source": "entered"
+      },
+      "on_loom": {
+        "width": {
+          "value": {
+            "value": 11.4,
+            "unit": "in"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 20.0,
+            "unit": "in"
+          },
+          "source": "measured"
+        },
+        "across": null,
+        "along": {
+          "value": {
+            "count": 22.0,
+            "over": {
+              "value": 1.0,
+              "unit": "in"
+            }
+          },
+          "source": "measured"
+        },
+        "conditions": "under weaving tension"
+      },
+      "before": {
+        "width": {
+          "value": {
+            "value": 11.0,
+            "unit": "in"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 19.0,
+            "unit": "in"
+          },
+          "source": "measured"
+        },
+        "across": null,
+        "along": null,
+        "conditions": ""
+      },
+      "after": {
+        "width": {
+          "value": {
+            "value": 10.5,
+            "unit": "in"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 18.0,
+            "unit": "in"
+          },
+          "source": "measured"
+        },
+        "across": null,
+        "along": {
+          "value": {
+            "count": 24.0,
+            "over": {
+              "value": 1.0,
+              "unit": "in"
+            }
+          },
+          "source": "measured"
+        },
+        "conditions": "dry, pressed"
+      },
+      "finishing": "machine washed warm, line dried, pressed",
+      "mass": null,
+      "tension": "",
+      "provenance": "",
+      "notes": ""
+    },
+    {
+      "id": "sw-oslo",
+      "name": "Oslo stitch mitten sample",
+      "craft": "nalbinding",
+      "technique": "Oslo UO/UOO F1",
+      "date": null,
+      "yarns": [
+        {
+          "material_id": "mystery",
+          "name": "Mystery grey",
+          "role": null
+        }
+      ],
+      "tools": "bone needle, thumb loop held loose",
+      "sett": null,
+      "width_in_reed": null,
+      "on_loom": {
+        "width": null,
+        "length": null,
+        "across": null,
+        "along": null,
+        "conditions": ""
+      },
+      "before": {
+        "width": {
+          "value": {
+            "value": 8.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 6.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "across": {
+          "value": {
+            "count": 12.0,
+            "over": {
+              "value": 5.0,
+              "unit": "cm"
+            }
+          },
+          "source": "measured"
+        },
+        "along": {
+          "value": {
+            "count": 9.0,
+            "over": {
+              "value": 5.0,
+              "unit": "cm"
+            }
+          },
+          "source": "measured"
+        },
+        "conditions": ""
+      },
+      "after": {
+        "width": {
+          "value": {
+            "value": 7.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 5.5,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "across": {
+          "value": {
+            "count": 13.0,
+            "over": {
+              "value": 5.0,
+              "unit": "cm"
+            }
+          },
+          "source": "measured"
+        },
+        "along": null,
+        "conditions": "dry"
+      },
+      "finishing": "fulled by hand in warm soapy water",
+      "mass": null,
+      "tension": "",
+      "provenance": "",
+      "notes": ""
+    },
+    {
+      "id": "sw-lace",
+      "name": "Lace, blocked hard",
+      "craft": "knitting",
+      "technique": "feather and fan",
+      "date": null,
+      "yarns": [],
+      "tools": "",
+      "sett": null,
+      "width_in_reed": null,
+      "on_loom": {
+        "width": null,
+        "length": null,
+        "across": null,
+        "along": null,
+        "conditions": ""
+      },
+      "before": {
+        "width": {
+          "value": {
+            "value": 10.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 10.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "across": null,
+        "along": null,
+        "conditions": ""
+      },
+      "after": {
+        "width": {
+          "value": {
+            "value": 16.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "length": {
+          "value": {
+            "value": 13.0,
+            "unit": "cm"
+          },
+          "source": "measured"
+        },
+        "across": null,
+        "along": null,
+        "conditions": ""
+      },
+      "finishing": "soaked, pinned out to dry",
+      "mass": null,
+      "tension": "",
+      "provenance": "",
+      "notes": ""
+    }
+  ]
+}

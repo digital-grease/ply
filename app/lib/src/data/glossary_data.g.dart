@@ -487,6 +487,53 @@ const List<GlossaryTerm> kGlossary = [
     definition: 'which needle or hand a step refers to.',
   ),
   GlossaryTerm(
+    term: 'Swatch',
+    aka: 'sample',
+    definition: 'a small piece worked in the yarn, stitch, tools and tension of a project, then measured before and after it is finished the way the project will be, to find the gauge (or sett and picks) and how much the fabric changes. In Ply, a swatch record can be linked to any number of projects, and the planning calculators can take their numbers from it.',
+  ),
+  GlossaryTerm(
+    term: 'Material',
+    definition: 'in Ply, a yarn or thread you describe in Materials and swatches: its fibers, weight category, structure, length per mass, wraps per inch, color, dye lot and how much you have. Every field is optional.',
+  ),
+  GlossaryTerm(
+    term: 'Length per mass',
+    aka: 'yardage, grist',
+    definition: 'how much yarn a weight of it holds, as on a ball band ("200 m per 100 g"). Weavers often give it as yards per pound (YPP). Weigh a measured length to find your own.',
+  ),
+  GlossaryTerm(
+    term: 'Dye lot',
+    definition: 'the batch a yarn was dyed in, printed on the label. Skeins from one lot match; another lot of the same color may not.',
+  ),
+  GlossaryTerm(
+    term: 'Fiber blend',
+    definition: 'the fibers a yarn is spun from, with their share by weight, as the label gives them ("80% wool, 20% nylon").',
+  ),
+  GlossaryTerm(
+    term: 'Finishing',
+    aka: 'wet finishing, blocking, fulling',
+    definition: 'what is done to a piece after it is worked, such as washing, pinning out to dry, pressing or fulling. It changes the fabric\'s size, so a swatch is measured after finishing it the same way as the project.',
+  ),
+  GlossaryTerm(
+    term: 'Draw-in',
+    definition: 'how much narrower the woven cloth is than the warp in the reed, as a share of the width in the reed. Weft-faced cloth can draw in very little.',
+  ),
+  GlossaryTerm(
+    term: 'Shrinkage',
+    definition: 'how much a piece loses in width or length when it is finished, as a share of its size before.',
+  ),
+  GlossaryTerm(
+    term: 'Length allowance',
+    definition: 'in Ply, the share to add to a finished length so the warp covers take-up and shrinkage together, worked out from a sample as its length on the loom over its length after wet finishing, minus one. Adding the lost share instead would fall a little short.',
+  ),
+  GlossaryTerm(
+    term: 'Weighed swatch',
+    definition: 'a yarn estimate from a swatch\'s weight: its grams per area times the project\'s area, turned into length by the yarn\'s length per mass. Closer than a rule of thumb.',
+  ),
+  GlossaryTerm(
+    term: 'Measured, entered, Ply default',
+    definition: 'in Ply, where a number came from: you measured it, you entered it (from a label, a pattern or your setup), or it is Ply\'s starting value or rule of thumb. Every estimate made with a swatch says which of its inputs are which.',
+  ),
+  GlossaryTerm(
     term: 'Nalbinding',
     aka: 'nålbinding',
     definition: 'an ancient single-needle looping craft, worked in a spiral with short lengths of yarn; predates knitting and crochet, and does not unravel when cut.',

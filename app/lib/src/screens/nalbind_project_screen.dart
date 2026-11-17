@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/library_backup.dart' show BackupCraft;
 import '../data/nalbind_repository.dart';
 import '../models/nalbind_project.dart';
 import '../models/native_format.dart';
@@ -9,6 +10,7 @@ import '../print/print_export.dart' show PdfExportText;
 import '../state/nalbind_providers.dart';
 import '../widgets/nalbind_diagram_view.dart';
 import '../widgets/notation_feedback.dart';
+import '../widgets/project_materials_sheet.dart';
 import '../widgets/project_photos.dart';
 import '../widgets/unsaved_changes_guard.dart';
 
@@ -222,6 +224,8 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
       appBar: AppBar(
         title: Text(widget.openId == null ? 'New project' : 'Project'),
         actions: [
+          // The project's materials and swatches (ADR 0016); shown only when there are any.
+          ProjectMaterialsAction(craft: BackupCraft.nalbinding, id: _id),
           // Prints what the form holds now (saved or not); photos come with a saved project.
           IconButton(
             tooltip: PdfExportText.action,

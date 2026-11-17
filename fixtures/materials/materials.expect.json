@@ -1,0 +1,171 @@
+{
+  "note": "Oracle for materials.json and diagnostics.json, worked out by hand from the formulas in ADR 0016 (exact factors: 1 in = 2.54 cm, 1 yd = 0.9144 m, 1 lb = 453.59237 g). A percentage figure's value is a fraction: the loss from the earlier measurement to the later one over the earlier one (negative when it grew), and an allowance is earlier / later - 1. Values are checked to 1 part in 10000; texts exactly.",
+  "materials": {
+    "grey-wool": {
+      "figures": [
+        { "code": "material.meters_per_100g", "value": 200, "text": "200 m per 100 g" },
+        { "code": "material.yards_per_100g", "value": 218.72266, "text": "218.72 yd per 100 g" },
+        { "code": "material.yards_per_pound", "value": 992.10930, "text": "992.11 yd per lb" },
+        { "code": "material.wraps_per_inch", "value": 11, "text": "11 wraps per in" },
+        { "code": "material.wraps_per_cm", "value": 4.33071, "text": "4.33 wraps per cm" },
+        { "code": "material.available_length", "value": 900, "text": "about 900 m" }
+      ],
+      "diagnostics": []
+    },
+    "cotton-8-2": {
+      "figures": [
+        { "code": "material.meters_per_100g", "value": 677.34473, "text": "677.34 m per 100 g" },
+        { "code": "material.yards_per_100g", "value": 740.75320, "text": "740.75 yd per 100 g" },
+        { "code": "material.yards_per_pound", "value": 3360, "text": "3360 yd per lb" },
+        { "code": "material.available_mass", "value": 0.5, "text": "about 0.5 lb" }
+      ],
+      "diagnostics": []
+    },
+    "mystery": { "figures": [], "diagnostics": [] }
+  },
+  "swatches": {
+    "sw-knit": {
+      "figures": [
+        { "code": "swatch.before.across_per_10cm", "value": 22, "text": "22 sts per 10 cm" },
+        { "code": "swatch.before.across_per_4in", "value": 22.352, "text": "22.35 sts per 4 in" },
+        { "code": "swatch.before.along_per_10cm", "value": 30, "text": "30 rows per 10 cm" },
+        { "code": "swatch.before.along_per_4in", "value": 30.48, "text": "30.48 rows per 4 in" },
+        { "code": "swatch.after.across_per_10cm", "value": 20, "text": "20 sts per 10 cm" },
+        { "code": "swatch.after.across_per_4in", "value": 20.32, "text": "20.32 sts per 4 in" },
+        { "code": "swatch.after.along_per_10cm", "value": 32, "text": "32 rows per 10 cm" },
+        { "code": "swatch.after.along_per_4in", "value": 32.512, "text": "32.51 rows per 4 in" },
+        { "code": "swatch.width_change", "value": -0.111111, "text": "11.1% larger" },
+        { "code": "swatch.length_change", "value": 0.0625, "text": "6.3% smaller" },
+        { "code": "swatch.grams_per_100cm2", "value": 4, "text": "4 g per 100 sq cm" }
+      ],
+      "diagnostics": []
+    },
+    "sw-towel": {
+      "figures": [
+        { "code": "swatch.on_loom.along_per_inch", "value": 22, "text": "22 picks per in" },
+        { "code": "swatch.on_loom.along_per_cm", "value": 8.661417, "text": "8.66 picks per cm" },
+        { "code": "swatch.after.along_per_inch", "value": 24, "text": "24 picks per in" },
+        { "code": "swatch.after.along_per_cm", "value": 9.448819, "text": "9.45 picks per cm" },
+        { "code": "swatch.draw_in", "value": 0.05, "text": "5% smaller" },
+        { "code": "swatch.take_up", "value": 0.05, "text": "5% smaller" },
+        { "code": "swatch.width_shrinkage", "value": 0.0454545, "text": "4.5% smaller" },
+        { "code": "swatch.length_shrinkage", "value": 0.0526316, "text": "5.3% smaller" },
+        { "code": "swatch.total_width_loss", "value": 0.125, "text": "12.5% smaller" },
+        { "code": "swatch.total_length_loss", "value": 0.1, "text": "10% smaller" },
+        { "code": "swatch.length_allowance", "value": 0.111111, "text": "11.1% of the finished length" },
+        { "code": "swatch.width_allowance", "value": 0.142857, "text": "14.3% of the finished width" }
+      ],
+      "diagnostics": []
+    },
+    "sw-oslo": {
+      "figures": [
+        { "code": "swatch.before.across_per_10cm", "value": 24, "text": "24 sts per 10 cm" },
+        { "code": "swatch.before.across_per_4in", "value": 24.384, "text": "24.38 sts per 4 in" },
+        { "code": "swatch.before.along_per_10cm", "value": 18, "text": "18 rows per 10 cm" },
+        { "code": "swatch.before.along_per_4in", "value": 18.288, "text": "18.29 rows per 4 in" },
+        { "code": "swatch.after.across_per_10cm", "value": 26, "text": "26 sts per 10 cm" },
+        { "code": "swatch.after.across_per_4in", "value": 26.416, "text": "26.42 sts per 4 in" },
+        { "code": "swatch.width_change", "value": 0.125, "text": "12.5% smaller" },
+        { "code": "swatch.length_change", "value": 0.083333, "text": "8.3% smaller" }
+      ],
+      "diagnostics": []
+    },
+    "sw-lace": {
+      "figures": [
+        { "code": "swatch.width_change", "value": -0.6, "text": "60% larger" },
+        { "code": "swatch.length_change", "value": -0.3, "text": "30% larger" }
+      ],
+      "diagnostics": [
+        {
+          "code": "swatch.grew_implausibly",
+          "severity": "warning",
+          "field": "after.width",
+          "message": "The width after finishing (16 cm) is 60% more than before finishing (10 cm). Check the measurement."
+        }
+      ]
+    }
+  },
+  "impossible": {
+    "bad-blend": [
+      { "code": "material.fiber_percents_over_100", "severity": "error", "field": "fibers", "message": "The fiber shares add up to 110%, more than 100%." },
+      { "code": "quantity.not_positive", "severity": "error", "field": "length_per_mass.length" },
+      { "code": "record.default_source", "severity": "error", "field": "available_mass" }
+    ],
+    "bad-sizes": [
+      { "code": "swatch.date_invalid", "severity": "error", "field": "date" },
+      { "code": "quantity.not_positive", "severity": "error", "field": "before.across.count" },
+      { "code": "quantity.not_positive", "severity": "error", "field": "after.width", "message": "The width after finishing must be more than 0." }
+    ],
+    "bad-source": [
+      { "code": "record.default_source", "severity": "error", "field": "after.width" }
+    ]
+  },
+  "estimates": {
+    "knit_cast_on_from_swatch": {
+      "swatch": "sw-knit",
+      "request": { "gauge": "swatch", "width": "50 cm", "ease": "5 cm", "repeat": 4 },
+      "working": "55 cm x 2 sts per cm = 110 sts, rounded to the nearest multiple of 4",
+      "value": 112,
+      "inputs": [
+        { "key": "stitch_gauge", "source": "measured", "sentence": "20 sts per 10 cm, measured after finishing (washed in cool water, dried flat), swatch Grey wool stockinette 2026-11-10" },
+        { "key": "width", "source": "entered", "sentence": "50 cm, you entered it" },
+        { "key": "ease", "source": "entered", "sentence": "5 cm, you entered it" },
+        { "key": "repeat", "source": "entered", "sentence": "multiple of 4, you entered it" }
+      ]
+    },
+    "knit_cast_on_from_default": {
+      "request": { "gauge": "default 22 sts over 10 cm, for DK", "width": "50 cm", "ease": "0 cm", "repeat": 1 },
+      "value": 110,
+      "inputs": [
+        { "key": "stitch_gauge", "source": "default", "sentence": "22 sts per 10 cm, Ply's default for DK" }
+      ]
+    },
+    "knit_yardage_weighed_swatch": {
+      "swatch": "sw-knit",
+      "yarn": "grey-wool",
+      "request": { "gauge": "swatch", "width": "50 cm", "length": "60 cm", "buffer": "default 10%" },
+      "working": "9 g over 225 sq cm (15 x 15 cm after finishing) is 4 g per 100 sq cm; 50 x 60 cm = 3000 sq cm, so 120 g; at 200 m per 100 g that is 240 m; with 10% more, 264 m",
+      "method": "weighed_swatch",
+      "meters": 240,
+      "yards": 262.46719,
+      "buffered_meters": 264,
+      "buffered_yards": 288.71391,
+      "tolerance": 0.05,
+      "inputs": [
+        { "key": "swatch_mass", "source": "measured", "sentence": "9 g, measured, swatch Grey wool stockinette 2026-11-10" },
+        { "key": "swatch_area", "source": "measured", "sentence": "225 sq cm, width x length measured after finishing (washed in cool water, dried flat), swatch Grey wool stockinette 2026-11-10" },
+        { "key": "width", "source": "entered", "sentence": "50 cm, you entered it" },
+        { "key": "length", "source": "entered", "sentence": "60 cm, you entered it" },
+        { "key": "length_per_mass", "source": "entered", "sentence": "200 m per 100 g, entered, material Grey wool" },
+        { "key": "buffer", "source": "default", "sentence": "10%, Ply's default" }
+      ]
+    },
+    "weave_warp_from_swatch": {
+      "swatch": "sw-towel",
+      "request": { "finished_length": "2 yd", "items": 2, "ends": "swatch sett across 10 in", "loom_waste": "default 0.75 yd", "allowance": "swatch" },
+      "working": "24 ends per in x 10 in = 240 ends; 2 x 2 yd x 20 / 18 + 0.75 yd = 5.19 yd; x 240 ends = 1246.67 yd",
+      "ends": 240,
+      "warp_length_yd": 5.194444,
+      "total_yd": 1246.6667,
+      "tolerance": 0.001,
+      "inputs": [
+        { "key": "finished_length", "source": "entered", "sentence": "2 yd, you entered it" },
+        { "key": "items", "source": "entered", "sentence": "2, you entered it" },
+        { "key": "ends", "source": "entered", "sentence": "240, 24 ends per in across 10 in (the sett in the reed, entered, swatch Towel sample 2026-11-02)" },
+        { "key": "loom_waste", "source": "default", "sentence": "0.75 yd, Ply's default" },
+        { "key": "length_allowance", "source": "measured", "sentence": "11.1% of the finished length, from 20 in on the loom and 18 in after wet finishing (measured), swatch Towel sample 2026-11-02" }
+      ]
+    },
+    "weave_weft_from_swatch": {
+      "swatch": "sw-towel",
+      "request": { "ppi": "swatch", "width": "12 in", "woven_length": "2.25 yd", "items": 2, "takeup": "default 10%" },
+      "working": "22 picks per in x 81 in = 1782 picks per item, 3564 picks; 3564 x 12 in x 1.1 = 47044.8 in",
+      "picks": 3564,
+      "total_in": 47044.8,
+      "tolerance": 0.5,
+      "inputs": [
+        { "key": "ppi", "source": "measured", "sentence": "22 picks per in, measured on the loom, swatch Towel sample 2026-11-02" }
+      ]
+    }
+  }
+}

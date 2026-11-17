@@ -8,11 +8,13 @@ import 'package:path_provider/path_provider.dart';
 import '../data/backup_file_access.dart';
 import '../data/knit_repository.dart';
 import '../data/library_backup.dart';
+import '../data/materials_repository.dart' show MaterialLibrary;
 import '../diagnostics/crash_reporter.dart' show kPlyAppVersion;
 import '../models/native_format.dart';
 import 'editor_providers.dart';
 import 'knit_editor_providers.dart';
 import 'loom_providers.dart';
+import 'material_providers.dart';
 import 'theme_providers.dart';
 
 /// The system save dialog and file picker for backups. Tests override it.
@@ -25,11 +27,13 @@ final backupFileAccessProvider =
 /// get their thumbnails rebuilt. A full backup offers the app settings in effect; restored settings
 /// go through the settings notifier (saved first, then applied). A full backup carries My looms
 /// (`looms.json`, read by the engine), and a restore adds a backup's looms in one write that a later
-/// failure undoes (ADR 0014). Tests override it with a service over a temp directory.
+/// failure undoes (ADR 0014), and the materials and swatches likewise (`materials.json` with the
+/// swatches' photos; ADR 0016). Tests override it with a service over a temp directory.
 final libraryBackupProvider = Provider<LibraryBackup>((ref) {
   final drafts = ref.watch(repositoryProvider);
   final knits = ref.watch(knitRepositoryProvider);
   final looms = ref.watch(loomRepositoryProvider);
+  final materials = ref.watch(materialsRepositoryProvider);
   return LibraryBackup(
     documentsDir: getApplicationDocumentsDirectory,
     currentKnitSchemaVersion: () async {
@@ -65,6 +69,16 @@ final libraryBackupProvider = Provider<LibraryBackup>((ref) {
         return bytes == null ? const [] : await looms.decodeBytes(bytes);
       },
       add: looms.addLooms,
+    ),
+    materials: MaterialBackupHooks(
+      currentFile: materials.currentBytes,
+      decode: materials.decodeBytes,
+      current: () async {
+        final bytes = await materials.currentBytes();
+        return bytes == null ? MaterialLibrary.empty : await materials.decodeBytes(bytes);
+      },
+      add: materials.addRecords,
+      fits: materials.fits,
     ),
   );
 });

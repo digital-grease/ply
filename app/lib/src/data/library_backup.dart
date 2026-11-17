@@ -7,9 +7,11 @@
 //   knits/<id>.plyknit + knits/<id>.json + knits/<id>.plyknit.v<n>.bak (format-upgrade backups)
 //   nalbinds/<id>.plynal + nalbinds/<id>.json + nalbinds/<id>.photos/<name>.<ext>
 //
-// A full backup may also carry `app_settings.json` (opt-in, the settings in effect) and `looms.json`
-// (the weaver's loom profiles, whenever there are any; ADR 0014); a single-project export is the
-// same format holding one project and never the settings or the looms. Thumbnails (`<id>.png`) are
+// A full backup may also carry `app_settings.json` (opt-in, the settings in effect), `looms.json`
+// (the weaver's loom profiles, whenever there are any; ADR 0014) and `materials.json` with every
+// swatch's photos under `swatches/<id>.photos/` (the materials and swatches, whenever there are any;
+// ADR 0016, see `library_backup_materials.dart`); a single-project export is the same format holding
+// one project and never the settings, the looms or the materials. Thumbnails (`<id>.png`) are
 // rebuildable caches and are left out; a restore rebuilds them.
 //
 // A restore treats the file as hostile until every check has passed: hard limits on size, entry
@@ -40,11 +42,17 @@ import '../diagnostics/log_buffer.dart';
 import '../models/app_settings.dart';
 import '../models/draft_meta.dart';
 import '../models/loom_profile.dart';
+import '../models/material_record.dart';
 import '../models/nalbind_project.dart';
 import '../models/native_format.dart';
+import '../models/project_materials.dart';
 import 'app_settings_repository.dart';
 import 'loom_repository.dart' show LoomFileException, LoomFileProblem;
+import 'materials_repository.dart'
+    show MaterialLibrary, MaterialsFileException, MaterialsFileProblem;
 import 'ustar.dart';
+
+part 'library_backup_materials.dart';
 
 const int _mib = 1024 * 1024;
 
@@ -198,6 +206,7 @@ class BackupLimits {
     this.maxFileBytes = 64 * _mib,
     this.maxSettingsBytes = 64 * 1024,
     this.maxLoomsBytes = _mib,
+    this.maxMaterialsBytes = 2 * _mib,
   });
 
   /// The limits for the device this runs on: a phone saves a backup through the system save dialog,
@@ -232,6 +241,9 @@ class BackupLimits {
 
   /// The largest `looms.json` entry (the engine reads at most 1 MB).
   final int maxLoomsBytes;
+
+  /// The largest `materials.json` entry (the engine reads at most 2 MB).
+  final int maxMaterialsBytes;
 
   int maxBytesFor(BackupFileRole role) =>
       role == BackupFileRole.sidecar ? maxSidecarBytes : maxFileBytes;
@@ -334,6 +346,11 @@ class BackupManifestFile {
   const BackupManifestFile.looms({required this.size, required this.sha256})
       : path = backupLoomsPath,
         craft = null,
+        projectId = null;
+
+  /// The [backupMaterialsPath] entry, or a swatch photo at [path]: no project either.
+  const BackupManifestFile.library({required this.path, required this.size, required this.sha256})
+      : craft = null,
         projectId = null;
 
   final String path;
@@ -448,8 +465,12 @@ class BackupManifest {
       }
       final isSettings = path == backupSettingsPath;
       final isLooms = path == backupLoomsPath;
-      final classified = (isSettings || isLooms) ? null : classifyLibraryPath(path);
-      if (!isSettings && !isLooms && classified == null) {
+      final isMaterials = path == backupMaterialsPath;
+      final swatchPhoto = classifySwatchPhotoPath(path);
+      final classified = (isSettings || isLooms || isMaterials || swatchPhoto != null)
+          ? null
+          : classifyLibraryPath(path);
+      if (!isSettings && !isLooms && !isMaterials && swatchPhoto == null && classified == null) {
         throw BackupException(BackupProblem.unsafe, detail: 'manifest path $path');
       }
       // Case-insensitively unique: on a case-insensitive file system two such paths are one file.
@@ -457,14 +478,24 @@ class BackupManifest {
         throw BackupException(BackupProblem.unsafe, detail: 'duplicate manifest path $path');
       }
       if (classified == null) {
-        // The app settings or the looms: no project, and a limit of their own.
+        // The app settings, the looms, the materials or a swatch photo: no project, and a limit of
+        // their own.
         if (craftName != null || project != null) throw damaged('craft or project of $path');
-        if (size > (isLooms ? limits.maxLoomsBytes : limits.maxSettingsBytes)) {
+        final max = isLooms
+            ? limits.maxLoomsBytes
+            : isMaterials
+                ? limits.maxMaterialsBytes
+                : swatchPhoto != null
+                    ? limits.maxFileBytes
+                    : limits.maxSettingsBytes;
+        if (size > max) {
           throw BackupException(BackupProblem.unsafe, detail: '$path is $size bytes');
         }
         files.add(isLooms
             ? BackupManifestFile.looms(size: size, sha256: digest)
-            : BackupManifestFile.settings(size: size, sha256: digest));
+            : (isMaterials || swatchPhoto != null)
+                ? BackupManifestFile.library(path: path, size: size, sha256: digest)
+                : BackupManifestFile.settings(size: size, sha256: digest));
         continue;
       }
       if (craftName != classified.craft.manifestName || project != classified.projectId) {
@@ -554,6 +585,10 @@ class BackupPlan {
     this.includeSettings = false,
     this.looms,
     this.loomsLeftOut,
+    this.materials,
+    this.swatchPhotos = const [],
+    this.materialsLeftOut,
+    this.setAsideLeftOut = const [],
   });
 
   final DateTime createdAt;
@@ -586,6 +621,26 @@ class BackupPlan {
   static const String loomsTooLarge = 'My looms is too large to back up, so it is not in this '
       'backup.';
 
+  /// The materials and swatches this backup carries (a full backup, when there are any), and the
+  /// swatches' photos.
+  final BackupMaterialsFile? materials;
+  final List<BackupSwatchPhoto> swatchPhotos;
+
+  /// Why the materials are not in this backup although there is a materials file, or null.
+  final String? materialsLeftOut;
+
+  /// The unreadable copies of `looms.json` and `materials.json` an earlier load moved aside
+  /// (`.corrupt`), which a backup never carries (a restore could not read them), in sentences for the
+  /// summary.
+  final List<String> setAsideLeftOut;
+
+  static const String materialsNewer = 'Your materials were saved by a newer version of Ply, so '
+      'they are not in this backup.';
+  static const String materialsUnreadable =
+      'Your materials could not be read, so they are not in this backup.';
+  static const String materialsTooLarge =
+      'Your materials are too large to back up, so they are not in this backup.';
+
   /// This plan with the app settings in or out (the backup summary's checkbox).
   BackupPlan withSettings(bool include) => BackupPlan(
         createdAt: createdAt,
@@ -599,6 +654,10 @@ class BackupPlan {
         includeSettings: include,
         looms: looms,
         loomsLeftOut: loomsLeftOut,
+        materials: materials,
+        swatchPhotos: swatchPhotos,
+        materialsLeftOut: materialsLeftOut,
+        setAsideLeftOut: setAsideLeftOut,
       );
 
   int get projectCount => projectCounts.values.sum;
@@ -612,6 +671,13 @@ class BackupPlan {
             BackupManifestFile.settings(size: settings!.bytes.length, sha256: settings!.sha256),
           if (looms != null)
             BackupManifestFile.looms(size: looms!.bytes.length, sha256: looms!.sha256),
+          if (materials != null)
+            BackupManifestFile.library(
+                path: backupMaterialsPath,
+                size: materials!.bytes.length,
+                sha256: materials!.sha256),
+          for (final f in swatchPhotos)
+            BackupManifestFile.library(path: f.archivePath, size: f.size, sha256: f.sha256),
           for (final f in files)
             BackupManifestFile(
               path: f.archivePath,
@@ -629,6 +695,8 @@ class BackupPlan {
       ustarEntryLength(manifestBytes.length) +
       (carriesSettings ? ustarEntryLength(settings!.bytes.length) : 0) +
       (looms != null ? ustarEntryLength(looms!.bytes.length) : 0) +
+      (materials != null ? ustarEntryLength(materials!.bytes.length) : 0) +
+      swatchPhotos.fold<int>(0, (sum, f) => sum + ustarEntryLength(f.size)) +
       files.fold<int>(0, (sum, f) => sum + ustarEntryLength(f.size)) +
       ustarEndLength;
 
@@ -713,6 +781,8 @@ class RestoreProject {
     this.targetId,
     this.targetName,
     this.loomPlanId,
+    this.linkedMaterials = const {},
+    this.linkedSwatches = const {},
   }) : _files = files;
 
   final BackupCraft craft;
@@ -734,6 +804,11 @@ class RestoreProject {
   /// For a weaving draft planned for a loom, that loom's id in the backup (its sidecar's
   /// `loomPlan.loomId`): when the restore adds that loom as a copy, the draft is pointed at the copy.
   final String? loomPlanId;
+
+  /// The material and swatch ids the project's sidecar links (ADR 0016): when the restore adds one
+  /// as a copy, the project is pointed at the copy.
+  final Set<String> linkedMaterials;
+  final Set<String> linkedSwatches;
 
   final List<_ArchivedFile> _files;
 
@@ -759,7 +834,8 @@ class RestoreSettings {
 
 /// One loom of a backup, as the restore preview shows it (ADR 0014).
 class RestoreLoom {
-  const RestoreLoom(this.loom, this.status, this.target, {this.copyId, this.drafts = 0});
+  const RestoreLoom(this.loom, this.status, this.target,
+      {this.copyId, this.drafts = 0, this.localName});
 
   /// The loom as the backup has it.
   final LoomProfile loom;
@@ -781,11 +857,15 @@ class RestoreLoom {
   /// added).
   final int drafts;
 
+  /// For a conflict: the name of the different loom My looms holds under this id (null when none).
+  /// Unticking the copy leaves the restored drafts planned for that loom, and the preview says so.
+  final String? localName;
+
   /// A key unique within a backup (the loom's id there).
   String get key => loom.id;
 
   RestoreLoom _withDrafts(int n) =>
-      RestoreLoom(loom, status, target, copyId: copyId, drafts: n);
+      RestoreLoom(loom, status, target, copyId: copyId, drafts: n, localName: localName);
 }
 
 /// The looms of a backup: [items] when they can be restored, otherwise the [refusal] sentence.
@@ -837,6 +917,7 @@ class RestorePlan {
     required this.projects,
     this.settings,
     this.looms,
+    this.materials,
   });
 
   /// The backup file. It must stay in place until [LibraryBackup.restore] returns.
@@ -851,6 +932,9 @@ class RestorePlan {
   /// The backup's loom profiles; null when it has none.
   final RestoreLooms? looms;
 
+  /// The backup's materials and swatches; null when it has none.
+  final RestoreMaterials? materials;
+
   List<RestoreProject> forCraft(BackupCraft craft, RestoreStatus status) =>
       [for (final p in projects) if (p.craft == craft && p.status == status) p];
 }
@@ -858,7 +942,12 @@ class RestorePlan {
 /// What a restore wrote.
 class RestoreResult {
   const RestoreResult(this.restored,
-      {this.settingsRestored = false, this.loomsRestored = 0, this.draftsRelinked = 0});
+      {this.settingsRestored = false,
+      this.loomsRestored = 0,
+      this.draftsRelinked = 0,
+      this.materialsRestored = 0,
+      this.swatchesRestored = 0,
+      this.projectsRelinkedToMaterials = 0});
 
   /// The projects now in the library, with their final ids.
   final List<({BackupCraft craft, String id})> restored;
@@ -871,6 +960,13 @@ class RestoreResult {
 
   /// How many restored drafts were pointed at the restored copy of their loom.
   final int draftsRelinked;
+
+  /// How many materials and swatches were added.
+  final int materialsRestored;
+  final int swatchesRestored;
+
+  /// How many restored projects were pointed at a restored copy of a material or swatch.
+  final int projectsRelinkedToMaterials;
 
   int get count => restored.length;
 }
@@ -922,6 +1018,7 @@ class LibraryBackup {
     this.currentSettings,
     this.applySettings,
     this.looms,
+    this.materials,
     DateTime Function()? clock,
     @visibleForTesting this.beforePlace,
   }) : _clock = clock ?? DateTime.now;
@@ -951,6 +1048,10 @@ class LibraryBackup {
   /// My looms, which a full backup carries and a restore adds to. Null: backups carry no looms, and
   /// a backup with looms restores its projects only.
   final LoomBackupHooks? looms;
+
+  /// The materials and swatches, which a full backup carries (with the swatches' photos) and a
+  /// restore adds to (ADR 0016). Null: backups carry none, and a backup with them restores the rest.
+  final MaterialBackupHooks? materials;
   final DateTime Function() _clock;
 
   /// Test seam: called before each file or folder is moved into the library on restore. Throwing
@@ -997,7 +1098,13 @@ class LibraryBackup {
       }
     }
     final (loomsFile, loomsLeftOut) = await _loomsFile();
-    if (files.isEmpty && loomsFile == null) throw const BackupException(BackupProblem.noProjects);
+    final (materialsFile, swatchPhotos, materialsLeftOut) = await _materialsFile(docs);
+    if (files.isEmpty && loomsFile == null && materialsFile == null) {
+      throw const BackupException(BackupProblem.noProjects);
+    }
+    if (files.length + swatchPhotos.length + 4 > limits.maxEntries) {
+      throw BackupException(BackupProblem.libraryTooManyFiles, limit: limits.maxEntries);
+    }
     final settings = await _settingsFile();
     return _checked(BackupPlan(
       createdAt: _clock(),
@@ -1009,7 +1116,33 @@ class LibraryBackup {
       includeSettings: settings != null,
       looms: loomsFile,
       loomsLeftOut: loomsLeftOut,
+      materials: materialsFile,
+      swatchPhotos: swatchPhotos,
+      materialsLeftOut: materialsLeftOut,
+      setAsideLeftOut: await _setAsideCopies(docs),
     ));
+  }
+
+  /// The summary's sentences for the `.corrupt` copies of `looms.json` and `materials.json` in [docs]
+  /// (ADR 0014 and 0016: never backed up, since a restore could not read them; kept on the device).
+  Future<List<String>> _setAsideCopies(Directory docs) async {
+    var looms = 0;
+    var materialFiles = 0;
+    try {
+      await for (final ent in docs.list(followLinks: false)) {
+        if (ent is! File) continue;
+        final name = p.basename(ent.path);
+        if (name.startsWith('$backupLoomsPath.corrupt')) looms++;
+        if (name.startsWith('$backupMaterialsPath.corrupt')) materialFiles++;
+      }
+    } catch (_) {/* best effort: the summary just says nothing */}
+    String sentence(int n, String what, String file) => n == 1
+        ? 'An unreadable copy of $what, kept as $file.corrupt, is not in this backup.'
+        : '$n unreadable copies of $what, kept as $file.corrupt, are not in this backup.';
+    return [
+      if (looms > 0) sentence(looms, 'My looms', backupLoomsPath),
+      if (materialFiles > 0) sentence(materialFiles, 'your materials', backupMaterialsPath),
+    ];
   }
 
   /// Plan a single-project export: the same format, layout and limits as a full backup, holding just
@@ -1215,8 +1348,18 @@ class LibraryBackup {
       header(backupLoomsPath, loomsFile.bytes.length);
       data(loomsFile.bytes);
     }
+    final materialsFile = plan.materials;
+    if (materialsFile != null) {
+      header(backupMaterialsPath, materialsFile.bytes.length);
+      data(materialsFile.bytes);
+    }
 
-    for (final f in plan.files) {
+    for (final f in [
+      ...plan.swatchPhotos.map((s) => (archivePath: s.archivePath, sourcePath: s.sourcePath,
+          size: s.size, sha256: s.sha256)),
+      ...plan.files.map((f) => (archivePath: f.archivePath, sourcePath: f.sourcePath,
+          size: f.size, sha256: f.sha256)),
+    ]) {
       header(f.archivePath, f.size);
       RandomAccessFile? raf;
       try {
@@ -1268,11 +1411,17 @@ class LibraryBackup {
       throw BackupException(BackupProblem.unreadable, detail: '$e');
     }
     try {
-      final (manifest, accumulators, settings, loomBytes) = await _readArchive(raf, length);
-      // The looms first: a draft that names a loom restored as a copy is compared with the library
-      // as it would be once pointed at the copy.
+      final (manifest, accumulators, settings, loomBytes, materialBytes, swatchPhotos) =
+          await _readArchive(raf, length);
+      // The looms and the materials first: a project that names a record restored as a copy is
+      // compared with the library as it would be once pointed at the copy.
       final loomPlan = loomBytes == null ? null : await _classifyLooms(loomBytes);
       final relinks = loomPlan?.relinks(const {}) ?? const <String, (String, String)>{};
+      final materialPlan = materialBytes == null
+          ? null
+          : await _classifyMaterials(materialBytes, swatchPhotos, docs);
+      final materialRelinks = materialPlan?.relinks(const {}) ??
+          _noMaterialRelinks;
       final projects = <RestoreProject>[];
       for (final craft in BackupCraft.values) {
         final dir = Directory(p.join(docs.path, craft.directory));
@@ -1280,7 +1429,7 @@ class LibraryBackup {
         final ofCraft = accumulators.values.where((a) => a.craft == craft).toList()
           ..sort((a, b) => a.id.compareTo(b.id));
         for (final acc in ofCraft) {
-          projects.add(await _classify(raf, acc, dir, stems, relinks));
+          projects.add(await _classify(raf, acc, dir, stems, relinks, materialRelinks));
         }
       }
       return RestorePlan(
@@ -1290,6 +1439,9 @@ class LibraryBackup {
         projects: projects,
         settings: settings,
         looms: loomPlan == null ? null : _withDraftCounts(loomPlan, projects),
+        materials: materialPlan == null
+            ? null
+            : _MaterialsBackup._withProjectCounts(materialPlan, projects),
       );
     } on FileSystemException catch (e) {
       throw BackupException(BackupProblem.unreadable, detail: '$e');
@@ -1302,8 +1454,15 @@ class LibraryBackup {
   /// that must be inspected (native file, upgrade backup, sidecar, app settings) is read into
   /// memory, within the per-entry limits, checked right away, and dropped: only the verdict and a
   /// few digests are kept per project (and the parsed settings). Photos are only hashed.
-  Future<(BackupManifest, Map<String, _ProjectAccumulator>, RestoreSettings?, Uint8List?)>
-      _readArchive(RandomAccessFile raf, int length) async {
+  Future<
+      (
+        BackupManifest,
+        Map<String, _ProjectAccumulator>,
+        RestoreSettings?,
+        Uint8List?,
+        Uint8List?,
+        Map<String, List<ArchivedSwatchPhoto>>,
+      )> _readArchive(RandomAccessFile raf, int length) async {
     final reader = UstarReader(raf, length);
     final BackupManifest manifest;
     try {
@@ -1325,6 +1484,8 @@ class LibraryBackup {
     final accumulators = <String, _ProjectAccumulator>{};
     RestoreSettings? settings;
     Uint8List? loomBytes;
+    Uint8List? materialBytes;
+    final swatchPhotos = <String, List<ArchivedSwatchPhoto>>{};
     int? knitVersion;
     Future<int> knit() async => knitVersion ??= await currentKnitSchemaVersion();
     var entries = 1;
@@ -1341,8 +1502,12 @@ class LibraryBackup {
         }
         final isSettings = path == backupSettingsPath;
         final isLooms = path == backupLoomsPath;
-        final layout = (isSettings || isLooms) ? null : classifyLibraryPath(path);
-        if (!isSettings && !isLooms && layout == null) {
+        final isMaterials = path == backupMaterialsPath;
+        final swatchPhoto = classifySwatchPhotoPath(path);
+        final layout = (isSettings || isLooms || isMaterials || swatchPhoto != null)
+            ? null
+            : classifyLibraryPath(path);
+        if (!isSettings && !isLooms && !isMaterials && swatchPhoto == null && layout == null) {
           throw BackupException(BackupProblem.unsafe, detail: 'path $path');
         }
         if (!seen.add(path.toLowerCase())) {
@@ -1357,17 +1522,32 @@ class LibraryBackup {
         }
         final max = layout != null
             ? limits.maxBytesFor(layout.role)
-            : (isLooms ? limits.maxLoomsBytes : limits.maxSettingsBytes);
+            : isLooms
+                ? limits.maxLoomsBytes
+                : isMaterials
+                    ? limits.maxMaterialsBytes
+                    : swatchPhoto != null
+                        ? limits.maxFileBytes
+                        : limits.maxSettingsBytes;
         if (entry.size > max) {
           throw BackupException(BackupProblem.unsafe, detail: '$path is ${entry.size} bytes');
         }
         final (digest, content) = await _hashSlice(raf, entry.dataOffset, entry.size,
-            keep: layout?.role != BackupFileRole.photo);
+            keep: layout?.role != BackupFileRole.photo && swatchPhoto == null);
         if (digest != record.sha256) {
           throw BackupException(BackupProblem.damaged, detail: '$path checksum');
         }
         if (isLooms) {
           loomBytes = content; // read as untrusted input once the archive has checked out
+          continue;
+        }
+        if (isMaterials) {
+          materialBytes = content; // read as untrusted input once the archive has checked out
+          continue;
+        }
+        if (swatchPhoto != null) {
+          (swatchPhotos[swatchPhoto.swatchId] ??= [])
+              .add(ArchivedSwatchPhoto(swatchPhoto, entry.size, entry.dataOffset, digest));
           continue;
         }
         if (layout == null) {
@@ -1391,7 +1571,7 @@ class LibraryBackup {
     if (seen.length != expected.length) {
       throw const BackupException(BackupProblem.damaged, detail: 'a manifest file is missing');
     }
-    return (manifest, accumulators, settings, loomBytes);
+    return (manifest, accumulators, settings, loomBytes, materialBytes, swatchPhotos);
   }
 
   /// The looms of a backup, as untrusted input, compared with My looms by id: new (added under
@@ -1444,7 +1624,7 @@ class LibraryBackup {
       }
       taken.add(copyId);
       items.add(RestoreLoom(loom, RestoreStatus.conflict, loom.copyWith(id: copyId, name: name),
-          copyId: copyId));
+          copyId: copyId, localName: mine?.displayName));
     }
     final adding = items.where((i) => i.target != null).length;
     if (local.length + adding > LoomLimits.maxLooms) {
@@ -1477,6 +1657,57 @@ class LibraryBackup {
     final plan = out['loomPlan'];
     if (plan is Map) out['loomPlan'] = {...plan, 'loomId': loomId, 'loomName': loomName};
     return out;
+  }
+
+  /// The name of a material or swatch restored as a copy: "<name> (restored)", within the name
+  /// limit.
+  static String recordCopyName(String name, String fallback) {
+    const suffix = ' (restored)';
+    final base = name.trim().isEmpty ? fallback : name.trim();
+    return '${clipRunes(base, MaterialLimits.maxNameChars - suffix.length)}$suffix';
+  }
+
+  /// [s] with its yarns pointed at the materials restored as copies ([copies]: backup id to the
+  /// copy's id and name).
+  static SwatchRecord swatchWithMaterialCopies(
+      SwatchRecord s, Map<String, (String, String)> copies) {
+    if (copies.isEmpty || !s.yarns.any((y) => copies.containsKey(y.materialId))) return s;
+    return SwatchRecord(
+      id: s.id,
+      name: s.name,
+      craft: s.craft,
+      technique: s.technique,
+      date: s.date,
+      yarns: [
+        for (final y in s.yarns)
+          switch (copies[y.materialId]) {
+            null => y,
+            final c => SwatchYarn(materialId: c.$1, name: c.$2, role: y.role),
+          },
+      ],
+      tools: s.tools,
+      sett: s.sett,
+      widthInReed: s.widthInReed,
+      onLoom: s.onLoom,
+      before: s.before,
+      after: s.after,
+      finishing: s.finishing,
+      mass: s.mass,
+      tension: s.tension,
+      provenance: s.provenance,
+      notes: s.notes,
+    );
+  }
+
+  /// A version-8 (custom) UUID derived from [key] under [purpose].
+  static String _derivedId(String purpose, String key) {
+    final digest = sha256.convert(utf8.encode('$purpose\n$key'));
+    final b = digest.bytes.sublist(0, 16);
+    b[6] = (b[6] & 0x0F) | 0x80;
+    b[8] = (b[8] & 0x3F) | 0x80;
+    final hex = b.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-'
+        '${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
   /// The name of a loom restored as a copy: "<name> (restored)", the name shortened to keep within
@@ -1553,6 +1784,9 @@ class LibraryBackup {
     if (acc.craft == BackupCraft.weaving && plan is Map && plan['loomId'] is String) {
       acc.loomPlanId = plan['loomId'] as String;
     }
+    final links = ProjectMaterials.idsIn(json);
+    acc.linkedMaterials = links.materials;
+    acc.linkedSwatches = links.swatches;
     final version = json['schemaVersion'];
     if (version is int && version > DraftMeta.currentSchemaVersion) {
       return RestoreRefusal.newerVersion;
@@ -1606,7 +1840,8 @@ class LibraryBackup {
   /// present, or restore it as a copy. [raf] is the open archive (a nalbinding copy's renamed
   /// `.plynal` is derived from it when an earlier copy may already be in the library).
   Future<RestoreProject> _classify(RandomAccessFile raf, _ProjectAccumulator acc, Directory dir,
-      Set<String> stems, Map<String, (String, String)> relinks) async {
+      Set<String> stems, Map<String, (String, String)> relinks,
+      _MaterialRelinks materialRelinks) async {
     final RestoreRefusal? refusal = acc.newer
         ? RestoreRefusal.newerVersion
         : acc.unreadable
@@ -1626,6 +1861,8 @@ class LibraryBackup {
           targetId: targetId,
           targetName: targetName,
           loomPlanId: acc.loomPlanId,
+          linkedMaterials: acc.linkedMaterials,
+          linkedSwatches: acc.linkedSwatches,
         );
     if (refusal != null) return make(RestoreStatus.refused);
 
@@ -1635,7 +1872,10 @@ class LibraryBackup {
     // A draft that names a loom restored as a copy is also the same as the library once pointed at
     // the copy (what an earlier restore of this backup wrote).
     final relink = relinks[acc.loomPlanId];
-    final relinked = relink == null ? null : await _relinkedSidecar(raf, acc, relink);
+    final linksCopy = _linksCopy(acc.linkedMaterials, acc.linkedSwatches, materialRelinks);
+    final relinked = (relink == null && !linksCopy)
+        ? null
+        : await _relinkedSidecar(raf, acc, relink, materialRelinks);
     if (await _sameAsLibrary(dir, acc.id, acc.files, acc.sidecarDigest!) ||
         (relinked != null &&
             await _sameAsLibrary(dir, acc.id, acc.files, sidecarDigest(relinked)))) {
@@ -1666,18 +1906,33 @@ class LibraryBackup {
   /// The library name of a project restored as a copy.
   static String copyNameFor(String name) => '$name (restored)';
 
-  /// The project's sidecar as it is once pointed at the loom copy [relink] (id, name), read again
-  /// from the archive and checked against its recorded digest.
-  Future<Map<String, dynamic>> _relinkedSidecar(
-      RandomAccessFile raf, _ProjectAccumulator acc, (String, String) relink) async {
+  /// The project's sidecar as it is once pointed at the loom copy [relink] (id, name) and the
+  /// material and swatch copies of [materialRelinks], read again from the archive and checked
+  /// against its recorded digest.
+  Future<Map<String, dynamic>> _relinkedSidecar(RandomAccessFile raf, _ProjectAccumulator acc,
+      (String, String)? relink, _MaterialRelinks materialRelinks) async {
     final f = acc.files.firstWhere((f) => f.layout.role == BackupFileRole.sidecar);
     final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
     if (digest != f.sha256) {
       throw BackupException(BackupProblem.damaged, detail: '${f.layout.pathFor(acc.id)} changed');
     }
-    return _relinked(
-        jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>, relink.$1, relink.$2);
+    return _rewrittenSidecar(
+        jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>, relink, materialRelinks);
   }
+
+  /// [json] (a sidecar) pointed at the loom copy [relink] and at the material and swatch copies of
+  /// [materialRelinks]; every other key kept.
+  static Map<String, dynamic> _rewrittenSidecar(Map<String, dynamic> json,
+      (String, String)? relink, _MaterialRelinks materialRelinks) {
+    final looms = relink == null ? json : _relinked(json, relink.$1, relink.$2);
+    return ProjectMaterials.relinked(looms, materialRelinks.materials, materialRelinks.swatches);
+  }
+
+  /// Whether a project linking [materialIds] and [swatchIds] links a record restored as a copy.
+  static bool _linksCopy(
+          Set<String> materialIds, Set<String> swatchIds, _MaterialRelinks materialRelinks) =>
+      materialIds.any(materialRelinks.materials.containsKey) ||
+      swatchIds.any(materialRelinks.swatches.containsKey);
 
   /// A digest of a sidecar's content that ignores `lastOpened` (bumped by every open) and key order,
   /// with the name replaced by [name] when given (to compare against a restored copy).
@@ -1794,7 +2049,8 @@ class LibraryBackup {
   Future<RestoreResult> restore(RestorePlan plan,
       {Set<String> skippedConflicts = const {},
       bool restoreSettings = false,
-      Set<String> skippedLoomConflicts = const {}}) async {
+      Set<String> skippedLoomConflicts = const {},
+      Set<String> skippedMaterialConflicts = const {}}) async {
     final selected = [
       for (final project in plan.projects)
         if (project.status == RestoreStatus.add ||
@@ -1808,7 +2064,25 @@ class LibraryBackup {
         plan.looms?.relinks(skippedLoomConflicts) ?? const <String, (String, String)>{};
     (String, String)? relinkFor(RestoreProject p) =>
         p.craft == BackupCraft.weaving ? relinks[p.loomPlanId] : null;
-    if (selected.isEmpty && settings == null && loomsToAdd.isEmpty) {
+    // Materials and swatches (ADR 0016): the records added, the copies projects point at, and the
+    // swatches whose photos are placed. A selection that would pass a record limit adds none of them
+    // (the preview said so), and the projects restore without them.
+    final materialPlan = plan.materials?.limitProblem(skippedMaterialConflicts) == null
+        ? plan.materials
+        : null;
+    final recordsToAdd = materialPlan?.selected(skippedMaterialConflicts) ??
+        (materials: const <MaterialRecord>[], swatches: const <SwatchRecord>[]);
+    final materialRelinks = materialPlan?.relinks(skippedMaterialConflicts) ?? _noMaterialRelinks;
+    final swatchesWithPhotos = [
+      for (final i in materialPlan?.items ?? const <RestoreRecord>[])
+        if (i.isSwatch &&
+            i.photos.isNotEmpty &&
+            (i.status == RestoreStatus.add ||
+                (i.status == RestoreStatus.conflict && !skippedMaterialConflicts.contains(i.key))))
+          i,
+    ];
+    final addsRecords = recordsToAdd.materials.isNotEmpty || recordsToAdd.swatches.isNotEmpty;
+    if (selected.isEmpty && settings == null && loomsToAdd.isEmpty && !addsRecords) {
       return const RestoreResult([]);
     }
     final docs = await documentsDir();
@@ -1817,14 +2091,18 @@ class LibraryBackup {
     final placed = <FileSystemEntity>[];
     final createdDirs = <Directory>[];
     Future<void> Function()? undoLooms;
+    Future<void> Function()? undoMaterials;
+    var photoFolders = const <String>[];
     try {
-      if (selected.isNotEmpty) {
+      if (selected.isNotEmpty || swatchesWithPhotos.isNotEmpty) {
         await staging.create();
         final raf = await plan.archive.open();
         try {
           for (final project in selected) {
-            await _stage(raf, staging, project, relink: relinkFor(project));
+            await _stage(raf, staging, project,
+                relink: relinkFor(project), materialRelinks: materialRelinks);
           }
+          photoFolders = await _stageSwatchPhotos(raf, staging, swatchesWithPhotos);
         } finally {
           await raf.close();
         }
@@ -1870,6 +2148,30 @@ class LibraryBackup {
         if (hooks == null) throw StateError('this build cannot restore looms');
         undoLooms = await hooks.add(loomsToAdd);
       }
+      // Then the swatches' photo folders (each moved whole), and the materials and swatches in one
+      // write of materials.json.
+      if (photoFolders.isNotEmpty) {
+        final dir = Directory(p.join(docs.path, backupSwatchDir));
+        if (!await dir.exists()) {
+          await dir.create(recursive: true);
+          createdDirs.add(dir);
+        }
+        for (final rel in photoFolders) {
+          final from = p.joinAll([staging.path, ...rel.split('/')]);
+          final to = p.joinAll([docs.path, ...rel.split('/')]);
+          await beforePlace?.call(to);
+          if (await FileSystemEntity.type(to, followLinks: false) !=
+              FileSystemEntityType.notFound) {
+            throw StateError('$rel appeared in the library during the restore');
+          }
+          placed.add(await Directory(from).rename(to));
+        }
+      }
+      if (addsRecords) {
+        final hooks = materials;
+        if (hooks == null) throw StateError('this build cannot restore materials');
+        undoMaterials = await hooks.add(recordsToAdd.materials, recordsToAdd.swatches);
+      }
       // Last: a failure to apply the settings still rolls every project (and the looms) back.
       if (settings != null) {
         final apply = applySettings;
@@ -1877,6 +2179,13 @@ class LibraryBackup {
         await apply(settings);
       }
     } catch (e) {
+      if (undoMaterials != null) {
+        try {
+          await undoMaterials();
+        } catch (undoError) {
+          PlyLog.instance.error('Restore rollback could not put materials.json back: $undoError');
+        }
+      }
       if (undoLooms != null) {
         try {
           await undoLooms();
@@ -1894,6 +2203,8 @@ class LibraryBackup {
     final restored = [for (final s in selected) (craft: s.craft, id: s.targetId!)];
     PlyLog.instance.info('Restored ${restored.length} projects'
         '${loomsToAdd.isNotEmpty ? ', ${loomsToAdd.length} looms' : ''}'
+        '${addsRecords ? ', ${recordsToAdd.materials.length} materials, '
+            '${recordsToAdd.swatches.length} swatches' : ''}'
         '${settings != null ? ' and the app settings' : ''} from a backup.');
     final rebuild = rebuildThumbnail;
     if (rebuild != null) {
@@ -1909,7 +2220,12 @@ class LibraryBackup {
     return RestoreResult(restored,
         settingsRestored: settings != null,
         loomsRestored: loomsToAdd.length,
-        draftsRelinked: selected.where((p) => relinkFor(p) != null).length);
+        draftsRelinked: selected.where((p) => relinkFor(p) != null).length,
+        materialsRestored: recordsToAdd.materials.length,
+        swatchesRestored: recordsToAdd.swatches.length,
+        projectsRelinkedToMaterials: selected
+            .where((p) => _linksCopy(p.linkedMaterials, p.linkedSwatches, materialRelinks))
+            .length);
   }
 
   /// Copy [project]'s files out of the archive into [staging], under its target id. Each digest is
@@ -1919,19 +2235,22 @@ class LibraryBackup {
   /// to copying a document byte for byte. A project restored under its own id, and every other file
   /// of a copy, is written byte for byte.
   Future<void> _stage(RandomAccessFile raf, Directory staging, RestoreProject project,
-      {(String, String)? relink}) async {
+      {(String, String)? relink, _MaterialRelinks? materialRelinks}) async {
     final id = project.targetId!;
     final rename = project.status == RestoreStatus.conflict;
+    final relinksMaterials = materialRelinks != null &&
+        _linksCopy(project.linkedMaterials, project.linkedSwatches, materialRelinks);
     for (final f in project._files) {
       final dest = File(p.joinAll([staging.path, ...f.layout.pathFor(id).split('/')]));
       await dest.parent.create(recursive: true);
-      if (relink != null && f.layout.role == BackupFileRole.sidecar) {
+      if ((relink != null || relinksMaterials) && f.layout.role == BackupFileRole.sidecar) {
         // A draft planned for a loom this restore adds as a copy (or that an earlier restore of
-        // this backup added): its sidecar names the copy, and the copy's name too when renamed.
+        // this backup added), or a project linking a material or swatch restored as a copy: its
+        // sidecar names the copy, and the copy's name too when renamed.
         final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
         if (digest != f.sha256) throw StateError('${f.layout.pathFor(project.id)} changed');
-        final json = _relinked(
-            jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>, relink.$1, relink.$2);
+        final json = _rewrittenSidecar(jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>,
+            relink, materialRelinks ?? _noMaterialRelinks);
         if (rename) json['name'] = project.targetName!;
         await dest.writeAsBytes(utf8.encode(jsonEncode(json)), flush: true);
         continue;
@@ -2073,6 +2392,10 @@ class _ProjectAccumulator {
 
   /// A weaving draft's `loomPlan.loomId`, when it names a loom.
   String? loomPlanId;
+
+  /// The material and swatch ids the sidecar links.
+  Set<String> linkedMaterials = const {};
+  Set<String> linkedSwatches = const {};
 }
 
 class _DigestSink implements Sink<Digest> {

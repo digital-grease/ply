@@ -15,6 +15,7 @@ pub mod error;
 pub mod feasibility;
 pub mod loom;
 pub mod loom_file;
+pub mod plan;
 pub mod profile;
 pub mod shadow;
 pub mod structure;

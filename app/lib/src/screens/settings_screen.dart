@@ -325,6 +325,12 @@ class _BackupSummaryDialogState extends State<_BackupSummaryDialog> {
           if (plan.looms != null)
             Text('My looms: ${plural(plan.looms!.count, 'loom')}'),
           if (plan.loomsLeftOut != null) Text(plan.loomsLeftOut!),
+          if (plan.materials != null)
+            Text('Materials: ${plural(plan.materials!.materials, 'material')}, '
+                '${plural(plan.materials!.swatches, 'swatch', 'swatches')}'
+                '${plan.swatchPhotos.isEmpty ? '' : ', ${plural(plan.swatchPhotos.length, 'photo')}'}'),
+          if (plan.materialsLeftOut != null) Text(plan.materialsLeftOut!),
+          for (final note in plan.setAsideLeftOut) Text(note),
           const SizedBox(height: PlySpacing.sm),
           Text('Size: ${formatBytes(plan.archiveSize)}'),
           const SizedBox(height: PlySpacing.sm),

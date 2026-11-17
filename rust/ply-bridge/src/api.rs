@@ -708,6 +708,153 @@ pub fn draft_sett_dto(draft: DraftDto) -> Option<SettDto> {
     weave::feasibility::file_sett(&draft).map(SettDto::from)
 }
 
+// ---------------------------------------------------------------------------
+// M8-01 MATERIALS AND SWATCHES, and planning estimates that show their working (ADR 0016; DTOs in
+// `materials_dto.rs`, flat enums only, so no freezed rebuild). The app owns the `materials.json`
+// file I/O; the engine owns its format, the diagnostics, the derived figures and the estimates.
+// ---------------------------------------------------------------------------
+
+pub use crate::materials_dto::{
+    CountInputDto, CountOverDto, FiberPartDto, FigureDto, FractionInputDto, InputOriginKind,
+    KnitCastOnRequestDto, KnitYardageRequestDto, LengthInputDto, LengthPerMassDto, MaterialDto,
+    MaterialLibraryDto, MaterialsFileFailure, MaterialsFileFailureKind, QuantityLengthDto,
+    QuantityLengthUnit, QuantityMassDto, QuantityMassUnit, RecordDiagnosticDto, RecordReportDto,
+    RecordSeverityKind, RecordedCountOverDto, RecordedLengthDto, RecordedLengthPerMassDto,
+    RecordedMassDto, SourceKind, SwatchCraftKind, SwatchDto, SwatchStageDto, SwatchYarnDto,
+    TracedCastOnDto, TracedInputDto, TracedWarpDto, TracedWeftDto, TracedYardageDto,
+    WeaveWarpRequestDto, WeaveWeftRequestDto, WholeInputDto, YardageMethodKind, YarnRoleKind,
+};
+
+/// Parse `materials.json` (any supported schema version). A newer, foreign, oversized or unreadable
+/// file is an `Err(MaterialsFileFailure)`, thrown as an exception on the Dart side; reading never
+/// writes.
+pub fn parse_materials(text: String) -> Result<MaterialLibraryDto, MaterialsFileFailure> {
+    ply_common::materials_file::read(&text)
+        .map(|l| MaterialLibraryDto::from(&l))
+        .map_err(MaterialsFileFailure::from)
+}
+
+/// Serialize the crafter's materials and swatches as a current-version `materials.json`. `Err` when
+/// a record has an error diagnostic, an id repeats, or there are too many records (Ply never writes
+/// a file it would refuse to read).
+pub fn write_materials(dto: MaterialLibraryDto) -> Result<String, String> {
+    ply_common::materials_file::write(&dto.into()).map_err(|e| e.to_string())
+}
+
+/// A material's diagnostics and the figures worked out from it (never stored).
+pub fn material_report(dto: MaterialDto) -> RecordReportDto {
+    let m = ply_common::materials::Material::from(dto);
+    RecordReportDto::new(&m.diagnostics(), &m.figures())
+}
+
+/// A swatch's diagnostics and the figures worked out from its measurements (never stored).
+pub fn swatch_report(dto: SwatchDto) -> RecordReportDto {
+    let s = ply_common::materials::Swatch::from(dto);
+    RecordReportDto::new(&s.diagnostics(), &s.figures())
+}
+
+/// The knitting cast-on for a width, with every input's source and the working (`ply_knit::plan`).
+/// `Err` (a sentence) when an input is missing or unusable.
+pub fn knit_cast_on_traced(req: KnitCastOnRequestDto) -> Result<TracedCastOnDto, String> {
+    let swatch = req.swatch.map(ply_common::materials::Swatch::from);
+    let t = ply_knit::plan::cast_on_traced(&ply_knit::plan::CastOnRequest {
+        swatch: swatch.as_ref(),
+        gauge: req.gauge.to_origin()?,
+        width: req.width.into(),
+        ease: req.ease.into(),
+        repeat: req.repeat,
+    })
+    .map_err(|e| e.0)?;
+    Ok(TracedCastOnDto {
+        stitches: t.value,
+        inputs: crate::materials_dto::traced_inputs(&t.inputs),
+        working: t.working,
+        notes: t.notes,
+    })
+}
+
+/// The knitting yarn estimate for a rectangle (the weighed swatch when it can, else the stockinette
+/// rule), with every input's source and the working.
+pub fn knit_yardage_traced(req: KnitYardageRequestDto) -> Result<TracedYardageDto, String> {
+    let swatch = req.swatch.map(ply_common::materials::Swatch::from);
+    let yarn = req.yarn.map(ply_common::materials::Material::from);
+    let t = ply_knit::plan::yardage_traced(&ply_knit::plan::YardageRequest {
+        swatch: swatch.as_ref(),
+        gauge: req.gauge.to_origin()?,
+        width: req.width.into(),
+        length: req.length.into(),
+        yarn: yarn.as_ref(),
+        buffer: req.buffer.to_origin()?,
+    })
+    .map_err(|e| e.0)?;
+    Ok(TracedYardageDto {
+        method: match t.value.method {
+            ply_knit::plan::YardageMethod::WeighedSwatch => YardageMethodKind::WeighedSwatch,
+            ply_knit::plan::YardageMethod::StockinetteRule => YardageMethodKind::StockinetteRule,
+        },
+        yards: t.value.yards,
+        meters: t.value.meters,
+        buffered_yards: t.value.buffered_yards,
+        buffered_meters: t.value.buffered_meters,
+        inputs: crate::materials_dto::traced_inputs(&t.inputs),
+        working: t.working,
+        notes: t.notes,
+    })
+}
+
+/// The weaving warp estimate, with every input's source and the working (`ply_weave::plan`).
+pub fn weave_warp_traced(req: WeaveWarpRequestDto) -> Result<TracedWarpDto, String> {
+    let swatch = req.swatch.map(ply_common::materials::Swatch::from);
+    let t = weave::plan::warp_traced(&weave::plan::WarpRequest {
+        swatch: swatch.as_ref(),
+        finished_length: req.finished_length.into(),
+        items: req.items,
+        ends: req.ends.to_origin()?,
+        sett_width: req.sett_width.map(Into::into),
+        loom_waste: req.loom_waste.to_origin()?,
+        allowance: req.allowance.to_origin()?,
+    })
+    .map_err(|e| e.0)?;
+    Ok(TracedWarpDto {
+        ends: t.value.ends,
+        warp_length: t.value.warp_length.into(),
+        total: t.value.total.into(),
+        inputs: crate::materials_dto::traced_inputs(&t.inputs),
+        working: t.working,
+        notes: t.notes,
+    })
+}
+
+/// The weaving weft estimate, counting the strands each pick of `draft` carries (1 without a
+/// draft), with every input's source and the working.
+pub fn weave_weft_traced(
+    req: WeaveWeftRequestDto,
+    draft: Option<DraftDto>,
+) -> Result<TracedWeftDto, String> {
+    let mean_strands = match draft {
+        Some(d) => f64::from(Draft::try_from(d)?.mean_strands()),
+        None => 1.0,
+    };
+    let swatch = req.swatch.map(ply_common::materials::Swatch::from);
+    let t = weave::plan::weft_traced(&weave::plan::WeftRequest {
+        swatch: swatch.as_ref(),
+        ppi: req.ppi.to_origin()?,
+        width: req.width.into(),
+        woven_length: req.woven_length.into(),
+        items: req.items,
+        takeup: req.takeup.to_origin()?,
+        mean_strands,
+    })
+    .map_err(|e| e.0)?;
+    Ok(TracedWeftDto {
+        picks: t.value.picks,
+        total: t.value.total.into(),
+        inputs: crate::materials_dto::traced_inputs(&t.inputs),
+        working: t.working,
+        notes: t.notes,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -43,7 +43,8 @@ pub enum CrossKind {
     Left,
 }
 
-/// Craft Yarn Council weight category, used to seed a default gauge.
+/// Craft Yarn Council weight category, used to seed a default gauge (and a material's weight).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum YarnWeightKind {
     Lace,
     SuperFine,

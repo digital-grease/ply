@@ -13,6 +13,7 @@ import '../models/knit_entry.dart';
 import '../models/native_format.dart';
 import '../rust/api.dart';
 import '../rust/knit_dto.dart';
+import 'sidecar_writes.dart';
 
 /// The one place the knitting app touches the generated bridge symbols for `ply-knit` — the analog of
 /// [DraftRepository] for weaving. Screens and editor state depend on this, never on `api.dart`
@@ -168,7 +169,9 @@ class KnitRepository {
       await _guardExisting(target, json);
       await _atomicWriteString(target, json);
       await _writeThumb(dir, knitId, pattern);
-      await _writeSidecar(dir, knitId, await _mergedSidecar(dir, knitId, meta));
+      // One write at a time to the sidecar (the materials sheet may be writing its links).
+      await SidecarWrites.run(_jsonPath(dir, knitId),
+          () async => _writeSidecar(dir, knitId, await _mergedSidecar(dir, knitId, meta)));
       return knitId;
     } on FileSystemException catch (e) {
       throw Exception('Could not save the pattern: ${e.message}');
@@ -263,9 +266,13 @@ class KnitRepository {
   /// Mark a pattern opened (bumps `lastOpened`, rewrites the sidecar) and return the refreshed entry.
   Future<KnitEntry> openKnit(String id) async {
     final dir = await _knitsDir();
-    final meta = await _readSidecar(dir, id);
-    final bumped = meta.copyWith(lastOpened: DateTime.now());
-    await _writeSidecar(dir, id, bumped);
+    // Under the sidecar lock (ADR 0016), so a link written at the same moment is not lost.
+    final bumped = await SidecarWrites.run(_jsonPath(dir, id), () async {
+      final meta = await _readSidecar(dir, id);
+      final bumped = meta.copyWith(lastOpened: DateTime.now());
+      await _writeSidecar(dir, id, bumped);
+      return bumped;
+    });
     final pngFile = File(_pngPath(dir, id));
     return KnitEntry(
       id: id,
@@ -278,8 +285,10 @@ class KnitRepository {
   /// Rename a pattern (display name only; the uuid filename never changes).
   Future<void> renameKnit(String id, String newName) async {
     final dir = await _knitsDir();
-    final meta = await _readSidecar(dir, id);
-    await _writeSidecar(dir, id, meta.copyWith(name: newName));
+    await SidecarWrites.run(_jsonPath(dir, id), () async {
+      final meta = await _readSidecar(dir, id);
+      await _writeSidecar(dir, id, meta.copyWith(name: newName));
+    });
   }
 
   /// Delete a pattern's whole triplet (sidecar FIRST so [listKnits] drops it atomically), plus any
@@ -301,16 +310,27 @@ class KnitRepository {
         }
       }
     } catch (_) {/* can't list: still remove the known files below */}
-    for (final path in [...files, for (final f in files) '$f.tmp', ...backups]) {
-      final f = File(path);
-      if (await f.exists()) {
-        try {
-          await f.delete();
-        } catch (_) {
-          // Tolerate races / permission quirks; a leftover file is harmless.
+    Future<void> remove(Iterable<String> paths) async {
+      for (final path in paths) {
+        final f = File(path);
+        if (await f.exists()) {
+          try {
+            await f.delete();
+          } catch (_) {
+            // Tolerate races / permission quirks; a leftover file is harmless.
+          }
         }
       }
     }
+
+    // The sidecar first, under the sidecar lock (ADR 0016), so a link being written cannot bring
+    // it back; with it the temp file a links write may have left.
+    final json = files.first;
+    await SidecarWrites.run(json, () => remove([json, '$json.tmp', '$json.links.tmp']));
+    await remove([
+      for (final f in files.skip(1)) ...[f, '$f.tmp'],
+      ...backups
+    ]);
   }
 
   /// Whether this repository instance (one per app run) has already swept orphaned backups.

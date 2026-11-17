@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/materials_repository.dart' show PlanException;
 import '../models/draft_doc.dart' show MeasureUnit;
 import '../models/knit_calculators.dart';
+import '../models/material_record.dart';
+import '../state/material_providers.dart';
 import '../state/theme_providers.dart';
+import '../widgets/record_report_panel.dart' show EstimateTrace;
+import '../widgets/swatch_choice.dart';
 
 /// The Calculators tab: standalone knitting maths usable WITHOUT an open pattern. A shared gauge feeds
 /// the cast-on, yardage, and resize calculators; everything computes live. The maths live in
@@ -38,6 +43,20 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
   final _ddChange = TextEditingController(text: '6');
   bool _ddIncrease = true;
 
+  // A recorded swatch the gauge comes from (ADR 0016), by id: the record is looked up in the library
+  // each time, so an edited swatch is used as it is now and a deleted one clears the choice (this tab
+  // stays mounted under the Materials screen). While the gauge field still shows what the swatch
+  // filled in, the cast-on and the yarn estimate are worked out by the engine from the swatch itself
+  // and list where every input came from.
+  String? _swatchId;
+  SwatchRecord? _swatchSeen;
+  String? _filledSts;
+  TracedEstimate<int>? _castOnTrace;
+  TracedEstimate<YarnAmount>? _yarnTrace;
+  String? _castOnError;
+  String? _yarnError;
+  int _traceSeq = 0;
+
   @override
   void dispose() {
     for (final c in [
@@ -47,6 +66,118 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// The unit preference read outside build (callbacks and the async re-trace).
+  bool get _metricNow => ref.read(appSettingsProvider).unit == MeasureUnit.centimeters;
+
+  Length get _windowLength =>
+      _metricNow ? const Length(10, LengthUnit.centimeter) : const Length(4, LengthUnit.inch);
+
+  /// The chosen swatch as the library holds it now, or null.
+  SwatchRecord? _currentSwatch() {
+    final id = _swatchId;
+    return id == null ? null : ref.read(materialLibraryProvider).valueOrNull?.swatch(id);
+  }
+
+  /// Fill the gauge field from [s] at the window of the app's units.
+  void _fillFrom(SwatchRecord? s) {
+    _filledSts = null;
+    final across = s?.planningAcross;
+    if (across != null) {
+      _gaugeSts.text = filledNumber(across.$1.value.per(_windowLength));
+      _filledSts = _gaugeSts.text;
+    }
+  }
+
+  void _useSwatch(SwatchRecord? s) {
+    setState(() {
+      _swatchId = s?.id;
+      _swatchSeen = s;
+      _castOnTrace = _yarnTrace = null;
+      _castOnError = _yarnError = null;
+      _fillFrom(s);
+    });
+    _retrace();
+  }
+
+  /// The library changed: a deleted swatch clears the choice; an edited one fills the gauge again.
+  void _onLibrary(MaterialLibraryState? lib) {
+    final id = _swatchId;
+    if (id == null || lib == null || !mounted) return;
+    final s = lib.swatch(id);
+    if (s == null) {
+      _useSwatch(null);
+    } else if (s != _swatchSeen) {
+      _useSwatch(s);
+    }
+  }
+
+  /// The units changed: a gauge the swatch filled in is filled in again for the new window.
+  void _onUnits() {
+    if (!mounted) return;
+    final s = _currentSwatch();
+    if (s != null && _filledSts != null && _gaugeSts.text == _filledSts) {
+      setState(() => _fillFrom(s));
+    }
+    _retrace();
+  }
+
+  /// Set the gauge field from code (the WPI seed), and work the estimates out again.
+  void _setGauge(String text) {
+    setState(() => _gaugeSts.text = text);
+    _retrace();
+  }
+
+  /// Work the cast-on and the yarn estimate out again with the engine, latest wins, while a swatch
+  /// is in use. Each has its own error, so one that cannot be worked out never hides the other.
+  Future<void> _retrace() async {
+    final swatch = _currentSwatch();
+    final seq = ++_traceSeq;
+    if (swatch == null) return;
+    final unit = _metricNow ? LengthUnit.centimeter : LengthUnit.inch;
+    final gauge = _filledSts != null && _gaugeSts.text == _filledSts
+        ? const PlanInput<CountOver>.swatch()
+        : PlanInput(InputOrigin.entered, CountOver(_d(_gaugeSts), _windowLength));
+    final repo = ref.read(materialsRepositoryProvider);
+    TracedEstimate<int>? castOn;
+    String? castOnError;
+    try {
+      castOn = await repo.castOnTraced(
+        swatch: swatch,
+        gauge: gauge,
+        width: Length(_d(_coWidth), unit),
+        ease: Length(_d(_coEase), unit),
+        repeat: _i(_coRepeat, 1),
+      );
+    } on PlanException catch (e) {
+      castOnError = e.message;
+    } catch (_) {
+      castOnError = 'The cast-on could not be worked out.';
+    }
+    TracedEstimate<YarnAmount>? yarn;
+    String? yarnError;
+    try {
+      yarn = await repo.yardageTraced(
+        swatch: swatch,
+        yarn: singleYarnOf(ref, swatch),
+        gauge: gauge,
+        width: Length(_d(_yWidth), unit),
+        length: Length(_d(_yLength), unit),
+        buffer: const PlanInput(InputOrigin.plyDefault, 0.1),
+      );
+    } on PlanException catch (e) {
+      yarnError = e.message;
+    } catch (_) {
+      yarnError = 'The yarn estimate could not be worked out.';
+    }
+    if (!mounted || seq != _traceSeq || _swatchId != swatch.id) return;
+    setState(() {
+      _castOnTrace = castOn;
+      _castOnError = castOnError;
+      _yarnTrace = yarn;
+      _yarnError = yarnError;
+    });
   }
 
   double _d(TextEditingController c) => double.tryParse(c.text.trim()) ?? 0;
@@ -80,6 +211,12 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
       yourGauge: gaugeSts,
     );
     final spread = distributeEvenly(total: _i(_ddCurrent), count: _i(_ddChange));
+    final swatches = swatchesForCraft(ref, SwatchCraft.knitting);
+    // The swatch may be edited or deleted elsewhere while this tab stays mounted, and the units may
+    // change: follow both.
+    ref.listen(materialLibraryProvider, (_, next) => _onLibrary(next.valueOrNull));
+    ref.listen(appSettingsProvider.select((a) => a.unit), (_, __) => _onUnits());
+    final swatch = _swatchId == null ? null : swatches.where((x) => x.id == _swatchId).firstOrNull;
 
     return Scaffold(
       body: ListView(
@@ -115,6 +252,11 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
                   Expanded(child: _wpiSeed()),
                 ],
               ),
+              // A recorded knitting swatch, when there is one: fills the gauge from what it measured.
+              if (swatches.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                SwatchChooser(swatches: swatches, selected: swatch, onChanged: _useSwatch),
+              ],
             ],
           ),
 
@@ -130,7 +272,12 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
                   Expanded(child: _num(_coRepeat, 'St repeat')),
                 ],
               ),
-              _result('Cast on $castOn stitches'),
+              if (_swatchId != null && _castOnError != null)
+                _error('cast-on-error', _castOnError!)
+              else
+                _result('Cast on ${_castOnTrace?.value ?? castOn} stitches'),
+              if (_castOnTrace != null && _castOnError == null)
+                EstimateTrace(estimate: _castOnTrace!),
             ],
           ),
 
@@ -182,8 +329,14 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
                   Expanded(child: _num(_yLength, 'Length ($_unit)')),
                 ],
               ),
-              _result('~${yards.round()} yards'),
-              _note('Rough stockinette estimate (+10% buffer); swatch-and-weigh for accuracy.'),
+              if (_swatchId != null && _yarnError != null)
+                _error('yarn-error', _yarnError!)
+              else
+                _result('~${(_yarnTrace?.value.bufferedYards ?? yards).round()} yards'),
+              if (_yarnTrace != null && _yarnError == null)
+                EstimateTrace(estimate: _yarnTrace!)
+              else if (_swatchId == null)
+                _note('Rough stockinette estimate (+10% buffer); swatch-and-weigh for accuracy.'),
             ],
           ),
         ],
@@ -220,7 +373,10 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
         controller: c,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) {
+          setState(() {});
+          _retrace();
+        },
         decoration: InputDecoration(labelText: label, isDense: true),
       );
 
@@ -239,11 +395,17 @@ class _CalculatorsScreenState extends ConsumerState<CalculatorsScreen> {
     }
     final sts = weight.stitchesPerWindow.round();
     return OutlinedButton(
-      onPressed: () => setState(() => _gaugeSts.text = '$sts'),
+      onPressed: () => _setGauge('$sts'),
       child: Text('Use $sts sts (${weight.name})',
           maxLines: 1, overflow: TextOverflow.ellipsis),
     );
   }
+
+  Widget _error(String key, String text) => Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Text(text,
+            key: ValueKey(key), style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      );
 
   Widget _result(String text) => Padding(
         padding: const EdgeInsets.only(top: 12),

@@ -2,8 +2,17 @@
 //!
 //! This crate is **pure**: no Flutter, no FFI, no I/O beyond serde. Keep it that way
 //! so it can be reused by the app, a CLI, batch tooling, or a server-side generator.
+//!
+//! Besides the small shared types below it holds what every craft shares (roadmap M8-01, ADR 0016):
+//! unit-aware quantities ([`quantity`]), where a number came from ([`provenance`]), the materials and
+//! swatch records ([`materials`]) and their file, `materials.json` ([`materials_file`]).
 
 use serde::{Deserialize, Serialize};
+
+pub mod materials;
+pub mod materials_file;
+pub mod provenance;
+pub mod quantity;
 
 /// The three fiber crafts Ply targets. Present from day one so the multi-engine
 /// seam is visible even while only weaving is implemented.

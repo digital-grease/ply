@@ -77,6 +77,9 @@ class FakeLoomRepository extends LoomRepository {
   Sett? fileSettValue;
   Object? saveError;
   int saves = 0;
+
+  /// When set, every save waits for it (to run changes at the same time).
+  Future<void>? saveGate;
   int checks = 0;
   LoomProfile? lastChecked;
   Sett? lastSett;
@@ -86,6 +89,7 @@ class FakeLoomRepository extends LoomRepository {
 
   @override
   Future<void> saveAll(List<LoomProfile> next) async {
+    if (saveGate != null) await saveGate;
     if (saveError != null) throw saveError!;
     saves++;
     looms = [...next];

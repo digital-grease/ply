@@ -6,6 +6,7 @@ import '../models/app_settings.dart';
 import '../models/draft_doc.dart' show MeasureUnit;
 import '../state/backup_providers.dart';
 import '../state/loom_providers.dart';
+import '../state/material_providers.dart';
 import '../state/nalbind_providers.dart';
 import '../theme/spacing.dart';
 
@@ -13,7 +14,8 @@ import '../theme/spacing.dart';
 /// into new projects, projects that differ from the library (restored as copies unless unticked),
 /// projects already in the library (skipped) and projects this build cannot restore (with the
 /// reason), then the backup's looms (new ones added, different ones offered as copies, ticked by
-/// default; ADR 0014), then the backup's app settings when it has them: their own item, unticked by
+/// default; ADR 0014), then its materials and swatches (the same way; ADR 0016), then the backup's
+/// app settings when it has them: their own item, unticked by
 /// default, applied only when ticked (or refused with the reason). Nothing is written until
 /// "Restore" is tapped. Pops with the [RestoreResult] after a successful restore.
 class RestorePreviewScreen extends ConsumerStatefulWidget {
@@ -32,6 +34,9 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
   /// Keys of the loom conflicts the user unticked.
   final Set<String> _skippedLooms = {};
 
+  /// Keys of the material and swatch conflicts the user unticked.
+  final Set<String> _skippedRecords = {};
+
   /// Whether to apply the backup's app settings (never by default: they replace the user's own).
   bool _restoreSettings = false;
   bool _busy = false;
@@ -46,17 +51,29 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
 
   int get _loomsToRestore => _plan.looms?.selected(_skippedLooms).length ?? 0;
 
+  ({int materials, int swatches}) get _recordsToRestore {
+    final m = _plan.materials;
+    if (m == null || m.limitProblem(_skippedRecords) != null) return (materials: 0, swatches: 0);
+    final sel = m.selected(_skippedRecords);
+    return (materials: sel.materials.length, swatches: sel.swatches.length);
+  }
+
   Future<void> _restore() async {
     setState(() => _busy = true);
     try {
       final result = await ref.read(libraryBackupProvider).restore(_plan,
           skippedConflicts: {..._skipped},
           restoreSettings: _restoreSettings,
-          skippedLoomConflicts: {..._skippedLooms});
+          skippedLoomConflicts: {..._skippedLooms},
+          skippedMaterialConflicts: {..._skippedRecords});
       // Every library tab reloads its list, and My looms its looms.
       ref.read(libraryRevisionProvider.notifier).state++;
       ref.invalidate(nalbindProjectsProvider);
       if (result.loomsRestored > 0) ref.invalidate(loomLibraryProvider);
+      if (result.materialsRestored > 0 || result.swatchesRestored > 0) {
+        ref.invalidate(materialLibraryProvider);
+      }
+      ref.invalidate(linkUsageProvider);
       if (mounted) Navigator.of(context).pop(result);
     } catch (e) {
       if (!mounted) return;
@@ -81,6 +98,7 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
   Widget build(BuildContext context) {
     final count = _toRestore;
     final looms = _loomsToRestore;
+    final records = _recordsToRestore;
     final settings = _restoreSettings && _plan.settings?.settings != null;
     final theme = Theme.of(context);
     final muted = theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant);
@@ -108,6 +126,7 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
               ),
             for (final craft in BackupCraft.values) ..._craftSection(craft, muted),
             ..._loomsSection(muted),
+            ..._materialsSection(muted),
             ..._settingsSection(),
           ],
         ),
@@ -115,7 +134,14 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
           child: Padding(
             padding: const EdgeInsets.all(PlySpacing.md),
             child: FilledButton(
-              onPressed: ((count > 0 || looms > 0 || settings) && !_busy) ? _restore : null,
+              onPressed: ((count > 0 ||
+                          looms > 0 ||
+                          records.materials > 0 ||
+                          records.swatches > 0 ||
+                          settings) &&
+                      !_busy)
+                  ? _restore
+                  : null,
               child: _busy
                   ? const Row(
                       mainAxisSize: MainAxisSize.min,
@@ -126,7 +152,11 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
                         Text('Restoring...'),
                       ],
                     )
-                  : Text(_restoreLabel(count, settings: settings, looms: looms)),
+                  : Text(_restoreLabel(count,
+                      settings: settings,
+                      looms: looms,
+                      materials: records.materials,
+                      swatches: records.swatches)),
             ),
           ),
         ),
@@ -228,9 +258,7 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
                 : (on) => setState(
                     () => on == true ? _skippedLooms.remove(i.key) : _skippedLooms.add(i.key)),
             title: Text(i.loom.displayName),
-            subtitle: Text('Add as "${i.target!.displayName}"'
-                '${i.drafts == 0 ? '' : '. ${i.drafts == 1 ? 'The draft' : '${i.drafts} drafts'} '
-                    'from this backup planned for it will use the copy.'}'),
+            subtitle: Text(_loomSubtitle(i)),
           ),
       ],
       if (present.isNotEmpty) ...[
@@ -239,6 +267,109 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
           ListTile(dense: true, title: Text(i.loom.displayName), subtitle: const Text('Skipped')),
       ],
     ];
+  }
+
+  /// The backup's materials and swatches, after the looms: new ones (added), different ones (added
+  /// as copies when ticked, the default), ones already in the library (skipped), or the reason they
+  /// cannot be restored. Nothing when the backup has none.
+  List<Widget> _materialsSection(TextStyle? muted) {
+    final m = _plan.materials;
+    if (m == null) return const [];
+    final theme = Theme.of(context);
+    String photos(RestoreRecord r) => r.photoCount == 0 ? '' : ', ${plural(r.photoCount, 'photo')}';
+    String uses(RestoreRecord r) => r.projects == 0
+        ? ''
+        : '. ${r.projects == 1 ? 'The project' : '${r.projects} projects'} from this backup that '
+            'use${r.projects == 1 ? 's' : ''} it will use the copy.';
+    // Unticked: the restored projects (and swatches) keep naming the record by its id, which here is
+    // a different record of yours, or none.
+    String yours(RestoreRecord r) =>
+        r.localName == null ? 'it as not in your materials' : 'your own "${r.localName}"';
+    String unticked(RestoreRecord r) {
+      final projects = r.projects == 1 ? 'The project' : '${r.projects} projects';
+      final swatches = r.swatchesNaming == 1 ? 'The swatch' : '${r.swatchesNaming} swatches';
+      final none = r.localName == null;
+      return 'Not added.'
+          '${r.projects == 0 ? '' : ' $projects from this backup that use'
+              '${r.projects == 1 ? 's' : ''} it will ${none ? 'show' : 'use'} ${yours(r)}.'}'
+          '${r.swatchesNaming == 0 ? '' : ' $swatches from this backup that name'
+              '${r.swatchesNaming == 1 ? 's' : ''} it will ${none ? 'show' : 'name'} ${yours(r)}.'}';
+    }
+    List<Widget> group(bool swatches) {
+      final added = m.withStatus(RestoreStatus.add, swatches: swatches);
+      final conflicts = m.withStatus(RestoreStatus.conflict, swatches: swatches);
+      final present = m.withStatus(RestoreStatus.alreadyPresent, swatches: swatches);
+      final noun = swatches ? 'swatches' : 'materials';
+      String count(int n) =>
+          swatches ? plural(n, 'swatch', 'swatches') : plural(n, 'material');
+      return [
+        if (added.isNotEmpty) ...[
+          _groupHeader('New $noun (${added.length})'),
+          for (final i in added)
+            ListTile(dense: true, title: Text(i.name), subtitle: Text('${i.summary}${photos(i)}')),
+        ],
+        if (conflicts.isNotEmpty) ...[
+          _groupHeader('Different from yours (${count(conflicts.length)})'),
+          for (final i in conflicts)
+            CheckboxListTile(
+              dense: true,
+              value: !_skippedRecords.contains(i.key),
+              onChanged: _busy
+                  ? null
+                  : (on) => setState(() =>
+                      on == true ? _skippedRecords.remove(i.key) : _skippedRecords.add(i.key)),
+              title: Text(i.name),
+              subtitle: Text(_skippedRecords.contains(i.key)
+                  ? unticked(i)
+                  : 'Add as "${i.copyName}"${photos(i)}${uses(i)}'),
+            ),
+        ],
+        if (present.isNotEmpty) ...[
+          _groupHeader('Already in your materials (${count(present.length)})'),
+          for (final i in present)
+            ListTile(dense: true, title: Text(i.name), subtitle: const Text('Skipped')),
+        ],
+      ];
+    }
+
+    return [
+      const Divider(height: PlySpacing.lg),
+      _sectionHeader('Materials and swatches'),
+      if (m.refusal != null)
+        ListTile(
+          dense: true,
+          leading: Icon(Icons.error_outline, color: theme.colorScheme.error),
+          title: Text(m.refusal!),
+        ),
+      if (m.limitProblem(_skippedRecords) != null)
+        ListTile(
+          dense: true,
+          leading: Icon(Icons.error_outline, color: theme.colorScheme.error),
+          title: Text(m.limitProblem(_skippedRecords)!),
+        ),
+      if (m.items.any((i) => i.status == RestoreStatus.conflict))
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: PlySpacing.md),
+          child: Text('Ticked records are added as copies. Yours are not changed.', style: muted),
+        ),
+      ...group(false),
+      ...group(true),
+    ];
+  }
+
+  /// What happens to a different loom: added as a copy the backup's drafts use, or (unticked) not
+  /// added, and then the drafts keep naming the loom by its id, which is a different loom of yours.
+  String _loomSubtitle(RestoreLoom i) {
+    final drafts = i.drafts == 1 ? 'The draft' : '${i.drafts} drafts';
+    if (_skippedLooms.contains(i.key)) {
+      final which =
+          i.localName == null ? 'a loom not in My looms' : 'your own "${i.localName}"';
+      return 'Not added.'
+          '${i.drafts == 0 ? '' : ' $drafts from this backup planned for it will be planned for '
+              '$which.'}';
+    }
+    return 'Add as "${i.target!.displayName}"'
+        '${i.drafts == 0 ? '' : '. $drafts from this backup planned for it will use the copy.'}';
   }
 
   /// The backup's app settings, after the projects: a tickable item (off by default) describing
@@ -281,10 +412,13 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
     );
   }
 
-  static String _restoreLabel(int count, {required bool settings, int looms = 0}) {
+  static String _restoreLabel(int count,
+      {required bool settings, int looms = 0, int materials = 0, int swatches = 0}) {
     final parts = [
       if (count > 0) plural(count, 'project'),
       if (looms > 0) plural(looms, 'loom'),
+      if (materials > 0) plural(materials, 'material'),
+      if (swatches > 0) plural(swatches, 'swatch', 'swatches'),
       if (settings) 'app settings',
     ];
     return parts.isEmpty ? 'Nothing to restore' : 'Restore ${_andList(parts)}';
@@ -303,8 +437,9 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
   }
 }
 
-/// "1 project", "3 projects".
-String plural(int n, String noun) => '$n $noun${n == 1 ? '' : 's'}';
+/// "1 project", "3 projects" ("1 swatch", "2 swatches" with [many]).
+String plural(int n, String noun, [String? many]) =>
+    n == 1 ? '$n $noun' : '$n ${many ?? '${noun}s'}';
 
 /// The sentence after a restore ("Restored 2 projects and app settings.", "Restored 2 projects, 1
 /// loom and app settings."), or null when it wrote nothing.
@@ -312,13 +447,19 @@ String? restoredMessage(RestoreResult result) {
   final parts = [
     if (result.count > 0) plural(result.count, 'project'),
     if (result.loomsRestored > 0) plural(result.loomsRestored, 'loom'),
+    if (result.materialsRestored > 0) plural(result.materialsRestored, 'material'),
+    if (result.swatchesRestored > 0) plural(result.swatchesRestored, 'swatch', 'swatches'),
     if (result.settingsRestored) 'app settings',
   ];
   if (parts.isEmpty) return null;
   final relinked = result.draftsRelinked;
+  final materialLinks = result.projectsRelinkedToMaterials;
   return 'Restored ${_andList(parts)}.'
       '${relinked == 0 ? '' : ' ${plural(relinked, 'draft')} now use${relinked == 1 ? 's' : ''} the '
-          'restored copy of ${relinked == 1 ? 'its' : 'their'} loom.'}';
+          'restored copy of ${relinked == 1 ? 'its' : 'their'} loom.'}'
+      '${materialLinks == 0 ? '' : ' ${plural(materialLinks, 'project')} now link'
+          '${materialLinks == 1 ? 's' : ''} the restored copies of '
+          '${materialLinks == 1 ? 'its' : 'their'} materials or swatches.'}';
 }
 
 /// "a", "a and b", "a, b and c".

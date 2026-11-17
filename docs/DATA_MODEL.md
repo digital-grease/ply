@@ -113,6 +113,61 @@ the reed (ends over the sett, from the weaver or from `[WARP] Spacing`) against 
 with a double-width cloth checked at its folded width; and a reed and sleying for the sett. A check
 whose input is unknown reports that it was not checked.
 
+## Materials and swatches (every craft: `ply-common`)
+
+A crafter's **materials** (yarns or threads) and **swatches** (measured samples) are reusable
+references shared by every craft, not part of any pattern and never in WIF, `.plyknit` or `.plynal`.
+No pattern needs one to open.
+
+**Quantities** (`quantity.rs`) keep the numbers and unit the crafter gave: `Length` (mm, cm, m, in,
+yd), `Mass` (g, kg, oz, lb), `LengthPerMass` ("200 m per 100 g") and `CountOver` (a count over a
+span: a gauge, a sett, picks, wraps, "20 over 10 cm"). Conversions use exact factors (1 in =
+2.54 cm, 1 yd = 0.9144 m, 1 lb = 453.59237 g, 1 oz = 1/16 lb), and a value that is not a finite
+number above zero is reported with a stable code (`quantity.not_finite`, `quantity.not_positive`,
+`quantity.too_large`).
+
+**Provenance** (`provenance.rs`): every stored number is `Recorded { value, source }`, where the
+source is `Measured` or `Entered` (from a label, a pattern or a setup). `Default` (one of Ply's rules
+of thumb) appears only in estimates; a record that holds one is refused.
+
+**Records** (`materials.rs`). A `Material`: name, maker, fiber blend (fibers with optional shares),
+Craft Yarn Council weight category, structure, length per mass, wraps per inch, color, dye lot,
+mass and length on hand, notes. A `Swatch`: craft, technique, date, yarns (a material by id with its
+name, or a name alone, and a role), tools, for weaving the sett and the width in the reed, and three
+measurement stages (`on_loom` for weaving, `before` finishing, `after` finishing), each with the
+swatch's width and length, counts across (stitches or ends) and along (rows or picks) and how it was
+measured; the finishing, the swatch's mass, tension notes and provenance. Every field may be missing,
+and unknown is never zero. Swatch photos are kept by the app beside the record
+(`<documents>/swatches/<id>.photos/`), never in it; as any photo is added, the location, camera and
+time details of a JPEG or PNG are removed (a JPEG keeps its orientation), and a WebP or HEIC is kept
+as it is.
+
+**Derived figures** (`Material::figures`, `Swatch::figures`) are worked out from the measurements
+each time they are shown and are never stored: yards and metres per 100 g, yards per pound, wraps per
+inch and per cm, the length (or mass) on hand; counts per 10 cm and 4 in (or per inch and cm for
+weaving); the change in width and length through finishing; for weaving draw-in, take-up, shrinkage
+and the total losses (each over the earlier measurement), and the length and width allowances
+(earlier over finished, minus one, so the finished size times one plus the allowance is the size to
+weave); grams per 100 sq cm. **Diagnostics** have stable codes: values that cannot be true
+(`swatch.date_invalid`, `material.fiber_percents_over_100`, `record.default_source`, ...) stop a
+record being saved; unusual ones (`swatch.grew_implausibly`, `swatch.wider_than_reed`, ...) are
+warnings.
+
+**Storage**: Ply's own `materials.json` (`materials_file.rs`: `format` `ply.materials`,
+`schema_version` 1, a newer file refused before its records are read, unknown fields refused,
+unknown values written as `null`, at most 500 of each record and 2 MB). A project links records in
+its sidecar under `materials` (`yarns`: material id, its name, a role; `swatches`: swatch id and its
+name); the name is kept so a link whose record is gone still says what it was.
+
+**Estimates that show their working** (`ply_knit::plan`, `ply_weave::plan`): the existing
+cast-on, yarn, warp and weft calculators, fed from a swatch, typed numbers, the draft or Ply's
+defaults, return every input with its source and a sentence ("20 sts per 10 cm, measured after
+finishing, swatch Grey wool 2026-11-10"; "10%, Ply's default"), the working, and caveats. From a
+swatch they take the gauge after finishing (before finishing only with a caveat), the sett in the
+reed, the length allowance, and the picks counted on the loom; the knitting yarn estimate uses the
+weighed swatch (its mass per area and its one yarn's length per mass) when it can. With typed inputs
+they give exactly the calculators' numbers.
+
 ## Knitting (sketch — not built, M5)
 
 Knitting has **no universal interchange standard** (KnitML stalled; Knitout is

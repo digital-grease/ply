@@ -65,6 +65,17 @@ class LoomLibraryNotifier extends AsyncNotifier<LoomLibraryState> {
 
   Future<LoomLibraryState> _current() async => state.valueOrNull ?? await future;
 
+  /// The last change queued. Changes run one at a time, each on the looms the one before it left, so
+  /// a delete and a duplicate made together can never bring back a deleted loom (ADR 0014, as for
+  /// the materials library in ADR 0016).
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() change) {
+    final run = _tail.then((_) => change());
+    _tail = run.then((_) {}, onError: (Object _) {});
+    return run;
+  }
+
   Future<void> _save(List<LoomProfile> looms) async {
     final current = await _current();
     if (current.readOnly) {
@@ -81,37 +92,37 @@ class LoomLibraryNotifier extends AsyncNotifier<LoomLibraryState> {
   }
 
   /// Add [loom], or replace the loom with its id.
-  Future<void> upsert(LoomProfile loom) async {
-    final looms = [...(await _current()).looms];
-    final i = looms.indexWhere((l) => l.id == loom.id);
-    if (i >= 0) {
-      looms[i] = loom;
-    } else {
-      looms.add(loom);
-    }
-    await _save(looms);
-  }
+  Future<void> upsert(LoomProfile loom) => _serialized(() async {
+        final looms = [...(await _current()).looms];
+        final i = looms.indexWhere((l) => l.id == loom.id);
+        if (i >= 0) {
+          looms[i] = loom;
+        } else {
+          looms.add(loom);
+        }
+        await _save(looms);
+      });
 
   /// A copy of the loom [id] under a new id, named "<name> (copy)", placed after it.
-  Future<LoomProfile?> duplicate(String id) async {
-    final looms = [...(await _current()).looms];
-    final i = looms.indexWhere((l) => l.id == id);
-    if (i < 0) return null;
-    final base = looms[i].name.trim().isEmpty ? 'Unnamed loom' : looms[i].name.trim();
-    const suffix = ' (copy)';
-    final copy = looms[i].copyWith(
-      id: newId(),
-      name: '${clipToRunes(base, LoomLimits.maxNameChars - suffix.length)}$suffix',
-    );
-    looms.insert(i + 1, copy);
-    await _save(looms);
-    return copy;
-  }
+  Future<LoomProfile?> duplicate(String id) => _serialized(() async {
+        final looms = [...(await _current()).looms];
+        final i = looms.indexWhere((l) => l.id == id);
+        if (i < 0) return null;
+        final base = looms[i].name.trim().isEmpty ? 'Unnamed loom' : looms[i].name.trim();
+        const suffix = ' (copy)';
+        final copy = looms[i].copyWith(
+          id: newId(),
+          name: '${clipToRunes(base, LoomLimits.maxNameChars - suffix.length)}$suffix',
+        );
+        looms.insert(i + 1, copy);
+        await _save(looms);
+        return copy;
+      });
 
-  Future<void> delete(String id) async {
-    final looms = [...(await _current()).looms]..removeWhere((l) => l.id == id);
-    await _save(looms);
-  }
+  Future<void> delete(String id) => _serialized(() async {
+        final looms = [...(await _current()).looms]..removeWhere((l) => l.id == id);
+        await _save(looms);
+      });
 }
 
 final loomLibraryProvider =

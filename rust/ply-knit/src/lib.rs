@@ -14,6 +14,7 @@ pub mod flow;
 pub mod instruction;
 pub mod native;
 pub mod pattern;
+pub mod plan;
 pub mod render;
 pub mod sections;
 pub mod validate;

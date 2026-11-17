@@ -119,3 +119,45 @@ dumped from the code under test) and a record. Every fixture is three files with
 |---|---|---|
 | `knitting/repeats/` | Authored horizontal repeats: a simple fixed repeat (`seed-stitch-round`), edge stitches and RS/WS mirroring (`rib-edges-flat`), to-end repeats with an exact remainder (`rib-to-end-flat`), an invalid remainder (`rib-to-end-remainder-flat`), an unknown first-row count (`rib-cast-on-unknown-flat`) and the same chart counted from a stated cast-on (`rib-cast-on-flat`), lace balance and count growth (`eyelet-lace-round`), a cable inside and across a repeat edge (`cable-repeat-round`), and every refused repeat shape (`rejected-spans-round`). | `rust/ply-knit/tests/repeat_fixtures.rs`; `app/test/native_format_test.dart` |
 | `knitting/sections/` | The construction layer (sections and the stitch ledger). On flat pieces: a shoulder sloped with wrap-and-turn short rows and then held (`shoulder-short-rows-flat`), a front neckline worked on held stitches with both sides and the neck edge returned to the needle and bound off (`neckline-hold-flat`), and a list of impossible or unfinished steps the ledger must name in plain words (`ledger-problems-flat`). In the round: a top-down sock with a heel flap, heel turn, gusset and grafted toe (`sock-heel-flap-round`), a sock with a German short-row heel (`sock-short-row-heel-round`), and every refusal of the steps for work in the round (`round-problems`). Each oracle gives the written instructions, every ledger line with its count (on the needle, still to work, waiting past a turn, wraps pending, each group on hold, bound off, side, and for work in the round: in the round, each needle group, worked flat, grafted) and the validation issues. | `rust/ply-knit/tests/section_fixtures.rs`; `app/test/knit_sections_fixture_test.dart`, `app/test/knit_sections_state_test.dart`, `app/test/knit_sections_screen_test.dart`, `app/test/knit_sock_sections_test.dart` |
+
+## `materials/`
+
+Materials and swatch records (shared by every craft), with an oracle worked out by hand from the
+formulas and a record.
+
+- `materials.json`: three invented materials and four invented swatches, as the engine's
+  `materials.json` writer stores them. The tests require that re-saving it gives the same bytes.
+- `materials.expect.json`: the oracle. Every figure Ply works out from each record (code, value,
+  text) and every diagnostic (code, severity, field, and the message where it matters); the
+  diagnostics of `diagnostics.json`; and five planning estimates worked out from the swatches (a
+  knitting cast-on from a swatch and from a default, a weighed-swatch yarn estimate, a warp and a
+  weft from a woven sample), each with every input's source and the sentence that cites it.
+- `diagnostics.json`: records that cannot be true, which the engine names and refuses to store.
+- `materials.fixture.toml`: the record. Sources, license, how the oracle was made, and the
+  verification status, with a practitioner check per craft (`pending`).
+
+| Folder | Contents | Tests |
+|---|---|---|
+| `materials/` | A DK wool, an 8/2 cotton and a material with only a name; a knitting swatch before and after washing (weighed), a woven towel sample on the loom, off it and after wet finishing, a nalbinding sample before and after fulling, and a lace swatch that grew by 60% when blocked (a warning). | `rust/ply-common/tests/materials_fixtures.rs`, `rust/ply-knit/tests/materials_estimates.rs`, `rust/ply-weave/tests/materials_estimates.rs`; `app/test/materials_fixture_test.dart` |
+
+## `nalbinding/`
+
+Craft acceptance fixtures for nalbinding: original projects with a structured recipe, each with an
+oracle derived by hand (not dumped from the code under test) and a record. Every fixture is three
+files with the same name:
+
+- `<name>.plynal`: the project, written by the app's own `.plynal` writer (schema version 3). The
+  tests require that re-saving it gives the same bytes, and the engine reads the same file.
+- `<name>.expect.json`: the oracle. The project's stitch, the fit as written, and for every step
+  (step 1 first) its kind, phase, part, stitch (where it comes from, the notation as written, how it
+  is read, whether it was accepted), the stitch count after it from the recipe's own numbers (a
+  number, `unknown`, `refused` or `not-applicable`), its written instruction, its target and whether
+  Ply checked it; then every issue in order with its code, severity, place and exact text; and the
+  steps ticked done.
+- `<name>.fixture.toml`: the record. Title, technique, license, provenance, the conventions the
+  recipe follows (cited, never copied), and the verification status: `automated_checks` and
+  `practitioner_nalbind_check` (`pending` until a nalbinder has worked or checked it).
+
+| Folder | Contents | Tests |
+|---|---|---|
+| `nalbinding/recipes/` | A mitten worked from the cuff with a thumb opening and a thumb picked up around it (`mitten-cuff-up`, two parts, no problems), a hat from a centre start at the crown (`hat-centre-start`, one count Ply cannot follow, two steps ticked done), every check a saved recipe can give (`recipe-problems`) and a recipe with no steps yet (`recipe-empty`). | `rust/ply-nalbind/tests/recipe_fixtures.rs`; `app/test/nalbind_recipe_model_test.dart`, `app/test/nalbind_recipe_fixture_test.dart`, `app/test/nalbind_recipe_backup_test.dart` |

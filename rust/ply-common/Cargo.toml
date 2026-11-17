@@ -6,3 +6,11 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true }
+# `materials.json` (ADR 0016) is JSON, read and written by the engine. `float_roundtrip` makes the
+# parser exact, so a measurement reads back as the very number that was written (the default parser
+# can be one unit in the last place off).
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+
+[dev-dependencies]
+# Property tests of the quantities, the records and the materials file.
+proptest = "1"

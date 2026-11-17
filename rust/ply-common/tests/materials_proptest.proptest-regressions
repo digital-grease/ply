@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ff39b3960fbc56b53a2da83ce6ea30fd079ef6b258be0abda53100c8e16a2d5e # shrinks to swatches = [], materials = [Material { id: "a", name: "", maker: "", fibers: [], weight: Some(Fine), structure: "", length_per_mass: None, wpi: None, color: "", dye_lot: "", available_mass: None, available_length: Some(Recorded { value: Length { value: 1922.1672553926078, unit: Millimeter }, source: Measured }), notes: "" }]

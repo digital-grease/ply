@@ -11,12 +11,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/materials_repository.dart' show PlanException;
 import '../models/knit_calculators.dart' show YarnWeight, yarnWeightFromWpi;
+import '../models/material_record.dart';
 import '../rust/dto.dart' show UnitKind;
 import '../rust/knit_dto.dart';
 import '../state/knit_editor_providers.dart';
 import '../state/knit_editor_state.dart';
+import '../state/material_providers.dart';
 import 'adaptive_sheet.dart';
+import 'record_report_panel.dart' show EstimateTrace;
+import 'swatch_choice.dart';
 
 /// Open the knit planning calculator. Call from a context inside the editor's ProviderScope so the
 /// sheet's `ref` resolves the open pattern. Adaptive: a bottom sheet on phones, a dialog on tablets.
@@ -55,6 +60,18 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
   final _yardWidth = TextEditingController();
   final _yardLength = TextEditingController();
   double? _yards;
+  double? _yardsBuffered;
+
+  // A swatch the gauge comes from (ADR 0016): while the gauge fields still hold what it filled in,
+  // the estimates take the gauge from the swatch itself and list where every input came from.
+  // Kept by id and looked up in the library each time, so an edited swatch is used as it is now and a
+  // deleted one clears the choice.
+  String? _swatchId;
+  SwatchRecord? _swatchSeen;
+  String? _swatchSts;
+  TracedEstimate<int>? _castOnTrace;
+  TracedEstimate<YarnAmount>? _yardTrace;
+  String? _planError;
 
   @override
   void initState() {
@@ -85,6 +102,62 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
     return GaugeDto(sts: s, rows: r, unit: _unit);
   }
 
+  /// Fill the gauge fields from [s] (its count after finishing, else before), or forget the swatch.
+  void _useSwatch(SwatchRecord? s) {
+    setState(() {
+      _swatchId = s?.id;
+      _swatchSeen = s;
+      _castOnTrace = null;
+      _yardTrace = null;
+      _planError = null;
+      _swatchSts = null;
+      final across = s?.planningAcross;
+      if (s == null || across == null) return;
+      final c = across.$1.value;
+      final metric = c.over.unit.isMetric;
+      final window = metric ? const Length(10, LengthUnit.centimeter) : const Length(4, LengthUnit.inch);
+      _unit = metric ? UnitKind.centimeters : UnitKind.inches;
+      _sts.text = filledNumber(c.per(window));
+      _swatchSts = _sts.text;
+      final along = s.stage(across.$2).along?.value;
+      if (along != null) _rows.text = filledNumber(along.per(window));
+      _applied = false;
+    });
+  }
+
+  /// The chosen swatch as the library holds it now, or null.
+  SwatchRecord? get _swatch {
+    final id = _swatchId;
+    return id == null ? null : ref.read(materialLibraryProvider).valueOrNull?.swatch(id);
+  }
+
+  /// The library changed: a deleted swatch clears the choice; an edited one fills the gauge again.
+  void _onLibrary(MaterialLibraryState? lib) {
+    final id = _swatchId;
+    if (id == null || lib == null || !mounted) return;
+    final s = lib.swatch(id);
+    if (s == null) {
+      _useSwatch(null);
+    } else if (s != _swatchSeen) {
+      _useSwatch(s);
+    }
+  }
+
+  /// The stitch gauge as a planning input: the swatch's own count while the field still shows what
+  /// it filled in, otherwise what is typed.
+  PlanInput<CountOver> get _gaugeInput {
+    final sts = double.tryParse(_sts.text.trim()) ?? 0;
+    if (_swatch != null && _swatchSts != null && _sts.text == _swatchSts) {
+      return const PlanInput.swatch();
+    }
+    final window = _unit == UnitKind.centimeters
+        ? const Length(10, LengthUnit.centimeter)
+        : const Length(4, LengthUnit.inch);
+    return PlanInput(InputOrigin.entered, CountOver(sts, window));
+  }
+
+  LengthUnit get _lengthUnit => _unit == UnitKind.centimeters ? LengthUnit.centimeter : LengthUnit.inch;
+
   /// Seed the gauge from a measured wraps-per-inch: classify it into a Craft Yarn Council weight band
   /// ([yarnWeightFromWpi]) and fill the stitch field with that band's typical stockinette gauge, plus
   /// a row estimate at the stockinette ~4:3 row:stitch ratio. An editable starting point the knitter
@@ -96,6 +169,11 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
       _sts.text = _fmt(sts);
       _rows.text = _fmt(sts * 4 / 3);
       _applied = false;
+      // A result worked out from the swatch's gauge no longer matches the fields: clear it.
+      if (_castOnTrace != null) _castOn = null;
+      if (_yardTrace != null) _yards = _yardsBuffered = null;
+      _castOnTrace = null;
+      _yardTrace = null;
     });
   }
 
@@ -111,6 +189,30 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
     if (!_castForm.currentState!.validate()) return;
     final g = _fieldGauge;
     if (g == null) return;
+    final swatch = _swatch;
+    if (swatch != null) {
+      // With a swatch, the engine works it out and says where each input came from.
+      try {
+        final t = await ref.read(materialsRepositoryProvider).castOnTraced(
+              swatch: swatch,
+              gauge: _gaugeInput,
+              width: Length(double.parse(_castWidth.text.trim()), _lengthUnit),
+              ease: Length(double.parse(_ease.text.trim()), _lengthUnit),
+              repeat: int.parse(_repeat.text.trim()),
+            );
+        if (mounted) {
+          setState(() {
+            _castOn = t.value;
+            _castOnTrace = t;
+            _castOnApplied = false;
+            _planError = null;
+          });
+        }
+      } on PlanException catch (e) {
+        if (mounted) setState(() => _planError = e.message);
+      }
+      return;
+    }
     final n = await ref.read(knitRepositoryProvider).castOn(
           double.parse(_castWidth.text.trim()),
           double.parse(_ease.text.trim()),
@@ -143,12 +245,42 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
     if (!_yardForm.currentState!.validate()) return;
     final g = _fieldGauge;
     if (g == null) return;
+    final swatch = _swatch;
+    if (swatch != null) {
+      try {
+        final t = await ref.read(materialsRepositoryProvider).yardageTraced(
+              swatch: swatch,
+              yarn: singleYarnOf(ref, swatch),
+              gauge: _gaugeInput,
+              width: Length(double.parse(_yardWidth.text.trim()), _lengthUnit),
+              length: Length(double.parse(_yardLength.text.trim()), _lengthUnit),
+              buffer: const PlanInput(InputOrigin.plyDefault, 0.1),
+            );
+        if (mounted) {
+          setState(() {
+            _yards = t.value.yards;
+            _yardsBuffered = t.value.bufferedYards;
+            _yardTrace = t;
+            _planError = null;
+          });
+        }
+      } on PlanException catch (e) {
+        if (mounted) setState(() => _planError = e.message);
+      }
+      return;
+    }
     final y = await ref.read(knitRepositoryProvider).estimateYards(
           double.parse(_yardWidth.text.trim()),
           double.parse(_yardLength.text.trim()),
           g,
         );
-    if (mounted) setState(() => _yards = y);
+    if (mounted) {
+      setState(() {
+        _yards = y;
+        _yardsBuffered = y * 1.1;
+        _yardTrace = null;
+      });
+    }
   }
 
   @override
@@ -156,6 +288,8 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
     final text = Theme.of(context).textTheme;
     final muted = text.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
     final patternCastOn = ref.watch(knitEditorProvider.select((s) => s.pattern.castOn));
+    final swatches = swatchesForCraft(ref, SwatchCraft.knitting);
+    ref.listen(materialLibraryProvider, (_, next) => _onLibrary(next.valueOrNull));
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
@@ -170,6 +304,13 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
             // --- Gauge: seed or type, then apply onto the pattern. ---
             Text('Gauge (per $_windowLabel)', style: text.titleSmall),
             const SizedBox(height: 8),
+            // A recorded swatch (only when there is one): fills the gauge from what it measured.
+            if (swatches.isNotEmpty) ...[
+              SwatchChooser(swatches: swatches, selected: _swatch, onChanged: _useSwatch),
+              if (_swatch != null && _swatch!.planningAcross == null)
+                Text('This swatch has no stitch count, so it cannot give a gauge.', style: muted),
+              const SizedBox(height: 8),
+            ],
             // Seed from a measured wraps-per-inch (replaces the yarn-weight picker): wrap the yarn
             // snugly around a ruler for an inch, count the wraps, and seed the gauge from the inferred
             // weight band.
@@ -255,6 +396,7 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
                   ),
               ],
             ),
+            if (_castOnTrace != null) EstimateTrace(estimate: _castOnTrace!),
             if (_castOnApplicable)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -305,10 +447,19 @@ class _KnitPlanningSheetState extends ConsumerState<KnitPlanningSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Estimate: ${_fmt(_yards!)} yards', style: text.bodyLarge),
-                      Text('With 10% buffer: ${_fmt(_yards! * 1.1)} yards', style: text.bodyLarge),
+                      Text('With 10% buffer: ${_fmt(_yardsBuffered ?? _yards! * 1.1)} yards',
+                          style: text.bodyLarge),
+                      if (_yardTrace != null) EstimateTrace(estimate: _yardTrace!),
                     ],
                   ),
                 ),
+              ),
+            if (_planError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(_planError!,
+                    key: const ValueKey('plan-error'),
+                    style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.error)),
               ),
             Text('Rough stockinette estimate. Always buy a little extra, ideally one dye lot.',
                 style: muted),

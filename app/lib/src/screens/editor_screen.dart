@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/library_backup.dart' show BackupCraft;
 import '../models/double_weave_layers.dart';
 import '../models/draft_doc.dart';
 import '../models/draft_issue.dart';
@@ -11,6 +12,7 @@ import '../print/weave_print.dart';
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../state/loom_providers.dart';
+import '../state/material_providers.dart' show openProjectProvider;
 import '../util/responsive.dart';
 import '../widgets/book_view_sheet.dart';
 import '../widgets/dimensions_bar.dart';
@@ -19,6 +21,7 @@ import '../widgets/integrated_draft_view.dart';
 import '../widgets/loom_check_panel.dart';
 import '../widgets/loom_plan_sheet.dart';
 import '../widgets/loom_type_picker.dart';
+import '../widgets/project_materials_sheet.dart';
 import '../widgets/save_draft_dialog.dart';
 import '../widgets/unsaved_changes_guard.dart';
 import '../widgets/validation_panel.dart';
@@ -33,6 +36,7 @@ enum _OverflowAction {
   zoomOut,
   loomType,
   loomPlan,
+  materials,
   convert,
   viewLayers,
   bookView,
@@ -160,6 +164,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       // loom group starts collapsed for each session.
       ref.read(draftLoomPlanProvider.notifier).state = widget.meta?.loomPlan;
       ref.read(loomCheckExpandedProvider.notifier).state = false;
+      // The project the planning calculator offers linked swatches for (ADR 0016).
+      ref.read(openProjectProvider.notifier).state =
+          (craft: BackupCraft.weaving, id: widget.id);
       setState(() => _loading = false);
     } catch (e) {
       if (!mounted) return;
@@ -566,6 +573,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // neither, the menu looks as it always did.
     final hasLooms =
         ref.watch(loomLibraryProvider.select((a) => a.valueOrNull?.looms.isNotEmpty ?? false));
+    // "Materials and swatches" likewise: offered once the crafter has a material or swatch, or the
+    // draft links one (ADR 0016).
+    final offerMaterials = ref.watch(
+        offerProjectMaterialsProvider((craft: BackupCraft.weaving, id: widget.id)));
     return PopScope<bool>(
       canPop: !dirty && !planChanged,
       onPopInvokedWithResult: _onLeave,
@@ -618,6 +629,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _chooseLoomType();
                       case _OverflowAction.loomPlan:
                         chooseLoomForDraft(context, ref);
+                      case _OverflowAction.materials:
+                        showProjectMaterials(context,
+                            craft: BackupCraft.weaving, id: widget.id);
                       case _OverflowAction.convert:
                         _convertToLiftplan();
                       case _OverflowAction.viewLayers:
@@ -668,6 +682,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             dense: true,
                             leading: Icon(Icons.fact_check_outlined),
                             title: Text('$kLoomForDraftTitle…')),
+                      ),
+                    // The draft's links to the library's materials and swatches (ADR 0016).
+                    if (offerMaterials)
+                      const PopupMenuItem(
+                        value: _OverflowAction.materials,
+                        child: ListTile(
+                            dense: true,
+                            leading: Icon(Icons.inventory_2_outlined),
+                            title: Text('$kProjectMaterialsTitle…')),
                       ),
                     PopupMenuItem(
                       value: _OverflowAction.convert,

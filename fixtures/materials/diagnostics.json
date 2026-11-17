@@ -1,0 +1,33 @@
+{
+  "note": "Records that cannot be true, as an untrusted file or a form might hold them. The engine reads each one, gives the diagnostics in materials.expect.json under \"impossible\", and refuses to store it.",
+  "materials": [
+    {
+      "id": "bad-blend",
+      "name": "Blend over 100%",
+      "fibers": [
+        { "fiber": "wool", "percent": 70 },
+        { "fiber": "silk", "percent": 40 }
+      ],
+      "length_per_mass": { "value": { "length": { "value": 0, "unit": "m" }, "mass": { "value": 100, "unit": "g" } }, "source": "entered" },
+      "wpi": null,
+      "available_mass": { "value": { "value": 50, "unit": "g" }, "source": "default" },
+      "available_length": null
+    }
+  ],
+  "swatches": [
+    {
+      "id": "bad-sizes",
+      "name": "Impossible sizes",
+      "craft": "knitting",
+      "date": "2026-02-30",
+      "before": { "width": null, "length": null, "across": { "value": { "count": -3, "over": { "value": 10, "unit": "cm" } }, "source": "measured" }, "along": null },
+      "after": { "width": { "value": { "value": 0, "unit": "cm" }, "source": "measured" }, "length": null, "across": null, "along": null }
+    },
+    {
+      "id": "bad-source",
+      "name": "A default in a record",
+      "craft": "weaving",
+      "after": { "width": { "value": { "value": 10, "unit": "cm" }, "source": "default" }, "length": null, "across": null, "along": null }
+    }
+  ]
+}

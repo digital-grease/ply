@@ -1,0 +1,54 @@
+# Fixture record for the materials and swatch fixtures (see fixtures/README.md).
+
+id = "materials/materials"
+title = "Three invented materials and four invented swatches, as Ply's materials.json stores them"
+technique = "materials and swatch records"
+files = ["materials.json", "materials.expect.json", "diagnostics.json"]
+created = "2026-11-16"
+license = "original"
+provenance = """
+Written by the engine's materials.json writer (ply_common::materials_file::write) from the records \
+built in rust/ply-common/tests/materials_fixtures.rs. Every record is invented for the tests, not \
+any maker's yarn: a DK wool with its ball band's length per mass (entered), measured wraps per inch \
+and a weighed amount on hand; an 8/2 cotton with a yards-per-pound figure and a length on hand; a \
+material with only a name. The swatches: a knitting swatch measured before and after washing and \
+weighed; a woven towel sample with its sett and width in the reed, and its width, length and picks \
+on the loom, off the loom and after wet finishing; a nalbinding sample in the Oslo stitch before and \
+after fulling; and a lace swatch that grew by 60% when blocked (a warning, saved as given). \
+diagnostics.json holds three records that cannot be true (a blend over 100%, a size of zero, a \
+negative count, an impossible date, one of Ply's defaults stored in a record)."""
+oracle = """
+materials.expect.json was written by hand from the formulas in ADR 0016 and the materials and swatches \
+research note (sections 1 to 3), not dumped from the code: the exact factors \
+(1 in = 2.54 cm, 1 yd = 0.9144 m, 1 lb = 453.59237 g), losses as (earlier - later) / earlier, the \
+weaving length allowance as on the loom / finished - 1 (the ratio method), the weighed-swatch yarn \
+estimate (grams per area times the project's area, turned into length by the yarn's length per \
+mass), and the calculators' own cast-on and warp and weft formulas."""
+
+[sources]
+yarn_weights = "Craft Yarn Council, Standard Yarn Weight System (categories 0 to 7, knit gauge ranges)"
+wraps_per_inch = "Craft Yarn Council, How to Measure Wraps Per Inch"
+take_up_and_shrinkage = "Weavers' sampling practice: measure on the loom, off the loom and after wet finishing; percentages of the earlier measurement (see the research note for the sources)"
+weighed_swatch = "Knitting practice: weigh a finished swatch and scale by area (see the research note)"
+
+[format]
+format = "ply.materials"
+schema_version = 1
+unknown_fields = "written as null (or empty text and lists), never as 0"
+derived = "never written: every figure is worked out from the measurements when shown"
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-common/tests/materials_fixtures.rs: materials.json is what the writer makes of the records, \
+reads back equal and writes the same bytes; every figure and diagnostic matches the oracle; every \
+record of diagnostics.json gets its codes and is refused by the writer and the reader. \
+rust/ply-knit/tests/materials_estimates.rs and rust/ply-weave/tests/materials_estimates.rs: the \
+cast-on, the weighed-swatch yarn estimate, the warp and the weft match the oracle with every input's \
+source and sentence. app/test/materials_fixture_test.dart: the app's version probe reads it as \
+schema version 1 and the Dart model reads the same records."""
+practitioner_knit_check = "pending"
+practitioner_weave_check = "pending"
+practitioner_nalbind_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "The plausibility thresholds (50% growth, 60% loss, 5% wider than the reed) are Ply's own checks, not craft facts."
