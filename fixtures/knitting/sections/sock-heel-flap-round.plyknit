@@ -1,0 +1,723 @@
+{
+  "format": "ply.knit",
+  "schema_version": 5,
+  "document": {
+    "name": "Top-down sock with a heel flap and gusset",
+    "construction": "InTheRound",
+    "first_row_side": "Rs",
+    "cast_on": 64,
+    "gauge": {
+      "sts": 32.0,
+      "rows": 44.0,
+      "unit": "Inches"
+    },
+    "palette": [
+      {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      }
+    ],
+    "legend": {
+      "stitches": [
+        {
+          "symbol": "ns",
+          "consumes": 0,
+          "produces": 0,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 2,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 1,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "yo",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssk",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 4,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "cdd",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1l",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1r",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k3tog",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sk2po",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssp",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kbf",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "pfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1p",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1lp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1rp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ktbl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        }
+      ]
+    },
+    "chart": {
+      "width": 4,
+      "rows": [
+        {
+          "cells": [
+            {
+              "stitch": 2,
+              "color": null
+            },
+            {
+              "stitch": 2,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            }
+          ],
+          "repeats": [
+            {
+              "start": 0,
+              "end": 4,
+              "count": "ToEnd"
+            }
+          ]
+        }
+      ]
+    },
+    "notes": "Worked from the cuff down on double-pointed needles or one long circular needle.",
+    "sections": [
+      {
+        "id": "section-1",
+        "name": "Cuff",
+        "notes": "",
+        "construction": "InTheRound",
+        "steps": [
+          {
+            "id": "step-1",
+            "action": {
+              "ChartRows": {
+                "first": 1,
+                "last": 1
+              }
+            }
+          },
+          {
+            "id": "step-2",
+            "action": {
+              "Opaque": {
+                "text": "Repeat round 1 until the cuff measures 1.5 in (4 cm).",
+                "stitch_change": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-2",
+        "name": "Leg",
+        "notes": "",
+        "construction": "InTheRound",
+        "steps": [
+          {
+            "id": "step-3",
+            "action": {
+              "Rows": {
+                "count": 50,
+                "text": "knit"
+              }
+            }
+          },
+          {
+            "id": "step-4",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "sole",
+                    "count": 32,
+                    "notes": "needles 1 and 2"
+                  },
+                  {
+                    "name": "instep",
+                    "count": 32,
+                    "notes": "needles 3 and 4"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-3",
+        "name": "Heel flap",
+        "notes": "The slipped stitch at the start of every row makes the chain the gusset stitches are picked up from.",
+        "construction": "Flat",
+        "steps": [
+          {
+            "id": "step-5",
+            "action": {
+              "WorkFlat": {
+                "count": 32,
+                "name": "heel flap",
+                "slip_edges": true
+              }
+            }
+          },
+          {
+            "id": "step-6",
+            "action": {
+              "Rows": {
+                "count": 32,
+                "text": "on RS rows, *sl 1, k1; rep from * to end; on WS rows, sl 1, p to end"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-4",
+        "name": "Heel turn",
+        "notes": "",
+        "construction": "Flat",
+        "steps": [
+          {
+            "id": "step-7",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "Count": 17
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "Ssk",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-8",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "Count": 4
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-9",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "Ssk",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-10",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-11",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "Ssk",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-12",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-13",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "Ssk",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-14",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-15",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "Ssk",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-16",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-17",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "Ssk",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-18",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-19",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "Ssk",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-20",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-5",
+        "name": "Gusset",
+        "notes": "After the second pick-up, knit to the center of the heel: the round starts there from then on.",
+        "construction": null,
+        "steps": [
+          {
+            "id": "step-21",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-22",
+            "action": {
+              "PickUp": {
+                "count": 16,
+                "along": {
+                  "Piece": "step-5"
+                },
+                "group": "sole"
+              }
+            }
+          },
+          {
+            "id": "step-23",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-24",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-25",
+            "action": {
+              "PickUp": {
+                "count": 16,
+                "along": {
+                  "Piece": "step-5"
+                },
+                "group": "sole"
+              }
+            }
+          },
+          {
+            "id": "step-31",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": {
+                  "Count": 9
+                },
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-32",
+            "action": {
+              "RoundStart": {}
+            }
+          },
+          {
+            "id": "step-26",
+            "action": {
+              "Shape": {
+                "change": -2,
+                "every": 2,
+                "until": {
+                  "Remain": 64
+                },
+                "groups": [
+                  "sole"
+                ],
+                "text": "knit to 3 sts before the instep, k2tog, k1; knit the instep; k1, ssk, knit to end"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-6",
+        "name": "Foot",
+        "notes": "",
+        "construction": "InTheRound",
+        "steps": [
+          {
+            "id": "step-27",
+            "action": {
+              "Opaque": {
+                "text": "Knit every round until the foot measures 2 in (5 cm) less than the length of the foot.",
+                "stitch_change": 0
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-7",
+        "name": "Toe",
+        "notes": "",
+        "construction": "InTheRound",
+        "steps": [
+          {
+            "id": "step-28",
+            "action": {
+              "Shape": {
+                "change": -2,
+                "every": 2,
+                "until": {
+                  "Remain": 32
+                },
+                "groups": [
+                  "sole",
+                  "instep"
+                ],
+                "text": "knit to 3 sts before the instep, k2tog, k1; k1, ssk, knit to the last 3 instep sts, k2tog, k1; k1, ssk, knit to end"
+              }
+            }
+          },
+          {
+            "id": "step-29",
+            "action": {
+              "Shape": {
+                "change": -2,
+                "every": 1,
+                "until": {
+                  "Remain": 16
+                },
+                "groups": [
+                  "sole",
+                  "instep"
+                ],
+                "text": "knit to 3 sts before the instep, k2tog, k1; k1, ssk, knit to the last 3 instep sts, k2tog, k1; k1, ssk, knit to end"
+              }
+            }
+          },
+          {
+            "id": "step-30",
+            "action": {
+              "Close": {
+                "method": "Graft"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

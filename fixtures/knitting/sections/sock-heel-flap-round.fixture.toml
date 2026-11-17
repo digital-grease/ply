@@ -1,0 +1,34 @@
+# Fixture record for sock-heel-flap-round (see fixtures/README.md).
+
+id = "knitting/sections/sock-heel-flap-round"
+title = "Top-down sock with a heel flap, heel turn, gusset and grafted toe"
+technique = "working in the round, heel flap with slipped edges, short-row heel turn with decreases, gusset pick-up and decreases, toe shaping, Kitchener stitch"
+files = ["sock-heel-flap-round.plyknit", "sock-heel-flap-round.expect.json"]
+created = "2026-11-15"
+license = "original"
+provenance = """
+Written for Ply's tests: the document was typed by hand and saved through the engine's own .plyknit writer (schema version 5). A plain 64-stitch adult sock built from the usual parts of a top-down sock, with stitch and row counts chosen for the test (32-row flap, 18 heel stitches after the turn, 16 stitches picked up along each side, 9 gusset decreases); no published pattern, chart or text was copied. The oracle (expect.json) was worked out by hand from the knitting, row by row and stitch by stitch (the counts are explained in its description), before the engine was run on the file, and then compared with it. On 2026-11-15 (review fix) two steps were added after the second pick-up (knit 9 sts, move the start of the round to the center of the heel); the two new lines and the changed notes were worked out by hand the same way, and every other line is unchanged."""
+
+[sources]
+# Conventions the oracle's written text and ledger follow (cited, nothing reproduced).
+references = [
+  "Quince & Co., \"Tip Tuesday: How to Turn a Heel\", https://quinceandco.com/blogs/news/tip-tuesday-how-to-turn-a-heel (heel turn rows: slip, work partway, decrease where the unworked stitches begin, work one more, turn).",
+  "LoveCrafts, \"How to knit a sock: Step 6 working a gusset\", https://www.lovecrafts.com/en-gb/c/article/how-to-knit-a-sock-working-a-gusset (pick up along the left edge of the flap through the slipped stitches, knit the instep, pick up along the right edge; extra stitches may be picked up to avoid holes).",
+  "Lion Brand Yarn, \"LBY Summer of Sock Techniques: The Gusset\", https://www.lionbrand.com/community/blog/?p=44258 (one stitch picked up under each slipped edge stitch; gusset decreases every other round until a stated count remains).",
+  "addi, \"Classic Heel - flap and gusset\", https://addi.de/en/?p=23830 (the parts of a flap-and-gusset heel).",
+  "Jimmy Beans Wool, \"Kitchener Stitch Knitting Tutorial\", https://jimmybeanswool.com/blogs/tutorials/kitchener-stitch-knitting-tutorial (grafting two needles of equal stitches closed).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/section_fixtures.rs (section_fixtures_match_their_oracles): the file parses as \
+a current .plyknit envelope and re-saves to the same bytes; the written instructions equal the \
+oracle line for line; every ledger line has the oracle's text, place and count (on the needle, still \
+to work, waiting past a turn, wraps and double stitches pending, each group on hold, bound off, side, \
+in the round, each needle group, worked flat, grafted); validation reports exactly the oracle's \
+issues. app/test/knit_sections_fixture_test.dart reads the same files (the current schema version, \
+the sections' shape, and the PDF and screen text built from the oracle)."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Gauge, yarn, the lengths of the leg and foot and the Kitchener stitch sequence itself are not part of the fixture; the cuff repeat and the foot length are unchecked steps with a stated change of 0, and the rows steps say what is worked in the pattern's own words (not checked). After the second gusset pick-up the pattern knits to the center of the heel and moves the start of the round there, as top-down sock patterns usually do."

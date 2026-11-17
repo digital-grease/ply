@@ -7,7 +7,7 @@ files = ["shoulder-short-rows-flat.plyknit", "shoulder-short-rows-flat.expect.js
 created = "2026-11-13"
 license = "original"
 provenance = """
-Written for Ply's tests through the engine's own .plyknit writer (schema version 4). The shoulder is a generic three-step slope over 24 stitches, the shape any shoulder shaping has; no published pattern, chart or text was copied."""
+Written for Ply's tests through the engine's own .plyknit writer (schema version 4), and re-saved by it as schema version 5 on 2026-11-15: only schema_version and the new fields (each section's construction and each short row's decrease, both null) changed, and the oracle did not change. The shoulder is a generic three-step slope over 24 stitches, the shape any shoulder shaping has; no published pattern, chart or text was copied."""
 
 [sources]
 # Conventions the oracle's written text and ledger follow (cited, nothing reproduced).
@@ -26,7 +26,7 @@ a current .plyknit envelope and re-saves to the same bytes; the written instruct
 oracle line for line; every ledger line (one per step, one per chart row of a chart-rows step) has \
 the oracle's text, place and count (on the needle, still to work, waiting past a turn, wraps and \
 double stitches pending, each group on hold, bound off, side); validation reports exactly the \
-oracle's issues. app/test/knit_sections_fixture_test.dart reads the same files (schema version 4, \
+oracle's issues. app/test/knit_sections_fixture_test.dart reads the same files (the current schema version, \
 the sections' shape, and the PDF and screen text built from the oracle)."""
 practitioner_knit_check = "pending"
 practitioner_reviewer = "owner"

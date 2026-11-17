@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 4,
+  "schema_version": 5,
   "document": {
     "name": "Problems the stitch ledger reports",
     "construction": "Flat",
@@ -464,6 +464,7 @@
         "id": "section-1",
         "name": "Problems",
         "notes": "",
+        "construction": null,
         "steps": [
           {
             "id": "step-1",
@@ -520,7 +521,8 @@
                   "Last": 25
                 },
                 "method": "WrapAndTurn",
-                "resolve_turns": false
+                "resolve_turns": false,
+                "decrease": null
               }
             }
           },
@@ -533,7 +535,8 @@
                   "Count": 16
                 },
                 "method": "Unspecified",
-                "resolve_turns": false
+                "resolve_turns": false,
+                "decrease": null
               }
             }
           },
@@ -573,7 +576,8 @@
                   "Last": 5
                 },
                 "method": "WrapAndTurn",
-                "resolve_turns": false
+                "resolve_turns": false,
+                "decrease": null
               }
             }
           },
@@ -620,6 +624,7 @@
         "id": "section-2",
         "name": "Edging",
         "notes": "",
+        "construction": null,
         "steps": [
           {
             "id": "step-16",

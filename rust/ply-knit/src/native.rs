@@ -2,7 +2,7 @@
 //! the ordered migrations that bring an older file up to the current schema.
 //!
 //! ```json
-//! { "format": "ply.knit", "schema_version": 4, "document": { "name": "...", "legend": ... } }
+//! { "format": "ply.knit", "schema_version": 5, "document": { "name": "...", "legend": ... } }
 //! ```
 //!
 //! **Version detection (deterministic).** A `.plyknit` file is one JSON object.
@@ -32,6 +32,12 @@
 //! - 4: the document gains `sections` (the construction layer, [`crate::sections`]; `[]` for a
 //!   chart-only pattern). The built-in vocabulary is unchanged from version 2. A step kind this
 //!   build does not know makes the file unreadable: it is never dropped on load.
+//! - 5: working in the round and sock heels. Each section gains `construction` (`null`: not
+//!   stated), each short-row step gains `decrease` (`null`: none), short rows can turn at the gap
+//!   (`BeforeGap`, `PastGap`), and eight step kinds are new (`JoinRound`, `WorkFlat`, `Rows`,
+//!   `Shape`, `PickUp`, `Groups`, `Close`, `RoundStart`). The built-in vocabulary is unchanged from version 2. A
+//!   version-4 file that names a newer step kind or turn was not written by any version-4 writer
+//!   and is refused.
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -43,7 +49,7 @@ use crate::pattern::KnitPattern;
 pub const KNIT_FORMAT: &str = "ply.knit";
 
 /// The `.plyknit` schema version this build writes, and the newest it can read.
-pub const KNIT_SCHEMA_VERSION: u32 = 4;
+pub const KNIT_SCHEMA_VERSION: u32 = 5;
 
 /// A pattern read from a `.plyknit` file, with the schema version the file was written at.
 #[derive(Debug, Clone, PartialEq)]
@@ -131,7 +137,8 @@ type Migration = fn(Value) -> Result<Value, KnitError>;
 /// The ordered migration chain: `MIGRATIONS[i]` upgrades a document from version `i + 1` to `i + 2`.
 /// The length is tied to [`KNIT_SCHEMA_VERSION`], so bumping the version without appending its
 /// migration does not compile.
-const MIGRATIONS: [Migration; KNIT_SCHEMA_VERSION as usize - 1] = [v1_to_v2, v2_to_v3, v3_to_v4];
+const MIGRATIONS: [Migration; KNIT_SCHEMA_VERSION as usize - 1] =
+    [v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5];
 
 /// Run every migration from `from` up to the current version, in order.
 fn migrate(from: u32, mut document: Value) -> Result<Value, KnitError> {
@@ -147,8 +154,8 @@ fn migrate(from: u32, mut document: Value) -> Result<Value, KnitError> {
 const LEGACY_BUILTIN_COUNTS: [usize; 3] = [12, 20, 21];
 
 /// The built-in stitch vocabulary exactly as schema version 2 defines it, in wire form. FROZEN: this
-/// is what a version-2 legend's built-in entries mean. Versions 3 and 4 changed the document shape
-/// only, so they use this vocabulary unchanged. A later vocabulary gets its own frozen copy and its own
+/// is what a version-2 legend's built-in entries mean. Versions 3, 4 and 5 changed the document
+/// shape only, so they use this vocabulary unchanged. A later vocabulary gets its own frozen copy and its own
 /// migration; this one never changes.
 fn builtins_v2() -> Vec<Value> {
     let def = |symbol: &str, consumes: u8, produces: u8, ws_variant: Option<u8>| {
@@ -309,6 +316,81 @@ fn v3_to_v4(mut doc: Value) -> Result<Value, KnitError> {
     Ok(doc)
 }
 
+/// The section step kinds a version-4 document can have: the vocabulary of schema version 4,
+/// FROZEN. Version 5 added kinds; a version-4 file naming one was written by no version-4 writer.
+const V4_STEP_KINDS: [&str; 8] = [
+    "ChartRows",
+    "Work",
+    "ShortRow",
+    "CastOn",
+    "BindOff",
+    "Hold",
+    "Resume",
+    "Opaque",
+];
+
+/// The short-row turns a version-4 document can have (frozen, as above).
+const V4_TURNS: [&str; 2] = ["Last", "Count"];
+
+/// Version 4 to 5: each section gains `construction`, set to `null` ("not stated"), and each
+/// short-row step gains `decrease`, set to `null` (no decrease at the turn).
+///
+/// A version-4 section never said how it was worked, and a version-4 short row never decreased, so
+/// the migration states neither: every version-4 step keeps exactly its meaning. A stray
+/// `construction` or `decrease` key meant nothing at version 4 and is replaced by `null`. A step
+/// kind or short-row turn that version 4 did not have is refused (`Malformed`) rather than read with
+/// its version-5 meaning: no version-4 writer produced one. Anything else malformed is left for the
+/// typed decode to report. Everything else in the document is untouched.
+fn v4_to_v5(mut doc: Value) -> Result<Value, KnitError> {
+    let Some(sections) = doc.get_mut("sections").and_then(Value::as_array_mut) else {
+        return Ok(doc);
+    };
+    for section in sections {
+        let Some(obj) = section.as_object_mut() else {
+            continue;
+        };
+        obj.insert("construction".into(), Value::Null);
+        let Some(steps) = obj.get_mut("steps").and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for step in steps {
+            let Some(action) = step.get_mut("action").and_then(Value::as_object_mut) else {
+                continue;
+            };
+            if action.len() != 1 {
+                continue;
+            }
+            let Some((kind, body)) = action.iter_mut().next() else {
+                continue;
+            };
+            if !V4_STEP_KINDS.contains(&kind.as_str()) {
+                return Err(KnitError::Malformed(format!(
+                    "a version-4 file cannot have a section step of kind {kind}, which is newer \
+                     than version 4"
+                )));
+            }
+            if kind != "ShortRow" {
+                continue;
+            }
+            let Some(fields) = body.as_object_mut() else {
+                continue;
+            };
+            let turn = fields
+                .get("to")
+                .and_then(Value::as_object)
+                .and_then(|to| to.keys().next().cloned());
+            if let Some(turn) = turn.filter(|t| !V4_TURNS.contains(&t.as_str())) {
+                return Err(KnitError::Malformed(format!(
+                    "a version-4 file cannot have a short row that turns at {turn}, which is newer \
+                     than version 4"
+                )));
+            }
+            fields.insert("decrease".into(), Value::Null);
+        }
+    }
+    Ok(doc)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,11 +513,12 @@ mod tests {
     /// The built-in vocabulary is part of the schema. If this fails, the built-ins changed: bump
     /// KNIT_SCHEMA_VERSION, freeze the new vocabulary next to `builtins_v2`, and append a migration
     /// that maps exactly what changed (see the format ADR). Do not edit `builtins_v2`. Schema 3 only
-    /// added `cast_on` and schema 4 only `sections`, so the vocabulary is still the version-2 one.
+    /// added `cast_on`, schema 4 `sections` and schema 5 section kinds, so the vocabulary is still
+    /// the version-2 one.
     #[test]
     fn current_builtins_are_the_frozen_schema_vocabulary() {
         assert_eq!(
-            KNIT_SCHEMA_VERSION, 4,
+            KNIT_SCHEMA_VERSION, 5,
             "update this test with the new snapshot"
         );
         let current = serde_json::to_value(&StitchLegend::builtin().stitches).unwrap();
@@ -448,7 +531,7 @@ mod tests {
         let json = write(&ribbing()).unwrap();
         let v: Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["format"], "ply.knit");
-        assert_eq!(v["schema_version"], 4);
+        assert_eq!(v["schema_version"], 5);
         assert_eq!(v["document"]["name"], "1x1 rib");
         assert_eq!(
             v["document"]["cast_on"],
@@ -460,7 +543,7 @@ mod tests {
             json!([]),
             "a chart-only pattern is written with no sections"
         );
-        assert_eq!(schema_version(&json).unwrap(), 4);
+        assert_eq!(schema_version(&json).unwrap(), 5);
     }
 
     #[test]
@@ -717,6 +800,276 @@ mod tests {
         }
     }
 
+    /// The real version-4 bytes the engine wrote before version 5 (see each `.fixture.toml`).
+    const SCHEMA_V4: [&str; 4] = [
+        "shoulder-short-rows-flat",
+        "neckline-hold-flat",
+        "ledger-problems-flat",
+        "eyelet-lace-round",
+    ];
+
+    /// The real version-4 bytes migrate to the current version with only the new fields added (each
+    /// section's `construction` and each short row's `decrease`, both null) and every other document
+    /// field exactly as stored; a re-save is a current envelope that loads unchanged.
+    #[test]
+    fn every_schema_v4_fixture_migrates_to_v5_unchanged_but_for_the_new_fields() {
+        for name in SCHEMA_V4 {
+            let text = fixture(&format!("schema-v4/{name}.plyknit"));
+            assert_eq!(schema_version(&text).unwrap(), 4, "{name}");
+            let stored: Value = serde_json::from_str(&text).unwrap();
+            let stored_doc = stored["document"].clone();
+            let loaded = read(&text).unwrap();
+            assert_eq!(loaded.source_version, 4, "{name}");
+            let mut migrated = serde_json::to_value(&loaded.pattern).unwrap();
+            let mut short_rows = 0;
+            for section in migrated["sections"].as_array_mut().unwrap() {
+                assert_eq!(
+                    section.as_object_mut().unwrap().remove("construction"),
+                    Some(Value::Null),
+                    "{name}: a migration never states how a section is worked"
+                );
+                for step in section["steps"].as_array_mut().unwrap() {
+                    if let Some(sr) = step["action"].get_mut("ShortRow") {
+                        assert_eq!(
+                            sr.as_object_mut().unwrap().remove("decrease"),
+                            Some(Value::Null),
+                            "{name}: a migration never adds a decrease"
+                        );
+                        short_rows += 1;
+                    }
+                }
+            }
+            let stored_short_rows = text.matches("\"ShortRow\"").count();
+            assert_eq!(short_rows, stored_short_rows, "{name}");
+            assert_eq!(migrated, stored_doc, "{name}: nothing else changes");
+
+            let saved = write(&loaded.pattern).unwrap();
+            assert_eq!(schema_version(&saved).unwrap(), KNIT_SCHEMA_VERSION);
+            let again = read(&saved).unwrap();
+            assert_eq!(again.source_version, KNIT_SCHEMA_VERSION);
+            assert_eq!(again.pattern, loaded.pattern, "{name}");
+            assert_eq!(write(&again.pattern).unwrap(), saved, "{name}: byte-stable");
+        }
+    }
+
+    /// The migrated version-4 fixtures write, count and validate exactly as they did at version 4:
+    /// the oracles in `fixtures/knitting/` were derived for version 4 and did not change.
+    #[test]
+    fn schema_v4_fixtures_count_write_and_validate_as_before() {
+        use crate::sections::{ledger, LedgerLine};
+        use crate::{stitch_flow, to_written, validate, Severity};
+        let oracle = |name: &str| -> Value {
+            let topic = if name.ends_with("-round") {
+                "repeats"
+            } else {
+                "sections"
+            };
+            let path = format!(
+                "{}/../../fixtures/knitting/{topic}/{name}.expect.json",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        for name in SCHEMA_V4 {
+            let p = read(&fixture(&format!("schema-v4/{name}.plyknit")))
+                .unwrap()
+                .pattern;
+            let want = oracle(name);
+            if let Some(written) = want.get("written").and_then(Value::as_array) {
+                let written: Vec<&str> = written.iter().map(|l| l.as_str().unwrap()).collect();
+                assert_eq!(to_written(&p), written, "{name}: written");
+                let lines: Vec<String> = ledger(&p).lines.iter().map(LedgerLine::written).collect();
+                let want_lines: Vec<&str> = want["steps"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|l| l["line"].as_str().unwrap())
+                    .collect();
+                assert_eq!(lines, want_lines, "{name}: ledger lines");
+            } else {
+                let mut lines = to_written(&p);
+                if let Some(line) = want.get("cast_on_line").and_then(Value::as_str) {
+                    assert_eq!(lines.remove(0), line, "{name}");
+                }
+                let rows = want["rows"].as_array().unwrap();
+                let written: Vec<&str> = rows
+                    .iter()
+                    .map(|r| r["written"].as_str().unwrap())
+                    .collect();
+                assert_eq!(lines, written, "{name}: written rows as before");
+                let produced: Vec<Option<u64>> =
+                    rows.iter().map(|r| r["produces"].as_u64()).collect();
+                let counts: Vec<Option<u64>> = stitch_flow(&p)
+                    .iter()
+                    .map(|f| f.count.map(|c| c.produced))
+                    .collect();
+                assert_eq!(counts, produced, "{name}: counts");
+            }
+            let got: Vec<(String, String)> = validate(&p)
+                .into_iter()
+                .map(|i| {
+                    let s = match i.severity {
+                        Severity::Error => "error",
+                        Severity::Warning => "warning",
+                    };
+                    (s.to_string(), i.message)
+                })
+                .collect();
+            let issues: Vec<(String, String)> = want["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|i| {
+                    (
+                        i["severity"].as_str().unwrap().to_string(),
+                        i["message"].as_str().unwrap().to_string(),
+                    )
+                })
+                .collect();
+            assert_eq!(got, issues, "{name}: validation");
+        }
+    }
+
+    /// Every version-5 step kind and field survives save and load exactly, and the re-save is
+    /// byte-stable.
+    #[test]
+    fn version_5_steps_round_trip() {
+        use crate::sections::*;
+        let mut p = ribbing();
+        p.construction = Construction::InTheRound;
+        p.cast_on = Some(64);
+        let step = |id: &str, action: StepAction| Step {
+            id: id.into(),
+            action,
+        };
+        p.sections = vec![Section {
+            id: "section-1".into(),
+            name: "Heel".into(),
+            notes: String::new(),
+            construction: Some(Construction::Flat),
+            steps: vec![
+                step(
+                    "step-1",
+                    StepAction::Groups {
+                        groups: vec![
+                            NeedleGroup {
+                                name: "sole".into(),
+                                count: 32,
+                                notes: "needles 1 and 2".into(),
+                            },
+                            NeedleGroup {
+                                name: "instep".into(),
+                                count: 32,
+                                notes: String::new(),
+                            },
+                        ],
+                    },
+                ),
+                step(
+                    "step-2",
+                    StepAction::WorkFlat {
+                        count: 32,
+                        name: "heel flap".into(),
+                        slip_edges: true,
+                    },
+                ),
+                step(
+                    "step-3",
+                    StepAction::Rows {
+                        count: 32,
+                        text: "sl 1, k1".into(),
+                    },
+                ),
+                step(
+                    "step-4",
+                    StepAction::ShortRow {
+                        stitch: WorkStitch::Knit,
+                        to: TurnAt::BeforeGap(1),
+                        method: TurnMethod::Unspecified,
+                        resolve_turns: false,
+                        decrease: Some(TurnDecrease {
+                            kind: Decrease::Ssk,
+                            after: 1,
+                        }),
+                    },
+                ),
+                step(
+                    "step-5",
+                    StepAction::ShortRow {
+                        stitch: WorkStitch::Purl,
+                        to: TurnAt::PastGap(2),
+                        method: TurnMethod::German,
+                        resolve_turns: true,
+                        decrease: None,
+                    },
+                ),
+                step(
+                    "step-6",
+                    StepAction::PickUp {
+                        count: 16,
+                        along: PickUpAlong::Piece("step-2".into()),
+                        group: Some("sole".into()),
+                    },
+                ),
+                step(
+                    "step-7",
+                    StepAction::PickUp {
+                        count: 3,
+                        along: PickUpAlong::Edge("the cast-on edge".into()),
+                        group: None,
+                    },
+                ),
+                step("step-8", StepAction::JoinRound {}),
+                step(
+                    "step-9",
+                    StepAction::Shape {
+                        change: -2,
+                        every: 2,
+                        until: ShapeUntil::Remain(64),
+                        groups: vec!["sole".into()],
+                        text: "k1, ssk".into(),
+                    },
+                ),
+                step(
+                    "step-10",
+                    StepAction::Shape {
+                        change: 1,
+                        every: 1,
+                        until: ShapeUntil::Times(3),
+                        groups: Vec::new(),
+                        text: String::new(),
+                    },
+                ),
+                step(
+                    "step-11",
+                    StepAction::Close {
+                        method: CloseMethod::Graft,
+                    },
+                ),
+                step(
+                    "step-12",
+                    StepAction::Close {
+                        method: CloseMethod::ThreeNeedleBindOff,
+                    },
+                ),
+            ],
+        }];
+        let text = write(&p).unwrap();
+        let v: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["document"]["sections"][0]["construction"], "Flat");
+        assert_eq!(
+            v["document"]["sections"][0]["steps"][7]["action"],
+            json!({"JoinRound": {}})
+        );
+        assert_eq!(
+            v["document"]["sections"][0]["steps"][3]["action"]["ShortRow"]["to"],
+            json!({"BeforeGap": 1})
+        );
+        let loaded = read(&text).unwrap();
+        assert_eq!(loaded.pattern, p);
+        assert_eq!(write(&loaded.pattern).unwrap(), text);
+    }
+
     /// A version-3 document never meant anything by a `sections` key (no writer produced one), so
     /// the migration replaces it with no sections instead of reading it as a construction now.
     #[test]
@@ -747,6 +1100,7 @@ mod tests {
             id: "section-1".into(),
             name: "Shoulder".into(),
             notes: "Use the smaller needle.".into(),
+            construction: None,
             steps: vec![
                 step("step-1", StepAction::ChartRows { first: 1, last: 1 }),
                 step(
@@ -756,6 +1110,7 @@ mod tests {
                         to: TurnAt::Last(6),
                         method: TurnMethod::WrapAndTurn,
                         resolve_turns: false,
+                        decrease: None,
                     },
                 ),
                 step(
@@ -802,6 +1157,7 @@ mod tests {
                         to: TurnAt::Count(5),
                         method: TurnMethod::German,
                         resolve_turns: false,
+                        decrease: None,
                     },
                 ),
             ],
@@ -821,7 +1177,7 @@ mod tests {
         assert_eq!(write(&loaded.pattern).unwrap(), text);
     }
 
-    /// A step kind this build does not know is never dropped. Within version 4 no writer
+    /// A step kind this build does not know is never dropped. Within version 5 no writer
     /// produces one, so the file is unreadable (a typed error, nothing loaded); a later version that
     /// adds kinds bumps the schema version and is refused as newer before its document is read.
     #[test]
@@ -829,22 +1185,83 @@ mod tests {
         let p = ribbing();
         let mut v: Value = serde_json::from_str(&write(&p).unwrap()).unwrap();
         v["document"]["sections"] = json!([{
-            "id": "section-1", "name": "Heel", "notes": "",
-            "steps": [{"id": "step-1", "action": {"PickUp": {"count": 12}}}]
+            "id": "section-1", "name": "Heel", "notes": "", "construction": null,
+            "steps": [{"id": "step-1", "action": {"Split": {"count": 12}}}]
         }]);
         assert!(matches!(read(&v.to_string()), Err(KnitError::Json(_))));
-        v["schema_version"] = json!(5);
+        v["schema_version"] = json!(6);
         assert!(matches!(
             read(&v.to_string()),
             Err(KnitError::NewerVersion {
-                found: 5,
-                supported: 4
+                found: 6,
+                supported: 5
             })
         ));
         // The control: the same file with a step kind this build knows loads.
-        v["schema_version"] = json!(4);
+        v["schema_version"] = json!(5);
         v["document"]["sections"][0]["steps"][0]["action"] = json!({"CastOn": {"count": 3}});
         assert!(read(&v.to_string()).is_ok());
+    }
+
+    /// A version-4 file never had the version-5 step kinds or gap turns (no version-4 writer made
+    /// one), so one that names them is refused instead of being read with today's meaning; the same
+    /// steps in a version-5 file load.
+    #[test]
+    fn a_version_4_file_with_a_newer_step_kind_is_refused() {
+        let p = ribbing();
+        let mut v: Value = serde_json::from_str(&write(&p).unwrap()).unwrap();
+        v["schema_version"] = json!(4);
+        for (action, kind) in [
+            (
+                json!({"PickUp": {"count": 12, "along": {"Edge": "x"}, "group": null}}),
+                "PickUp",
+            ),
+            (json!({"JoinRound": {}}), "JoinRound"),
+            (
+                json!({"ShortRow": {"stitch": "Knit", "to": {"BeforeGap": 1}, "method": "Unspecified", "resolve_turns": false}}),
+                "BeforeGap",
+            ),
+        ] {
+            v["document"]["sections"] = json!([{
+                "id": "section-1", "name": "Heel", "notes": "",
+                "steps": [{"id": "step-1", "action": action}]
+            }]);
+            let err = read(&v.to_string()).unwrap_err();
+            assert!(
+                matches!(&err, KnitError::Malformed(m) if m.contains(kind)),
+                "{kind}: {err}"
+            );
+        }
+    }
+
+    /// The version-4 to 5 step gives every section "not stated" and every short row "no decrease",
+    /// replacing stray keys a version-4 document might carry, and touches nothing else.
+    #[test]
+    fn v4_to_v5_states_nothing_new() {
+        let doc = json!({
+            "sections": [{
+                "id": "s", "name": "", "notes": "", "construction": "InTheRound",
+                "steps": [
+                    {"id": "a", "action": {"ShortRow": {"stitch": "Knit", "to": {"Last": 2}, "method": "German", "resolve_turns": true, "decrease": {"kind": "Ssk", "after": 1}}}},
+                    {"id": "b", "action": {"CastOn": {"count": 3}}}
+                ]
+            }]
+        });
+        let out = v4_to_v5(doc).unwrap();
+        assert_eq!(out["sections"][0]["construction"], Value::Null);
+        assert_eq!(
+            out["sections"][0]["steps"][0]["action"]["ShortRow"]["decrease"],
+            Value::Null
+        );
+        assert_eq!(
+            out["sections"][0]["steps"][1]["action"],
+            json!({"CastOn": {"count": 3}})
+        );
+        assert_eq!(v4_to_v5(json!("x")).unwrap(), json!("x"));
+        assert_eq!(
+            v4_to_v5(json!({"sections": 3})).unwrap(),
+            json!({"sections": 3})
+        );
     }
 
     /// A version-2 document never meant anything by a `cast_on` key (no writer produced one), so the
@@ -1026,14 +1443,14 @@ mod tests {
         let p = ribbing();
         let text = write(&p)
             .unwrap()
-            .replace("\"schema_version\": 4", "\"schema_version\": 5");
+            .replace("\"schema_version\": 5", "\"schema_version\": 6");
         let err = read(&text).unwrap_err();
         assert!(
             matches!(
                 err,
                 KnitError::NewerVersion {
-                    found: 5,
-                    supported: 4
+                    found: 6,
+                    supported: 5
                 }
             ),
             "{err}"

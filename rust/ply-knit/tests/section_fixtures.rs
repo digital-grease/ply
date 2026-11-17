@@ -1,5 +1,6 @@
 //! Knitting section acceptance fixtures (`fixtures/knitting/sections/`): original flat patterns
-//! with short rows and held stitches, each with a hand-derived oracle. Each fixture is a `.plyknit`
+//! with short rows and held stitches, and socks worked in the round (a heel flap and gusset, a
+//! short-row heel), each with a hand-derived oracle. Each fixture is a `.plyknit`
 //! file the engine wrote, an `.expect.json` oracle (the written instructions; every ledger line with
 //! its place, text and count; the validation issues) and a `.fixture.toml` record.
 //!
@@ -19,10 +20,13 @@ const DIR: &str = concat!(
 );
 
 /// Every tracked fixture, by name.
-const FIXTURES: [&str; 3] = [
+const FIXTURES: [&str; 6] = [
     "shoulder-short-rows-flat",
     "neckline-hold-flat",
     "ledger-problems-flat",
+    "sock-heel-flap-round",
+    "sock-short-row-heel-round",
+    "round-problems",
 ];
 
 fn read(name: &str, ext: &str) -> String {
@@ -72,8 +76,11 @@ fn section_fixtures_match_their_oracles() {
             "{name}: re-saving changes the file"
         );
         assert!(!p.sections.is_empty(), "{name}: has sections");
-        assert_eq!(expect["construction"], "Flat");
-        assert_eq!(p.construction, Construction::Flat);
+        let construction = match p.construction {
+            Construction::Flat => "Flat",
+            Construction::InTheRound => "InTheRound",
+        };
+        assert_eq!(expect["construction"], construction, "{name}");
         assert_eq!(
             expect["cast_on"].as_u64(),
             p.cast_on.map(u64::from),
@@ -131,15 +138,52 @@ fn section_fixtures_match_their_oracles() {
                     assert_eq!(held, want_held, "{at}: held");
                     assert_eq!(c.bound_off, w["bound_off"].as_u64().unwrap(), "{at}");
                     assert_eq!(side(c.side), w["side"], "{at}: side");
-                    // The ledger never loses a stitch: what is on the needle, on hold and bound
-                    // off is what was cast on, plus what was added, less what was removed. These
-                    // fixtures add or remove nothing else, so it is the cast-on (or, for a chart
-                    // row that makes more than it takes, more).
-                    let total = c.on_needle + c.held_total() + c.bound_off;
-                    assert!(
-                        total >= u64::from(p.cast_on.unwrap()),
-                        "{at}: {total} stitches accounted for"
+                    // Added for working in the round (schema version 5); the first slice's oracles
+                    // leave them out, which means not in the round, no groups, nothing worked flat
+                    // apart and nothing grafted.
+                    let flag = |k: &str| w.get(k).and_then(Value::as_bool).unwrap_or(false);
+                    assert_eq!(c.in_round, flag("in_round"), "{at}: in the round");
+                    let groups: Vec<(String, u64)> =
+                        c.groups.iter().map(|g| (g.name.clone(), g.count)).collect();
+                    let want_groups: Vec<(String, u64)> = w
+                        .get("groups")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .map(|g| {
+                                    (g[0].as_str().unwrap().to_string(), g[1].as_u64().unwrap())
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    assert_eq!(groups, want_groups, "{at}: groups");
+                    assert_eq!(
+                        c.flat,
+                        w.get("flat").and_then(Value::as_u64),
+                        "{at}: worked flat"
                     );
+                    assert_eq!(
+                        c.grafted,
+                        w.get("grafted").and_then(Value::as_u64).unwrap_or(0),
+                        "{at}: grafted"
+                    );
+                    let group_total: u64 = c.groups.iter().map(|g| g.count).sum();
+                    assert!(
+                        c.groups.is_empty() || group_total == c.on_needle,
+                        "{at}: the groups hold every stitch on the needle"
+                    );
+                    // The ledger never loses a stitch: what is on the needle, on hold and bound
+                    // off is what was cast on, plus what was added, less what was removed. The
+                    // first slice's fixtures add or remove nothing else, so it is the cast-on (or,
+                    // for a chart row that makes more than it takes, more); the sock fixtures
+                    // decrease, and say so.
+                    let total = c.on_needle + c.held_total() + c.bound_off + c.grafted;
+                    if expect.get("conserves_stitches").and_then(Value::as_bool) != Some(false) {
+                        assert!(
+                            total >= u64::from(p.cast_on.unwrap()),
+                            "{at}: {total} stitches accounted for"
+                        );
+                    }
                 }
                 (LineCount::Unknown, Value::String(s)) => assert_eq!(s, "unknown", "{at}"),
                 (LineCount::NotCounted, Value::String(s)) => {

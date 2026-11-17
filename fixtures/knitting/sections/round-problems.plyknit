@@ -1,0 +1,1437 @@
+{
+  "format": "ply.knit",
+  "schema_version": 5,
+  "document": {
+    "name": "Working in the round: every refusal",
+    "construction": "Flat",
+    "first_row_side": "Rs",
+    "cast_on": 20,
+    "gauge": {
+      "sts": 22.0,
+      "rows": 30.0,
+      "unit": "Inches"
+    },
+    "palette": [
+      {
+        "r": 255,
+        "g": 255,
+        "b": 255
+      }
+    ],
+    "legend": {
+      "stitches": [
+        {
+          "symbol": "ns",
+          "consumes": 0,
+          "produces": 0,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 2,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": 1,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "yo",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssk",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 6,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "p2tog",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": 4,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "cdd",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1l",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1r",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "k3tog",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "sk2po",
+          "consumes": 3,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ssp",
+          "consumes": 2,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "kbf",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "pfb",
+          "consumes": 1,
+          "produces": 2,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1p",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1lp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "m1rp",
+          "consumes": 0,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        },
+        {
+          "symbol": "ktbl",
+          "consumes": 1,
+          "produces": 1,
+          "ws_variant": null,
+          "cable": null,
+          "macro_rows": 1
+        }
+      ]
+    },
+    "chart": {
+      "width": 20,
+      "rows": [
+        {
+          "cells": [
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            },
+            {
+              "stitch": 1,
+              "color": null
+            }
+          ],
+          "repeats": []
+        }
+      ]
+    },
+    "notes": "",
+    "sections": [
+      {
+        "id": "section-1",
+        "name": "Flat start",
+        "notes": "",
+        "construction": "InTheRound",
+        "steps": [
+          {
+            "id": "step-1",
+            "action": {
+              "WorkFlat": {
+                "count": 4,
+                "name": "heel",
+                "slip_edges": false
+              }
+            }
+          },
+          {
+            "id": "step-2",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": {
+                  "Count": 5
+                },
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-3",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-4",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-5",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "Last": 5
+                },
+                "method": "WrapAndTurn",
+                "resolve_turns": false,
+                "decrease": null
+              }
+            }
+          },
+          {
+            "id": "step-6",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-7",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "left",
+                    "count": 10,
+                    "notes": ""
+                  },
+                  {
+                    "name": "right",
+                    "count": 10,
+                    "notes": ""
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-8",
+            "action": {
+              "Rows": {
+                "count": 2,
+                "text": "knit"
+              }
+            }
+          },
+          {
+            "id": "step-9",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "BeforeGap": 1
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": null
+              }
+            }
+          },
+          {
+            "id": "step-10",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-11",
+            "action": {
+              "Work": {
+                "stitch": "Purl",
+                "to": "End",
+                "resolve_turns": true
+              }
+            }
+          },
+          {
+            "id": "step-12",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 2,
+                "until": {
+                  "Times": 3
+                },
+                "groups": [],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-13",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-14",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-15",
+            "action": {
+              "ChartRows": {
+                "first": 1,
+                "last": 1
+              }
+            }
+          },
+          {
+            "id": "step-16",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "Last": 3
+                },
+                "method": "WrapAndTurn",
+                "resolve_turns": false,
+                "decrease": null
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-2",
+        "name": "Groups",
+        "notes": "",
+        "construction": "Flat",
+        "steps": [
+          {
+            "id": "step-17",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "left",
+                    "count": 9,
+                    "notes": ""
+                  },
+                  {
+                    "name": "right",
+                    "count": 9,
+                    "notes": ""
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-18",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "left",
+                    "count": 0,
+                    "notes": ""
+                  },
+                  {
+                    "name": "right",
+                    "count": 17,
+                    "notes": ""
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-19",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": " ",
+                    "count": 8,
+                    "notes": ""
+                  },
+                  {
+                    "name": "right",
+                    "count": 9,
+                    "notes": ""
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-20",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "sole",
+                    "count": 8,
+                    "notes": ""
+                  },
+                  {
+                    "name": "Sole",
+                    "count": 9,
+                    "notes": ""
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-21",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": {
+                  "Count": 2
+                },
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-22",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "sole",
+                    "count": 8,
+                    "notes": ""
+                  },
+                  {
+                    "name": "instep",
+                    "count": 9,
+                    "notes": ""
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-23",
+            "action": {
+              "Rows": {
+                "count": 1,
+                "text": "knit"
+              }
+            }
+          },
+          {
+            "id": "step-24",
+            "action": {
+              "Close": {
+                "method": "Graft"
+              }
+            }
+          },
+          {
+            "id": "step-25",
+            "action": {
+              "WorkFlat": {
+                "count": 8,
+                "name": "heel",
+                "slip_edges": false
+              }
+            }
+          },
+          {
+            "id": "step-26",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Times": 1
+                },
+                "groups": [],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-27",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-28",
+            "action": {
+              "Rows": {
+                "count": 0,
+                "text": "knit"
+              }
+            }
+          },
+          {
+            "id": "step-29",
+            "action": {
+              "Close": {
+                "method": "Graft"
+              }
+            }
+          },
+          {
+            "id": "step-30",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Times": 1
+                },
+                "groups": [],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-31",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "instep",
+                    "count": 6,
+                    "notes": ""
+                  },
+                  {
+                    "name": "sole",
+                    "count": 5,
+                    "notes": ""
+                  },
+                  {
+                    "name": "heel",
+                    "count": 5,
+                    "notes": ""
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-32",
+            "action": {
+              "Close": {
+                "method": "Graft"
+              }
+            }
+          },
+          {
+            "id": "step-33",
+            "action": {
+              "Shape": {
+                "change": 0,
+                "every": 1,
+                "until": {
+                  "Times": 1
+                },
+                "groups": [
+                  "instep"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-34",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 0,
+                "until": {
+                  "Times": 1
+                },
+                "groups": [
+                  "instep"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-35",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Times": 1
+                },
+                "groups": [
+                  "instep",
+                  "instep"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-36",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Times": 1
+                },
+                "groups": [
+                  "gusset"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-37",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Times": 0
+                },
+                "groups": [
+                  "instep"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-38",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Remain": 16
+                },
+                "groups": [
+                  "instep"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-39",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Remain": 20
+                },
+                "groups": [
+                  "instep"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-40",
+            "action": {
+              "Shape": {
+                "change": -2,
+                "every": 1,
+                "until": {
+                  "Remain": 9
+                },
+                "groups": [
+                  "instep",
+                  "sole"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-41",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Times": 20
+                },
+                "groups": [],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-42",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Times": 5
+                },
+                "groups": [
+                  "sole"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-43",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Edge": "the cast-on edge"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-44",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Edge": "the cast-on edge"
+                },
+                "group": "gusset"
+              }
+            }
+          },
+          {
+            "id": "step-45",
+            "action": {
+              "PickUp": {
+                "count": 0,
+                "along": {
+                  "Edge": "the cast-on edge"
+                },
+                "group": "sole"
+              }
+            }
+          },
+          {
+            "id": "step-46",
+            "action": {
+              "Opaque": {
+                "text": "Knit 1 round, increasing 1 st in the instep.",
+                "stitch_change": 1
+              }
+            }
+          },
+          {
+            "id": "step-47",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Edge": "the cast-on edge"
+                },
+                "group": "sole"
+              }
+            }
+          },
+          {
+            "id": "step-48",
+            "action": {
+              "Shape": {
+                "change": -1,
+                "every": 1,
+                "until": {
+                  "Times": 1
+                },
+                "groups": [
+                  "sole"
+                ],
+                "text": ""
+              }
+            }
+          },
+          {
+            "id": "step-49",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Piece": "step-999"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-50",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Piece": "step-2"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-51",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Piece": "step-25"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-52",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Piece": "step-55"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-53",
+            "action": {
+              "WorkFlat": {
+                "count": 20,
+                "name": "heel",
+                "slip_edges": false
+              }
+            }
+          },
+          {
+            "id": "step-54",
+            "action": {
+              "WorkFlat": {
+                "count": 0,
+                "name": "heel",
+                "slip_edges": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-3",
+        "name": "Heel",
+        "notes": "",
+        "construction": "Flat",
+        "steps": [
+          {
+            "id": "step-55",
+            "action": {
+              "WorkFlat": {
+                "count": 9,
+                "name": "heel",
+                "slip_edges": true
+              }
+            }
+          },
+          {
+            "id": "step-56",
+            "action": {
+              "WorkFlat": {
+                "count": 4,
+                "name": "heel",
+                "slip_edges": false
+              }
+            }
+          },
+          {
+            "id": "step-57",
+            "action": {
+              "Groups": {
+                "groups": [
+                  {
+                    "name": "all",
+                    "count": 17,
+                    "notes": ""
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "step-58",
+            "action": {
+              "Close": {
+                "method": "Graft"
+              }
+            }
+          },
+          {
+            "id": "step-59",
+            "action": {
+              "Rows": {
+                "count": 4,
+                "text": "sl 1, knit to end"
+              }
+            }
+          },
+          {
+            "id": "step-60",
+            "action": {
+              "PickUp": {
+                "count": 3,
+                "along": {
+                  "Piece": "step-55"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-61",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Piece": "step-55"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-62",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-63",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Piece": "step-55"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-64",
+            "action": {
+              "PickUp": {
+                "count": 1,
+                "along": {
+                  "Piece": "step-55"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-65",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "Last": 4
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": null
+              }
+            }
+          },
+          {
+            "id": "step-66",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "Last": 3
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": null
+              }
+            }
+          },
+          {
+            "id": "step-67",
+            "action": {
+              "PickUp": {
+                "count": 1,
+                "along": {
+                  "Edge": "the edge"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-68",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "BeforeGap": 10
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": null
+              }
+            }
+          },
+          {
+            "id": "step-69",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "PastGap": 5
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": null
+              }
+            }
+          },
+          {
+            "id": "step-70",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "PastGap": 3
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 0
+                }
+              }
+            }
+          },
+          {
+            "id": "step-71",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "PastGap": 4
+                },
+                "method": "WrapAndTurn",
+                "resolve_turns": false,
+                "decrease": null
+              }
+            }
+          },
+          {
+            "id": "step-72",
+            "action": {
+              "ShortRow": {
+                "stitch": "Purl",
+                "to": {
+                  "BeforeGap": 0
+                },
+                "method": "Unspecified",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "P2tog",
+                  "after": 1
+                }
+              }
+            }
+          },
+          {
+            "id": "step-73",
+            "action": {
+              "Work": {
+                "stitch": "Knit",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-74",
+            "action": {
+              "Work": {
+                "stitch": "Purl",
+                "to": {
+                  "Count": 2
+                },
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-75",
+            "action": {
+              "PickUp": {
+                "count": 1,
+                "along": {
+                  "Edge": "the edge"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-76",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-77",
+            "action": {
+              "Work": {
+                "stitch": "Purl",
+                "to": "End",
+                "resolve_turns": false
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "section-4",
+        "name": "Back in the round",
+        "notes": "",
+        "construction": "InTheRound",
+        "steps": [
+          {
+            "id": "step-78",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-79",
+            "action": {
+              "PickUp": {
+                "count": 2,
+                "along": {
+                  "Piece": "step-55"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-80",
+            "action": {
+              "BindOff": {
+                "count": null,
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-81",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-82",
+            "action": {
+              "Rows": {
+                "count": 1,
+                "text": "knit"
+              }
+            }
+          },
+          {
+            "id": "step-83",
+            "action": {
+              "WorkFlat": {
+                "count": 4,
+                "name": "flap",
+                "slip_edges": false
+              }
+            }
+          },
+          {
+            "id": "step-84",
+            "action": {
+              "Close": {
+                "method": "Graft"
+              }
+            }
+          },
+          {
+            "id": "step-85",
+            "action": {
+              "PickUp": {
+                "count": 6,
+                "along": {
+                  "Edge": "the bound-off edge"
+                },
+                "group": null
+              }
+            }
+          },
+          {
+            "id": "step-86",
+            "action": {
+              "Hold": {
+                "count": null,
+                "name": "all"
+              }
+            }
+          },
+          {
+            "id": "step-87",
+            "action": {
+              "Resume": {
+                "hold": "step-86",
+                "facing": null
+              }
+            }
+          },
+          {
+            "id": "step-88",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-89",
+            "action": {
+              "BindOff": {
+                "count": null,
+                "resolve_turns": false
+              }
+            }
+          },
+          {
+            "id": "step-90",
+            "action": {
+              "CastOn": {
+                "count": 10
+              }
+            }
+          },
+          {
+            "id": "step-91",
+            "action": {
+              "JoinRound": {}
+            }
+          },
+          {
+            "id": "step-92",
+            "action": {
+              "WorkFlat": {
+                "count": 6,
+                "name": "flap",
+                "slip_edges": false
+              }
+            }
+          },
+          {
+            "id": "step-93",
+            "action": {
+              "RoundStart": {}
+            }
+          },
+          {
+            "id": "step-94",
+            "action": {
+              "ShortRow": {
+                "stitch": "Knit",
+                "to": {
+                  "Last": 6
+                },
+                "method": "German",
+                "resolve_turns": false,
+                "decrease": {
+                  "kind": "Ssk",
+                  "after": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

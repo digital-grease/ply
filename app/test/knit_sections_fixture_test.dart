@@ -17,7 +17,7 @@ import 'knit_sections_test_support.dart';
 import 'print/print_test_support.dart';
 
 // The knitting section acceptance fixtures (fixtures/knitting/sections/, shared with the Rust tests)
-// as the app sees them: every one is a current (version 4) .plyknit envelope, and what the engine
+// as the app sees them: every one is a current (version 5) .plyknit envelope, and what the engine
 // says about it (its hand-derived oracle: the written instructions, the ledger and the problems)
 // reaches the written-instructions screen and the printed PDF intact: each section under its
 // heading, each step with its row label and its stitch count, uncounted steps flagged, and every
@@ -61,9 +61,9 @@ PrintSection _section(PrintDocument d, String heading) =>
     d.sections.firstWhere((s) => s.heading == heading);
 
 void main() {
-  test('every section fixture is a current (version 4) envelope', () {
+  test('every section fixture is a current (version 5) envelope', () {
     for (final name in kSectionFixtures) {
-      expect(plyknitSchemaVersion(sectionFixtureText(name, 'plyknit')), 4, reason: name);
+      expect(plyknitSchemaVersion(sectionFixtureText(name, 'plyknit')), 5, reason: name);
       final record = sectionFixtureText(name, 'fixture.toml');
       expect(record, contains('practitioner_knit_check = "pending"'), reason: name);
       expect(record, contains('license = "original"'), reason: name);

@@ -1,0 +1,1496 @@
+{
+  "description": "Deliberate mistakes for the steps that work in the round, sock heels and toes, each refused in plain words and changing nothing, around a few steps that work. A flat piece of 20 sts is joined into the round only at the start of a row at an edge (not partway through a row or at a short-row turn, and not twice); a flat chart is not worked in the round; short rows need a part worked flat. Needle groups must have names, distinct names and stitches, add up to the needle, and be set at the start of a round. Shaping must change something, every 1 or more rounds, on groups that exist, and reach its stitch count by whole repeats without emptying the needle or a group. Picking up needs stitches, a group when the needle has groups and a known group when named, the right side facing, an edge (not a short-row turn), and for a part worked flat, a side of it: the right side at the start of a right-side row, the left side at its end, or the right side at the end of the round after the part is joined again. Short rows at the gap need a gap ahead, room before or past it and room for their decrease. Joining a part worked flat back needs the right side facing. Closing needs no stitches resting outside a part worked flat, a whole round, and two equal halves. Sections marked flat or in the round that do not start that way are warned about, as is a part still worked flat at the end. A side of a part worked flat moves with its stitches: after picking up at the start of its right-side row the work is still at its right side (a second pick-up there is warned about), after picking up at the end of the row it is past the picked-up stitches, not at a side, and once the part is joined back in, its right side is after the stitches picked up before its first stitch. The start of the round cannot move while part of the round is worked flat, and a German turn just after a decrease that leaves a single stitch to work is refused.",
+  "covers": [
+    "every refusal of join to work in the round, working flat over part of the round, rows, shaping, picking up, needle groups and closing",
+    "gap-relative short-row refusals",
+    "a flat chart in the round",
+    "section construction warnings",
+    "an unchecked change that stops the needle groups",
+    "a part worked flat left at the end of the pattern",
+    "sides of a part worked flat that move with picked-up stitches",
+    "moving the start of the round while working flat",
+    "a German turn after a decrease"
+  ],
+  "conserves_stitches": false,
+  "construction": "Flat",
+  "first_row_side": "Rs",
+  "cast_on": 20,
+  "written": [
+    "Cast on 20 sts.",
+    "Section 1: Flat start (worked in the round)",
+    "Work back and forth over the next 4 sts for the heel. (not counted: see the problems)",
+    "Next row (RS): knit 5 sts. (20 sts on the needle, 15 still to work in this row)",
+    "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+    "Knit to end. (20 sts on the needle)",
+    "Short row 1 (WS): purl to last 5 sts, wrap and turn. (20 sts on the needle, 5 waiting past a turn)",
+    "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+    "Divide the sts into needle groups: 10 left, 10 right. (not counted: see the problems)",
+    "Work 2 rows: knit. (not counted: see the problems)",
+    "Knit to 1 st before the gap, turn. (not counted: see the problems)",
+    "Short row 2 (RS): knit to end. (20 sts on the needle, 5 waiting past a turn)",
+    "Next row (WS): purl to end, working each wrap together with its stitch. (20 sts on the needle)",
+    "Next 6 rows (first row RS): decrease 1 st in the first row and then every other row, 3 times in all. (17 sts on the needle)",
+    "Join to work in the round, being careful not to twist. (17 sts on the needle)",
+    "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+    "Row 1 (RS): k20 (not counted: see the problems)",
+    "Knit to last 3 sts, wrap and turn. (not counted: see the problems)",
+    "Section 2: Groups (worked flat)",
+    "Divide the sts into needle groups: 9 left, 9 right. (not counted: see the problems)",
+    "Divide the sts into needle groups: 0 left, 17 right. (not counted: see the problems)",
+    "Divide the sts into needle groups: 8 unnamed, 9 right. (not counted: see the problems)",
+    "Divide the sts into needle groups: 8 sole, 9 Sole. (not counted: see the problems)",
+    "Next rnd: knit 2 sts. (17 sts on the needle, 15 still to work in this rnd)",
+    "Divide the sts into needle groups: 8 sole, 9 instep. (not counted: see the problems)",
+    "Work 1 rnd: knit. (not counted: see the problems)",
+    "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+    "Work back and forth over the next 8 sts for the heel. (not counted: see the problems)",
+    "Decrease 1 st in every rnd, 1 time in all. (not counted: see the problems)",
+    "Knit to end. (17 sts on the needle)",
+    "Work 0 rnds: knit. (not counted: see the problems)",
+    "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+    "Next rnd: decrease 1 st in every rnd, 1 time in all. (16 sts on the needle)",
+    "Divide the 16 sts into needle groups, starting at the beginning of the rnd: 6 instep, 5 sole, 5 heel. (16 sts on the needle: 6 instep, 5 sole, 5 heel)",
+    "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+    "Increase 0 sts on the instep in every rnd, 1 time in all. (not counted: see the problems)",
+    "Decrease 1 st on the instep in every rnd, 1 time in all. (not counted: see the problems)",
+    "Decrease 1 st on each of the instep and the instep in every rnd, 1 time in all. (not counted: see the problems)",
+    "Decrease 1 st on the gusset in every rnd, 1 time in all. (not counted: see the problems)",
+    "Decrease 1 st on the instep in every rnd, 0 times in all. (not counted: see the problems)",
+    "Decrease 1 st on the instep in every rnd until 16 sts remain. (not counted: see the problems)",
+    "Decrease 1 st on the instep in every rnd until 20 sts remain. (not counted: see the problems)",
+    "Decrease 2 sts on each of the instep and the sole in every rnd until 9 sts remain. (not counted: see the problems)",
+    "Decrease 1 st in every rnd, 20 times in all. (not counted: see the problems)",
+    "Decrease 1 st on the sole in every rnd, 5 times in all. (not counted: see the problems)",
+    "Pick up and knit 2 sts along the cast-on edge. (not counted: see the problems)",
+    "Pick up and knit 2 sts along the cast-on edge, adding them to the gusset. (not counted: see the problems)",
+    "Pick up and knit 0 sts along the cast-on edge, adding them to the sole. (not counted: see the problems)",
+    "Not checked by Ply: Knit 1 round, increasing 1 st in the instep. (17 sts on the needle)",
+    "Pick up and knit 2 sts along the cast-on edge, adding them to the sole. (not counted: see the problems)",
+    "Decrease 1 st on the sole in every rnd, 1 time in all. (not counted: see the problems)",
+    "Pick up and knit 2 sts along the side of the part worked flat. (not counted: see the problems)",
+    "Pick up and knit 2 sts along the side of the part worked flat. (not counted: see the problems)",
+    "Pick up and knit 2 sts along the side of the heel. (not counted: see the problems)",
+    "Pick up and knit 2 sts along the side of the heel. (not counted: see the problems)",
+    "Work back and forth over the next 20 sts for the heel. (not counted: see the problems)",
+    "Work back and forth over the next 0 sts for the heel. (not counted: see the problems)",
+    "Section 3: Heel (worked flat)",
+    "Work back and forth over the next 9 sts for the heel, slipping the first st of every row; the other 8 sts rest on the needle. (17 sts on the needle; 9 worked flat, 8 resting)",
+    "Work back and forth over the next 4 sts for the heel. (not counted: see the problems)",
+    "Divide the sts into needle groups: 17 all. (not counted: see the problems)",
+    "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+    "Next 4 rows (first row RS): sl 1, knit to end. (17 sts on the needle; 9 worked flat, 8 resting)",
+    "Next row (RS): pick up and knit 3 sts along the right side of the heel (it has 2 slipped edge sts on this side). (20 sts on the needle; 12 worked flat, 8 resting; 9 still to work in this row)",
+    "Pick up and knit 2 sts along the right side of the heel (it has 2 slipped edge sts on this side). (22 sts on the needle; 14 worked flat, 8 resting; 9 still to work in this row)",
+    "Knit to end. (22 sts on the needle; 14 worked flat, 8 resting)",
+    "Pick up and knit 2 sts along the left side of the heel (it has 2 slipped edge sts on this side). (24 sts on the needle; 16 worked flat, 8 resting)",
+    "Pick up and knit 1 st along the side of the heel. (not counted: see the problems)",
+    "Short row 1 (WS): purl to last 4 sts, turn. (24 sts on the needle; 16 worked flat, 8 resting; 4 waiting past a turn)",
+    "Short row 2 (RS): knit to last 3 sts, turn. (24 sts on the needle; 16 worked flat, 8 resting; 7 waiting past a turn)",
+    "Pick up and knit 1 st along the edge. (not counted: see the problems)",
+    "Purl to 10 sts before the gap, turn. (not counted: see the problems)",
+    "Purl to 5 sts past the gap, turn. (not counted: see the problems)",
+    "Purl to 3 sts past the gap, p2tog, turn. (not counted: see the problems)",
+    "Purl to 4 sts past the gap, wrap and turn. (not counted: see the problems)",
+    "Short row 3 (WS): purl to the gap, p2tog, p1, turn. (23 sts on the needle; 15 worked flat, 8 resting; 4 waiting past a turn)",
+    "Short row 4 (RS): knit to end. (23 sts on the needle; 15 worked flat, 8 resting; 1 waiting past a turn)",
+    "Next row (WS): purl 2 sts. (23 sts on the needle; 15 worked flat, 8 resting; 13 still to work in this row; 1 waiting past a turn)",
+    "Pick up and knit 1 st along the edge. (not counted: see the problems)",
+    "Join to work in the round again over all 23 sts. (not counted: see the problems)",
+    "Purl to end. (23 sts on the needle; 15 worked flat, 8 resting)",
+    "Section 4: Back in the round (worked in the round)",
+    "Join to work in the round again over all 23 sts. (23 sts on the needle)",
+    "Pick up and knit 2 sts along the side of the heel. (not counted: see the problems)",
+    "Next rnd: bind off all sts. (0 sts on the needle; 23 bound off)",
+    "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+    "Work 1 row: knit. (not counted: see the problems)",
+    "Work back and forth over the next 4 sts for the flap. (not counted: see the problems)",
+    "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+    "Next row (RS): pick up and knit 6 sts along the bound-off edge. (6 sts on the needle; 23 bound off)",
+    "Place all 6 sts on a holder (all). (0 sts on the needle; 6 on hold; 23 bound off)",
+    "Return the 6 sts on hold (all) to the needle and join the yarn. (6 sts on the needle; 23 bound off)",
+    "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+    "Next row: bind off all sts. (0 sts on the needle; 29 bound off)",
+    "Cast on 10 sts. (10 sts on the needle; 29 bound off)",
+    "Join to work in the round, being careful not to twist. (10 sts on the needle; 29 bound off)",
+    "Work back and forth over the next 6 sts for the flap; the other 4 sts rest on the needle. (10 sts on the needle; 6 worked flat, 4 resting; 29 bound off)",
+    "The rnd now starts here (move the marker for the start of the rnd). (not counted: see the problems)",
+    "Knit to last 6 sts, ssk, turn. (not counted: see the problems)"
+  ],
+  "steps": [
+    {
+      "section": "Flat start",
+      "step": 1,
+      "chart_row": null,
+      "line": "Work back and forth over the next 4 sts for the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Flat start",
+      "step": 2,
+      "chart_row": null,
+      "line": "Next row (RS): knit 5 sts. (20 sts on the needle, 15 still to work in this row)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 15,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Flat start",
+      "step": 3,
+      "chart_row": null,
+      "line": "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Flat start",
+      "step": 4,
+      "chart_row": null,
+      "line": "Knit to end. (20 sts on the needle)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Flat start",
+      "step": 5,
+      "chart_row": null,
+      "line": "Short row 1 (WS): purl to last 5 sts, wrap and turn. (20 sts on the needle, 5 waiting past a turn)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 15,
+        "mid_row": false,
+        "past_turns": 5,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Flat start",
+      "step": 6,
+      "chart_row": null,
+      "line": "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Flat start",
+      "step": 7,
+      "chart_row": null,
+      "line": "Divide the sts into needle groups: 10 left, 10 right. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Flat start",
+      "step": 8,
+      "chart_row": null,
+      "line": "Work 2 rows: knit. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Flat start",
+      "step": 9,
+      "chart_row": null,
+      "line": "Knit to 1 st before the gap, turn. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Flat start",
+      "step": 10,
+      "chart_row": null,
+      "line": "Short row 2 (RS): knit to end. (20 sts on the needle, 5 waiting past a turn)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 5,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Flat start",
+      "step": 11,
+      "chart_row": null,
+      "line": "Next row (WS): purl to end, working each wrap together with its stitch. (20 sts on the needle)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 20,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Flat start",
+      "step": 12,
+      "chart_row": null,
+      "line": "Next 6 rows (first row RS): decrease 1 st in the first row and then every other row, 3 times in all. (17 sts on the needle)",
+      "count": {
+        "on_needle": 17,
+        "to_work": 17,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Flat start",
+      "step": 13,
+      "chart_row": null,
+      "line": "Join to work in the round, being careful not to twist. (17 sts on the needle)",
+      "count": {
+        "on_needle": 17,
+        "to_work": 17,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Flat start",
+      "step": 14,
+      "chart_row": null,
+      "line": "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Flat start",
+      "step": 15,
+      "chart_row": 1,
+      "line": "Row 1 (RS): k20 (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Flat start",
+      "step": 16,
+      "chart_row": null,
+      "line": "Knit to last 3 sts, wrap and turn. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 1,
+      "chart_row": null,
+      "line": "Divide the sts into needle groups: 9 left, 9 right. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 2,
+      "chart_row": null,
+      "line": "Divide the sts into needle groups: 0 left, 17 right. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 3,
+      "chart_row": null,
+      "line": "Divide the sts into needle groups: 8 unnamed, 9 right. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 4,
+      "chart_row": null,
+      "line": "Divide the sts into needle groups: 8 sole, 9 Sole. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 5,
+      "chart_row": null,
+      "line": "Next rnd: knit 2 sts. (17 sts on the needle, 15 still to work in this rnd)",
+      "count": {
+        "on_needle": 17,
+        "to_work": 15,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Groups",
+      "step": 6,
+      "chart_row": null,
+      "line": "Divide the sts into needle groups: 8 sole, 9 instep. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 7,
+      "chart_row": null,
+      "line": "Work 1 rnd: knit. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 8,
+      "chart_row": null,
+      "line": "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 9,
+      "chart_row": null,
+      "line": "Work back and forth over the next 8 sts for the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 10,
+      "chart_row": null,
+      "line": "Decrease 1 st in every rnd, 1 time in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 11,
+      "chart_row": null,
+      "line": "Knit to end. (17 sts on the needle)",
+      "count": {
+        "on_needle": 17,
+        "to_work": 17,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Groups",
+      "step": 12,
+      "chart_row": null,
+      "line": "Work 0 rnds: knit. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 13,
+      "chart_row": null,
+      "line": "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 14,
+      "chart_row": null,
+      "line": "Next rnd: decrease 1 st in every rnd, 1 time in all. (16 sts on the needle)",
+      "count": {
+        "on_needle": 16,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Groups",
+      "step": 15,
+      "chart_row": null,
+      "line": "Divide the 16 sts into needle groups, starting at the beginning of the rnd: 6 instep, 5 sole, 5 heel. (16 sts on the needle: 6 instep, 5 sole, 5 heel)",
+      "count": {
+        "on_needle": 16,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "instep",
+            6
+          ],
+          [
+            "sole",
+            5
+          ],
+          [
+            "heel",
+            5
+          ]
+        ],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Groups",
+      "step": 16,
+      "chart_row": null,
+      "line": "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 17,
+      "chart_row": null,
+      "line": "Increase 0 sts on the instep in every rnd, 1 time in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 18,
+      "chart_row": null,
+      "line": "Decrease 1 st on the instep in every rnd, 1 time in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 19,
+      "chart_row": null,
+      "line": "Decrease 1 st on each of the instep and the instep in every rnd, 1 time in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 20,
+      "chart_row": null,
+      "line": "Decrease 1 st on the gusset in every rnd, 1 time in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 21,
+      "chart_row": null,
+      "line": "Decrease 1 st on the instep in every rnd, 0 times in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 22,
+      "chart_row": null,
+      "line": "Decrease 1 st on the instep in every rnd until 16 sts remain. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 23,
+      "chart_row": null,
+      "line": "Decrease 1 st on the instep in every rnd until 20 sts remain. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 24,
+      "chart_row": null,
+      "line": "Decrease 2 sts on each of the instep and the sole in every rnd until 9 sts remain. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 25,
+      "chart_row": null,
+      "line": "Decrease 1 st in every rnd, 20 times in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 26,
+      "chart_row": null,
+      "line": "Decrease 1 st on the sole in every rnd, 5 times in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 27,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the cast-on edge. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 28,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the cast-on edge, adding them to the gusset. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 29,
+      "chart_row": null,
+      "line": "Pick up and knit 0 sts along the cast-on edge, adding them to the sole. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 30,
+      "chart_row": null,
+      "line": "Not checked by Ply: Knit 1 round, increasing 1 st in the instep. (17 sts on the needle)",
+      "count": {
+        "on_needle": 17,
+        "to_work": 17,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Groups",
+      "step": 31,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the cast-on edge, adding them to the sole. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 32,
+      "chart_row": null,
+      "line": "Decrease 1 st on the sole in every rnd, 1 time in all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 33,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the side of the part worked flat. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 34,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the side of the part worked flat. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 35,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the side of the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 36,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the side of the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 37,
+      "chart_row": null,
+      "line": "Work back and forth over the next 20 sts for the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Groups",
+      "step": 38,
+      "chart_row": null,
+      "line": "Work back and forth over the next 0 sts for the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 1,
+      "chart_row": null,
+      "line": "Work back and forth over the next 9 sts for the heel, slipping the first st of every row; the other 8 sts rest on the needle. (17 sts on the needle; 9 worked flat, 8 resting)",
+      "count": {
+        "on_needle": 17,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": 9,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 2,
+      "chart_row": null,
+      "line": "Work back and forth over the next 4 sts for the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 3,
+      "chart_row": null,
+      "line": "Divide the sts into needle groups: 17 all. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 4,
+      "chart_row": null,
+      "line": "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 5,
+      "chart_row": null,
+      "line": "Next 4 rows (first row RS): sl 1, knit to end. (17 sts on the needle; 9 worked flat, 8 resting)",
+      "count": {
+        "on_needle": 17,
+        "to_work": 9,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": 9,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 6,
+      "chart_row": null,
+      "line": "Next row (RS): pick up and knit 3 sts along the right side of the heel (it has 2 slipped edge sts on this side). (20 sts on the needle; 12 worked flat, 8 resting; 9 still to work in this row)",
+      "count": {
+        "on_needle": 20,
+        "to_work": 9,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": 12,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 7,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the right side of the heel (it has 2 slipped edge sts on this side). (22 sts on the needle; 14 worked flat, 8 resting; 9 still to work in this row)",
+      "count": {
+        "on_needle": 22,
+        "to_work": 9,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": 14,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 8,
+      "chart_row": null,
+      "line": "Knit to end. (22 sts on the needle; 14 worked flat, 8 resting)",
+      "count": {
+        "on_needle": 22,
+        "to_work": 14,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": 14,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 9,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the left side of the heel (it has 2 slipped edge sts on this side). (24 sts on the needle; 16 worked flat, 8 resting)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 10,
+      "chart_row": null,
+      "line": "Pick up and knit 1 st along the side of the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 11,
+      "chart_row": null,
+      "line": "Short row 1 (WS): purl to last 4 sts, turn. (24 sts on the needle; 16 worked flat, 8 resting; 4 waiting past a turn)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 4,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 12,
+      "chart_row": null,
+      "line": "Short row 2 (RS): knit to last 3 sts, turn. (24 sts on the needle; 16 worked flat, 8 resting; 7 waiting past a turn)",
+      "count": {
+        "on_needle": 24,
+        "to_work": 13,
+        "mid_row": false,
+        "past_turns": 7,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 13,
+      "chart_row": null,
+      "line": "Pick up and knit 1 st along the edge. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 14,
+      "chart_row": null,
+      "line": "Purl to 10 sts before the gap, turn. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 15,
+      "chart_row": null,
+      "line": "Purl to 5 sts past the gap, turn. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 16,
+      "chart_row": null,
+      "line": "Purl to 3 sts past the gap, p2tog, turn. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 17,
+      "chart_row": null,
+      "line": "Purl to 4 sts past the gap, wrap and turn. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 18,
+      "chart_row": null,
+      "line": "Short row 3 (WS): purl to the gap, p2tog, p1, turn. (23 sts on the needle; 15 worked flat, 8 resting; 4 waiting past a turn)",
+      "count": {
+        "on_needle": 23,
+        "to_work": 14,
+        "mid_row": false,
+        "past_turns": 4,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": 15,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 19,
+      "chart_row": null,
+      "line": "Short row 4 (RS): knit to end. (23 sts on the needle; 15 worked flat, 8 resting; 1 waiting past a turn)",
+      "count": {
+        "on_needle": 23,
+        "to_work": 15,
+        "mid_row": false,
+        "past_turns": 1,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": 15,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 20,
+      "chart_row": null,
+      "line": "Next row (WS): purl 2 sts. (23 sts on the needle; 15 worked flat, 8 resting; 13 still to work in this row; 1 waiting past a turn)",
+      "count": {
+        "on_needle": 23,
+        "to_work": 13,
+        "mid_row": true,
+        "past_turns": 1,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": 15,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 21,
+      "chart_row": null,
+      "line": "Pick up and knit 1 st along the edge. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 22,
+      "chart_row": null,
+      "line": "Join to work in the round again over all 23 sts. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Heel",
+      "step": 23,
+      "chart_row": null,
+      "line": "Purl to end. (23 sts on the needle; 15 worked flat, 8 resting)",
+      "count": {
+        "on_needle": 23,
+        "to_work": 15,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": 15,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 1,
+      "chart_row": null,
+      "line": "Join to work in the round again over all 23 sts. (23 sts on the needle)",
+      "count": {
+        "on_needle": 23,
+        "to_work": 23,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 2,
+      "chart_row": null,
+      "line": "Pick up and knit 2 sts along the side of the heel. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back in the round",
+      "step": 3,
+      "chart_row": null,
+      "line": "Next rnd: bind off all sts. (0 sts on the needle; 23 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 23,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 4,
+      "chart_row": null,
+      "line": "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back in the round",
+      "step": 5,
+      "chart_row": null,
+      "line": "Work 1 row: knit. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back in the round",
+      "step": 6,
+      "chart_row": null,
+      "line": "Work back and forth over the next 4 sts for the flap. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back in the round",
+      "step": 7,
+      "chart_row": null,
+      "line": "Graft the sts together with Kitchener stitch. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back in the round",
+      "step": 8,
+      "chart_row": null,
+      "line": "Next row (RS): pick up and knit 6 sts along the bound-off edge. (6 sts on the needle; 23 bound off)",
+      "count": {
+        "on_needle": 6,
+        "to_work": 6,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 23,
+        "side": "WS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 9,
+      "chart_row": null,
+      "line": "Place all 6 sts on a holder (all). (0 sts on the needle; 6 on hold; 23 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [
+          [
+            "all",
+            6
+          ]
+        ],
+        "bound_off": 23,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 10,
+      "chart_row": null,
+      "line": "Return the 6 sts on hold (all) to the needle and join the yarn. (6 sts on the needle; 23 bound off)",
+      "count": {
+        "on_needle": 6,
+        "to_work": 6,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 23,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 11,
+      "chart_row": null,
+      "line": "Join to work in the round, being careful not to twist. (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back in the round",
+      "step": 12,
+      "chart_row": null,
+      "line": "Next row: bind off all sts. (0 sts on the needle; 29 bound off)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 29,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 13,
+      "chart_row": null,
+      "line": "Cast on 10 sts. (10 sts on the needle; 29 bound off)",
+      "count": {
+        "on_needle": 10,
+        "to_work": 10,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 29,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 14,
+      "chart_row": null,
+      "line": "Join to work in the round, being careful not to twist. (10 sts on the needle; 29 bound off)",
+      "count": {
+        "on_needle": 10,
+        "to_work": 10,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 29,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 15,
+      "chart_row": null,
+      "line": "Work back and forth over the next 6 sts for the flap; the other 4 sts rest on the needle. (10 sts on the needle; 6 worked flat, 4 resting; 29 bound off)",
+      "count": {
+        "on_needle": 10,
+        "to_work": 6,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 29,
+        "side": "RS",
+        "in_round": false,
+        "groups": [],
+        "flat": 6,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Back in the round",
+      "step": 16,
+      "chart_row": null,
+      "line": "The rnd now starts here (move the marker for the start of the rnd). (not counted: see the problems)",
+      "count": "not counted"
+    },
+    {
+      "section": "Back in the round",
+      "step": 17,
+      "chart_row": null,
+      "line": "Knit to last 6 sts, ssk, turn. (not counted: see the problems)",
+      "count": "not counted"
+    }
+  ],
+  "issues": [
+    {
+      "severity": "warning",
+      "message": "Flat start: the section is marked as worked in the round, but the work is flat when it starts; start the section with a step that joins the work into the round, or mark it as worked flat"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 1: works part of the stitches flat, but the work is already flat; put the other stitches on hold instead"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 3: joins the work into the round partway through a row (15 stitches still to work in it); join at the end of a row"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 6: joins the work into the round at a short-row turn; work to the end of the row first"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 7: divides the stitches into groups at a short-row turn; do it at the start of a row"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 8: works whole rows, but the work is at a short-row turn here; work to the end of the row first"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 9: works to the gap an earlier short row left, but no stitches are waiting past a turn ahead in this row"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 14: the work is already in the round"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 15, chart row 1: the chart is for working flat (it has wrong-side rows), but the work is in the round here; use knit, purl or row steps for the rounds"
+    },
+    {
+      "severity": "error",
+      "message": "Flat start, step 16: turns partway through a round; to work short rows over part of the round (a short-row heel), first add a step that works part of the stitches flat"
+    },
+    {
+      "severity": "warning",
+      "message": "Groups: the section is marked as worked flat, but the work is in the round when it starts; start the section with a step that works part of the stitches flat, or mark it as worked in the round"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 1: the groups add up to 18 stitches, but 17 are on the needle"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 2: the needle group left has 0 stitches"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 3: a needle group has no name"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 4: two needle groups are called Sole"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 6: divides the stitches into groups partway through a round (15 stitches still to work in it); do it at the start of a round"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 7: works whole rounds, but this round is already started (15 stitches still to work in it); finish the round first"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 8: closes the stitches partway through a round (15 stitches still to work in it); finish the round first"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 9: starts working flat partway through a round (15 stitches still to work in it); Ply starts a part worked flat at the start of the round"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 10: shapes over whole rounds, but this round is already started (15 stitches still to work in it); finish the round first"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 12: works 0 rounds; work at least 1"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 13: grafting joins two equal halves, but 17 stitches do not divide evenly"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 16: grafting joins two halves, but the stitches are in 3 needle groups (instep, sole, heel); divide them into two groups first"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 17: changes no stitches; to work rounds without shaping, use a step that works whole rounds"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 18: shapes every 0 rounds; give 1 to shape every round, or 2 for every other round"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 19: names the needle group instep twice"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 20: there is no needle group called gusset on the needle here"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 21: shapes 0 times; shape at least once"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 22: shapes until 16 stitches remain, but that is how many are on the needle already"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 23: decreases, but 20 stitches is more than the 16 on the needle"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 24: decreases 4 stitches at a time, which cannot reach 9 from 16: it goes from 12 to 8"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 25: takes off 20 stitches, but only 16 are on the needle"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 26: takes 5 stitches off the sole, which has only 5 stitches"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 27: the stitches are in needle groups (instep, sole, heel); say which group the picked-up stitches go on"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 28: there is no needle group called gusset; the groups are instep, sole, heel"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 29: picks up 0 stitches; pick up at least 1"
+    },
+    {
+      "severity": "warning",
+      "message": "Groups, step 30: this step adds stitches in its own words, so Ply cannot tell how the change falls between the needle groups (instep, sole, heel); it stops counting the groups here (divide the stitches into groups again to count them)"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 31: adds the stitches to the needle group sole, but the stitches are not divided into groups yet; divide them first, or leave the group out"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 32: shapes the needle group sole, but the stitches are not divided into groups yet; divide them first, or leave the group out"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 33: picks up along a part worked flat, but the step that worked it flat is gone (it may have been deleted)"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 34: names Flat start, step 2, which does not work stitches flat"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 35: picks up along the heel, but Groups, step 9 could not work it flat"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 36: picks up along the heel before Heel, step 1 works it; move this step after it"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 37: works 20 stitches flat, but the round has only 17 stitches"
+    },
+    {
+      "severity": "error",
+      "message": "Groups, step 38: works 0 stitches flat; work at least 1"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 2: part of the round is already worked flat; join it back into the round first"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 3: divides the stitches into groups while part of the round is worked flat; divide them in the round, before working part of it flat"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 4: closes the stitches while others rest on the needle outside the part worked flat; join them back into the round first"
+    },
+    {
+      "severity": "warning",
+      "message": "Heel, step 7: picks up along the right side of the heel a second time"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 10: picks up along the heel, but the work is not at either side of it here (a side is at the end or the start of its right-side rows, wherever those stitches are now)"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 13: picks up at a short-row turn; pick up at the end of a row or at its start"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 14: works to 10 stitches before the gap, but only 9 are before it"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 15: works 5 stitches past the gap, but only 4 are waiting past it"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 16: has no room for the decrease: it needs 2 stitches after the first 12 stitches, but only 1 is left in this row"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 17: turns with no stitches left past the turn; to work every stitch left in the row, use a plain work step instead"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 21: picks up with the right side facing, but the work is partway through a wrong-side row"
+    },
+    {
+      "severity": "error",
+      "message": "Heel, step 22: joins the work back into the round partway through a wrong-side row, but rounds are worked from the right side; join at the end of a right-side row"
+    },
+    {
+      "severity": "error",
+      "message": "Back in the round, step 2: picks up along the heel, but the work is not at either side of it here (a side is at the end or the start of its right-side rows, wherever those stitches are now)"
+    },
+    {
+      "severity": "error",
+      "message": "Back in the round, step 4: there are no stitches on the needle; cast on first (in the pattern settings or with a cast-on step)"
+    },
+    {
+      "severity": "error",
+      "message": "Back in the round, step 5: there are no stitches on the needle; cast on first (in the pattern settings or with a cast-on step)"
+    },
+    {
+      "severity": "error",
+      "message": "Back in the round, step 6: there are no stitches on the needle; cast on first (in the pattern settings or with a cast-on step)"
+    },
+    {
+      "severity": "error",
+      "message": "Back in the round, step 7: there are no stitches on the needle; cast on first (in the pattern settings or with a cast-on step)"
+    },
+    {
+      "severity": "warning",
+      "message": "Back in the round, step 10: does not say which side faces you when the stitches go back on the needle, so Ply cannot tell which rows after it are right-side or wrong-side rows"
+    },
+    {
+      "severity": "error",
+      "message": "Back in the round, step 11: Ply does not know which side of the work faces you here, so it cannot tell which way the right side goes; say which side faces you in the step that returned these stitches"
+    },
+    {
+      "severity": "error",
+      "message": "Back in the round, step 16: moves the start of the round while part of the round is worked flat; join it back into the round first"
+    },
+    {
+      "severity": "error",
+      "message": "Back in the round, step 17: turns too soon for a German short row: the next row would have only the double stitch to work; work at least 2 stitches before this turn, or use another method"
+    },
+    {
+      "severity": "warning",
+      "message": "Back in the round, step 15: 4 stitches are still resting on the needle at the end of the pattern; no step joins them back into the round"
+    }
+  ]
+}

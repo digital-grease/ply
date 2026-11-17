@@ -2,17 +2,33 @@
 // engine's `ply_knit::sections` owns their meaning and the stitch ledger). No FFI: ids, the step
 // kinds the editor offers, and the hold steps a "return stitches" step can name.
 
+import 'dart:convert';
+
 import '../rust/knit_dto.dart';
 
 /// The kinds of step the sections editor can add, in the order the add menu lists them.
 enum KnitStepKind {
   chartRows('Chart rows', 'Work rows of the chart, each over every stitch left in the row.'),
   work('Knit or purl across', 'Work part of a row, or to the end of the row, in one stitch.'),
+  rows(
+      'Rows or rounds', 'Work a number of whole rows or rounds without changing the stitch count.'),
   shortRow('Short row', 'Work part of the row, then turn before the end.'),
   castOn('Cast on', 'Cast on new stitches.'),
   bindOff('Bind off', 'Bind off some stitches, or the rest of the row.'),
   hold('Put stitches on hold', 'Move stitches to a holder or waste yarn, as a named group.'),
   resume('Return held stitches', 'Put a group from a holder back on the needle.'),
+  joinRound('Join in the round',
+      'Join the stitches into a round, or join a part worked flat back into the round.'),
+  workFlat('Work part of the round flat',
+      'Work back and forth over some of the stitches, such as a heel flap, while the rest wait.'),
+  pickUp('Pick up and knit', 'Pick up and knit new stitches along an edge, such as a heel flap.'),
+  groups('Needle groups',
+      'Name groups of stitches on the needle, such as the instep and the sole, to count each.'),
+  shape('Shaping',
+      'Decrease or increase on some rows or rounds, a number of times or to a stitch count.'),
+  close('Graft or close', 'Graft the last stitches together, or bind them off together.'),
+  roundStart('Move the start of the round',
+      'Make the round start where the work is now, as patterns say after a gusset pick-up.'),
   unchecked('Written step (not checked)',
       'Any other instruction, in your own words. Ply does not check it.');
 
@@ -35,6 +51,14 @@ KnitStepKind knitStepKind(KnitStepActionDto action) => switch (action) {
       KnitStepActionDto_Hold() => KnitStepKind.hold,
       KnitStepActionDto_Resume() => KnitStepKind.resume,
       KnitStepActionDto_Opaque() => KnitStepKind.unchecked,
+      KnitStepActionDto_JoinRound() => KnitStepKind.joinRound,
+      KnitStepActionDto_WorkFlat() => KnitStepKind.workFlat,
+      KnitStepActionDto_Rows() => KnitStepKind.rows,
+      KnitStepActionDto_Shape() => KnitStepKind.shape,
+      KnitStepActionDto_PickUp() => KnitStepKind.pickUp,
+      KnitStepActionDto_Groups() => KnitStepKind.groups,
+      KnitStepActionDto_Close() => KnitStepKind.close,
+      KnitStepActionDto_RoundStart() => KnitStepKind.roundStart,
     };
 
 /// The plain-words name of a work stitch.
@@ -51,12 +75,50 @@ String turnMethodLabel(TurnMethodKind m) => switch (m) {
       TurnMethodKind.unspecified => 'Just turn (method not stated)',
     };
 
+/// The plain-words name of a decrease worked at a short row's turn.
+String decreaseLabel(DecreaseKind d) => switch (d) {
+      DecreaseKind.k2Tog => 'k2tog',
+      DecreaseKind.ssk => 'ssk',
+      DecreaseKind.p2Tog => 'p2tog',
+      DecreaseKind.ssp => 'ssp',
+    };
+
+/// The plain-words name of a way to close the last stitches.
+String closeMethodLabel(CloseMethodKind m) => switch (m) {
+      CloseMethodKind.graft => 'Graft (Kitchener stitch)',
+      CloseMethodKind.threeNeedleBindOff => 'Three-needle bind-off',
+    };
+
+/// How a section says it is worked, in plain words (`null`: the section does not say).
+String sectionConstructionLabel(ConstructionKind? c) => switch (c) {
+      null => 'Not stated',
+      ConstructionKind.flat => 'Worked flat',
+      ConstructionKind.inTheRound => 'Worked in the round',
+    };
+
 /// Whether a written-instructions line is a section heading (`Section 2: Left side`, or `Section 2`
-/// for a section with no name), as the engine writes them for a pattern with sections.
-bool isKnitSectionHeading(String line) => RegExp(r'^Section \d+(?:: .*)?$').hasMatch(line);
+/// for a section with no name, with `(worked flat)` or `(worked in the round)` when the section
+/// says), as the engine writes them for a pattern with sections.
+bool isKnitSectionHeading(String line) =>
+    RegExp(r'^Section \d+(?:: .*| \(worked (?:flat|in the round)\))?$').hasMatch(line);
 
 /// The largest stitch count a step form accepts (the same bound as the pattern cast-on).
 const int kMaxStepCount = 100000;
+
+/// The most a section's or step's name, notes or text may hold, in bytes of UTF-8 as the engine
+/// measures it (`ply_knit::sections::MAX_TEXT_BYTES`): a pattern past it would save but not open.
+const int kMaxSectionTextBytes = 10000;
+
+/// The most needle groups one step may name or set (`ply_knit::sections::MAX_GROUPS`).
+const int kMaxNeedleGroups = 100;
+
+/// Whether [text] is longer than a section or step text may be.
+bool knitTextTooLong(String text) => utf8.encode(text).length > kMaxSectionTextBytes;
+
+/// What a form says when a text is past [kMaxSectionTextBytes].
+const String kKnitTextTooLong =
+    'Too long for Ply to save: keep it under 10,000 bytes (most letters take 1, accented letters '
+    'and symbols 2 to 4).';
 
 /// The next free id of the form `<prefix>N`: one more than the largest N already used, so a new id
 /// never clashes with an existing one (including ids a deleted item freed, which are not reused).
@@ -74,13 +136,15 @@ String _nextId(Iterable<String> ids, String prefix) {
 String nextSectionId(KnitPatternDto p) => _nextId([for (final s in p.sections) s.id], 'section-');
 
 /// The id for a new step of [p] (`step-N`), unique across every section. Every id a "return held
-/// stitches" step names counts as used too, so deleting a hold step never lets a new one take its id
-/// and silently become what the orphaned return step returns.
+/// stitches" or "pick up along" step names counts as used too, so deleting a hold or work-flat step
+/// never lets a new one take its id and silently become what the orphaned step refers to.
 String nextStepId(KnitPatternDto p) => _nextId([
       for (final s in p.sections)
         for (final st in s.steps) ...[
           st.id,
           if (st.action case KnitStepActionDto_Resume(:final hold)) hold,
+          if (st.action case KnitStepActionDto_PickUp(along: PickUpAlongDto_Piece(:final step)))
+            step,
         ],
     ], 'step-');
 
@@ -130,6 +194,36 @@ List<KnitHoldRef> knitHoldSteps(KnitPatternDto p) => [
             ),
     ];
 
+/// Every step that works part of the round flat in [p], in pattern order, as a pick-up step can
+/// name it (the part's name, or `Part worked flat` when it has none).
+List<KnitHoldRef> knitFlatParts(KnitPatternDto p) => [
+      for (var si = 0; si < p.sections.length; si++)
+        for (var ti = 0; ti < p.sections[si].steps.length; ti++)
+          if (p.sections[si].steps[ti].action case KnitStepActionDto_WorkFlat(:final name))
+            KnitHoldRef(
+              stepId: p.sections[si].steps[ti].id,
+              name: name.trim().isEmpty ? 'Part worked flat' : name,
+              sectionName: knitSectionTitle(p, si),
+              stepNumber: ti + 1,
+            ),
+    ];
+
+/// The names of the needle groups the pattern's group steps set, in order, each once.
+List<String> knitGroupNames(KnitPatternDto p) {
+  final names = <String>[];
+  for (final s in p.sections) {
+    for (final st in s.steps) {
+      if (st.action case KnitStepActionDto_Groups(:final groups)) {
+        for (final g in groups) {
+          final n = g.name.trim();
+          if (n.isNotEmpty && !names.contains(n)) names.add(n);
+        }
+      }
+    }
+  }
+  return names;
+}
+
 /// The action a new step of [kind] starts with in its form: nothing that would surprise (counts the
 /// knitter then sets; the first hold step for a return).
 KnitStepActionDto defaultKnitStepAction(KnitStepKind kind, KnitPatternDto p) => switch (kind) {
@@ -148,4 +242,18 @@ KnitStepActionDto defaultKnitStepAction(KnitStepKind kind, KnitPatternDto p) => 
       KnitStepKind.resume => KnitStepActionDto.resume(
           hold: knitHoldSteps(p).isEmpty ? '' : knitHoldSteps(p).last.stepId),
       KnitStepKind.unchecked => const KnitStepActionDto.opaque(text: ''),
+      KnitStepKind.joinRound => const KnitStepActionDto.joinRound(),
+      KnitStepKind.workFlat =>
+        const KnitStepActionDto.workFlat(count: 1, name: 'heel flap', slipEdges: true),
+      KnitStepKind.rows => const KnitStepActionDto.rows(count: 1, text: ''),
+      KnitStepKind.shape => const KnitStepActionDto.shape(
+          change: -2, every: 2, until: ShapeUntilDto.times(count: 1), groups: [], text: ''),
+      KnitStepKind.pickUp => KnitStepActionDto.pickUp(
+          count: 1,
+          along: knitFlatParts(p).isEmpty
+              ? const PickUpAlongDto.edge(text: '')
+              : PickUpAlongDto.piece(step: knitFlatParts(p).last.stepId)),
+      KnitStepKind.groups => const KnitStepActionDto.groups(groups: []),
+      KnitStepKind.close => const KnitStepActionDto.close(method: CloseMethodKind.graft),
+      KnitStepKind.roundStart => const KnitStepActionDto.roundStart(),
     };

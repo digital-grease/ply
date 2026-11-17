@@ -476,11 +476,13 @@ pub fn tieup_for_shed_dto(rows: Vec<Vec<u16>>, shafts: u16, shed: ShedKind) -> V
 // ---------------------------------------------------------------------------
 
 pub use crate::knit_dto::{
-    CableDefDto, CellDto, ChartDto, ConstructionKind, CrossKind, GaugeDto, KnitConstructionDto,
-    KnitFormatFailure, KnitFormatFailureKind, KnitHeldCountDto, KnitIssueDto, KnitLedgerLineDto,
-    KnitLineCountKind, KnitNeedleCountDto, KnitPatternDto, KnitSectionDto, KnitSectionIssueDto,
-    KnitStepActionDto, KnitStepDto, RepeatDto, RepeatSpanDto, RowDto, SideKind, StitchDefDto,
-    StitchLegendDto, TurnAtDto, TurnMethodKind, WorkStitchKind, WorkToDto, YarnWeightKind,
+    CableDefDto, CellDto, ChartDto, CloseMethodKind, ConstructionKind, CrossKind, DecreaseKind,
+    GaugeDto, KnitConstructionDto, KnitFormatFailure, KnitFormatFailureKind, KnitGroupCountDto,
+    KnitHeldCountDto, KnitIssueDto, KnitLedgerLineDto, KnitLineCountKind, KnitNeedleCountDto,
+    KnitPatternDto, KnitSectionDto, KnitSectionIssueDto, KnitStepActionDto, KnitStepDto,
+    NeedleGroupDto, PickUpAlongDto, RepeatDto, RepeatSpanDto, RowDto, ShapeUntilDto, SideKind,
+    StitchDefDto, StitchLegendDto, TurnAtDto, TurnDecreaseDto, TurnMethodKind, WorkStitchKind,
+    WorkToDto, YarnWeightKind,
 };
 
 /// Parse a native `.plyknit` file (any supported schema version) into the editor's
@@ -500,11 +502,18 @@ pub fn parse_knit(json: String) -> Result<KnitPatternDto, KnitFormatFailure> {
 }
 
 /// Serialize the editor's `KnitPatternDto` as a current-version native `.plyknit` envelope. `Err` if
-/// the gauge is non-finite (the engine rejects a NaN/Inf gauge that JSON can't round-trip).
+/// the gauge is non-finite (the engine rejects a NaN/Inf gauge that JSON can't round-trip), or if
+/// the sections are past the sizes `parse_knit` opens: a file this build would then refuse to open
+/// is never written (the app keeps the pattern unsaved and says why).
 pub fn write_knit(dto: KnitPatternDto) -> Result<String, String> {
-    ply_knit::KnitPattern::from(dto)
-        .to_json()
-        .map_err(|e| e.to_string())
+    let pattern = ply_knit::KnitPattern::from(dto);
+    ply_knit::sections::check_limits(&pattern).map_err(|why| {
+        format!(
+            "a section is too large to save: {why}. Your changes are still here; shorten it and \
+             save again"
+        )
+    })?;
+    pattern.to_json().map_err(|e| e.to_string())
 }
 
 /// Render a knitting chart `KnitPatternDto` to an RGBA preview (symbols + colorwork + cable spans).

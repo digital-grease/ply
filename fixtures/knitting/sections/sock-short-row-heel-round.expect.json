@@ -1,0 +1,922 @@
+{
+  "description": "A child's top-down sock in the round over 32 sts with a German short-row heel, worked out stitch by stitch by hand. After a 1x1 rib cuff and 30 plain rounds the stitches are divided into the sole (16, at the start of the round) and the instep (16). The heel is worked back and forth over the 16 sole stitches while the instep rests. Short rows 1 and 2 turn with 1 st left; rows 3 to 10 each start by making a double stitch and work to the double stitch made at the last turn on that side (1 st before the gap), so 1 more stitch waits on each side every two rows: after row 10, 5 wait at each end and 6 are left in the middle, with 10 double stitches. Rows 11 to 18 lengthen again: each works to 1 st past the gap, working the double stitches it reaches as one stitch (two each row) and making a new one at its turn, so 1 fewer stitch waits on each side every two rows. Row 19 knits to the end of the heel, working the last double stitch on that side. The heel joins the round at the end of that row: the instep is knitted, and the next round works the last double stitch (on the second heel stitch) and the one stitch still waiting at the start. Nothing is added or removed in the heel: 32 sts throughout. The toe decreases 2 sts on each group every other round to 16 ((32 - 16) / 4 = 4 times, 8 rounds), then every round to 8 (2 times), and the 4 sole sts are grafted to the 4 instep sts.",
+  "covers": [
+    "German short rows over half the round while the instep rests",
+    "turning to the double stitch at the gap (shortening) and 1 st past the gap (lengthening)",
+    "double stitches carried, worked as one and made again",
+    "a heel row that ends at the edge and joins the round",
+    "the last double stitch worked in the first full round",
+    "needle groups through a short-row heel",
+    "repeated shaping on two groups and grafting"
+  ],
+  "conserves_stitches": false,
+  "construction": "InTheRound",
+  "first_row_side": "Rs",
+  "cast_on": 32,
+  "written": [
+    "Cast on 32 sts. Join to work in the round, being careful not to twist.",
+    "Section 1: Cuff (worked in the round)",
+    "Round 1: *k, p; rep from * to end (32 sts on the needle)",
+    "Not checked by Ply: Repeat round 1 until the cuff measures 1 in (2.5 cm). (32 sts on the needle)",
+    "Section 2: Leg (worked in the round)",
+    "Next 30 rnds: knit. (32 sts on the needle)",
+    "Divide the 32 sts into needle groups, starting at the beginning of the rnd: 16 sole (needles 1 and 2), 16 instep (needles 3 and 4). (32 sts on the needle: 16 sole, 16 instep)",
+    "Section 3: Heel",
+    "Notes: German short rows over the 16 sole stitches: the first half shortens each row by one stitch, the second half lengthens it again, then the heel joins the round.",
+    "Work back and forth over the next 16 sts for the heel; the other 16 sts rest on the needle. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting)",
+    "Short row 1 (RS): knit to last st, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 1 waiting past a turn)",
+    "Short row 2 (WS): make a double stitch, purl to last st, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 2 waiting past a turn)",
+    "Short row 3 (RS): make a double stitch, knit to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 3 waiting past a turn)",
+    "Short row 4 (WS): make a double stitch, purl to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 4 waiting past a turn)",
+    "Short row 5 (RS): make a double stitch, knit to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 5 waiting past a turn)",
+    "Short row 6 (WS): make a double stitch, purl to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 6 waiting past a turn)",
+    "Short row 7 (RS): make a double stitch, knit to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 7 waiting past a turn)",
+    "Short row 8 (WS): make a double stitch, purl to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 8 waiting past a turn)",
+    "Short row 9 (RS): make a double stitch, knit to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 9 waiting past a turn)",
+    "Short row 10 (WS): make a double stitch, purl to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 10 waiting past a turn)",
+    "Short row 11 (RS): make a double stitch, knit to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 9 waiting past a turn)",
+    "Short row 12 (WS): make a double stitch, purl to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 8 waiting past a turn)",
+    "Short row 13 (RS): make a double stitch, knit to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 7 waiting past a turn)",
+    "Short row 14 (WS): make a double stitch, purl to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 6 waiting past a turn)",
+    "Short row 15 (RS): make a double stitch, knit to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 5 waiting past a turn)",
+    "Short row 16 (WS): make a double stitch, purl to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 4 waiting past a turn)",
+    "Short row 17 (RS): make a double stitch, knit to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 3 waiting past a turn)",
+    "Short row 18 (WS): make a double stitch, purl to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 2 waiting past a turn)",
+    "Short row 19 (RS): make a double stitch, knit to end, working each double stitch as one stitch. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 1 waiting past a turn)",
+    "Join to work in the round again over all 32 sts. (32 sts on the needle: 16 sole, 16 instep; 16 still to work in this rnd)",
+    "Knit to end. (32 sts on the needle: 16 sole, 16 instep)",
+    "Next rnd: knit to end, working each double stitch as one stitch. (32 sts on the needle: 16 sole, 16 instep)",
+    "Section 4: Foot (worked in the round)",
+    "Not checked by Ply: Knit every round until the foot measures 1.25 in (3 cm) less than the length of the foot. (32 sts on the needle: 16 sole, 16 instep)",
+    "Section 5: Toe (worked in the round)",
+    "Next 8 rnds: decrease 2 sts on each of the sole and the instep in the first rnd and then every other rnd until 16 sts remain (4 decrease rnds); each decrease rnd: k1, ssk, knit to the last 3 sts of the sole, k2tog, k1, then work the instep the same way. (16 sts on the needle: 8 sole, 8 instep)",
+    "Next 2 rnds: decrease 2 sts on each of the sole and the instep in every rnd until 8 sts remain (2 decrease rnds); each decrease rnd: k1, ssk, knit to the last 3 sts of the sole, k2tog, k1, then work the instep the same way. (8 sts on the needle: 4 sole, 4 instep)",
+    "Graft the 4 sole sts to the 4 instep sts with Kitchener stitch. (0 sts on the needle; 8 grafted)"
+  ],
+  "steps": [
+    {
+      "section": "Cuff",
+      "step": 1,
+      "chart_row": 1,
+      "line": "Round 1: *k, p; rep from * to end (32 sts on the needle)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 32,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Cuff",
+      "step": 2,
+      "chart_row": null,
+      "line": "Not checked by Ply: Repeat round 1 until the cuff measures 1 in (2.5 cm). (32 sts on the needle)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 32,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Leg",
+      "step": 1,
+      "chart_row": null,
+      "line": "Next 30 rnds: knit. (32 sts on the needle)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 32,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Leg",
+      "step": 2,
+      "chart_row": null,
+      "line": "Divide the 32 sts into needle groups, starting at the beginning of the rnd: 16 sole (needles 1 and 2), 16 instep (needles 3 and 4). (32 sts on the needle: 16 sole, 16 instep)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 32,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 1,
+      "chart_row": null,
+      "line": "Work back and forth over the next 16 sts for the heel; the other 16 sts rest on the needle. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 2,
+      "chart_row": null,
+      "line": "Short row 1 (RS): knit to last st, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 1 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 14,
+        "mid_row": false,
+        "past_turns": 1,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 3,
+      "chart_row": null,
+      "line": "Short row 2 (WS): make a double stitch, purl to last st, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 2 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 14,
+        "mid_row": false,
+        "past_turns": 2,
+        "pending_turns": 2,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 4,
+      "chart_row": null,
+      "line": "Short row 3 (RS): make a double stitch, knit to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 3 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 13,
+        "mid_row": false,
+        "past_turns": 3,
+        "pending_turns": 3,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 5,
+      "chart_row": null,
+      "line": "Short row 4 (WS): make a double stitch, purl to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 4 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 13,
+        "mid_row": false,
+        "past_turns": 4,
+        "pending_turns": 4,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 6,
+      "chart_row": null,
+      "line": "Short row 5 (RS): make a double stitch, knit to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 5 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 5,
+        "pending_turns": 5,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 7,
+      "chart_row": null,
+      "line": "Short row 6 (WS): make a double stitch, purl to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 6 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 6,
+        "pending_turns": 6,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 8,
+      "chart_row": null,
+      "line": "Short row 7 (RS): make a double stitch, knit to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 7 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 11,
+        "mid_row": false,
+        "past_turns": 7,
+        "pending_turns": 7,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 9,
+      "chart_row": null,
+      "line": "Short row 8 (WS): make a double stitch, purl to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 8 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 11,
+        "mid_row": false,
+        "past_turns": 8,
+        "pending_turns": 8,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 10,
+      "chart_row": null,
+      "line": "Short row 9 (RS): make a double stitch, knit to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 9 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 10,
+        "mid_row": false,
+        "past_turns": 9,
+        "pending_turns": 9,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 11,
+      "chart_row": null,
+      "line": "Short row 10 (WS): make a double stitch, purl to the double stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 10 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 10,
+        "mid_row": false,
+        "past_turns": 10,
+        "pending_turns": 10,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 12,
+      "chart_row": null,
+      "line": "Short row 11 (RS): make a double stitch, knit to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 9 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 11,
+        "mid_row": false,
+        "past_turns": 9,
+        "pending_turns": 9,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 13,
+      "chart_row": null,
+      "line": "Short row 12 (WS): make a double stitch, purl to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 8 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 11,
+        "mid_row": false,
+        "past_turns": 8,
+        "pending_turns": 8,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 14,
+      "chart_row": null,
+      "line": "Short row 13 (RS): make a double stitch, knit to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 7 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 7,
+        "pending_turns": 7,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 15,
+      "chart_row": null,
+      "line": "Short row 14 (WS): make a double stitch, purl to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 6 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 12,
+        "mid_row": false,
+        "past_turns": 6,
+        "pending_turns": 6,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 16,
+      "chart_row": null,
+      "line": "Short row 15 (RS): make a double stitch, knit to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 5 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 13,
+        "mid_row": false,
+        "past_turns": 5,
+        "pending_turns": 5,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 17,
+      "chart_row": null,
+      "line": "Short row 16 (WS): make a double stitch, purl to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 4 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 13,
+        "mid_row": false,
+        "past_turns": 4,
+        "pending_turns": 4,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 18,
+      "chart_row": null,
+      "line": "Short row 17 (RS): make a double stitch, knit to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 3 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 14,
+        "mid_row": false,
+        "past_turns": 3,
+        "pending_turns": 3,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 19,
+      "chart_row": null,
+      "line": "Short row 18 (WS): make a double stitch, purl to 1 st past the gap, working each double stitch as one stitch, turn. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 2 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 14,
+        "mid_row": false,
+        "past_turns": 2,
+        "pending_turns": 2,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 20,
+      "chart_row": null,
+      "line": "Short row 19 (RS): make a double stitch, knit to end, working each double stitch as one stitch. (32 sts on the needle: 16 sole, 16 instep; 16 worked flat, 16 resting; 1 waiting past a turn)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 1,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 0,
+        "side": "WS",
+        "in_round": false,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": 16,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 21,
+      "chart_row": null,
+      "line": "Join to work in the round again over all 32 sts. (32 sts on the needle: 16 sole, 16 instep; 16 still to work in this rnd)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 16,
+        "mid_row": true,
+        "past_turns": 0,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 22,
+      "chart_row": null,
+      "line": "Knit to end. (32 sts on the needle: 16 sole, 16 instep)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 32,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 1,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Heel",
+      "step": 23,
+      "chart_row": null,
+      "line": "Next rnd: knit to end, working each double stitch as one stitch. (32 sts on the needle: 16 sole, 16 instep)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 32,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Foot",
+      "step": 1,
+      "chart_row": null,
+      "line": "Not checked by Ply: Knit every round until the foot measures 1.25 in (3 cm) less than the length of the foot. (32 sts on the needle: 16 sole, 16 instep)",
+      "count": {
+        "on_needle": 32,
+        "to_work": 32,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "sole",
+            16
+          ],
+          [
+            "instep",
+            16
+          ]
+        ],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Toe",
+      "step": 1,
+      "chart_row": null,
+      "line": "Next 8 rnds: decrease 2 sts on each of the sole and the instep in the first rnd and then every other rnd until 16 sts remain (4 decrease rnds); each decrease rnd: k1, ssk, knit to the last 3 sts of the sole, k2tog, k1, then work the instep the same way. (16 sts on the needle: 8 sole, 8 instep)",
+      "count": {
+        "on_needle": 16,
+        "to_work": 16,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "sole",
+            8
+          ],
+          [
+            "instep",
+            8
+          ]
+        ],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Toe",
+      "step": 2,
+      "chart_row": null,
+      "line": "Next 2 rnds: decrease 2 sts on each of the sole and the instep in every rnd until 8 sts remain (2 decrease rnds); each decrease rnd: k1, ssk, knit to the last 3 sts of the sole, k2tog, k1, then work the instep the same way. (8 sts on the needle: 4 sole, 4 instep)",
+      "count": {
+        "on_needle": 8,
+        "to_work": 8,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": "RS",
+        "in_round": true,
+        "groups": [
+          [
+            "sole",
+            4
+          ],
+          [
+            "instep",
+            4
+          ]
+        ],
+        "flat": null,
+        "grafted": 0
+      }
+    },
+    {
+      "section": "Toe",
+      "step": 3,
+      "chart_row": null,
+      "line": "Graft the 4 sole sts to the 4 instep sts with Kitchener stitch. (0 sts on the needle; 8 grafted)",
+      "count": {
+        "on_needle": 0,
+        "to_work": 0,
+        "mid_row": false,
+        "past_turns": 0,
+        "pending_turns": 0,
+        "held": [],
+        "bound_off": 0,
+        "side": null,
+        "in_round": false,
+        "groups": [],
+        "flat": null,
+        "grafted": 8
+      }
+    }
+  ],
+  "issues": []
+}

@@ -15,8 +15,9 @@ use ply_knit::pattern::{
     StitchDef, StitchLegend,
 };
 use ply_knit::sections::{
-    HeldCount, Ledger, LedgerLine, LineCount, NeedleCount, Section, SectionIssue, Step, StepAction,
-    TurnAt, TurnMethod, WorkStitch, WorkTo,
+    CloseMethod, Decrease, HeldCount, Ledger, LedgerLine, LineCount, NeedleCount, NeedleGroup,
+    PickUpAlong, Section, SectionIssue, ShapeUntil, Step, StepAction, TurnAt, TurnDecrease,
+    TurnMethod, WorkStitch, WorkTo,
 };
 use ply_knit::validate::{KnitIssue, Severity};
 use ply_knit::KnitError;
@@ -82,10 +83,53 @@ pub enum WorkToDto {
     Count { count: u32 },
 }
 
-/// Where a short row turns (data-carrying: a freezed union in Dart).
+/// Where a short row turns (data-carrying: a freezed union in Dart). `BeforeGap` and `PastGap` turn
+/// relative to the gap an earlier short row on this side left (schema version 5).
 pub enum TurnAtDto {
     Last { count: u32 },
     Count { count: u32 },
+    BeforeGap { count: u32 },
+    PastGap { count: u32 },
+}
+
+/// A decrease that works two stitches together.
+pub enum DecreaseKind {
+    K2tog,
+    Ssk,
+    P2tog,
+    Ssp,
+}
+
+/// A decrease worked just before a short row turns, then `after` more stitches.
+pub struct TurnDecreaseDto {
+    pub kind: DecreaseKind,
+    pub after: u32,
+}
+
+/// How many times a shaping step shapes, or the stitch count it shapes to (a freezed union).
+pub enum ShapeUntilDto {
+    Times { count: u32 },
+    Remain { count: u32 },
+}
+
+/// The edge a pick-up step picks up along (a freezed union): a side of a part worked flat (by the
+/// id of the step that worked it flat), or any edge in the pattern's own words.
+pub enum PickUpAlongDto {
+    Piece { step: String },
+    Edge { text: String },
+}
+
+/// A named needle group (instep, sole) with its stitch count and a note.
+pub struct NeedleGroupDto {
+    pub name: String,
+    pub count: u32,
+    pub notes: String,
+}
+
+/// How a closing step finishes the last stitches.
+pub enum CloseMethodKind {
+    Graft,
+    ThreeNeedleBindOff,
 }
 
 /// What a section step does; mirrors `ply_knit::sections::StepAction` (a freezed union in Dart).
@@ -107,6 +151,7 @@ pub enum KnitStepActionDto {
         to: TurnAtDto,
         method: TurnMethodKind,
         resolve_turns: bool,
+        decrease: Option<TurnDecreaseDto>,
     },
     CastOn {
         count: u32,
@@ -127,6 +172,38 @@ pub enum KnitStepActionDto {
         text: String,
         stitch_change: Option<i32>,
     },
+    // Schema version 5: working in the round, sock heels and toes.
+    JoinRound,
+    WorkFlat {
+        count: u32,
+        name: String,
+        slip_edges: bool,
+    },
+    Rows {
+        count: u32,
+        text: String,
+    },
+    /// `change` is per needle group named (or the whole needle), per shaping row; an `i32` like
+    /// `stitch_change`, and capped the same way on load.
+    Shape {
+        change: i32,
+        every: u32,
+        until: ShapeUntilDto,
+        groups: Vec<String>,
+        text: String,
+    },
+    PickUp {
+        count: u32,
+        along: PickUpAlongDto,
+        group: Option<String>,
+    },
+    Groups {
+        groups: Vec<NeedleGroupDto>,
+    },
+    Close {
+        method: CloseMethodKind,
+    },
+    RoundStart,
 }
 
 // --- structs ---------------------------------------------------------------------------------------
@@ -142,12 +219,20 @@ pub struct KnitSectionDto {
     pub id: String,
     pub name: String,
     pub notes: String,
+    /// Whether the section is worked flat or in the round, when the pattern says.
+    pub construction: Option<ConstructionKind>,
     pub steps: Vec<KnitStepDto>,
 }
 
 /// A group of stitches on hold, as the ledger counts it. `hold` is the hold step's id.
 pub struct KnitHeldCountDto {
     pub hold: String,
+    pub name: String,
+    pub count: u32,
+}
+
+/// A needle group as the ledger counts it.
+pub struct KnitGroupCountDto {
     pub name: String,
     pub count: u32,
 }
@@ -164,6 +249,14 @@ pub struct KnitNeedleCountDto {
     pub held: Vec<KnitHeldCountDto>,
     pub bound_off: u32,
     pub side: Option<SideKind>,
+    /// The work is in the round (`to_work` is what is left of the round).
+    pub in_round: bool,
+    /// The needle groups, in order from the start of the round or row (empty without groups).
+    pub groups: Vec<KnitGroupCountDto>,
+    /// While part of the round is worked flat: the stitches worked flat (the rest of `on_needle`
+    /// rests on the needle).
+    pub flat: Option<u32>,
+    pub grafted: u32,
 }
 
 /// Whether a ledger line was counted, could not be known, or was refused.
@@ -681,6 +774,8 @@ impl From<TurnAt> for TurnAtDto {
         match t {
             TurnAt::Last(count) => Self::Last { count },
             TurnAt::Count(count) => Self::Count { count },
+            TurnAt::BeforeGap(count) => Self::BeforeGap { count },
+            TurnAt::PastGap(count) => Self::PastGap { count },
         }
     }
 }
@@ -689,8 +784,106 @@ impl From<TurnAtDto> for TurnAt {
         match t {
             TurnAtDto::Last { count } => Self::Last(count),
             TurnAtDto::Count { count } => Self::Count(count),
+            TurnAtDto::BeforeGap { count } => Self::BeforeGap(count),
+            TurnAtDto::PastGap { count } => Self::PastGap(count),
         }
     }
+}
+
+impl From<Decrease> for DecreaseKind {
+    fn from(d: Decrease) -> Self {
+        match d {
+            Decrease::K2tog => Self::K2tog,
+            Decrease::Ssk => Self::Ssk,
+            Decrease::P2tog => Self::P2tog,
+            Decrease::Ssp => Self::Ssp,
+        }
+    }
+}
+impl From<DecreaseKind> for Decrease {
+    fn from(d: DecreaseKind) -> Self {
+        match d {
+            DecreaseKind::K2tog => Self::K2tog,
+            DecreaseKind::Ssk => Self::Ssk,
+            DecreaseKind::P2tog => Self::P2tog,
+            DecreaseKind::Ssp => Self::Ssp,
+        }
+    }
+}
+
+impl From<TurnDecrease> for TurnDecreaseDto {
+    fn from(d: TurnDecrease) -> Self {
+        TurnDecreaseDto {
+            kind: d.kind.into(),
+            after: d.after,
+        }
+    }
+}
+impl From<TurnDecreaseDto> for TurnDecrease {
+    fn from(d: TurnDecreaseDto) -> Self {
+        TurnDecrease {
+            kind: d.kind.into(),
+            after: d.after,
+        }
+    }
+}
+
+impl From<ShapeUntil> for ShapeUntilDto {
+    fn from(u: ShapeUntil) -> Self {
+        match u {
+            ShapeUntil::Times(count) => Self::Times { count },
+            ShapeUntil::Remain(count) => Self::Remain { count },
+        }
+    }
+}
+impl From<ShapeUntilDto> for ShapeUntil {
+    fn from(u: ShapeUntilDto) -> Self {
+        match u {
+            ShapeUntilDto::Times { count } => Self::Times(count),
+            ShapeUntilDto::Remain { count } => Self::Remain(count),
+        }
+    }
+}
+
+impl From<PickUpAlong> for PickUpAlongDto {
+    fn from(a: PickUpAlong) -> Self {
+        match a {
+            PickUpAlong::Piece(step) => Self::Piece { step },
+            PickUpAlong::Edge(text) => Self::Edge { text },
+        }
+    }
+}
+impl From<PickUpAlongDto> for PickUpAlong {
+    fn from(a: PickUpAlongDto) -> Self {
+        match a {
+            PickUpAlongDto::Piece { step } => Self::Piece(step),
+            PickUpAlongDto::Edge { text } => Self::Edge(text),
+        }
+    }
+}
+
+impl From<CloseMethod> for CloseMethodKind {
+    fn from(m: CloseMethod) -> Self {
+        match m {
+            CloseMethod::Graft => Self::Graft,
+            CloseMethod::ThreeNeedleBindOff => Self::ThreeNeedleBindOff,
+        }
+    }
+}
+impl From<CloseMethodKind> for CloseMethod {
+    fn from(m: CloseMethodKind) -> Self {
+        match m {
+            CloseMethodKind::Graft => Self::Graft,
+            CloseMethodKind::ThreeNeedleBindOff => Self::ThreeNeedleBindOff,
+        }
+    }
+}
+
+/// An engine `i64` stitch change as the DTO's `i32`: exact for every file that opens (`parse_knit`
+/// refuses a change past the ledger's cap, well inside `i32`); the clamp only guards a pattern
+/// built in Rust.
+fn change_to_dto(d: i64) -> i32 {
+    d.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
 impl From<&StepAction> for KnitStepActionDto {
@@ -711,11 +904,13 @@ impl From<&StepAction> for KnitStepActionDto {
                 to,
                 method,
                 resolve_turns,
+                decrease,
             } => Self::ShortRow {
                 stitch: stitch.into(),
                 to: to.into(),
                 method: method.into(),
                 resolve_turns,
+                decrease: decrease.map(TurnDecreaseDto::from),
             },
             StepAction::CastOn { count } => Self::CastOn { count },
             StepAction::BindOff {
@@ -737,9 +932,55 @@ impl From<&StepAction> for KnitStepActionDto {
                 text,
                 // `parse_knit` refuses a change past the ledger's cap (well inside i32), so this is
                 // exact for every file that opens; the clamp only guards a pattern built in Rust.
-                stitch_change: stitch_change
-                    .map(|d| d.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32),
+                stitch_change: stitch_change.map(change_to_dto),
             },
+            StepAction::JoinRound {} => Self::JoinRound,
+            StepAction::WorkFlat {
+                count,
+                name,
+                slip_edges,
+            } => Self::WorkFlat {
+                count,
+                name,
+                slip_edges,
+            },
+            StepAction::Rows { count, text } => Self::Rows { count, text },
+            StepAction::Shape {
+                change,
+                every,
+                until,
+                groups,
+                text,
+            } => Self::Shape {
+                change: change_to_dto(change),
+                every,
+                until: until.into(),
+                groups,
+                text,
+            },
+            StepAction::PickUp {
+                count,
+                along,
+                group,
+            } => Self::PickUp {
+                count,
+                along: along.into(),
+                group,
+            },
+            StepAction::Groups { groups } => Self::Groups {
+                groups: groups
+                    .into_iter()
+                    .map(|g: NeedleGroup| NeedleGroupDto {
+                        name: g.name,
+                        count: g.count,
+                        notes: g.notes,
+                    })
+                    .collect(),
+            },
+            StepAction::Close { method } => Self::Close {
+                method: method.into(),
+            },
+            StepAction::RoundStart {} => Self::RoundStart,
         }
     }
 }
@@ -761,11 +1002,13 @@ impl From<KnitStepActionDto> for StepAction {
                 to,
                 method,
                 resolve_turns,
+                decrease,
             } => Self::ShortRow {
                 stitch: stitch.into(),
                 to: to.into(),
                 method: method.into(),
                 resolve_turns,
+                decrease: decrease.map(TurnDecrease::from),
             },
             KnitStepActionDto::CastOn { count } => Self::CastOn { count },
             KnitStepActionDto::BindOff {
@@ -787,6 +1030,53 @@ impl From<KnitStepActionDto> for StepAction {
                 text,
                 stitch_change: stitch_change.map(i64::from),
             },
+            KnitStepActionDto::JoinRound => Self::JoinRound {},
+            KnitStepActionDto::WorkFlat {
+                count,
+                name,
+                slip_edges,
+            } => Self::WorkFlat {
+                count,
+                name,
+                slip_edges,
+            },
+            KnitStepActionDto::Rows { count, text } => Self::Rows { count, text },
+            KnitStepActionDto::Shape {
+                change,
+                every,
+                until,
+                groups,
+                text,
+            } => Self::Shape {
+                change: i64::from(change),
+                every,
+                until: until.into(),
+                groups,
+                text,
+            },
+            KnitStepActionDto::PickUp {
+                count,
+                along,
+                group,
+            } => Self::PickUp {
+                count,
+                along: along.into(),
+                group,
+            },
+            KnitStepActionDto::Groups { groups } => Self::Groups {
+                groups: groups
+                    .into_iter()
+                    .map(|g| NeedleGroup {
+                        name: g.name,
+                        count: g.count,
+                        notes: g.notes,
+                    })
+                    .collect(),
+            },
+            KnitStepActionDto::Close { method } => Self::Close {
+                method: method.into(),
+            },
+            KnitStepActionDto::RoundStart => Self::RoundStart {},
         }
     }
 }
@@ -797,6 +1087,7 @@ impl From<&Section> for KnitSectionDto {
             id: s.id.clone(),
             name: s.name.clone(),
             notes: s.notes.clone(),
+            construction: s.construction.map(ConstructionKind::from),
             steps: s
                 .steps
                 .iter()
@@ -814,6 +1105,7 @@ impl From<KnitSectionDto> for Section {
             id: s.id,
             name: s.name,
             notes: s.notes,
+            construction: s.construction.map(Construction::from),
             steps: s
                 .steps
                 .into_iter()
@@ -850,6 +1142,17 @@ impl From<&NeedleCount> for KnitNeedleCountDto {
                 .collect(),
             bound_off: sat(c.bound_off),
             side: c.side.map(SideKind::from),
+            in_round: c.in_round,
+            groups: c
+                .groups
+                .iter()
+                .map(|g| KnitGroupCountDto {
+                    name: g.name.clone(),
+                    count: sat(g.count),
+                })
+                .collect(),
+            flat: c.flat.map(sat),
+            grafted: sat(c.grafted),
         }
     }
 }
@@ -999,6 +1302,7 @@ mod tests {
                 id: "section-1".into(),
                 name: "Shoulder".into(),
                 notes: "n".into(),
+                construction: None,
                 steps: vec![
                     step("a", StepAction::ChartRows { first: 1, last: 2 }),
                     step(
@@ -1024,6 +1328,7 @@ mod tests {
                             to: TurnAt::Count(4),
                             method: TurnMethod::German,
                             resolve_turns: true,
+                            decrease: None,
                         },
                     ),
                     step(
@@ -1033,6 +1338,7 @@ mod tests {
                             to: TurnAt::Last(2),
                             method: TurnMethod::Unspecified,
                             resolve_turns: false,
+                            decrease: None,
                         },
                     ),
                     step("f", StepAction::CastOn { count: 3 }),
@@ -1084,9 +1390,245 @@ mod tests {
                 id: "section-2".into(),
                 name: String::new(),
                 notes: String::new(),
+                construction: None,
                 steps: Vec::new(),
             },
+            Section {
+                id: "section-3".into(),
+                name: "Heel".into(),
+                notes: String::new(),
+                construction: Some(Construction::Flat),
+                steps: vec![
+                    step(
+                        "m",
+                        StepAction::Groups {
+                            groups: vec![NeedleGroup {
+                                name: "sole".into(),
+                                count: 4,
+                                notes: "needle 1".into(),
+                            }],
+                        },
+                    ),
+                    step(
+                        "n",
+                        StepAction::WorkFlat {
+                            count: 4,
+                            name: "heel flap".into(),
+                            slip_edges: true,
+                        },
+                    ),
+                    step(
+                        "o",
+                        StepAction::Rows {
+                            count: 6,
+                            text: "sl 1, k1".into(),
+                        },
+                    ),
+                    step(
+                        "p",
+                        StepAction::ShortRow {
+                            stitch: WorkStitch::Purl,
+                            to: TurnAt::BeforeGap(1),
+                            method: TurnMethod::Unspecified,
+                            resolve_turns: false,
+                            decrease: Some(TurnDecrease {
+                                kind: Decrease::P2tog,
+                                after: 1,
+                            }),
+                        },
+                    ),
+                    step(
+                        "q",
+                        StepAction::ShortRow {
+                            stitch: WorkStitch::Knit,
+                            to: TurnAt::PastGap(2),
+                            method: TurnMethod::German,
+                            resolve_turns: true,
+                            decrease: Some(TurnDecrease {
+                                kind: Decrease::Ssk,
+                                after: 0,
+                            }),
+                        },
+                    ),
+                    step(
+                        "r",
+                        StepAction::PickUp {
+                            count: 3,
+                            along: PickUpAlong::Piece("n".into()),
+                            group: Some("sole".into()),
+                        },
+                    ),
+                    step(
+                        "s",
+                        StepAction::PickUp {
+                            count: 2,
+                            along: PickUpAlong::Edge("the cast-on edge".into()),
+                            group: None,
+                        },
+                    ),
+                    step("t", StepAction::JoinRound {}),
+                    step(
+                        "u",
+                        StepAction::Shape {
+                            change: -2,
+                            every: 2,
+                            until: ShapeUntil::Remain(8),
+                            groups: vec!["sole".into()],
+                            text: "k1, ssk".into(),
+                        },
+                    ),
+                    step(
+                        "v",
+                        StepAction::Shape {
+                            change: 3,
+                            every: 1,
+                            until: ShapeUntil::Times(2),
+                            groups: Vec::new(),
+                            text: String::new(),
+                        },
+                    ),
+                    step(
+                        "w",
+                        StepAction::Close {
+                            method: CloseMethod::Graft,
+                        },
+                    ),
+                    step(
+                        "x",
+                        StepAction::Close {
+                            method: CloseMethod::ThreeNeedleBindOff,
+                        },
+                    ),
+                    step("y", StepAction::RoundStart {}),
+                ],
+            },
         ]
+    }
+
+    /// A sock's ledger crosses with its needle groups, the part worked flat, rounds and grafting
+    /// (the hand-derived fixture, through the real bridge calls).
+    #[test]
+    fn a_sock_construction_crosses_with_groups_flat_parts_and_grafting() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/knitting/sections/sock-heel-flap-round.plyknit"
+        );
+        let dto = crate::api::parse_knit(std::fs::read_to_string(path).unwrap()).unwrap();
+        assert!(matches!(
+            dto.sections[2].construction,
+            Some(ConstructionKind::Flat)
+        ));
+        let c = crate::api::knit_construction(dto);
+        assert!(c.issues.is_empty());
+        let flap = c
+            .lines
+            .iter()
+            .find(|l| l.step_id == "step-6")
+            .and_then(|l| l.count.as_ref())
+            .unwrap();
+        assert_eq!(
+            (flap.on_needle, flap.flat, flap.in_round),
+            (64, Some(32), false)
+        );
+        let names: Vec<(String, u32)> = flap
+            .groups
+            .iter()
+            .map(|g| (g.name.clone(), g.count))
+            .collect();
+        assert_eq!(names, vec![("sole".into(), 32), ("instep".into(), 32)]);
+        let last = c.lines.last().unwrap().count.as_ref().unwrap();
+        assert_eq!((last.on_needle, last.grafted), (0, 16));
+        let joined = c.lines.iter().find(|l| l.step_id == "step-23").unwrap();
+        assert!(joined.count.as_ref().unwrap().in_round);
+        assert_eq!(
+            joined.count_text,
+            "66 sts on the needle: 34 sole, 32 instep; 32 still to work in this rnd"
+        );
+    }
+
+    /// A pattern past the sizes `parse_knit` opens is never written: saving it is refused in plain
+    /// words (the app keeps it unsaved), so Ply never writes a file it would then refuse to open.
+    #[test]
+    fn write_knit_refuses_what_parse_knit_would_not_open() {
+        let mut pattern = KnitPattern::from(crate::api::knit_blank_pattern());
+        let groups = |n: usize| StepAction::Groups {
+            groups: (0..n)
+                .map(|i| NeedleGroup {
+                    name: format!("g{i}"),
+                    count: 1,
+                    notes: String::new(),
+                })
+                .collect(),
+        };
+        let section = |action: StepAction| Section {
+            id: "s".into(),
+            name: "S".into(),
+            notes: String::new(),
+            construction: None,
+            steps: vec![Step {
+                id: "a".into(),
+                action,
+            }],
+        };
+        for action in [
+            groups(ply_knit::sections::MAX_GROUPS + 1),
+            StepAction::Rows {
+                count: 1,
+                text: "k".repeat(ply_knit::sections::MAX_TEXT_BYTES + 1),
+            },
+        ] {
+            pattern.sections = vec![section(action)];
+            let err = crate::api::write_knit(KnitPatternDto::from(&pattern)).unwrap_err();
+            assert!(err.starts_with("a section is too large to save: "), "{err}");
+            assert!(err.ends_with("Your changes are still here; shorten it and save again"));
+            // And the same file, written another way, would indeed not open.
+            assert!(crate::api::parse_knit(pattern.to_json().unwrap()).is_err());
+        }
+        // At the limits it saves and opens again.
+        for action in [
+            groups(ply_knit::sections::MAX_GROUPS),
+            StepAction::Rows {
+                count: 1,
+                text: "\u{e9}".repeat(ply_knit::sections::MAX_TEXT_BYTES / 2),
+            },
+        ] {
+            pattern.sections = vec![section(action)];
+            let saved = crate::api::write_knit(KnitPatternDto::from(&pattern)).unwrap();
+            assert!(crate::api::parse_knit(saved).is_ok());
+        }
+    }
+
+    /// The real version-4 bytes open through the bridge with every section "not stated" and every
+    /// short row without a decrease, and saving writes the current version.
+    #[test]
+    fn a_v4_file_opens_with_nothing_new_stated_and_saves_as_current() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/migrations/plyknit/schema-v4/shoulder-short-rows-flat.plyknit"
+        );
+        let v4 = std::fs::read_to_string(path).unwrap();
+        assert_eq!(ply_knit::native::schema_version(&v4).unwrap(), 4);
+        let dto = crate::api::parse_knit(v4).unwrap();
+        assert!(dto.sections.iter().all(|s| s.construction.is_none()));
+        let short_rows = dto
+            .sections
+            .iter()
+            .flat_map(|s| &s.steps)
+            .filter(|st| {
+                matches!(
+                    st.action,
+                    KnitStepActionDto::ShortRow { decrease: None, .. }
+                )
+            })
+            .count();
+        assert_eq!(short_rows, 3);
+        let saved = crate::api::write_knit(dto).unwrap();
+        assert_eq!(
+            ply_knit::native::schema_version(&saved).unwrap(),
+            ply_knit::KNIT_SCHEMA_VERSION
+        );
+        let again = crate::api::parse_knit(saved.clone()).unwrap();
+        assert_eq!(crate::api::write_knit(again).unwrap(), saved);
     }
 
     /// The construction call names every line and issue by section and step id, and its text and
@@ -1099,6 +1641,7 @@ mod tests {
             id: "section-1".into(),
             name: "Shoulder".into(),
             notes: String::new(),
+            construction: None,
             steps: vec![
                 Step {
                     id: "step-1".into(),
@@ -1107,6 +1650,7 @@ mod tests {
                         to: TurnAt::Last(4),
                         method: TurnMethod::WrapAndTurn,
                         resolve_turns: false,
+                        decrease: None,
                     },
                 },
                 Step {
@@ -1171,6 +1715,7 @@ mod tests {
             id: "s".into(),
             name: "x".repeat(ply_knit::sections::MAX_TEXT_BYTES + 1),
             notes: String::new(),
+            construction: None,
             steps: Vec::new(),
         }];
         let Err(err) = crate::api::parse_knit(pattern.to_json().unwrap()) else {
@@ -1273,7 +1818,7 @@ mod tests {
         let kind =
             |text: &str| KnitFormatFailure::from(KnitPattern::from_json(text).unwrap_err()).kind;
         assert_eq!(
-            kind(r#"{"format":"ply.knit","schema_version":5,"document":{}}"#),
+            kind(r#"{"format":"ply.knit","schema_version":6,"document":{}}"#),
             KnitFormatFailureKind::NewerVersion
         );
         assert_eq!(
@@ -1281,7 +1826,7 @@ mod tests {
             KnitFormatFailureKind::WrongFormat
         );
         assert_eq!(kind("{not json"), KnitFormatFailureKind::Unreadable);
-        for current_or_older in [2, 3, 4] {
+        for current_or_older in [2, 3, 4, 5] {
             assert_eq!(
                 kind(&format!(
                     r#"{{"format":"ply.knit","schema_version":{current_or_older},"document":{{}}}}"#

@@ -122,19 +122,26 @@ pub struct CableDef { pub front: u8, pub back: u8, pub direction: Cross, pub fro
 pub enum Cross { Right, Left }
 ```
 
-**Sections (the optional construction layer, `sections.rs`, `.plyknit` schema version 4).** A
-pattern may add named sections, each an ordered list of steps with stable ids: work a range of the
-chart's rows, knit or purl across (to the end, to the last N stitches, or N stitches), a short row
-(wrap and turn, German, or an unspecified turn), cast on, bind off, put stitches on hold as a named
-group, return a group (by the id of the step that held it, with the side facing the knitter), and a
-written step in the pattern's own words that Ply does not check. A stitch ledger walks the steps on
-a model of the needle (the stitches in order, where the work is, and which way the row travels) and
-gives the count after every step: on the needle, still to work in the row, waiting past a short-row
-turn, each group on hold, bound off. A step that asks for more stitches than there are is reported
-and not applied; an unknown count stays unknown. With sections, the written instructions follow
-them step by step with the count after each, and chart rows are checked where a section works them.
-A pattern with no sections is the chart exactly as before. Flat work only so far; working in the
-round, picking up stitches and joining pieces are later steps.
+**Sections (the optional construction layer, `sections.rs`, `.plyknit` schema version 5).** A
+pattern may add named sections, each an ordered list of steps with stable ids, and each may say
+whether it is worked flat or in the round: work a range of the chart's rows, knit or purl across
+(to the end, to the last N stitches, or N stitches), work whole rows or rounds, a short row (wrap
+and turn, German, or an unspecified turn; from the end, by count, or relative to the gap an earlier
+turn left, with an optional decrease before the turn), cast on, bind off, put stitches on hold as a
+named group, return a group (by the id of the step that held it, with the side facing the knitter),
+join the work in the round, work part of the round flat while the rest rests on the needle (a heel
+flap), pick up and knit along an edge or a side of that part, move the start of the round, divide
+the stitches into named needle groups (instep, sole), shape over several rows or rounds a number of
+times or to a stitch count, graft or bind off the last stitches together, and a written step in the pattern's own words that Ply
+does not check. A stitch ledger walks the steps on a model of the needle (the stitches in order,
+where the work is, which way the row travels, or the start of the round) and gives the count after
+every step: on the needle (and in each needle group), still to work in the row or round, worked flat
+and resting, waiting past a short-row turn, each group on hold, bound off, grafted. A step that asks
+for more stitches than there are is reported and not applied; an unknown count stays unknown; Ply
+never guesses a pick-up rate or which group a change falls in. With sections, the written
+instructions follow them step by step with the count after each, and chart rows are checked where a
+section works them. A pattern with no sections is the chart exactly as before. Joining separate
+pieces and splitting one into several are later steps.
 
 What the research forced (vs the first draft): **repeats are first-class** (`RepeatSpan`/`Repeat`),
 the **vocabulary is an open `StitchLegend`** not a closed enum, **cables are spanning cells**

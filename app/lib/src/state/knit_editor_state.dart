@@ -287,6 +287,15 @@ class KnitEditorState {
   KnitEditorState setSectionNotesAt(int si, String notes) =>
       _editSectionAt(si, (s) => s.notes == notes ? null : _section(s, notes: notes));
 
+  /// Say how the section at [si] is worked: flat, in the round, or (null) not stated. Out of range
+  /// or no change is a no-op.
+  KnitEditorState setSectionConstructionAt(int si, ConstructionKind? construction) =>
+      _editSectionAt(
+          si,
+          (s) => s.construction == construction
+              ? null
+              : _section(s, replaceConstruction: true, construction: construction));
+
   /// Remove the section at [si] and its steps. A step elsewhere that returns stitches put on hold
   /// here is left as it is; the engine reports it, and Undo restores the section.
   KnitEditorState removeSectionAt(int si) {
@@ -634,12 +643,18 @@ bool _sameRepeats(List<RepeatSpanDto> a, List<RepeatSpanDto> b) {
   return true;
 }
 
-/// [s] with the given fields replaced.
+/// [s] with the given fields replaced (the construction only when [replaceConstruction], since
+/// null is a value it can take).
 KnitSectionDto _section(KnitSectionDto s,
-        {String? name, String? notes, List<KnitStepDto>? steps}) =>
+        {String? name,
+        String? notes,
+        List<KnitStepDto>? steps,
+        bool replaceConstruction = false,
+        ConstructionKind? construction}) =>
     KnitSectionDto(
       id: s.id,
       name: name ?? s.name,
       notes: notes ?? s.notes,
+      construction: replaceConstruction ? construction : s.construction,
       steps: steps ?? s.steps,
     );

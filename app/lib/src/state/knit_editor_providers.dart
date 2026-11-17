@@ -152,6 +152,8 @@ class KnitEditorNotifier extends Notifier<KnitEditorState> {
   void addSection(String name) => state = state.addSection(name);
   void renameSectionAt(int si, String name) => state = state.renameSectionAt(si, name);
   void setSectionNotesAt(int si, String notes) => state = state.setSectionNotesAt(si, notes);
+  void setSectionConstructionAt(int si, ConstructionKind? construction) =>
+      state = state.setSectionConstructionAt(si, construction);
   void removeSectionAt(int si) => state = state.removeSectionAt(si);
   void moveSectionAt(int si, int delta) => state = state.moveSectionAt(si, delta);
   void addStepAt(int si, KnitStepActionDto action, {int? index}) =>

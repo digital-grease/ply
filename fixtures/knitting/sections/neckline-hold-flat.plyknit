@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 4,
+  "schema_version": 5,
   "document": {
     "name": "Front neckline on held stitches",
     "construction": "Flat",
@@ -451,6 +451,7 @@
         "id": "section-1",
         "name": "Body",
         "notes": "",
+        "construction": null,
         "steps": [
           {
             "id": "step-1",
@@ -467,6 +468,7 @@
         "id": "section-2",
         "name": "Divide for the neck",
         "notes": "",
+        "construction": null,
         "steps": [
           {
             "id": "step-2",
@@ -504,6 +506,7 @@
         "id": "section-3",
         "name": "Left side",
         "notes": "",
+        "construction": null,
         "steps": [
           {
             "id": "step-5",
@@ -550,6 +553,7 @@
         "id": "section-4",
         "name": "Right side",
         "notes": "",
+        "construction": null,
         "steps": [
           {
             "id": "step-9",
@@ -615,6 +619,7 @@
         "id": "section-5",
         "name": "Neck edge",
         "notes": "",
+        "construction": null,
         "steps": [
           {
             "id": "step-15",

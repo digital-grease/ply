@@ -1,10 +1,14 @@
-//! KNITTING SECTIONS (M9-01, first slice: flat short rows and held stitches): an OPTIONAL
-//! construction layer above the chart, never a replacement for it. A pattern may name sections
-//! ("Back", "Left shoulder"), each an ordered list of steps: work a range of the pattern's chart
-//! rows, cast on, bind off, work across in a plain stitch, work a short row and turn, put stitches on
-//! hold as a named group, return a group to the needle, or an unchecked written step in the
-//! pattern's own words. A pattern with no sections is a chart-only pattern and behaves exactly as
-//! before.
+//! KNITTING SECTIONS (M9-01; first slice: flat short rows and held stitches; second slice: work in
+//! the round, sock heels, gussets and toes): an OPTIONAL construction layer above the chart, never a
+//! replacement for it. A pattern may name sections ("Back", "Heel flap"), each an ordered list of
+//! steps: work a range of the pattern's chart rows, cast on, bind off, work across in a plain
+//! stitch, work whole rows or rounds, work a short row and turn (also relative to the gap, with a
+//! decrease before the turn), put stitches on hold as a named group, return a group to the needle,
+//! join the work in the round, work part of the round flat while the rest rests, pick up and knit
+//! along an edge, divide the stitches into named needle groups, shape over several rows or rounds,
+//! graft or bind off the last stitches together, or an unchecked written step in the pattern's own
+//! words. A section may say whether it is worked flat or in the round. A pattern with no sections is
+//! a chart-only pattern and behaves exactly as before.
 //!
 //! # The stitch ledger
 //!
@@ -46,9 +50,28 @@
 //! many stitches to count"), [`MAX_STEPS`] steps and [`MAX_LINES`] lines (past them, one error and
 //! the counting stops); [`check_limits`] is what a file must meet to open.
 //!
+//! **In the round.** A pattern worked in the round starts with its cast-on joined into a round (a
+//! cast-on step onto an empty needle is joined too); a [`StepAction::JoinRound`] joins flat work.
+//! The stitches are numbered from the start of the round, every round travels toward n from the
+//! right side, and a round that reaches n ends there and the next starts at stitch 1: no turns.
+//! [`StepAction::WorkFlat`] works the next stitches back and forth as a flat part (a heel flap) with
+//! the needle model above, while the rest of the round RESTS on the needle (counted, never worked);
+//! a join puts them back, waiting short-row stitches becoming ordinary stitches of the round (wraps
+//! and double stitches stay where they are). Whole rows of a flat part, before its first short-row
+//! turn, are counted per edge, so a pick-up along its side can say how many slipped edge stitches
+//! that side has; Ply never guesses how many to pick up. A part's two sides are boundaries that move
+//! with the stitches, so a pick-up along one is found wherever the work is, and
+//! [`StepAction::RoundStart`] moves the start of the round keeping every place.
+//!
+//! **Needle groups.** [`StepAction::Groups`] names runs of stitches (the instep, the sole); every
+//! step after it keeps each group's count exactly: held stitches go back into their groups, a
+//! pick-up names its group, a shaping step names the groups it shapes, a cast-on over a gap takes the
+//! held stitches' group. A step that changes the count where Ply cannot place the change between the
+//! groups (an unchecked step, a chart row, a shaping step that names none, stitches added between
+//! two groups) stops counting the groups, with a warning: it never picks a neighbour.
+//!
 //! **Unknown stays unknown.** An unchecked step that does not say how it changes the stitch count
 //! makes every later count unknown (one warning); a chart row that cannot be counted does the same.
-//! Patterns worked in the round are not counted in this slice (one warning).
 //!
 //! The written form ([`written`]) and validation ([`crate::validate`]) both read this one ledger.
 
@@ -82,6 +105,9 @@ pub const MAX_LINES: usize = 20_000;
 pub const MAX_SECTIONS: usize = 1_000;
 pub const MAX_TEXT_BYTES: usize = 10_000;
 
+/// The most needle groups one step may name or set (a sock has two or three).
+pub const MAX_GROUPS: usize = 100;
+
 /// Whether `pattern`'s sections are within the sizes a file may have: at most [`MAX_SECTIONS`]
 /// sections and [`MAX_STEPS`] steps, every id, name, note and text at most [`MAX_TEXT_BYTES`], and
 /// every unchecked step's stitch change within [`MAX_LIVE_STITCHES`] either way (a larger one could
@@ -113,6 +139,20 @@ pub fn check_limits(pattern: &KnitPattern) -> Result<(), String> {
                     StepAction::Hold { name, .. } => long(name),
                     StepAction::Resume { hold, .. } => long(hold),
                     StepAction::Opaque { text, .. } => long(text),
+                    StepAction::WorkFlat { name, .. } => long(name),
+                    StepAction::Rows { text, .. } => long(text),
+                    StepAction::Shape { groups, text, .. } => {
+                        long(text) || groups.iter().any(|g| long(g))
+                    }
+                    StepAction::PickUp { along, group, .. } => {
+                        group.as_deref().is_some_and(long)
+                            || match along {
+                                PickUpAlong::Piece(t) | PickUpAlong::Edge(t) => long(t),
+                            }
+                    }
+                    StepAction::Groups { groups } => {
+                        groups.iter().any(|g| long(&g.name) || long(&g.notes))
+                    }
                     _ => false,
                 };
             if too_long {
@@ -120,14 +160,28 @@ pub fn check_limits(pattern: &KnitPattern) -> Result<(), String> {
                     "a step's id or text is longer than {MAX_TEXT_BYTES} bytes"
                 ));
             }
-            if let StepAction::Opaque {
-                stitch_change: Some(d),
-                ..
-            } = st.action
-            {
+            let many = match &st.action {
+                StepAction::Shape { groups, .. } => groups.len(),
+                StepAction::Groups { groups } => groups.len(),
+                _ => 0,
+            };
+            if many > MAX_GROUPS {
+                return Err(format!(
+                    "a step names {many} needle groups; Ply opens at most {MAX_GROUPS}"
+                ));
+            }
+            let change = match st.action {
+                StepAction::Opaque {
+                    stitch_change: Some(d),
+                    ..
+                } => Some(("an unchecked step", d)),
+                StepAction::Shape { change, .. } => Some(("a shaping step", change)),
+                _ => None,
+            };
+            if let Some((what, d)) = change {
                 if d.unsigned_abs() > MAX_LIVE_STITCHES {
                     return Err(format!(
-                        "an unchecked step changes the stitch count by {d}; Ply counts at most \
+                        "{what} changes the stitch count by {d}; Ply counts at most \
                          {MAX_LIVE_STITCHES} stitches"
                     ));
                 }
@@ -147,6 +201,11 @@ pub struct Section {
     pub name: String,
     /// Free text printed under the section's heading (needles, yarn, a reminder).
     pub notes: String,
+    /// Whether the section is worked flat or in the round, when the pattern says (schema version
+    /// 5; `None` for older files and when not stated). It is shown with the heading and checked at
+    /// the section's start; the steps themselves join the work into the round
+    /// ([`StepAction::JoinRound`]) or work part of it flat ([`StepAction::WorkFlat`]).
+    pub construction: Option<Construction>,
     pub steps: Vec<Step>,
 }
 
@@ -185,6 +244,68 @@ pub enum TurnAt {
     Last(u32),
     /// After working this many stitches ("knit 10 sts, turn").
     Count(u32),
+    /// Until this many stitches are left before the GAP: where an earlier short row on this side
+    /// turned, the edge of the stitches waiting past that turn ("knit to 1 st before the gap").
+    /// Schema version 5.
+    BeforeGap(u32),
+    /// Through the gap and this many stitches past it ("knit to 1 st past the gap"). Schema
+    /// version 5.
+    PastGap(u32),
+}
+
+/// A decrease that works two stitches together as one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Decrease {
+    K2tog,
+    Ssk,
+    P2tog,
+    Ssp,
+}
+
+/// A decrease worked just before a short row turns, then `after` more stitches (a heel turn's
+/// "ssk, k1, turn"). Schema version 5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnDecrease {
+    pub kind: Decrease,
+    pub after: u32,
+}
+
+/// How many times a shaping step shapes, or the stitch count it shapes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShapeUntil {
+    /// This many shaping rows or rounds.
+    Times(u32),
+    /// Until this many stitches are on the needle; it must be reachable by whole repeats.
+    Remain(u32),
+}
+
+/// The edge a pick-up step picks up along.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PickUpAlong {
+    /// A side of the part worked flat by the step with this id (a [`StepAction::WorkFlat`], such
+    /// as a heel flap). Ply finds which side from where the work is, and says how many slipped
+    /// edge stitches or rows that side has when it knows.
+    Piece(String),
+    /// Any other edge, in the pattern's own words ("the cast-on edge").
+    Edge(String),
+}
+
+/// A named group of stitches on the needle (the instep, the sole), with a note such as which
+/// needles hold it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NeedleGroup {
+    pub name: String,
+    pub count: u32,
+    pub notes: String,
+}
+
+/// How a closing step finishes the last stitches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CloseMethod {
+    /// Graft the two halves together with Kitchener stitch (a sock toe).
+    Graft,
+    /// Bind the two halves off together with a three-needle bind-off.
+    ThreeNeedleBindOff,
 }
 
 /// How a short row turns.
@@ -212,12 +333,15 @@ pub enum StepAction {
         to: WorkTo,
         resolve_turns: bool,
     },
-    /// Work across, then turn before the end of the row.
+    /// Work across, then turn before the end of the row. `decrease` (schema version 5; `None` in
+    /// older files) is a decrease worked just before the turn, then a few more stitches, as a heel
+    /// turn does ("knit to 1 st before the gap, ssk, k1, turn").
     ShortRow {
         stitch: WorkStitch,
         to: TurnAt,
         method: TurnMethod,
         resolve_turns: bool,
+        decrease: Option<TurnDecrease>,
     },
     /// Cast on stitches: onto an empty needle, at the start of a row (onto the left needle, worked
     /// in that row), or in the middle of a row (onto the right needle).
@@ -240,6 +364,52 @@ pub enum StepAction {
         text: String,
         stitch_change: Option<i64>,
     },
+    // --- schema version 5: working in the round, sock heels and toes ---
+    /// Join the stitches into a round (from flat work at the start of a row), or join a part worked
+    /// flat ([`StepAction::WorkFlat`]) back into the round with the stitches that rested.
+    JoinRound {},
+    /// From the start of a round, work back and forth over the next `count` stitches (a heel flap);
+    /// the others rest on the needle until a [`StepAction::JoinRound`]. `name` names the part
+    /// ("heel flap"); `slip_edges`: the first stitch of every row is slipped, so each side has one
+    /// slipped edge stitch for every two rows.
+    WorkFlat {
+        count: u32,
+        name: String,
+        slip_edges: bool,
+    },
+    /// Work `count` whole rows (flat) or rounds, from the start of a row or round, without
+    /// changing the stitch count. `text` is the pattern's own words for them; Ply counts the rows
+    /// and the stitches, not the stitches' names.
+    Rows { count: u32, text: String },
+    /// Work whole rows or rounds, changing the count by `change` stitches in each named group (or
+    /// on the whole needle when `groups` is empty) on the first row and then every `every` rows,
+    /// `until` a number of times or a stitch count. `text` is the pattern's own words for a shaping
+    /// row ("k1, ssk, knit to last 3 sts, k2tog, k1"), not checked.
+    Shape {
+        change: i64,
+        every: u32,
+        until: ShapeUntil,
+        groups: Vec<String>,
+        text: String,
+    },
+    /// Pick up and knit `count` stitches along an edge, with the right side facing, onto the
+    /// needle group `group` when the needle has groups. Ply never guesses a pick-up rate.
+    PickUp {
+        count: u32,
+        along: PickUpAlong,
+        group: Option<String>,
+    },
+    /// Divide the stitches into named needle groups, in working order from the start of the row
+    /// or round; the counts must add up to the stitches on the needle. An empty list stops
+    /// counting groups.
+    Groups { groups: Vec<NeedleGroup> },
+    /// Close the last stitches: graft the two halves together or bind them off together.
+    Close { method: CloseMethod },
+    /// Make the round start where the work is now, partway through a round ("knit 9 sts: this is
+    /// the new start of the round", after a gusset pick-up); every stitch, group and side keeps its
+    /// place. A part worked flat starts at the start of the round, so this also chooses where it
+    /// starts.
+    RoundStart {},
 }
 
 // --- ledger output ---------------------------------------------------------------------------------
@@ -274,6 +444,24 @@ pub struct NeedleCount {
     pub bound_off: u64,
     /// The side the row in progress (or the next row) is worked from, when known.
     pub side: Option<Side>,
+    /// The work is in the round: `to_work` counts what is left of the round in progress.
+    pub in_round: bool,
+    /// The needle groups (instep, sole) and their stitches, in order from the start of the round
+    /// or row; empty when the pattern has not divided the stitches into groups.
+    pub groups: Vec<GroupCount>,
+    /// While part of the round is worked flat ([`StepAction::WorkFlat`]): the stitches being worked
+    /// flat. The rest of `on_needle` rests on the needle; `to_work` and `past_turns` count the
+    /// flat part.
+    pub flat: Option<u64>,
+    /// Stitches grafted closed so far, in the whole pattern.
+    pub grafted: u64,
+}
+
+/// A needle group as the ledger counts it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupCount {
+    pub name: String,
+    pub count: u64,
 }
 
 impl NeedleCount {
@@ -283,15 +471,41 @@ impl NeedleCount {
     }
 
     /// The count as the written instructions give it, without brackets: `24 sts on the needle, 6
-    /// waiting past a turn; 12 on hold; 6 bound off`.
+    /// waiting past a turn; 12 on hold; 6 bound off`, or with needle groups or a part worked flat
+    /// `64 sts on the needle: 32 sole, 32 instep; 32 worked flat, 32 resting; 12 still to work in
+    /// this row`.
     pub fn text(&self) -> String {
-        let mut s = format!("{} on the needle", sts(self.on_needle));
+        let unit = if self.in_round { "rnd" } else { "row" };
+        let mut head = format!("{} on the needle", sts(self.on_needle));
+        if !self.groups.is_empty() {
+            let parts: Vec<String> = self
+                .groups
+                .iter()
+                .map(|g| format!("{} {}", g.count, display_name(&g.name)))
+                .collect();
+            head.push_str(&format!(": {}", parts.join(", ")));
+        }
+        let mut parts = vec![head];
+        if let Some(flat) = self.flat {
+            parts.push(format!(
+                "{flat} worked flat, {} resting",
+                self.on_needle.saturating_sub(flat)
+            ));
+        }
         if self.mid_row && self.to_work > 0 {
-            s.push_str(&format!(", {} still to work in this row", self.to_work));
+            parts.push(format!("{} still to work in this {unit}", self.to_work));
         }
         if self.past_turns > 0 {
-            s.push_str(&format!(", {} waiting past a turn", self.past_turns));
+            parts.push(format!("{} waiting past a turn", self.past_turns));
         }
+        // Slice-1 wording without groups or a flat part; semicolons once a list of groups or a
+        // flat part would make commas ambiguous.
+        let sep = if self.groups.is_empty() && self.flat.is_none() {
+            ", "
+        } else {
+            "; "
+        };
+        let mut s = parts.join(sep);
         match self.held.as_slice() {
             [] => {}
             [one] => s.push_str(&format!("; {} on hold", one.count)),
@@ -305,6 +519,9 @@ impl NeedleCount {
         }
         if self.bound_off > 0 {
             s.push_str(&format!("; {} bound off", self.bound_off));
+        }
+        if self.grafted > 0 {
+            s.push_str(&format!("; {} grafted", self.grafted));
         }
         s
     }
@@ -402,12 +619,19 @@ pub fn section_title(pattern: &KnitPattern, section: usize) -> String {
     }
 }
 
-/// The heading line the written instructions give a section: `Section 1: Back`, or `Section 2`.
+/// The heading line the written instructions give a section: `Section 1: Back`, or `Section 2`,
+/// with how it is worked when the section says (`Section 3: Heel flap (worked flat)`).
 pub fn heading(pattern: &KnitPattern, section: usize) -> String {
-    match pattern.sections.get(section).map(|s| s.name.trim()) {
+    let mut h = match pattern.sections.get(section).map(|s| s.name.trim()) {
         Some(name) if !name.is_empty() => format!("Section {}: {name}", section + 1),
         _ => format!("Section {}", section + 1),
+    };
+    match pattern.sections.get(section).and_then(|s| s.construction) {
+        Some(Construction::Flat) => h.push_str(" (worked flat)"),
+        Some(Construction::InTheRound) => h.push_str(" (worked in the round)"),
+        None => {}
     }
+    h
 }
 
 /// The written instructions of a pattern with sections (see [`crate::to_written`]).
@@ -479,6 +703,247 @@ struct Mark {
 struct Gap {
     at: u64,
     name: String,
+    /// The needle group the held stitches were in, so stitches cast on over the gap take their
+    /// place in it.
+    group: GapGroup,
+}
+
+/// The needle group of the stitches a gap was left by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GapGroup {
+    /// The stitches were not in needle groups.
+    None,
+    One(String),
+    /// They were in more than one group: Ply cannot tell which group stitches cast on over the gap
+    /// belong to.
+    Several,
+}
+
+/// A side of a part worked flat ([`StepAction::WorkFlat`]), as a boundary between stitches `at`
+/// and `at + 1` (in the round, 0 is the start of the round). The right side is just before the
+/// part's first stitch (where its right-side rows start), the left side just after its last. They
+/// move with the stitches, so a pick-up along a side is found wherever the work is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SideMark {
+    /// The id of the work-flat step.
+    piece: String,
+    left: bool,
+    at: u64,
+}
+
+/// A run of `len` stitches of one needle group, in piece order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Seg {
+    name: String,
+    len: u64,
+}
+
+/// Which needle group stitches added to the needle join.
+#[derive(Debug, Clone, Copy)]
+enum Join<'s> {
+    /// The group of the stitches either side of them, when that is one group (at an edge of flat
+    /// work, the one beside them). Between two groups Ply cannot tell, and does not guess.
+    Adjacent,
+    /// The group with this name.
+    Named(&'s str),
+    /// The groups they were in when they were taken off the needle (held stitches returning; empty
+    /// when they were held before the stitches were divided into groups, which Ply cannot place).
+    Exact(&'s [Seg]),
+    /// Ply cannot tell which group they belong to.
+    Unknown,
+}
+
+/// Remove stitches `start..=end` (1-based) from the groups.
+fn seg_remove(segs: &mut Vec<Seg>, start: u64, end: u64) {
+    let mut pos = 0;
+    for s in segs.iter_mut() {
+        let (a, b) = (pos + 1, pos + s.len);
+        pos += s.len;
+        let (lo, hi) = (a.max(start), b.min(end));
+        if lo <= hi {
+            s.len -= hi - lo + 1;
+        }
+    }
+    seg_tidy(segs);
+}
+
+/// The groups of stitches `start..=end` (1-based), as their own run.
+fn seg_slice(segs: &[Seg], start: u64, end: u64) -> Vec<Seg> {
+    let mut out = Vec::new();
+    let mut pos = 0;
+    for s in segs {
+        let (a, b) = (pos + 1, pos + s.len);
+        pos += s.len;
+        let (lo, hi) = (a.max(start), b.min(end));
+        if lo <= hi {
+            out.push(Seg {
+                name: s.name.clone(),
+                len: hi - lo + 1,
+            });
+        }
+    }
+    out
+}
+
+/// Split the groups at boundary `at` (0..=total) and return the index where a run inserted there
+/// goes.
+fn seg_split(segs: &mut Vec<Seg>, at: u64) -> usize {
+    let mut pos = 0;
+    for i in 0..segs.len() {
+        if pos == at {
+            return i;
+        }
+        let end = pos + segs[i].len;
+        if at < end {
+            let head = at - pos;
+            let tail = Seg {
+                name: segs[i].name.clone(),
+                len: segs[i].len - head,
+            };
+            segs[i].len = head;
+            segs.insert(i + 1, tail);
+            return i + 1;
+        }
+        pos = end;
+    }
+    segs.len()
+}
+
+/// The group of stitch `pos` (1-based).
+fn seg_at(segs: &[Seg], pos: u64) -> Option<&str> {
+    let mut end = 0;
+    for s in segs {
+        end += s.len;
+        if pos <= end {
+            return Some(&s.name);
+        }
+    }
+    None
+}
+
+/// Add `k` stitches at boundary `at` (0..=the stitches the groups cover before) to the group `join`
+/// says. `round`: the stitches either side of boundary 0 are the last and the first. `fresh`: the
+/// needle had no stitches, so a returning group's run becomes the needle's groups. Returns false,
+/// changing nothing, when Ply cannot tell which group they join (the caller then stops counting the
+/// groups, with a warning); true otherwise, and always when there are no groups.
+fn seg_insert(segs: &mut Vec<Seg>, at: u64, k: u64, join: Join, round: bool, fresh: bool) -> bool {
+    if k == 0 {
+        return true;
+    }
+    if let (Join::Exact(run), true) = (join, fresh) {
+        *segs = run.to_vec();
+        return true;
+    }
+    if segs.is_empty() {
+        return true;
+    }
+    let name = match join {
+        Join::Exact(run) if !run.is_empty() => {
+            let i = seg_split(segs, at);
+            for (j, s) in run.iter().enumerate() {
+                segs.insert(i + j, s.clone());
+            }
+            seg_tidy(segs);
+            return true;
+        }
+        Join::Exact(_) | Join::Unknown => return false,
+        Join::Named(name) => name.to_string(),
+        Join::Adjacent => {
+            let total: u64 = segs.iter().map(|s| s.len).sum();
+            let before = if at > 0 {
+                seg_at(segs, at)
+            } else if round {
+                seg_at(segs, total)
+            } else {
+                None
+            };
+            let after = if at < total {
+                seg_at(segs, at + 1)
+            } else if round {
+                seg_at(segs, 1)
+            } else {
+                None
+            };
+            match (before, after) {
+                (Some(a), Some(b)) if a == b => a.to_string(),
+                (Some(a), None) | (None, Some(a)) => a.to_string(),
+                _ => return false,
+            }
+        }
+    };
+    let i = seg_split(segs, at);
+    if i > 0 && segs[i - 1].name == name {
+        segs[i - 1].len += k;
+    } else if i < segs.len() && segs[i].name == name {
+        segs[i].len += k;
+    } else {
+        segs.insert(i, Seg { name, len: k });
+    }
+    seg_tidy(segs);
+    true
+}
+
+/// Drop empty runs and merge neighbours of the same group.
+fn seg_tidy(segs: &mut Vec<Seg>) {
+    segs.retain(|s| s.len > 0);
+    let mut out: Vec<Seg> = Vec::with_capacity(segs.len());
+    for s in segs.drain(..) {
+        match out.last_mut() {
+            Some(last) if last.name == s.name => last.len += s.len,
+            _ => out.push(s),
+        }
+    }
+    *segs = out;
+}
+
+/// The groups by name, in the order they first appear, with their stitches added up.
+fn group_counts<'a>(runs: impl IntoIterator<Item = &'a Seg>) -> Vec<GroupCount> {
+    let mut out: Vec<GroupCount> = Vec::new();
+    for s in runs {
+        match out.iter_mut().find(|g| g.name == s.name) {
+            Some(g) => g.count += s.len,
+            None => out.push(GroupCount {
+                name: s.name.clone(),
+                count: s.len,
+            }),
+        }
+    }
+    out
+}
+
+/// Change the group `name` by `delta` stitches, shared out over its runs (a group can sit either
+/// side of the start of the round). The caller has checked that the group keeps at least one
+/// stitch. Only counts change: the shaping steps that use this have worked across every wrap and
+/// gap first.
+fn seg_change(segs: &mut Vec<Seg>, name: &str, delta: i64) {
+    let runs: Vec<usize> = (0..segs.len()).filter(|&i| segs[i].name == name).collect();
+    if runs.is_empty() || delta == 0 {
+        return;
+    }
+    let mut left = delta.unsigned_abs();
+    if delta > 0 {
+        let m = runs.len() as u64;
+        for (j, &i) in runs.iter().enumerate() {
+            segs[i].len += left / m + u64::from((j as u64) < left % m);
+        }
+        left = 0;
+    }
+    while left > 0 {
+        let active: Vec<usize> = runs.iter().copied().filter(|&i| segs[i].len > 0).collect();
+        if active.is_empty() {
+            break;
+        }
+        let share = (left / active.len() as u64).max(1);
+        for i in active {
+            let take = share.min(segs[i].len).min(left);
+            segs[i].len -= take;
+            left -= take;
+            if left == 0 {
+                break;
+            }
+        }
+    }
+    seg_tidy(segs);
 }
 
 /// The live stitches and where the work is (see the module docs).
@@ -502,6 +967,20 @@ struct Needle {
     /// A fresh needle whose side is not known yet, so which way its first row travels is not known
     /// either; the first side Ply learns (from a chart row) sets both.
     unoriented: bool,
+    /// The work is in the round: stitches 1..=n in round order from the start of the round, every
+    /// round worked from the right side toward n, and no turns.
+    round: bool,
+    /// The needle groups over stitches 1..=n, or empty when the stitches are not in groups.
+    segs: Vec<Seg>,
+    /// The row in progress started at an edge, travelling toward n (`true`) or toward 1.
+    edge_row: Option<bool>,
+    /// Whole rows worked from edge to edge before the first short-row turn: those that started at
+    /// the low edge (`[0]`) and at the high edge (`[1]`). They make the needle's two sides.
+    full_rows: [u64; 2],
+    /// A short-row turn was made on this needle; later rows no longer add to its sides.
+    sides_frozen: bool,
+    /// The sides of parts worked flat on this needle (in the round, normalized below n).
+    sides: Vec<SideMark>,
 }
 
 impl Needle {
@@ -522,7 +1001,20 @@ impl Needle {
             marks: Vec::new(),
             gaps: Vec::new(),
             unoriented: false,
+            round: false,
+            segs: Vec::new(),
+            edge_row: None,
+            full_rows: [0, 0],
+            sides_frozen: false,
+            sides: Vec::new(),
         }
+    }
+
+    /// A fresh round of `n` stitches, at the start of the round.
+    fn fresh_round(n: u64) -> Self {
+        let mut needle = Needle::fresh(n, Some(Side::Rs));
+        needle.round = true;
+        needle
     }
 
     /// A fresh needle of `n` stitches in piece order (stitches held from an earlier needle keep
@@ -545,7 +1037,7 @@ impl Needle {
         needle
     }
 
-    /// Stitches still on the left needle in this row.
+    /// Stitches still on the left needle in this row (in the round: in this round).
     fn lh(&self) -> u64 {
         if self.up {
             self.n - self.c
@@ -560,6 +1052,9 @@ impl Needle {
     }
 
     fn side(&self) -> Option<Side> {
+        if self.round {
+            return Some(Side::Rs);
+        }
         self.up_side.map(|s| if self.up { s } else { s.other() })
     }
 
@@ -577,13 +1072,35 @@ impl Needle {
         self.unoriented = false;
     }
 
-    /// The work is at the start edge of the needle (not at a short-row turn).
+    /// The work is at the start edge of the needle (not at a short-row turn); in the round, at the
+    /// start of the round.
     fn at_edge(&self) -> bool {
         if self.up {
             self.c == 0
         } else {
             self.c == self.n
         }
+    }
+
+    /// Stitches waiting past a turn ahead of the work in this row: the gap an earlier short row on
+    /// this side left is just before them.
+    fn waiting_ahead(&self) -> u64 {
+        if self.up {
+            self.hi
+        } else {
+            self.lo
+        }
+    }
+
+    /// Whether the stitch `offset` stitches ahead of the work (1 = the next one) carries a mark of
+    /// `kind`.
+    fn mark_ahead(&self, offset: u64, kind: Pending) -> bool {
+        let pos = if self.up {
+            self.c.checked_add(offset)
+        } else {
+            (self.c + 1).checked_sub(offset)
+        };
+        pos.is_some_and(|p| self.marks.iter().any(|m| m.pos == p && m.kind == kind))
     }
 
     /// Work `k` stitches (`k <= lh`): the wraps and double stitches and the gaps it works across.
@@ -619,10 +1136,13 @@ impl Needle {
     }
 
     /// Take the next `k` stitches off the left needle (`k <= lh`). Returns the wraps and double
-    /// stitches they carry, with their 1-based offsets in the removed run.
-    fn remove_ahead(&mut self, k: u64) -> Vec<(u64, Mark)> {
+    /// stitches they carry, with their 1-based offsets in the removed run, and their groups.
+    fn remove_ahead(&mut self, k: u64) -> (Vec<(u64, Mark)>, Vec<Seg>) {
         let start = if self.up { self.c + 1 } else { self.c + 1 - k };
         let end = start + k - 1;
+        let groups = seg_slice(&self.segs, start, end);
+        seg_remove(&mut self.segs, start, end);
+        self.sides_removed(start, end);
         let taken: Vec<(u64, Mark)> = take(&mut self.marks, |m| m.pos >= start && m.pos <= end)
             .into_iter()
             .map(|m| (m.pos - start + 1, m))
@@ -648,13 +1168,29 @@ impl Needle {
         }
         self.n -= k;
         self.tidy();
-        taken
+        (taken, groups)
     }
 
     /// Insert `k` new stitches at the boundary: ahead (on the left needle, worked next) or behind
-    /// (on the right needle). `marks` are offsets in the inserted run. Returns a gap it closed.
-    fn insert(&mut self, k: u64, ahead: bool, marks: &[(u64, Mark)]) -> Option<Gap> {
+    /// (on the right needle). `marks` are offsets in the inserted run; `join` says which needle
+    /// group they join. Returns a gap it closed, and false when Ply cannot tell which needle group
+    /// the stitches join (the needle groups are then not kept up to date: stop counting them).
+    fn insert(
+        &mut self,
+        k: u64,
+        ahead: bool,
+        marks: &[(u64, Mark)],
+        join: Join,
+    ) -> (Option<Gap>, bool) {
         let c = self.c;
+        let grouped = seg_insert(&mut self.segs, c, k, join, self.round, self.n == 0);
+        // A part's right side is just before its first stitch, so stitches added there come before
+        // it; its left side is just after its last, so they come after it.
+        for side in &mut self.sides {
+            if side.at > c || (side.at == c && !side.left) {
+                side.at += k;
+            }
+        }
         for m in &mut self.marks {
             if m.pos > c {
                 m.pos += k;
@@ -678,13 +1214,97 @@ impl Needle {
         if ahead != self.up {
             self.c += k;
         }
-        closed
+        self.norm_sides();
+        (closed, grouped)
+    }
+
+    /// Add `k` stitches after stitch n (the end of the round), joining `join`'s group. The work's
+    /// position does not change. False when Ply cannot tell the group (as [`Needle::insert`]).
+    fn append(&mut self, k: u64, join: Join) -> bool {
+        let n = self.n;
+        let grouped = seg_insert(&mut self.segs, n, k, join, self.round, n == 0);
+        // The boundary at the start of the round is just after stitch n: a part whose last stitch
+        // is stitch n keeps its left side there, before the new stitches; a part whose first stitch
+        // is stitch 1 keeps its right side at the start of the round, after them.
+        for side in &mut self.sides {
+            if side.left && (side.at == 0 || side.at == n) {
+                side.at = n;
+            }
+        }
+        self.n += k;
+        grouped
+    }
+
+    /// Move the boundaries of the sides of parts worked flat after stitches `start..=end` are taken
+    /// off: those past them move down, those inside close up to where the stitches were.
+    fn sides_removed(&mut self, start: u64, end: u64) {
+        let k = end + 1 - start;
+        for side in &mut self.sides {
+            if side.at >= end {
+                side.at -= k;
+            } else if side.at >= start {
+                side.at = start - 1;
+            }
+        }
+    }
+
+    /// The stitches between boundaries `lo_b` and `hi_b` changed by `delta` at places Ply does not
+    /// know: sides at or before `lo_b` stay, sides at or after `hi_b` move by `delta`, and sides
+    /// strictly between are no longer known (dropped, so a pick-up there is refused, not guessed).
+    fn sides_resized(&mut self, lo_b: u64, hi_b: u64, delta: i64) {
+        if delta == 0 {
+            return;
+        }
+        self.sides.retain(|x| x.at <= lo_b || x.at >= hi_b);
+        for x in &mut self.sides {
+            if x.at >= hi_b && x.at > lo_b {
+                x.at = x.at.saturating_add_signed(delta);
+            }
+        }
+    }
+
+    /// In the round the boundary after stitch n is the start of the round, 0.
+    fn norm_sides(&mut self) {
+        if self.round {
+            let n = self.n;
+            for side in &mut self.sides {
+                if side.at >= n {
+                    side.at = 0;
+                }
+            }
+        }
+    }
+
+    /// Make the round start where the work is (`0 < c < n`, in the round): every stitch, wrap, gap,
+    /// group and side keeps its place, numbered from the new start.
+    fn rotate(&mut self) {
+        let (n, c) = (self.n, self.c);
+        for m in &mut self.marks {
+            m.pos = (m.pos + n - c - 1) % n + 1;
+        }
+        for g in &mut self.gaps {
+            g.at = (g.at + n - c) % n;
+        }
+        for side in &mut self.sides {
+            side.at = (side.at + n - c) % n;
+        }
+        let i = seg_split(&mut self.segs, c);
+        let head: Vec<Seg> = self.segs.drain(..i).collect();
+        self.segs.extend(head);
+        seg_tidy(&mut self.segs);
+        self.c = 0;
+        self.row_start = true;
+        self.yarn_here = false;
+        self.edge_row = None;
+        self.tidy();
     }
 
     /// Take `k` stitches off the right needle (`k <= rh`), nearest the boundary first.
     fn remove_behind(&mut self, k: u64) {
         let start = if self.up { self.c + 1 - k } else { self.c + 1 };
         let end = start + k - 1;
+        seg_remove(&mut self.segs, start, end);
+        self.sides_removed(start, end);
         self.marks.retain(|m| !(m.pos >= start && m.pos <= end));
         for m in &mut self.marks {
             if m.pos > end {
@@ -709,8 +1329,19 @@ impl Needle {
         self.tidy();
     }
 
-    /// Turn the work where it is: everything past the boundary is left unworked.
-    fn turn(&mut self) {
+    /// Turn the work where it is: everything past the boundary is left unworked. `end_of_row`: the
+    /// row reached the end of the needle (so a row begun at the other edge is a whole row and adds
+    /// to that side); otherwise it is a short-row turn, after which rows no longer add to the sides.
+    fn turn(&mut self, end_of_row: bool) {
+        match self.edge_row.take() {
+            Some(from_low) if end_of_row && !self.sides_frozen => {
+                self.full_rows[usize::from(!from_low)] += 1;
+            }
+            _ => {}
+        }
+        if !end_of_row {
+            self.sides_frozen = true;
+        }
         if self.up {
             self.hi = self.n - self.c;
         } else {
@@ -723,13 +1354,69 @@ impl Needle {
     }
 
     /// After a step: an empty needle has no position; a row with nothing left on the left needle
-    /// has ended, and the work turns.
+    /// has ended, and the work turns; a round with nothing left ends at the start of the round, and
+    /// the next round begins there.
     fn settle(&mut self) {
         if self.n == 0 {
             *self = Needle::empty();
         } else if self.lh() == 0 {
-            self.turn();
+            if self.round {
+                self.c = 0;
+                self.row_start = true;
+                self.yarn_here = false;
+                self.edge_row = None;
+            } else {
+                self.turn(true);
+            }
         }
+    }
+
+    /// Work `rows` whole rows (or rounds) from the start of a row at an edge: the first crosses
+    /// every wrap, double stitch and gap on the needle (returned), and the rest are the same rows
+    /// again. Whole rows before the first short-row turn add to the needle's sides.
+    fn whole_rows(&mut self, rows: u64) -> (Vec<Mark>, Vec<Gap>) {
+        self.row_start = false;
+        self.edge_row = Some(self.up);
+        let k = self.lh();
+        let crossed = self.traverse(k);
+        self.settle();
+        if !self.round && rows > 1 {
+            let more = rows - 1;
+            if more % 2 == 1 {
+                self.row_start = false;
+                self.edge_row = Some(self.up);
+                let k = self.lh();
+                self.traverse(k);
+                self.settle();
+            }
+            if !self.sides_frozen {
+                self.full_rows[0] += more / 2;
+                self.full_rows[1] += more / 2;
+            }
+        }
+        crossed
+    }
+
+    /// Turn the needle end for end, so stitch n becomes stitch 1: the same stitches, numbered the
+    /// other way (used when joining flat work whose right-side rows travel toward stitch 1).
+    fn mirror(&mut self) {
+        let n = self.n;
+        for m in &mut self.marks {
+            m.pos = n + 1 - m.pos;
+        }
+        for g in &mut self.gaps {
+            g.at = n - g.at;
+        }
+        for side in &mut self.sides {
+            side.at = n - side.at;
+        }
+        self.segs.reverse();
+        self.c = n - self.c;
+        self.up = !self.up;
+        std::mem::swap(&mut self.lo, &mut self.hi);
+        self.up_side = self.up_side.map(Side::other);
+        self.full_rows.swap(0, 1);
+        self.edge_row = self.edge_row.map(|u| !u);
     }
 
     /// Drop gaps that are no longer between two stitches, and duplicates.
@@ -773,14 +1460,54 @@ struct Group {
     /// `None` when held while the count was unknown.
     count: Option<u64>,
     marks: Vec<(u64, Mark)>,
+    /// The needle groups the stitches were in, so they go back into them.
+    segs: Vec<Seg>,
     resumed: Option<(usize, usize)>,
+}
+
+/// The stitches resting on the needle while part of the round is worked flat
+/// ([`StepAction::WorkFlat`]): they follow the flat part in round order, and a
+/// [`StepAction::JoinRound`] puts them back into the round.
+#[derive(Debug, Clone)]
+struct Rest {
+    /// The id of the step that started working flat.
+    step: String,
+    count: u64,
+    /// Their wraps and double stitches, by 1-based offset in the resting run.
+    marks: Vec<(u64, Mark)>,
+    segs: Vec<Seg>,
+    /// Gaps among them (left by stitches put on hold), by boundary in the resting run: 0 is
+    /// between the flat part's last stitch and the first resting stitch.
+    gaps: Vec<Gap>,
+    /// Sides of earlier parts worked flat among them, likewise.
+    sides: Vec<SideMark>,
+}
+
+/// A part worked flat, as a pick-up along its sides needs it.
+#[derive(Debug, Clone)]
+struct PieceRecord {
+    slip_edges: bool,
+    /// Whole rows that started at its right edge (the start of its right-side rows) and at its
+    /// left edge, before its first short-row turn (filled in when it is joined back into the
+    /// round; while it is worked, the needle has them).
+    rows: [u64; 2],
+    /// Its right and left sides have been picked up along.
+    picked: [bool; 2],
 }
 
 struct Walk<'a> {
     p: &'a KnitPattern,
-    /// `None`: the count is unknown (sticky) or not kept (in the round).
+    /// `None`: the count is unknown (sticky).
     needle: Option<Needle>,
+    /// While part of the round is worked flat: the stitches resting outside it. `needle` is then
+    /// the part worked flat.
+    rest: Option<Rest>,
+    /// Every part worked flat so far, by the id of the step that started it.
+    pieces: HashMap<String, PieceRecord>,
+    /// A cast-on onto an empty needle is joined into the round (the pattern is worked in the round).
+    default_round: bool,
     bound_off: u64,
+    grafted: u64,
     groups: Vec<Group>,
     /// Hold steps that were processed but could not put anything on hold.
     failed_holds: Vec<String>,
@@ -804,7 +1531,11 @@ impl<'a> Walk<'a> {
         Walk {
             p,
             needle: None,
+            rest: None,
+            pieces: HashMap::new(),
+            default_round: p.construction == Construction::InTheRound,
             bound_off: 0,
+            grafted: 0,
             groups: Vec::new(),
             failed_holds: Vec::new(),
             lines: Vec::new(),
@@ -839,38 +1570,31 @@ impl<'a> Walk<'a> {
             return;
         }
         self.index_ids();
-        self.needle = match p.construction {
-            Construction::Flat => match p.cast_on {
-                Some(n) if u64::from(n) > MAX_LIVE_STITCHES => {
-                    self.error(
-                        None,
-                        None,
-                        None,
-                        format!(
-                            "the cast-on of {n} stitches is more than Ply can count \
-                             ({MAX_LIVE_STITCHES}), so the sections are not counted"
-                        ),
-                    );
-                    None
-                }
-                Some(n) if n > 0 => Some(Needle::fresh(u64::from(n), Some(p.first_row_side))),
-                _ => Some(Needle::empty()),
-            },
-            Construction::InTheRound => {
-                self.warn(
+        // The pattern's cast-on is on the needle before the first section: flat, its first row from
+        // the pattern's first-row side, or joined into a round.
+        self.needle = match p.cast_on {
+            Some(n) if u64::from(n) > MAX_LIVE_STITCHES => {
+                self.error(
                     None,
                     None,
                     None,
-                    "sections are counted only for flat knitting so far; this pattern is worked in \
-                     the round, so Ply does not count its sections"
-                        .into(),
+                    format!(
+                        "the cast-on of {n} stitches is more than Ply can count \
+                         ({MAX_LIVE_STITCHES}), so the sections are not counted"
+                    ),
                 );
                 None
             }
+            Some(n) if n > 0 => Some(match p.construction {
+                Construction::Flat => Needle::fresh(u64::from(n), Some(p.first_row_side)),
+                Construction::InTheRound => Needle::fresh_round(u64::from(n)),
+            }),
+            _ => Some(Needle::empty()),
         };
         for (si, section) in p.sections.iter().enumerate() {
             self.short_no = 0;
             self.make_ds = None;
+            self.check_construction(si, section);
             for (ti, step) in section.steps.iter().enumerate() {
                 self.step(si, ti, step);
                 if self.stopped {
@@ -880,6 +1604,49 @@ impl<'a> Walk<'a> {
             self.end_section(si);
         }
         self.end_pattern();
+    }
+
+    /// A section that says how it is worked: the work must already be worked that way when it
+    /// starts, or its first step must make it so (a warning otherwise; nothing is changed).
+    fn check_construction(&mut self, si: usize, section: &Section) {
+        let Some(declared) = section.construction else {
+            return;
+        };
+        let Some(needle) = &self.needle else {
+            return;
+        };
+        if needle.n == 0 && self.rest.is_none() {
+            return;
+        }
+        let round = needle.round;
+        let first = section.steps.first().map(|s| &s.action);
+        match declared {
+            Construction::InTheRound
+                if !round && !matches!(first, Some(StepAction::JoinRound {})) =>
+            {
+                self.warn(
+                    Some(si),
+                    None,
+                    None,
+                    "the section is marked as worked in the round, but the work is flat when it \
+                     starts; start the section with a step that joins the work into the round, or \
+                     mark it as worked flat"
+                        .into(),
+                )
+            }
+            Construction::Flat if round && !matches!(first, Some(StepAction::WorkFlat { .. })) => {
+                self.warn(
+                    Some(si),
+                    None,
+                    None,
+                    "the section is marked as worked flat, but the work is in the round when it \
+                     starts; start the section with a step that works part of the stitches flat, \
+                     or mark it as worked in the round"
+                        .into(),
+                )
+            }
+            _ => {}
+        }
     }
 
     /// Room for `lines` more ledger lines; when there is none, one error and the walk stops.
@@ -915,7 +1682,83 @@ impl<'a> Walk<'a> {
     /// needle and on hold.
     fn too_big(&self, k: u64) -> bool {
         let n = self.needle.as_ref().map_or(0, |n| n.n);
-        n.saturating_add(self.held_total()).saturating_add(k) > MAX_LIVE_STITCHES
+        let rest = self.rest.as_ref().map_or(0, |r| r.count);
+        n.saturating_add(rest)
+            .saturating_add(self.held_total())
+            .saturating_add(k)
+            > MAX_LIVE_STITCHES
+    }
+
+    /// The side a row toward stitch n is worked from on a fresh needle: the pattern's first-row side,
+    /// or, in a part worked flat, the right side (its rows start that way).
+    fn first_side(&self) -> Side {
+        if self.rest.is_some() {
+            Side::Rs
+        } else {
+            self.p.first_row_side
+        }
+    }
+
+    /// Why a step that works stitches cannot: nothing is on the needle (or, while part of the round
+    /// is worked flat, nothing is left in that part).
+    fn no_stitches_here(&self) -> String {
+        match &self.rest {
+            Some(rest) => format!(
+                "there are no stitches left in the part worked flat; join the work back into the \
+                 round to work the {} resting there",
+                stitches(rest.count)
+            ),
+            None => no_stitches(),
+        }
+    }
+
+    /// Every needle group's runs, the part worked flat first and then the stitches resting.
+    fn all_segs(&self) -> Vec<&Seg> {
+        let needle = self.needle.iter().flat_map(|n| n.segs.iter());
+        let rest = self.rest.iter().flat_map(|r| r.segs.iter());
+        needle.chain(rest).collect()
+    }
+
+    /// The names of the needle groups, in order.
+    fn group_names(&self) -> Vec<String> {
+        group_counts(self.all_segs())
+            .into_iter()
+            .map(|g| g.name)
+            .collect()
+    }
+
+    /// How many needle groups the stitches being worked are in (while part of the round is worked
+    /// flat, that part's groups; its steps never change the resting stitches).
+    fn worked_groups(&self) -> usize {
+        self.needle
+            .as_ref()
+            .map_or(0, |n| group_counts(n.segs.iter()).len())
+    }
+
+    /// Stop counting needle groups (a step changes the count in a way Ply cannot place between
+    /// them), with one warning naming them.
+    fn drop_groups(&mut self, si: usize, ti: usize, row: Option<usize>, why: &str) {
+        let names = self.group_names();
+        if names.is_empty() {
+            return;
+        }
+        if let Some(n) = self.needle.as_mut() {
+            n.segs.clear();
+        }
+        if let Some(r) = self.rest.as_mut() {
+            r.segs.clear();
+        }
+        self.warn(
+            Some(si),
+            Some(ti),
+            row,
+            format!(
+                "{why}, so Ply cannot tell how the change falls between the needle groups ({}); it \
+                 stops counting the groups here (divide the stitches into groups again to count \
+                 them)",
+                names.join(", ")
+            ),
+        );
     }
 
     /// Ids must be unique and present: a returned group names its hold step by id.
@@ -1015,15 +1858,20 @@ impl<'a> Walk<'a> {
                 count: g.count.unwrap_or(0),
             })
             .collect();
+        let rest = self.rest.as_ref();
         LineCount::Counted(NeedleCount {
-            on_needle: needle.n,
+            on_needle: needle.n + rest.map_or(0, |r| r.count),
             to_work: needle.lh(),
             mid_row: !needle.row_start && needle.n > 0,
             past_turns: needle.lo + needle.hi,
-            pending_turns: needle.marks.len() as u64,
+            pending_turns: (needle.marks.len() + rest.map_or(0, |r| r.marks.len())) as u64,
             held,
             bound_off: self.bound_off,
             side: needle.side(),
+            in_round: needle.round,
+            groups: group_counts(self.all_segs()),
+            flat: rest.map(|_| needle.n),
+            grafted: self.grafted,
         })
     }
 
@@ -1076,6 +1924,11 @@ impl<'a> Walk<'a> {
             return None;
         }
         needle.row_start = false;
+        needle.edge_row = needle.at_edge().then_some(needle.up);
+        if needle.round {
+            self.short_no = 0;
+            return Some("Next rnd".to_string());
+        }
         let side = match needle.side() {
             Some(Side::Rs) => " (RS)",
             Some(Side::Ws) => " (WS)",
@@ -1222,7 +2075,8 @@ impl<'a> Walk<'a> {
                 to,
                 method,
                 resolve_turns,
-            } => self.short_row(si, ti, *stitch, *to, *method, *resolve_turns),
+                decrease,
+            } => self.short_row(si, ti, *stitch, *to, *method, *resolve_turns, *decrease),
             StepAction::CastOn { count } => self.cast_on(si, ti, *count),
             StepAction::BindOff {
                 count,
@@ -1234,6 +2088,28 @@ impl<'a> Walk<'a> {
                 text,
                 stitch_change,
             } => self.opaque(si, ti, text, *stitch_change),
+            StepAction::JoinRound {} => self.join_round(si, ti),
+            StepAction::WorkFlat {
+                count,
+                name,
+                slip_edges,
+            } => self.work_flat(si, ti, step, *count, name, *slip_edges),
+            StepAction::Rows { count, text } => self.rows(si, ti, *count, text),
+            StepAction::Shape {
+                change,
+                every,
+                until,
+                groups,
+                text,
+            } => self.shape(si, ti, *change, *every, *until, groups, text),
+            StepAction::PickUp {
+                count,
+                along,
+                group,
+            } => self.pick_up(si, ti, *count, along, group.as_deref()),
+            StepAction::Groups { groups } => self.set_groups(si, ti, groups),
+            StepAction::Close { method } => self.close(si, ti, *method),
+            StepAction::RoundStart {} => self.round_start(si, ti),
         }
     }
 
@@ -1281,7 +2157,8 @@ impl<'a> Walk<'a> {
             return self.unknown_line(si, ti, base);
         };
         if needle.n == 0 {
-            return self.refuse(si, ti, base, no_stitches());
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, base, problem);
         }
         let k = match Self::reach(needle.lh(), to) {
             Ok(k) => k,
@@ -1301,6 +2178,7 @@ impl<'a> Walk<'a> {
         self.push_line(si, ti, None, label, text, true, false, count);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn short_row(
         &mut self,
         si: usize,
@@ -1309,54 +2187,101 @@ impl<'a> Walk<'a> {
         to: TurnAt,
         method: TurnMethod,
         resolve: bool,
+        decrease: Option<TurnDecrease>,
     ) {
-        let reach = match to {
-            TurnAt::Last(m) => WorkTo::Last(m),
-            TurnAt::Count(m) => WorkTo::Count(m),
-        };
-        let work_part = work_text(stitch, reach);
+        let dec_part = decrease.map_or(String::new(), |d| decrease_text(stitch, d));
         let turn_part = match method {
             TurnMethod::WrapAndTurn => ", wrap and turn",
             TurnMethod::German | TurnMethod::Unspecified => ", turn",
         };
-        let base = format!("{work_part}{turn_part}");
+        let generic = turn_work_text(stitch, to, None);
+        let base = format!("{generic}{dec_part}{turn_part}");
         let Some(needle) = &self.needle else {
             return self.unknown_line(si, ti, base);
         };
         if needle.n == 0 {
-            return self.refuse(si, ti, base, no_stitches());
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, base, problem);
         }
-        let lh = needle.lh();
-        let nothing_past = match to {
-            TurnAt::Last(m) => m == 0,
-            TurnAt::Count(m) => u64::from(m) == lh,
-        };
-        if nothing_past {
+        if needle.round {
             return self.refuse(
                 si,
                 ti,
                 base,
-                "turns with no stitches left past the turn; to work every stitch left in the row, \
-                 use a plain work step instead"
+                "turns partway through a round; to work short rows over part of the round (a \
+                 short-row heel), first add a step that works part of the stitches flat"
                     .into(),
             );
         }
-        let k = match Self::reach(lh, reach) {
-            Ok(k) => k,
-            Err(problem) => {
-                let problem = match to {
-                    TurnAt::Last(m) if u64::from(m) == lh => format!(
-                        "turns before working any stitches: the last {} are all that is left to \
-                         work in this row",
-                        stitches(lh)
-                    ),
-                    TurnAt::Count(0) => "turns before working any stitches".to_string(),
-                    _ => problem,
-                };
-                return self.refuse(si, ti, base, problem);
+        let lh = needle.lh();
+        let gap_form = matches!(to, TurnAt::BeforeGap(_) | TurnAt::PastGap(_));
+        let k = if decrease.is_none() && !gap_form {
+            // The first slice's forms, checked exactly as before.
+            let reach = match to {
+                TurnAt::Last(m) => WorkTo::Last(m),
+                TurnAt::Count(m) => WorkTo::Count(m),
+                _ => unreachable!("not a gap form"),
+            };
+            let nothing_past = match to {
+                TurnAt::Last(m) => m == 0,
+                TurnAt::Count(m) => u64::from(m) == lh,
+                _ => false,
+            };
+            if nothing_past {
+                return self.refuse(si, ti, base, nothing_past_problem());
+            }
+            match Self::reach(lh, reach) {
+                Ok(k) => k,
+                Err(problem) => {
+                    let problem = match to {
+                        TurnAt::Last(m) if u64::from(m) == lh => format!(
+                            "turns before working any stitches: the last {} are all that is left \
+                             to work in this row",
+                            stitches(lh)
+                        ),
+                        TurnAt::Count(0) => "turns before working any stitches".to_string(),
+                        _ => problem,
+                    };
+                    return self.refuse(si, ti, base, problem);
+                }
+            }
+        } else {
+            match Self::turn_reach(needle, to) {
+                Ok(k) => k,
+                Err(problem) => return self.refuse(si, ti, base, problem),
             }
         };
-        if method == TurnMethod::German && needle.rh() + k < 2 {
+        // What the decrease and the stitches after it take, and what is left past the turn.
+        let dec_used = decrease.map_or(0, |d| 2 + u64::from(d.after));
+        if dec_used > lh - k {
+            return self.refuse(
+                si,
+                ti,
+                base,
+                format!(
+                    "has no room for the decrease: it needs {} after the first {}, but only {} \
+                     left in this row",
+                    stitches(dec_used),
+                    stitches(k),
+                    are_count(lh - k)
+                ),
+            );
+        }
+        let used = k + dec_used;
+        if used == 0 {
+            return self.refuse(si, ti, base, "turns before working any stitches".into());
+        }
+        let past = lh - used;
+        // A turn relative to the gap may come out at the end of the row (the last rows of a heel
+        // turn): with a plain "turn" that is just the end of the row. Every other turn needs a
+        // stitch past it.
+        let ends_row = past == 0;
+        if ends_row && !(gap_form && method == TurnMethod::Unspecified) {
+            return self.refuse(si, ti, base, nothing_past_problem());
+        }
+        // The decrease makes two stitches one, so it leaves one fewer on the right needle.
+        let decreased = u64::from(decrease.is_some());
+        if method == TurnMethod::German && needle.rh() + used - decreased < 2 {
             // After the turn the next row works the stitches on the right needle now, and its first
             // one becomes the double stitch: with only one, that row would have nothing to work.
             return self.refuse(
@@ -1368,6 +2293,7 @@ impl<'a> Walk<'a> {
                     .into(),
             );
         }
+        let work_part = turn_work_text(stitch, to, Some(needle));
         let label = self.take_label(true);
         let work_part = if label.is_some() {
             self.with_double_stitch(work_part)
@@ -1375,43 +2301,124 @@ impl<'a> Walk<'a> {
             work_part
         };
         let needle = self.needle.as_mut().expect("counting");
-        let (marks, gaps) = needle.traverse(k);
+        let (mut marks, mut gaps) = needle.traverse(k);
+        if let Some(d) = decrease {
+            // Two stitches worked together: the one nearest the boundary is the one that goes.
+            let (m, g) = needle.traverse(2);
+            marks.extend(m);
+            gaps.extend(g);
+            needle.remove_behind(1);
+            let (m, g) = needle.traverse(u64::from(d.after));
+            marks.extend(m);
+            gaps.extend(g);
+        }
         // Any resolving phrase belongs to the stitches worked, before the turn.
-        let mut text = self.crossings(si, ti, None, work_part, &marks, &gaps, resolve, true);
+        let worked = format!("{work_part}{dec_part}");
+        let mut text = self.crossings(si, ti, None, worked, &marks, &gaps, resolve, true);
         text.push_str(turn_part);
         let needle = self.needle.as_mut().expect("counting");
-        match method {
-            TurnMethod::WrapAndTurn => {
-                let pos = if needle.up { needle.c + 1 } else { needle.c };
-                needle.marks.push(Mark {
-                    pos,
-                    kind: Pending::Wrap,
-                });
+        if ends_row {
+            needle.turn(false);
+        } else {
+            match method {
+                TurnMethod::WrapAndTurn => {
+                    let pos = if needle.up { needle.c + 1 } else { needle.c };
+                    needle.marks.push(Mark {
+                        pos,
+                        kind: Pending::Wrap,
+                    });
+                }
+                TurnMethod::German => {
+                    let pos = if needle.up { needle.c } else { needle.c + 1 };
+                    needle.marks.push(Mark {
+                        pos,
+                        kind: Pending::Double,
+                    });
+                }
+                TurnMethod::Unspecified => {}
             }
-            TurnMethod::German => {
-                let pos = if needle.up { needle.c } else { needle.c + 1 };
-                needle.marks.push(Mark {
-                    pos,
-                    kind: Pending::Double,
-                });
+            needle.turn(false);
+            if method == TurnMethod::German {
+                // Slip the double stitch: the first stitch of the next row (k >= 1, so it exists).
+                if needle.up {
+                    needle.c += 1;
+                } else {
+                    needle.c -= 1;
+                }
+                needle.yarn_here = true;
+                needle.settle();
             }
-            TurnMethod::Unspecified => {}
-        }
-        needle.turn();
-        if method == TurnMethod::German {
-            // Slip the double stitch: the first stitch of the next row (k >= 1, so it exists).
-            if needle.up {
-                needle.c += 1;
-            } else {
-                needle.c -= 1;
-            }
-            needle.yarn_here = true;
-            needle.settle();
         }
         let count = self.snapshot();
         let line = self.push_line(si, ti, None, label, text, true, false, count);
-        if method == TurnMethod::German {
+        if method == TurnMethod::German && !ends_row {
             self.make_ds = Some(line);
+        }
+    }
+
+    /// The stitches a gap-relative short row works before its decrease (or its turn), or the
+    /// problem that stops it. Also the first slice's forms when they come with a decrease.
+    fn turn_reach(needle: &Needle, to: TurnAt) -> Result<u64, String> {
+        let lh = needle.lh();
+        let ahead = needle.waiting_ahead();
+        let no_gap = || {
+            "works to the gap an earlier short row left, but no stitches are waiting past a turn \
+             ahead in this row"
+                .to_string()
+        };
+        match to {
+            TurnAt::Last(m) => {
+                let m = u64::from(m);
+                if m > lh {
+                    Err(format!(
+                        "works to the last {}, but {}",
+                        stitches(m),
+                        only_left(lh)
+                    ))
+                } else {
+                    Ok(lh - m)
+                }
+            }
+            TurnAt::Count(0) => Err("works 0 stitches".into()),
+            TurnAt::Count(m) => {
+                let m = u64::from(m);
+                if m > lh {
+                    Err(format!("works {}, but {}", stitches(m), only_left(lh)))
+                } else {
+                    Ok(m)
+                }
+            }
+            TurnAt::BeforeGap(m) => {
+                if ahead == 0 {
+                    return Err(no_gap());
+                }
+                let before = lh - ahead;
+                let m = u64::from(m);
+                if m > before {
+                    Err(format!(
+                        "works to {} before the gap, but only {} before it",
+                        stitches(m),
+                        are_count(before)
+                    ))
+                } else {
+                    Ok(before - m)
+                }
+            }
+            TurnAt::PastGap(m) => {
+                if ahead == 0 {
+                    return Err(no_gap());
+                }
+                let m = u64::from(m);
+                if m > ahead {
+                    Err(format!(
+                        "works {} past the gap, but only {} waiting past it",
+                        stitches(m),
+                        are_count(ahead)
+                    ))
+                } else {
+                    Ok(lh - ahead + m)
+                }
+            }
         }
     }
 
@@ -1432,19 +2439,61 @@ impl<'a> Walk<'a> {
             return self.refuse(si, ti, format!("cast on {}", sts(k)), too_many());
         }
         let needle = self.needle.as_ref().expect("counting");
-        let text = if needle.n == 0 {
-            // A new piece: its first row is worked from the side the pattern's first row is.
-            self.needle = Some(Needle::fresh(k, Some(self.p.first_row_side)));
+        let text = if needle.n == 0 && self.default_round && self.rest.is_none() {
+            // A pattern worked in the round joins a new cast-on into a round.
+            self.needle = Some(Needle::fresh_round(k));
+            format!(
+                "cast on {} and join to work in the round, being careful not to twist",
+                sts(k)
+            )
+        } else if needle.n == 0 {
+            // A new piece: its first row is worked from the side the pattern's first row is (a
+            // part worked flat: from the right side, as the part's rows are).
+            let first = self.first_side();
+            self.needle = Some(Needle::fresh(k, Some(first)));
             format!("cast on {}", sts(k))
         } else if needle.row_start {
-            self.needle.as_mut().expect("counting").insert(k, true, &[]);
-            format!("cast on {} at the start of the row", sts(k))
+            let unit = if needle.round { "rnd" } else { "row" };
+            let (_, grouped) =
+                self.needle
+                    .as_mut()
+                    .expect("counting")
+                    .insert(k, true, &[], Join::Adjacent);
+            if !grouped {
+                self.drop_groups(
+                    si,
+                    ti,
+                    None,
+                    "this step casts on stitches between two needle groups",
+                );
+            }
+            format!("cast on {} at the start of the {unit}", sts(k))
         } else {
-            let closed = self
-                .needle
-                .as_mut()
-                .expect("counting")
-                .insert(k, false, &[]);
+            // Over a gap, the new stitches take the place of the held ones, in their group.
+            let c = needle.c;
+            let gap_group = needle
+                .gaps
+                .iter()
+                .find(|g| g.at == c)
+                .map(|g| g.group.clone());
+            let join = match &gap_group {
+                Some(GapGroup::One(name)) => Join::Named(name),
+                Some(GapGroup::Several) => Join::Unknown,
+                Some(GapGroup::None) | None => Join::Adjacent,
+            };
+            let (closed, grouped) =
+                self.needle
+                    .as_mut()
+                    .expect("counting")
+                    .insert(k, false, &[], join);
+            if !grouped {
+                let why = if matches!(gap_group, Some(GapGroup::Several)) {
+                    "this step casts on over a gap left by stitches from more than one needle group"
+                } else {
+                    "this step casts on stitches between two needle groups"
+                };
+                self.drop_groups(si, ti, None, why);
+            }
             match closed {
                 Some(gap) => format!(
                     "cast on {} onto the right needle, over the gap left by the stitches on hold \
@@ -1469,7 +2518,8 @@ impl<'a> Walk<'a> {
             return self.unknown_line(si, ti, asked);
         };
         if needle.n == 0 {
-            return self.refuse(si, ti, asked, no_stitches());
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, asked, problem);
         }
         let lh = needle.lh();
         let k = count.map(u64::from).unwrap_or(lh);
@@ -1495,7 +2545,12 @@ impl<'a> Walk<'a> {
         let whole = count.is_none() && needle.rh() == 0;
         let label = self.take_label(false);
         let needle = self.needle.as_mut().expect("counting");
-        let mut marks: Vec<Mark> = needle.remove_ahead(k).into_iter().map(|(_, m)| m).collect();
+        let mut marks: Vec<Mark> = needle
+            .remove_ahead(k)
+            .0
+            .into_iter()
+            .map(|(_, m)| m)
+            .collect();
         let mut gaps = Vec::new();
         let remains = needle.lh() > 0;
         if remains {
@@ -1547,13 +2602,15 @@ impl<'a> Walk<'a> {
                 name: name.to_string(),
                 count: count.map(u64::from),
                 marks: Vec::new(),
+                segs: Vec::new(),
                 resumed: None,
             });
             return self.unknown_line(si, ti, fallback);
         };
         if needle.n == 0 {
             self.failed_holds.push(step.id.clone());
-            return self.refuse(si, ti, fallback, no_stitches());
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, fallback, problem);
         }
         let lh = needle.lh();
         let k = count.map(u64::from).unwrap_or(lh);
@@ -1596,11 +2653,17 @@ impl<'a> Walk<'a> {
             format!("place the next {} on a holder{shown}", sts(k))
         };
         let needle = self.needle.as_mut().expect("counting");
-        let marks = needle.remove_ahead(k);
+        let (marks, segs) = needle.remove_ahead(k);
         if needle.rh() > 0 && needle.lh() > 0 {
+            let group = match group_counts(segs.iter()).as_slice() {
+                [] => GapGroup::None,
+                [one] => GapGroup::One(one.name.clone()),
+                _ => GapGroup::Several,
+            };
             needle.gaps.push(Gap {
                 at: needle.c,
                 name: name.to_string(),
+                group,
             });
             needle.tidy();
         }
@@ -1610,6 +2673,7 @@ impl<'a> Walk<'a> {
             name: name.to_string(),
             count: Some(k),
             marks,
+            segs,
             resumed: None,
         });
         let line_count = self.snapshot();
@@ -1717,13 +2781,14 @@ impl<'a> Walk<'a> {
         if empty {
             // The group keeps its piece order: from the other side, its first row starts at the
             // last stitch, so a wrap lands where the knitter meets it.
-            let mut fresh = Needle::facing(k, facing, self.p.first_row_side);
+            let mut fresh = Needle::facing(k, facing, self.first_side());
             for (offset, m) in &group.marks {
                 fresh.marks.push(Mark {
                     pos: *offset,
                     kind: m.kind,
                 });
             }
+            fresh.segs = group.segs.clone();
             self.needle = Some(fresh);
             if facing.is_none() {
                 let marks = if group.marks.is_empty() {
@@ -1755,15 +2820,26 @@ impl<'a> Walk<'a> {
                     ),
                 ),
                 (Some(f), None) => {
-                    let first = self.p.first_row_side;
+                    let first = self.first_side();
                     self.needle.as_mut().expect("counting").set_side(f, first)
                 }
                 _ => {}
             }
-            self.needle
-                .as_mut()
-                .expect("counting")
-                .insert(k, true, &group.marks);
+            let (_, grouped) = self.needle.as_mut().expect("counting").insert(
+                k,
+                true,
+                &group.marks,
+                Join::Exact(&group.segs),
+            );
+            if !grouped {
+                self.drop_groups(
+                    si,
+                    ti,
+                    None,
+                    "these stitches were put on hold before the stitches were divided into needle \
+                     groups",
+                );
+            }
         }
         self.groups[gi].resumed = Some((si, ti));
         self.needle.as_mut().expect("counting").settle();
@@ -1797,6 +2873,8 @@ impl<'a> Walk<'a> {
         };
         let k = change.unsigned_abs();
         let at_start = needle.row_start;
+        // Applied below only once it fits; then the groups go when it changes the count.
+        let regroup = change != 0 && self.worked_groups() > 1;
         if change > 0 {
             if self.too_big(k) {
                 self.error(Some(si), Some(ti), None, too_many());
@@ -1812,10 +2890,22 @@ impl<'a> Walk<'a> {
                 );
                 return;
             }
-            self.needle
-                .as_mut()
-                .expect("counting")
-                .insert(k, at_start, &[]);
+            if regroup {
+                self.drop_groups(si, ti, None, "this step adds stitches in its own words");
+            }
+            let (_, grouped) =
+                self.needle
+                    .as_mut()
+                    .expect("counting")
+                    .insert(k, at_start, &[], Join::Adjacent);
+            if !grouped {
+                self.drop_groups(
+                    si,
+                    ti,
+                    None,
+                    "this step adds stitches between two needle groups",
+                );
+            }
         } else if change < 0 {
             let room = if at_start { needle.lh() } else { needle.rh() };
             if k > room {
@@ -1847,6 +2937,9 @@ impl<'a> Walk<'a> {
                     LineCount::NotCounted,
                 );
                 return;
+            }
+            if regroup {
+                self.drop_groups(si, ti, None, "this step removes stitches in its own words");
             }
             let needle = self.needle.as_mut().expect("counting");
             if at_start {
@@ -1943,19 +3036,35 @@ impl<'a> Walk<'a> {
             false
         };
         if needle.n == 0 {
-            return refuse(self, label, body, no_stitches());
+            let problem = self.no_stitches_here();
+            return refuse(self, label, body, problem);
+        }
+        let chart_round = self.p.construction == Construction::InTheRound;
+        if chart_round != needle.round {
+            let problem = if chart_round {
+                "the chart is for working in the round, but the work is flat here; use knit, purl \
+                 or row steps for the part worked flat"
+            } else {
+                "the chart is for working flat (it has wrong-side rows), but the work is in the \
+                 round here; use knit, purl or row steps for the rounds"
+            };
+            return refuse(self, label, body, problem.into());
         }
         if !needle.row_start {
-            return refuse(
-                self,
-                label,
-                body,
+            let problem = if needle.round {
+                format!(
+                    "a chart round has to start at the beginning of a round, but this round is \
+                     already started ({} still to work in it)",
+                    stitches(needle.lh())
+                )
+            } else {
                 format!(
                     "a chart row has to start at the beginning of a row, but this row is already \
                      started ({} still to work in it)",
                     stitches(needle.lh())
-                ),
-            );
+                )
+            };
+            return refuse(self, label, body, problem);
         }
         let chart_side = self.p.row_side(r);
         let side_unknown = needle.side().is_none();
@@ -2063,20 +3172,46 @@ impl<'a> Walk<'a> {
             );
         }
         let new_n = n - lh + count.produced.min(MAX_LIVE_STITCHES + 1);
-        if new_n.saturating_add(self.held_total()) > MAX_LIVE_STITCHES {
+        let resting = self.rest.as_ref().map_or(0, |r| r.count);
+        if new_n
+            .saturating_add(self.held_total())
+            .saturating_add(resting)
+            > MAX_LIVE_STITCHES
+        {
             return refuse(self, label, body, too_many());
         }
         if side_unknown {
-            let first = self.p.first_row_side;
+            let first = self.first_side();
             self.needle
                 .as_mut()
                 .expect("counting")
                 .set_side(chart_side, first);
         }
-        self.needle.as_mut().expect("counting").row_start = false;
+        {
+            let needle = self.needle.as_mut().expect("counting");
+            needle.row_start = false;
+            needle.edge_row = at_edge.then_some(needle.up);
+        }
         let body = self.with_double_stitch(body);
+        // A row that changes the count: the groups follow it only when there is one group.
+        if count.produced != count.consumed && self.worked_groups() > 1 {
+            self.drop_groups(si, ti, Some(r), "this chart row changes the stitch count");
+        }
         let needle = self.needle.as_mut().expect("counting");
         let up = needle.up;
+        if count.produced != count.consumed {
+            if let Some(name) = needle.segs.first().map(|s| s.name.clone()) {
+                needle.segs = vec![Seg { name, len: new_n }];
+            }
+        }
+        // The sides of parts worked flat at the ends of the worked run keep their places; Ply cannot
+        // tell where one inside it falls once the row changes the count.
+        let (lo_b, hi_b) = if up {
+            (needle.c, needle.c + lh)
+        } else {
+            (needle.c - lh, needle.c)
+        };
+        needle.sides_resized(lo_b, hi_b, count.produced as i64 - lh as i64);
         let (marks, gaps) = needle.traverse(lh);
         // The worked run is replaced by what the row produces.
         let produced = count.produced;
@@ -2116,27 +3251,31 @@ impl<'a> Walk<'a> {
                 None,
                 None,
                 format!(
-                    "ends part way through a row, with {} still to work in it",
+                    "ends part way through a {}, with {} still to work in it",
+                    if needle.round { "round" } else { "row" },
                     stitches(needle.lh())
                 ),
             );
         }
         let waiting = needle.lo + needle.hi;
-        if waiting > 0 || !needle.marks.is_empty() {
-            let wraps = needle
-                .marks
-                .iter()
-                .filter(|m| m.kind == Pending::Wrap)
-                .count() as u64;
-            let doubles = needle.marks.len() as u64 - wraps;
-            let mut text = format!(
-                "ends with short rows not yet worked across: {} {} still waiting past a turn",
-                stitches(waiting),
-                if waiting == 1 { "is" } else { "are" }
-            );
+        let mut kinds: Vec<Pending> = needle.marks.iter().map(|m| m.kind).collect();
+        if let Some(rest) = &self.rest {
+            kinds.extend(rest.marks.iter().map(|(_, m)| m.kind));
+        }
+        if waiting > 0 || !kinds.is_empty() {
+            let wraps = kinds.iter().filter(|k| **k == Pending::Wrap).count() as u64;
+            let doubles = kinds.len() as u64 - wraps;
+            let mut parts = Vec::new();
+            if waiting > 0 {
+                parts.push(format!(
+                    "{} {} still waiting past a turn",
+                    stitches(waiting),
+                    if waiting == 1 { "is" } else { "are" }
+                ));
+            }
             if wraps > 0 {
-                text.push_str(&format!(
-                    ", and {} not yet worked together with {}",
+                parts.push(format!(
+                    "{} not yet worked together with {}",
                     count_of(wraps, "wrap is", "wraps are"),
                     if wraps == 1 {
                         "its stitch"
@@ -2146,16 +3285,39 @@ impl<'a> Walk<'a> {
                 ));
             }
             if doubles > 0 {
-                text.push_str(&format!(
-                    ", and {} not yet worked as one stitch",
+                parts.push(format!(
+                    "{} not yet worked as one stitch",
                     count_of(doubles, "double stitch is", "double stitches are")
                 ));
             }
-            self.warn(Some(si), None, None, text);
+            self.warn(
+                Some(si),
+                None,
+                None,
+                format!(
+                    "ends with short rows not yet worked across: {}",
+                    parts.join(", and ")
+                ),
+            );
         }
     }
 
     fn end_pattern(&mut self) {
+        if let Some(rest) = self.rest.clone() {
+            if let Some(&(ws, wt)) = self.by_id.get(rest.step.as_str()) {
+                self.warn(
+                    Some(ws),
+                    Some(wt),
+                    None,
+                    format!(
+                        "{} {} still resting on the needle at the end of the pattern; no step joins \
+                         them back into the round",
+                        stitches(rest.count),
+                        if rest.count == 1 { "is" } else { "are" }
+                    ),
+                );
+            }
+        }
         let held: Vec<Group> = self
             .groups
             .iter()
@@ -2219,6 +3381,1148 @@ impl<'a> Walk<'a> {
     }
 }
 
+// --- the walk: working in the round, sock heels and toes (schema version 5) ---------------------
+
+/// Where a pick-up goes, from where the work is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PickPlace {
+    /// Partway through a right-side row or a round: onto the right needle where the work is.
+    Mid,
+    /// At the start of a round: after the last stitch, ending the round before it.
+    RoundEnd,
+    /// Just after a right-side row reached the edge (the work has turned): onto that row's end.
+    RowEnd,
+    /// At the start of a right-side row, at its edge: the row begins with them.
+    RowStart,
+    /// Onto an empty needle: they are the needle's first row, a right-side row.
+    Empty,
+}
+
+impl<'a> Walk<'a> {
+    fn join_round(&mut self, si: usize, ti: usize) {
+        let Some(needle) = &self.needle else {
+            return self.unknown_line(si, ti, "join to work in the round".into());
+        };
+        if self.rest.is_some() {
+            return self.rejoin(si, ti);
+        }
+        let generic = "join to work in the round, being careful not to twist".to_string();
+        if needle.n == 0 {
+            return self.refuse(si, ti, generic, no_stitches());
+        }
+        if needle.round {
+            return self.refuse(si, ti, generic, "the work is already in the round".into());
+        }
+        if !needle.row_start {
+            let problem = format!(
+                "joins the work into the round partway through a row ({} still to work in it); \
+                 join at the end of a row",
+                stitches(needle.lh())
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        if !needle.at_edge() {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "joins the work into the round at a short-row turn; work to the end of the row \
+                 first"
+                    .into(),
+            );
+        }
+        if needle.up_side.is_none() {
+            return self.refuse(si, ti, generic, side_unknown_problem());
+        }
+        let needle = self.needle.as_mut().expect("counting");
+        // Rounds travel toward stitch n, from the right side.
+        if needle.up_side == Some(Side::Ws) {
+            needle.mirror();
+        }
+        // At the start of a wrong-side row the right-side row just ended here: the round goes on
+        // from it instead of turning, so the next round starts at stitch 1.
+        needle.round = true;
+        needle.up = true;
+        needle.up_side = Some(Side::Rs);
+        needle.c = 0;
+        needle.lo = 0;
+        needle.hi = 0;
+        needle.row_start = true;
+        needle.yarn_here = false;
+        needle.edge_row = None;
+        let count = self.snapshot();
+        self.push_line(si, ti, None, None, generic, true, false, count);
+    }
+
+    /// Join the part worked flat back into the round, with the stitches that rested.
+    fn rejoin(&mut self, si: usize, ti: usize) {
+        let rest = self.rest.clone().expect("working flat");
+        let needle = self.needle.as_ref().expect("counting");
+        let total = needle.n + rest.count;
+        let text = format!("join to work in the round again over all {}", sts(total));
+        if needle.n > 0 {
+            match needle.up_side {
+                Some(Side::Rs) => {}
+                None => return self.refuse(si, ti, text, side_unknown_problem()),
+                Some(Side::Ws) => {
+                    return self.refuse(
+                        si,
+                        ti,
+                        text,
+                        "the part worked flat is turned the other way round from the round (its \
+                         right-side rows run back toward the start of the round), so Ply cannot \
+                         join it back in"
+                            .into(),
+                    )
+                }
+            }
+            let row_end = !needle.up && needle.row_start && needle.c == needle.n;
+            if !needle.up && !row_end {
+                return self.refuse(
+                    si,
+                    ti,
+                    text,
+                    "joins the work back into the round partway through a wrong-side row, but \
+                     rounds are worked from the right side; join at the end of a right-side row"
+                        .into(),
+                );
+            }
+        }
+        if let Some(rec) = self.pieces.get_mut(&rest.step) {
+            let needle = self.needle.as_ref().expect("counting");
+            rec.rows = needle.full_rows;
+        }
+        // The groups of the part and of the stitches that rested must both be known to go on
+        // counting them (all the stitches may have been worked flat, with none resting).
+        let part_groups = self.needle.as_ref().is_some_and(|n| !n.segs.is_empty());
+        let rest_groups = !rest.segs.is_empty();
+        let part_n = self.needle.as_ref().map_or(0, |n| n.n);
+        if part_n > 0 && rest.count > 0 && part_groups != rest_groups {
+            self.drop_groups(
+                si,
+                ti,
+                None,
+                "the stitches worked flat and the stitches that rested are not both in needle groups",
+            );
+        }
+        let rest_segs = self.rest.as_ref().map_or_else(Vec::new, |r| r.segs.clone());
+        let needle = self.needle.as_mut().expect("counting");
+        let empty_part = needle.n == 0;
+        if empty_part {
+            *needle = Needle::fresh_round(0);
+        }
+        // Waiting stitches and short-row turns end with the flat part: the rounds work every
+        // stitch as they come to it. Wraps and double stitches stay where they are.
+        let mid = needle.c > 0;
+        let piece_n = needle.n;
+        needle.round = true;
+        needle.up = true;
+        needle.up_side = Some(Side::Rs);
+        needle.lo = 0;
+        needle.hi = 0;
+        needle.unoriented = false;
+        needle.edge_row = None;
+        if empty_part {
+            needle.segs = rest_segs;
+        } else if !needle.segs.is_empty() {
+            needle.segs.extend(rest_segs);
+            seg_tidy(&mut needle.segs);
+        }
+        for (offset, m) in &rest.marks {
+            needle.marks.push(Mark {
+                pos: piece_n + offset,
+                kind: m.kind,
+            });
+        }
+        for g in &rest.gaps {
+            needle.gaps.push(Gap {
+                at: piece_n + g.at,
+                ..g.clone()
+            });
+        }
+        for x in &rest.sides {
+            needle.sides.push(SideMark {
+                at: piece_n + x.at,
+                ..x.clone()
+            });
+        }
+        needle.n += rest.count;
+        needle.norm_sides();
+        needle.tidy();
+        needle.row_start = !mid;
+        needle.yarn_here = mid;
+        needle.settle();
+        self.rest = None;
+        let count = self.snapshot();
+        self.push_line(si, ti, None, None, text, true, false, count);
+    }
+
+    fn work_flat(
+        &mut self,
+        si: usize,
+        ti: usize,
+        step: &Step,
+        count: u32,
+        name: &str,
+        slip_edges: bool,
+    ) {
+        let m = u64::from(count);
+        let what = match name.trim() {
+            "" => String::new(),
+            n => format!(" for the {n}"),
+        };
+        let slip = if slip_edges {
+            ", slipping the first st of every row"
+        } else {
+            ""
+        };
+        let generic = format!("work back and forth over the next {}{what}{slip}", sts(m));
+        let Some(needle) = &self.needle else {
+            return self.unknown_line(si, ti, generic);
+        };
+        if needle.n == 0 {
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, generic, problem);
+        }
+        if self.rest.is_some() {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "part of the round is already worked flat; join it back into the round first"
+                    .into(),
+            );
+        }
+        if !needle.round {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "works part of the stitches flat, but the work is already flat; put the other \
+                 stitches on hold instead"
+                    .into(),
+            );
+        }
+        if needle.c != 0 || !needle.row_start {
+            let problem = format!(
+                "starts working flat partway through a round ({} still to work in it); Ply starts \
+                 a part worked flat at the start of the round",
+                stitches(needle.lh())
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        if m == 0 {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "works 0 stitches flat; work at least 1".into(),
+            );
+        }
+        let n = needle.n;
+        if m > n {
+            let problem = format!(
+                "works {} flat, but the round has only {}",
+                stitches(m),
+                stitches(n)
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        let old = needle.clone();
+        let mut piece = Needle::fresh(m, Some(Side::Rs));
+        piece.marks = old.marks.iter().copied().filter(|k| k.pos <= m).collect();
+        piece.gaps = old.gaps.iter().filter(|g| g.at < m).cloned().collect();
+        piece.segs = seg_slice(&old.segs, 1, m);
+        // Earlier sides in the part stay with it; the new part's sides are its two ends.
+        piece.sides = old.sides.iter().filter(|x| x.at <= m).cloned().collect();
+        piece.sides.push(SideMark {
+            piece: step.id.clone(),
+            left: false,
+            at: 0,
+        });
+        piece.sides.push(SideMark {
+            piece: step.id.clone(),
+            left: true,
+            at: m,
+        });
+        let offset = |at: u64| at - m;
+        let rest = Rest {
+            step: step.id.clone(),
+            count: n - m,
+            marks: old
+                .marks
+                .iter()
+                .filter(|k| k.pos > m)
+                .map(|k| (k.pos - m, *k))
+                .collect(),
+            segs: seg_slice(&old.segs, m + 1, n),
+            gaps: old
+                .gaps
+                .iter()
+                .filter(|g| g.at >= m)
+                .map(|g| Gap {
+                    at: offset(g.at),
+                    ..g.clone()
+                })
+                .collect(),
+            sides: old
+                .sides
+                .iter()
+                .filter(|x| x.at > m)
+                .map(|x| SideMark {
+                    at: offset(x.at),
+                    ..x.clone()
+                })
+                .collect(),
+        };
+        self.needle = Some(piece);
+        self.rest = Some(rest);
+        self.pieces.insert(
+            step.id.clone(),
+            PieceRecord {
+                slip_edges,
+                rows: [0, 0],
+                picked: [false, false],
+            },
+        );
+        let text = if n == m {
+            format!("work back and forth over all {}{what}{slip}", sts(m))
+        } else {
+            format!(
+                "{generic}; the other {} {} on the needle",
+                sts(n - m),
+                if n - m == 1 { "rests" } else { "rest" }
+            )
+        };
+        let count = self.snapshot();
+        self.push_line(si, ti, None, None, text, true, false, count);
+    }
+
+    /// The label for a step that works `rows` whole rows from the start of a row: `Next 32 rows
+    /// (first row RS)`, `Next 50 rnds`, or the one-row labels.
+    fn rows_label(&mut self, rows: u64) -> Option<String> {
+        if rows == 1 {
+            return self.take_label(false);
+        }
+        let needle = self.needle.as_mut()?;
+        needle.row_start = false;
+        self.short_no = 0;
+        if needle.round {
+            return Some(format!("Next {rows} rnds"));
+        }
+        Some(match needle.side() {
+            Some(Side::Rs) => format!("Next {rows} rows (first row RS)"),
+            Some(Side::Ws) => format!("Next {rows} rows (first row WS)"),
+            None => format!("Next {rows} rows"),
+        })
+    }
+
+    /// Why a step that works whole rows cannot start here, or `None`.
+    fn whole_rows_problem(&self, needle: &Needle, what: &str) -> Option<String> {
+        let unit = if needle.round { "round" } else { "row" };
+        if !needle.row_start {
+            return Some(format!(
+                "{what} whole {unit}s, but this {unit} is already started ({} still to work in \
+                 it); finish the {unit} first",
+                stitches(needle.lh())
+            ));
+        }
+        if !needle.round && !needle.at_edge() {
+            return Some(format!(
+                "{what} whole rows, but the work is at a short-row turn here; work to the end of \
+                 the row first"
+            ));
+        }
+        None
+    }
+
+    fn rows(&mut self, si: usize, ti: usize, count: u32, text: &str) {
+        let r = u64::from(count);
+        let body = match text.trim().trim_end_matches('.') {
+            "" => "work even".to_string(),
+            t => t.to_string(),
+        };
+        let round_words = self.needle.as_ref().map_or(self.default_round, |n| n.round);
+        let units = |round: bool| match (round, r) {
+            (true, 1) => "rnd",
+            (true, _) => "rnds",
+            (false, 1) => "row",
+            (false, _) => "rows",
+        };
+        let unlabelled = format!("work {r} {}: {body}", units(round_words));
+        let Some(needle) = &self.needle else {
+            return self.unknown_line(si, ti, unlabelled);
+        };
+        if needle.n == 0 {
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, unlabelled, problem);
+        }
+        if r == 0 {
+            let problem = if needle.round {
+                "works 0 rounds; work at least 1"
+            } else {
+                "works 0 rows; work at least 1"
+            };
+            return self.refuse(si, ti, unlabelled, problem.into());
+        }
+        if let Some(problem) = self.whole_rows_problem(needle, "works") {
+            return self.refuse(si, ti, unlabelled, problem);
+        }
+        let label = self.rows_label(r);
+        let body = if label.is_some() {
+            self.with_double_stitch(body)
+        } else {
+            body
+        };
+        let needle = self.needle.as_mut().expect("counting");
+        let (marks, gaps) = needle.whole_rows(r);
+        let text = self.crossings(si, ti, None, body, &marks, &gaps, false, false);
+        let count = self.snapshot();
+        self.push_line(si, ti, None, label, text, true, false, count);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn shape(
+        &mut self,
+        si: usize,
+        ti: usize,
+        change: i64,
+        every: u32,
+        until: ShapeUntil,
+        groups: &[String],
+        how: &str,
+    ) {
+        let round_words = self.needle.as_ref().map_or(self.default_round, |n| n.round);
+        let generic = shape_text(change, every, until, groups, how, round_words, None);
+        let Some(needle) = &self.needle else {
+            return self.unknown_line(si, ti, generic);
+        };
+        if needle.n == 0 {
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, generic, problem);
+        }
+        let unit = if needle.round { "round" } else { "row" };
+        if change == 0 {
+            let problem = format!(
+                "changes no stitches; to work {unit}s without shaping, use a step that works whole \
+                 {unit}s"
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        if every == 0 {
+            let problem = format!(
+                "shapes every 0 {unit}s; give 1 to shape every {unit}, or 2 for every other {unit}"
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        // The groups it names must be on the needle, once each.
+        let here = group_counts(needle.segs.iter());
+        for (i, g) in groups.iter().enumerate() {
+            if groups[..i].iter().any(|h| h.trim() == g.trim()) {
+                let problem = format!("names the needle group {} twice", display_name(g));
+                return self.refuse(si, ti, generic, problem);
+            }
+            if !here.iter().any(|h| h.name == *g) {
+                let problem = if here.is_empty() && self.rest.is_none() {
+                    format!(
+                        "shapes the needle group {}, but the stitches are not divided into groups \
+                         yet; divide them first, or leave the group out",
+                        display_name(g)
+                    )
+                } else {
+                    format!(
+                        "there is no needle group called {} on the needle here",
+                        display_name(g)
+                    )
+                };
+                return self.refuse(si, ti, generic, problem);
+            }
+        }
+        let n = needle.n;
+        let places = groups.len().max(1) as i64;
+        let verb = if change < 0 { "decreases" } else { "increases" };
+        let Some(per_row) = change.checked_mul(places) else {
+            return self.refuse(si, ti, generic, too_many());
+        };
+        let times: u64 = match until {
+            ShapeUntil::Times(0) => {
+                return self.refuse(
+                    si,
+                    ti,
+                    generic,
+                    "shapes 0 times; shape at least once".into(),
+                );
+            }
+            ShapeUntil::Times(t) => u64::from(t),
+            ShapeUntil::Remain(target) => {
+                let target = u64::from(target);
+                let diff = i128::from(target) - i128::from(n);
+                if diff == 0 {
+                    let problem = format!(
+                        "shapes until {} remain, but that is how many are on the needle already",
+                        stitches(target)
+                    );
+                    return self.refuse(si, ti, generic, problem);
+                }
+                if (diff < 0) != (per_row < 0) {
+                    let problem = format!(
+                        "{verb}, but {} is {} than the {} on the needle",
+                        stitches(target),
+                        if diff > 0 { "more" } else { "fewer" },
+                        n
+                    );
+                    return self.refuse(si, ti, generic, problem);
+                }
+                let step = i128::from(per_row);
+                if diff % step != 0 {
+                    let q = diff / step;
+                    let near = i128::from(n) + q * step;
+                    let problem = format!(
+                        "{verb} {} at a time, which cannot reach {} from {}: it goes from {} \
+                         to {}",
+                        stitches(per_row.unsigned_abs()),
+                        target,
+                        n,
+                        near,
+                        near + step
+                    );
+                    return self.refuse(si, ti, generic, problem);
+                }
+                (diff / step) as u64
+            }
+        };
+        // Every count stays in range: at least 1 stitch on the needle and in each group it shapes,
+        // never past the cap.
+        let total = i128::from(per_row) * i128::from(times);
+        let after = i128::from(n) + total;
+        if after < 1 {
+            let problem = format!(
+                "takes off {}, but only {} on the needle",
+                stitches(total.unsigned_abs() as u64),
+                are_count(n)
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        for g in groups {
+            let have = here.iter().find(|h| h.name == *g).map_or(0, |h| h.count);
+            let off = i128::from(change) * i128::from(times);
+            if i128::from(have) + off < 1 {
+                let problem = format!(
+                    "takes {} off the {}, which has only {}",
+                    stitches(off.unsigned_abs() as u64),
+                    display_name(g),
+                    stitches(have)
+                );
+                return self.refuse(si, ti, generic, problem);
+            }
+        }
+        if total > 0 && self.too_big(total as u64) {
+            return self.refuse(si, ti, generic, too_many());
+        }
+        if let Some(problem) = self.whole_rows_problem(needle, "shapes over") {
+            return self.refuse(si, ti, generic, problem);
+        }
+        let Some(rows) = times.checked_mul(u64::from(every)) else {
+            return self.refuse(si, ti, generic, too_many());
+        };
+        let text = shape_text(change, every, until, groups, how, needle.round, Some(times));
+        let label = self.rows_label(rows);
+        let text = if label.is_some() {
+            self.with_double_stitch(text)
+        } else {
+            text
+        };
+        let needle = self.needle.as_mut().expect("counting");
+        let (marks, gaps) = needle.whole_rows(rows);
+        let text = self.crossings(si, ti, None, text, &marks, &gaps, false, false);
+        if groups.is_empty() && self.worked_groups() > 1 {
+            self.drop_groups(
+                si,
+                ti,
+                None,
+                "this step does not say which needle groups it shapes",
+            );
+        }
+        let needle = self.needle.as_mut().expect("counting");
+        // Every stitch was worked, so only the sides at the ends of the needle keep their places.
+        let n_now = needle.n;
+        needle.sides_resized(0, n_now, total as i64);
+        if needle.round {
+            needle.sides.retain(|x| x.at == 0);
+        }
+        if groups.is_empty() {
+            if let Some(name) = needle.segs.first().map(|s| s.name.clone()) {
+                seg_change(&mut needle.segs, &name, total as i64);
+            }
+        } else {
+            for g in groups {
+                seg_change(&mut needle.segs, g, change * times as i64);
+            }
+        }
+        needle.n = after as u64;
+        if !needle.up {
+            needle.c = needle.n;
+        }
+        let count = self.snapshot();
+        self.push_line(si, ti, None, label, text, true, false, count);
+    }
+
+    fn pick_up(
+        &mut self,
+        si: usize,
+        ti: usize,
+        count: u32,
+        along: &PickUpAlong,
+        group: Option<&str>,
+    ) {
+        let k = u64::from(count);
+        let onto = group.map_or(String::new(), |g| {
+            format!(", adding them to the {}", display_name(g))
+        });
+        // The part worked flat this picks up along, when it is one, and its name.
+        let piece_id = match along {
+            PickUpAlong::Piece(id) => Some(id.as_str()),
+            PickUpAlong::Edge(_) => None,
+        };
+        let piece_name = piece_id.and_then(|id| {
+            let &(s, t) = self.by_id.get(id)?;
+            match &self.p.sections[s].steps[t].action {
+                StepAction::WorkFlat { name, .. } => Some(name.trim().to_string()),
+                _ => None,
+            }
+        });
+        let flat_words = |name: &Option<String>| match name.as_deref() {
+            Some(n) if !n.is_empty() => format!("the {n}"),
+            _ => "the part worked flat".to_string(),
+        };
+        let edge = match along {
+            PickUpAlong::Edge(t) => match t.trim() {
+                "" => "the edge".to_string(),
+                t => t.to_string(),
+            },
+            PickUpAlong::Piece(_) => format!("the side of {}", flat_words(&piece_name)),
+        };
+        let generic = format!("pick up and knit {} along {edge}{onto}", sts(k));
+        if let Some(id) = piece_id {
+            let Some(&(ws, wt)) = self.by_id.get(id) else {
+                return self.refuse(
+                    si,
+                    ti,
+                    generic,
+                    "picks up along a part worked flat, but the step that worked it flat is gone \
+                     (it may have been deleted)"
+                        .into(),
+                );
+            };
+            let other = self.place(ws, Some(wt), None);
+            if piece_name.is_none() {
+                let problem = format!("names {other}, which does not work stitches flat");
+                return self.refuse(si, ti, generic, problem);
+            }
+            if (ws, wt) > (si, ti) {
+                let problem = format!(
+                    "picks up along {} before {other} works it; move this step after it",
+                    flat_words(&piece_name)
+                );
+                return self.refuse(si, ti, generic, problem);
+            }
+            if !self.pieces.contains_key(id) {
+                let problem = format!(
+                    "picks up along {}, but {other} could not work it flat",
+                    flat_words(&piece_name)
+                );
+                return self.refuse(si, ti, generic, problem);
+            }
+        }
+        let Some(needle) = &self.needle else {
+            return self.unknown_line(si, ti, generic);
+        };
+        if k == 0 {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "picks up 0 stitches; pick up at least 1".into(),
+            );
+        }
+        if self.too_big(k) {
+            return self.refuse(si, ti, generic, too_many());
+        }
+        let names = self.group_names();
+        match group {
+            Some(g) if names.is_empty() => {
+                let problem = format!(
+                    "adds the stitches to the needle group {}, but the stitches are not divided \
+                     into groups yet; divide them first, or leave the group out",
+                    display_name(g)
+                );
+                return self.refuse(si, ti, generic, problem);
+            }
+            Some(g) if !names.iter().any(|n| n == g) => {
+                let problem = format!(
+                    "there is no needle group called {}; the groups are {}",
+                    display_name(g),
+                    names.join(", ")
+                );
+                return self.refuse(si, ti, generic, problem);
+            }
+            None if !names.is_empty() => {
+                let problem = format!(
+                    "the stitches are in needle groups ({}); say which group the picked-up \
+                     stitches go on",
+                    names.join(", ")
+                );
+                return self.refuse(si, ti, generic, problem);
+            }
+            _ => {}
+        }
+        // Where the work is decides where the new stitches go: always with the right side facing.
+        let place = if needle.n == 0 {
+            if self.rest.is_some() {
+                let problem = self.no_stitches_here();
+                return self.refuse(si, ti, generic, problem);
+            }
+            PickPlace::Empty
+        } else if needle.round {
+            if needle.row_start {
+                PickPlace::RoundEnd
+            } else {
+                PickPlace::Mid
+            }
+        } else if needle.side().is_none() {
+            return self.refuse(si, ti, generic, side_unknown_problem());
+        } else if !needle.row_start {
+            if needle.side() != Some(Side::Rs) {
+                return self.refuse(
+                    si,
+                    ti,
+                    generic,
+                    "picks up with the right side facing, but the work is partway through a \
+                     wrong-side row"
+                        .into(),
+                );
+            }
+            PickPlace::Mid
+        } else if !needle.at_edge() {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "picks up at a short-row turn; pick up at the end of a row or at its start".into(),
+            );
+        } else if needle.side() == Some(Side::Ws) {
+            PickPlace::RowEnd
+        } else {
+            PickPlace::RowStart
+        };
+        // Along a part worked flat: which side, from where the work is.
+        let mut side_info = None;
+        let edge = if let Some(id) = piece_id {
+            let active = self.rest.as_ref().is_some_and(|r| r.step == id);
+            let rec = self.pieces.get(id).expect("checked above").clone();
+            // Where the new stitches go: at the start of a round, after the last stitch; otherwise
+            // where the work is. A side of the part is there when its mark is.
+            let at = match place {
+                PickPlace::RoundEnd => 0,
+                _ => needle.c,
+            };
+            // 0: the right side (where its right-side rows start), 1: the left side.
+            let which = match place {
+                PickPlace::Empty => None,
+                _ => needle
+                    .sides
+                    .iter()
+                    .find(|m| m.piece == id && m.at == at)
+                    .map(|m| usize::from(m.left)),
+            };
+            let Some(which) = which else {
+                let problem = format!(
+                    "picks up along {}, but the work is not at either side of it here (a side is \
+                     at the end or the start of its right-side rows, wherever those stitches are \
+                     now)",
+                    flat_words(&piece_name)
+                );
+                return self.refuse(si, ti, generic, problem);
+            };
+            let rows = if active { needle.full_rows } else { rec.rows };
+            side_info = Some((which, rec.picked[which]));
+            let words = flat_words(&piece_name);
+            let info = if rec.slip_edges {
+                // No whole rows on that side yet: there are no slipped edge stitches to mention.
+                match rows[which] {
+                    0 => String::new(),
+                    1 => " (it has 1 slipped edge st on this side)".to_string(),
+                    s => format!(" (it has {s} slipped edge sts on this side)"),
+                }
+            } else if rows[0] + rows[1] > 0 {
+                format!(" (it is {} rows long)", rows[0] + rows[1])
+            } else {
+                String::new()
+            };
+            format!(
+                "the {} side of {words}{info}",
+                if which == 0 { "right" } else { "left" }
+            )
+        } else {
+            edge
+        };
+        if let Some((which, true)) = side_info {
+            self.warn(
+                Some(si),
+                Some(ti),
+                None,
+                format!(
+                    "picks up along the {} side of {} a second time",
+                    if which == 0 { "right" } else { "left" },
+                    flat_words(&piece_name)
+                ),
+            );
+        }
+        if let (Some((which, _)), Some(id)) = (side_info, piece_id) {
+            if let Some(rec) = self.pieces.get_mut(id) {
+                rec.picked[which] = true;
+            }
+        }
+        let join = match group {
+            Some(g) => Join::Named(g),
+            None => Join::Adjacent,
+        };
+        let label = match place {
+            PickPlace::RowStart => self.take_label(false),
+            PickPlace::Empty => Some("Next row (RS)".to_string()),
+            _ => None,
+        };
+        match place {
+            PickPlace::Empty => {
+                let mut fresh = Needle::fresh(k, Some(Side::Rs));
+                fresh.c = k;
+                fresh.row_start = false;
+                fresh.yarn_here = true;
+                fresh.settle();
+                self.needle = Some(fresh);
+            }
+            PickPlace::RoundEnd => {
+                let grouped = self.needle.as_mut().expect("counting").append(k, join);
+                if !grouped {
+                    self.drop_groups(
+                        si,
+                        ti,
+                        None,
+                        "this step picks up stitches between two groups",
+                    );
+                }
+            }
+            PickPlace::RowEnd | PickPlace::Mid | PickPlace::RowStart => {
+                let needle = self.needle.as_mut().expect("counting");
+                if place == PickPlace::RowEnd {
+                    // Back onto the row that just ended: the stitches continue it.
+                    needle.up = !needle.up;
+                    needle.row_start = false;
+                    needle.yarn_here = true;
+                }
+                needle.edge_row = None;
+                let (_, grouped) = needle.insert(k, false, &[], join);
+                needle.settle();
+                if !grouped {
+                    self.drop_groups(
+                        si,
+                        ti,
+                        None,
+                        "this step picks up stitches between two groups",
+                    );
+                }
+            }
+        }
+        let text = format!("pick up and knit {} along {edge}{onto}", sts(k));
+        let count = self.snapshot();
+        self.push_line(si, ti, None, label, text, true, false, count);
+    }
+
+    fn round_start(&mut self, si: usize, ti: usize) {
+        let text = "the rnd now starts here (move the marker for the start of the rnd)".to_string();
+        let Some(needle) = &self.needle else {
+            return self.unknown_line(si, ti, text);
+        };
+        if needle.n == 0 {
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, text, problem);
+        }
+        if self.rest.is_some() {
+            return self.refuse(
+                si,
+                ti,
+                text,
+                "moves the start of the round while part of the round is worked flat; join it \
+                 back into the round first"
+                    .into(),
+            );
+        }
+        if !needle.round {
+            return self.refuse(
+                si,
+                ti,
+                text,
+                "moves the start of the round, but the work is flat; only a round has a start"
+                    .into(),
+            );
+        }
+        if needle.c == 0 {
+            return self.refuse(
+                si,
+                ti,
+                text,
+                "moves the start of the round to where it already is; work to where the new start \
+                 should be first"
+                    .into(),
+            );
+        }
+        self.needle.as_mut().expect("counting").rotate();
+        let count = self.snapshot();
+        self.push_line(si, ti, None, None, text, true, false, count);
+    }
+
+    fn set_groups(&mut self, si: usize, ti: usize, groups: &[NeedleGroup]) {
+        let list: Vec<String> = groups
+            .iter()
+            .map(|g| match g.notes.trim() {
+                "" => format!("{} {}", g.count, display_name(&g.name)),
+                notes => format!("{} {} ({notes})", g.count, display_name(&g.name)),
+            })
+            .collect();
+        let generic = if groups.is_empty() {
+            "stop counting needle groups".to_string()
+        } else {
+            format!("divide the sts into needle groups: {}", list.join(", "))
+        };
+        let Some(needle) = &self.needle else {
+            return self.unknown_line(si, ti, generic);
+        };
+        if needle.n == 0 {
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, generic, problem);
+        }
+        if self.rest.is_some() {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "divides the stitches into groups while part of the round is worked flat; divide \
+                 them in the round, before working part of it flat"
+                    .into(),
+            );
+        }
+        let unit = if needle.round { "round" } else { "row" };
+        if !needle.row_start {
+            let problem = format!(
+                "divides the stitches into groups partway through a {unit} ({} still to work in \
+                 it); do it at the start of a {unit}",
+                stitches(needle.lh())
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        if !needle.round && !needle.at_edge() {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "divides the stitches into groups at a short-row turn; do it at the start of a row"
+                    .into(),
+            );
+        }
+        let n = needle.n;
+        let round = needle.round;
+        let up = needle.up;
+        if groups.is_empty() {
+            self.needle.as_mut().expect("counting").segs.clear();
+            let count = self.snapshot();
+            self.push_line(si, ti, None, None, generic, true, false, count);
+            return;
+        }
+        for (i, g) in groups.iter().enumerate() {
+            if g.name.trim().is_empty() {
+                return self.refuse(si, ti, generic, "a needle group has no name".into());
+            }
+            if groups[..i]
+                .iter()
+                .any(|h| h.name.trim().eq_ignore_ascii_case(g.name.trim()))
+            {
+                let problem = format!("two needle groups are called {}", g.name.trim());
+                return self.refuse(si, ti, generic, problem);
+            }
+            if g.count == 0 {
+                let problem = format!("the needle group {} has 0 stitches", g.name.trim());
+                return self.refuse(si, ti, generic, problem);
+            }
+        }
+        let sum: u64 = groups.iter().map(|g| u64::from(g.count)).sum();
+        if sum != n {
+            let problem = format!(
+                "the groups add up to {}, but {} on the needle",
+                stitches(sum),
+                are_count(n)
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        // In working order from here: toward stitch n, or from stitch n down.
+        let mut segs: Vec<Seg> = groups
+            .iter()
+            .map(|g| Seg {
+                name: g.name.trim().to_string(),
+                len: u64::from(g.count),
+            })
+            .collect();
+        if !up {
+            segs.reverse();
+        }
+        self.needle.as_mut().expect("counting").segs = segs;
+        let start = if round {
+            "starting at the beginning of the rnd"
+        } else {
+            "in the order the next row works them"
+        };
+        let text = format!(
+            "divide the {} into needle groups, {start}: {}",
+            sts(n),
+            list.join(", ")
+        );
+        let count = self.snapshot();
+        self.push_line(si, ti, None, None, text, true, false, count);
+    }
+
+    fn close(&mut self, si: usize, ti: usize, method: CloseMethod) {
+        let generic = match method {
+            CloseMethod::Graft => "graft the sts together with Kitchener stitch".to_string(),
+            CloseMethod::ThreeNeedleBindOff => {
+                "bind off the sts together with a three-needle bind-off".to_string()
+            }
+        };
+        let Some(needle) = &self.needle else {
+            return self.unknown_line(si, ti, generic);
+        };
+        if needle.n == 0 {
+            let problem = self.no_stitches_here();
+            return self.refuse(si, ti, generic, problem);
+        }
+        if self.rest.is_some() {
+            return self.refuse(
+                si,
+                ti,
+                generic,
+                "closes the stitches while others rest on the needle outside the part worked \
+                 flat; join them back into the round first"
+                    .into(),
+            );
+        }
+        if !needle.row_start {
+            let unit = if needle.round { "round" } else { "row" };
+            let problem = format!(
+                "closes the stitches partway through a {unit} ({} still to work in it); finish \
+                 the {unit} first",
+                stitches(needle.lh())
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        if !needle.round && !needle.at_edge() {
+            let waiting = needle.lo + needle.hi;
+            let problem = format!(
+                "closes the stitches at a short-row turn, with {} still waiting past a turn; work \
+                 to the end of the row first",
+                stitches(waiting)
+            );
+            return self.refuse(si, ti, generic, problem);
+        }
+        let n = needle.n;
+        let what = match method {
+            CloseMethod::Graft => "grafting",
+            CloseMethod::ThreeNeedleBindOff => "a three-needle bind-off",
+        };
+        let groups = group_counts(needle.segs.iter());
+        let text = match groups.as_slice() {
+            [a, b] => {
+                if a.count != b.count {
+                    let problem = format!(
+                        "{what} joins two needle groups of the same size, but the {} has {} and \
+                         the {} has {}",
+                        display_name(&a.name),
+                        stitches(a.count),
+                        display_name(&b.name),
+                        stitches(b.count)
+                    );
+                    return self.refuse(si, ti, generic, problem);
+                }
+                match method {
+                    CloseMethod::Graft => format!(
+                        "graft the {} {} sts to the {} {} sts with Kitchener stitch",
+                        a.count,
+                        display_name(&a.name),
+                        b.count,
+                        display_name(&b.name)
+                    ),
+                    CloseMethod::ThreeNeedleBindOff => format!(
+                        "with the right sides together, bind off the {} {} sts and the {} {} sts \
+                         together with a three-needle bind-off",
+                        a.count,
+                        display_name(&a.name),
+                        b.count,
+                        display_name(&b.name)
+                    ),
+                }
+            }
+            [_, _, ..] => {
+                let names: Vec<String> = groups.iter().map(|g| display_name(&g.name)).collect();
+                let problem = format!(
+                    "{what} joins two halves, but the stitches are in {} needle groups ({}); \
+                     divide them into two groups first",
+                    groups.len(),
+                    names.join(", ")
+                );
+                return self.refuse(si, ti, generic, problem);
+            }
+            _ => {
+                if n % 2 == 1 {
+                    let problem = format!(
+                        "{what} joins two equal halves, but {} do not divide evenly",
+                        stitches(n)
+                    );
+                    return self.refuse(si, ti, generic, problem);
+                }
+                match method {
+                    CloseMethod::Graft => format!(
+                        "divide the {} evenly onto two needles ({} on each) and graft them \
+                         together with Kitchener stitch",
+                        sts(n),
+                        n / 2
+                    ),
+                    CloseMethod::ThreeNeedleBindOff => format!(
+                        "divide the {} evenly onto two needles ({} on each) and, with the right \
+                         sides together, bind them off together with a three-needle bind-off",
+                        sts(n),
+                        n / 2
+                    ),
+                }
+            }
+        };
+        let (total, overflow) = match method {
+            CloseMethod::Graft => self.grafted.overflowing_add(n),
+            CloseMethod::ThreeNeedleBindOff => self.bound_off.overflowing_add(n),
+        };
+        if overflow {
+            return self.refuse(si, ti, generic, too_many());
+        }
+        let needle = self.needle.as_mut().expect("counting");
+        let marks = std::mem::take(&mut needle.marks);
+        let gaps = std::mem::take(&mut needle.gaps);
+        let text = self.crossings(si, ti, None, text, &marks, &gaps, false, false);
+        match method {
+            CloseMethod::Graft => self.grafted = total,
+            CloseMethod::ThreeNeedleBindOff => self.bound_off = total,
+        }
+        self.needle = Some(Needle::empty());
+        let count = self.snapshot();
+        self.push_line(si, ti, None, None, text, true, false, count);
+    }
+}
+
 // --- wording helpers -------------------------------------------------------------------------------
 
 fn work_text(stitch: WorkStitch, to: WorkTo) -> String {
@@ -2236,6 +4540,138 @@ fn work_text(stitch: WorkStitch, to: WorkTo) -> String {
             _ => format!("{verb} {}", sts(u64::from(m))),
         },
     }
+}
+
+/// How far a short row works before its turn (or its decrease), in a knitter's words. With the
+/// needle, a turn at the gap names the stitch the knitter sees there: `knit to the wrapped stitch`
+/// (the first stitch past a wrap-and-turn gap) or `knit to the double stitch` (the last one before
+/// a German turn's gap).
+fn turn_work_text(stitch: WorkStitch, to: TurnAt, needle: Option<&Needle>) -> String {
+    let verb = match stitch {
+        WorkStitch::Knit => "knit",
+        WorkStitch::Purl => "purl",
+        WorkStitch::InPattern => "work in pattern",
+    };
+    let before_gap = needle.map(|n| n.lh() - n.waiting_ahead().min(n.lh()));
+    match to {
+        TurnAt::Last(m) => work_text(stitch, WorkTo::Last(m)),
+        TurnAt::Count(m) => work_text(stitch, WorkTo::Count(m)),
+        TurnAt::BeforeGap(0) => match (needle, before_gap) {
+            (Some(n), Some(b)) if n.waiting_ahead() > 0 && n.mark_ahead(b + 1, Pending::Wrap) => {
+                format!("{verb} to the wrapped stitch")
+            }
+            _ => format!("{verb} to the gap"),
+        },
+        TurnAt::BeforeGap(1) => match (needle, before_gap) {
+            (Some(n), Some(b))
+                if n.waiting_ahead() > 0 && b > 0 && n.mark_ahead(b, Pending::Double) =>
+            {
+                format!("{verb} to the double stitch")
+            }
+            _ => format!("{verb} to 1 st before the gap"),
+        },
+        TurnAt::BeforeGap(m) => format!("{verb} to {m} sts before the gap"),
+        TurnAt::PastGap(0) => format!("{verb} to the gap"),
+        TurnAt::PastGap(m) => format!("{verb} to {} past the gap", sts(u64::from(m))),
+    }
+}
+
+/// `, ssk, k1`: a short row's decrease and the stitches worked after it.
+fn decrease_text(stitch: WorkStitch, d: TurnDecrease) -> String {
+    let dec = match d.kind {
+        Decrease::K2tog => "k2tog",
+        Decrease::Ssk => "ssk",
+        Decrease::P2tog => "p2tog",
+        Decrease::Ssp => "ssp",
+    };
+    let after = u64::from(d.after);
+    if after == 0 {
+        return format!(", {dec}");
+    }
+    let then = match stitch {
+        WorkStitch::Knit => format!("k{after}"),
+        WorkStitch::Purl => format!("p{after}"),
+        WorkStitch::InPattern => format!("work {} in pattern", sts(after)),
+    };
+    format!(", {dec}, {then}")
+}
+
+/// The words of a shaping step: `decrease 2 sts on the sole in the first rnd and then every other
+/// rnd until 64 sts remain (9 decrease rnds); each decrease rnd: k1, ssk, ...`. `times` is the
+/// number of shaping rows or rounds when Ply knows it.
+fn shape_text(
+    change: i64,
+    every: u32,
+    until: ShapeUntil,
+    groups: &[String],
+    how: &str,
+    round: bool,
+    times: Option<u64>,
+) -> String {
+    let unit = if round { "rnd" } else { "row" };
+    let verb = if change < 0 { "decrease" } else { "increase" };
+    let mut s = format!("{verb} {}", sts(change.unsigned_abs()));
+    let names: Vec<String> = groups
+        .iter()
+        .map(|g| format!("the {}", display_name(g)))
+        .collect();
+    match names.as_slice() {
+        [] => {}
+        [one] => s.push_str(&format!(" on {one}")),
+        [rest @ .., last] => s.push_str(&format!(" on each of {} and {last}", rest.join(", "))),
+    }
+    match every {
+        0 | 1 => s.push_str(&format!(" in every {unit}")),
+        2 => s.push_str(&format!(" in the first {unit} and then every other {unit}")),
+        n => s.push_str(&format!(
+            " in the first {unit} and then every {} {unit}",
+            ordinal(n)
+        )),
+    }
+    match until {
+        ShapeUntil::Times(t) => s.push_str(&format!(
+            ", {} in all",
+            count_of(u64::from(t), "time", "times")
+        )),
+        ShapeUntil::Remain(target) => {
+            s.push_str(&format!(" until {} remain", sts(u64::from(target))));
+            if let Some(t) = times {
+                s.push_str(&format!(
+                    " ({t} {verb} {unit}{})",
+                    if t == 1 { "" } else { "s" }
+                ));
+            }
+        }
+    }
+    match how.trim().trim_end_matches('.') {
+        "" => {}
+        how => s.push_str(&format!("; each {verb} {unit}: {how}")),
+    }
+    s
+}
+
+/// `3rd`, `4th`, `21st`.
+fn ordinal(n: u32) -> String {
+    let suffix = match (n % 10, n % 100) {
+        (1, 11) | (2, 12) | (3, 13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
+}
+
+fn nothing_past_problem() -> String {
+    "turns with no stitches left past the turn; to work every stitch left in the row, use a plain \
+     work step instead"
+        .into()
+}
+
+fn side_unknown_problem() -> String {
+    "Ply does not know which side of the work faces you here, so it cannot tell which way the \
+     right side goes; say which side faces you in the step that returned these stitches"
+        .into()
 }
 
 /// `1 st` / `24 sts` (the written instructions' abbreviation).
@@ -2372,6 +4808,7 @@ mod tests {
             id: id.into(),
             name: name.into(),
             notes: String::new(),
+            construction: None,
             steps: steps
                 .into_iter()
                 .map(|(id, action)| Step {
@@ -2396,6 +4833,7 @@ mod tests {
             to,
             method,
             resolve_turns: false,
+            decrease: None,
         }
     }
 
@@ -2463,6 +4901,7 @@ mod tests {
             to,
             method,
             resolve_turns: false,
+            decrease: None,
         };
         let p = pat(
             Some(12),
@@ -3387,7 +5826,7 @@ mod tests {
     }
 
     #[test]
-    fn in_the_round_sections_are_not_counted_yet() {
+    fn in_the_round_sections_are_counted_in_rounds() {
         let mut p = pat(
             Some(8),
             8,
@@ -3395,13 +5834,28 @@ mod tests {
             vec![section(
                 "s1",
                 "Leg",
-                vec![("a", work(Knit, WorkTo::End, false))],
+                vec![
+                    ("a", work(Knit, WorkTo::Count(3), false)),
+                    ("b", work(Knit, WorkTo::End, false)),
+                    ("c", work(Purl, WorkTo::End, false)),
+                ],
             )],
         );
         p.construction = Construction::InTheRound;
-        assert_eq!(lines(&p), vec!["Knit to end. (stitch count unknown)"]);
-        assert_eq!(messages(&p).len(), 1);
-        assert!(messages(&p)[0].1.contains("worked in the round"));
+        assert_eq!(
+            lines(&p),
+            vec![
+                "Next rnd: knit 3 sts. (8 sts on the needle, 5 still to work in this rnd)",
+                "Knit to end. (8 sts on the needle)",
+                "Next rnd: purl to end. (8 sts on the needle)",
+            ],
+            "no turns: every round starts at the start of the round, from the right side"
+        );
+        assert!(messages(&p).is_empty(), "{:?}", messages(&p));
+        let l = ledger(&p);
+        let c = l.lines[2].count.counted().unwrap();
+        assert!(c.in_round);
+        assert_eq!(c.side, Some(Side::Rs));
     }
 
     #[test]

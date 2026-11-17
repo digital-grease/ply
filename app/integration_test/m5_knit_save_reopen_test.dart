@@ -5,7 +5,7 @@
 // lastOpened on open, writes the current `.plyknit` envelope, refuses a newer file with the typed
 // error, and deletes cleanly (drops out of the list). A schema-version-2 file (before the cast-on)
 // opens through the real engine with the cast-on not set, and saving it writes the current version
-// (4) with a one-time `.v2.bak` of the original.
+// (5) with a one-time `.v2.bak` of the original.
 //
 //   flutter test integration_test/m5_knit_save_reopen_test.dart -d emulator-5554
 
@@ -71,7 +71,7 @@ void main() {
 
     // The file on disk is a current-version envelope, and the real engine refuses a newer one with
     // the typed error the editor turns into "saved by a newer version of Ply".
-    expect(plyknitSchemaVersion(File(entry.patternPath).readAsStringSync()), 4);
+    expect(plyknitSchemaVersion(File(entry.patternPath).readAsStringSync()), 5);
     await expectLater(
       repo.parse('{"format":"ply.knit","schema_version":99,"document":{}}'),
       throwsA(isA<NativeFormatException>()
@@ -90,7 +90,7 @@ void main() {
     expect(afterDelete.map((e) => e.id), isNot(contains(id)));
   });
 
-  testWidgets('a schema-version-2 pattern opens without a cast-on and saves as version 4',
+  testWidgets('a schema-version-2 pattern opens without a cast-on and saves as version 5',
       (tester) async {
     final repo = KnitRepository();
     final pattern = KnitEditorState(pattern: await repo.blank()).resizeChart(4, 2).pattern;
@@ -117,7 +117,7 @@ void main() {
 
     final edited = KnitEditorState(pattern: opened).setCastOn(4).pattern;
     await repo.saveKnit(pattern: edited, meta: meta, id: id);
-    expect(plyknitSchemaVersion(File(path).readAsStringSync()), 4);
+    expect(plyknitSchemaVersion(File(path).readAsStringSync()), 5);
     expect(File(KnitRepository.backupPath(path, 2)).readAsStringSync(), v2,
         reason: 'the version-2 original is kept once');
     expect((await repo.readPattern(id)).castOn, 4);

@@ -10,8 +10,10 @@ import '../widgets/knit_step_dialog.dart';
 import '../widgets/name_input_dialog.dart';
 
 /// The SECTIONS editor (M9-01): the pattern's construction as named sections of ordered steps (chart
-/// rows, knit or purl across, short rows, cast on, bind off, stitches put on hold and returned, and
-/// written steps Ply does not check). Every step shows its words and the stitch count after it from
+/// rows, knit or purl across, rows or rounds, short rows, cast on, bind off, stitches put on hold and
+/// returned, joining in the round, working part of the round flat, picking up, needle groups,
+/// shaping, grafting, and written steps Ply does not check). A section can say whether it is worked
+/// flat or in the round. Every step shows its words and the stitch count after it from
 /// the engine's ledger ([knitConstructionProvider]), with any problem right beneath it. Edits go
 /// through the knit editor's state, so Undo and Redo here and in the chart editor are one history.
 /// Optional: a pattern without sections shows a short explanation and works as a chart, as before.
@@ -92,6 +94,7 @@ Future<void> _addSection(BuildContext context, WidgetRef ref) async {
     title: 'New section',
     confirmLabel: 'Add',
     fieldLabel: 'Section name',
+    validator: _sectionNameProblem,
   );
   if (name == null) return;
   ref.read(knitEditorProvider.notifier).addSection(name);
@@ -113,9 +116,10 @@ class _Intro extends StatelessWidget {
         const SizedBox(height: 12),
         const Text(
           'Sections describe how a piece is made, step by step: casting on, working rows of the '
-          'chart, short rows, putting stitches on hold and returning them to the needle, and '
-          'binding off. Ply counts the stitches after every step and says when a step asks for more '
-          'stitches than there are.',
+          'chart, short rows, putting stitches on hold and returning them to the needle, binding '
+          'off, and for socks and other work in the round, heel flaps, picking up stitches, needle '
+          'groups such as the instep and the sole, shaping and grafting. Ply counts the stitches '
+          'after every step and says when a step asks for more stitches than there are.',
         ),
         const SizedBox(height: 12),
         const Text(
@@ -138,7 +142,7 @@ class _Intro extends StatelessWidget {
   }
 }
 
-enum _SectionMenu { rename, notes, up, down, delete }
+enum _SectionMenu { rename, notes, construction, up, down, delete }
 
 enum _StepMenu { edit, up, down, delete }
 
@@ -170,7 +174,7 @@ class _SectionCard extends ConsumerWidget {
           children: [
             ListTile(
               title: Text('${index + 1}. $title', style: text.titleMedium),
-              subtitle: section.notes.trim().isEmpty ? null : Text(section.notes.trim()),
+              subtitle: _sectionSubtitle(section),
               trailing: PopupMenuButton<_SectionMenu>(
                 tooltip: 'Section actions',
                 onSelected: (m) async {
@@ -180,12 +184,16 @@ class _SectionCard extends ConsumerWidget {
                           title: 'Rename section',
                           confirmLabel: 'Rename',
                           initial: section.name,
-                          fieldLabel: 'Section name');
+                          fieldLabel: 'Section name',
+                          validator: _sectionNameProblem);
                       if (name != null) notifier.renameSectionAt(index, name);
                     case _SectionMenu.notes:
                       final notes = await showKnitTextDialog(context,
                           title: 'Section notes', label: 'Notes', initial: section.notes);
                       if (notes != null) notifier.setSectionNotesAt(index, notes);
+                    case _SectionMenu.construction:
+                      final choice = await _askConstruction(context, section.construction);
+                      if (choice != null) notifier.setSectionConstructionAt(index, choice.$1);
                     case _SectionMenu.up:
                       notifier.moveSectionAt(index, -1);
                     case _SectionMenu.down:
@@ -215,6 +223,8 @@ class _SectionCard extends ConsumerWidget {
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: _SectionMenu.rename, child: Text('Rename')),
                   const PopupMenuItem(value: _SectionMenu.notes, child: Text('Notes')),
+                  const PopupMenuItem(
+                      value: _SectionMenu.construction, child: Text('Flat or in the round')),
                   PopupMenuItem(
                       value: _SectionMenu.up, enabled: index > 0, child: const Text('Move up')),
                   PopupMenuItem(
@@ -259,6 +269,50 @@ class _SectionCard extends ConsumerWidget {
     );
   }
 }
+
+/// Why a section name cannot be saved (longer than a pattern file may hold), or null.
+String? _sectionNameProblem(String name) => knitTextTooLong(name) ? kKnitTextTooLong : null;
+
+/// The section's notes and, when it says, how it is worked.
+Widget? _sectionSubtitle(KnitSectionDto section) {
+  final parts = [
+    if (section.construction != null) sectionConstructionLabel(section.construction),
+    if (section.notes.trim().isNotEmpty) section.notes.trim(),
+  ];
+  return parts.isEmpty ? null : Text(parts.join('\n'));
+}
+
+/// Ask how a section is worked. Returns the choice (its value may be null: not stated), or null on
+/// Cancel.
+Future<(ConstructionKind?,)?> _askConstruction(BuildContext context, ConstructionKind? current) =>
+    showDialog<(ConstructionKind?,)>(
+      context: context,
+      builder: (dialog) => SimpleDialog(
+        title: const Text('How is this section worked?'),
+        children: [
+          for (final c in const [null, ConstructionKind.flat, ConstructionKind.inTheRound])
+            SimpleDialogOption(
+              key: Key('knit-section-construction-${c?.name ?? 'none'}'),
+              onPressed: () => Navigator.pop(dialog, (c,)),
+              child: Row(
+                children: [
+                  Icon(c == current ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                      size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(sectionConstructionLabel(c))),
+                ],
+              ),
+            ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 8, 24, 0),
+            child:
+                Text('Shown with the heading. Ply checks that the work is worked this way when the '
+                    'section starts; steps such as "Join in the round" and "Work part of the round '
+                    'flat" change how it is worked.'),
+          ),
+        ],
+      ),
+    );
 
 Future<void> _addStep(BuildContext context, WidgetRef ref, int sectionIndex) async {
   final kind = await showModalBottomSheet<KnitStepKind>(

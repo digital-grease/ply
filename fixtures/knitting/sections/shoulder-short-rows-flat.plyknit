@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 4,
+  "schema_version": 5,
   "document": {
     "name": "Shoulder slope in wrap-and-turn short rows",
     "construction": "Flat",
@@ -403,6 +403,7 @@
         "id": "section-1",
         "name": "Body",
         "notes": "",
+        "construction": null,
         "steps": [
           {
             "id": "step-1",
@@ -428,6 +429,7 @@
         "id": "section-2",
         "name": "Shoulder",
         "notes": "The stitches left at the end of each right-side row become the low end of the slope.",
+        "construction": null,
         "steps": [
           {
             "id": "step-3",
@@ -438,7 +440,8 @@
                   "Last": 6
                 },
                 "method": "WrapAndTurn",
-                "resolve_turns": false
+                "resolve_turns": false,
+                "decrease": null
               }
             }
           },
@@ -461,7 +464,8 @@
                   "Last": 12
                 },
                 "method": "WrapAndTurn",
-                "resolve_turns": false
+                "resolve_turns": false,
+                "decrease": null
               }
             }
           },
@@ -484,7 +488,8 @@
                   "Last": 18
                 },
                 "method": "WrapAndTurn",
-                "resolve_turns": false
+                "resolve_turns": false,
+                "decrease": null
               }
             }
           },

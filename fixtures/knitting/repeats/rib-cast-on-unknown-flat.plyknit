@@ -1,6 +1,6 @@
 {
   "format": "ply.knit",
-  "schema_version": 4,
+  "schema_version": 5,
   "document": {
     "name": "2x2 rib from the cast-on",
     "construction": "Flat",

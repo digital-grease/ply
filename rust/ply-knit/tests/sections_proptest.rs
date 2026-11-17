@@ -12,7 +12,11 @@
 //! 3. every step that is not applied is an error at that step, and every bind-off or hold of more
 //!    stitches than are left in the row is one of them (nothing goes negative silently);
 //! 4. sections survive `.plyknit` save and load exactly, and a step kind this build does not know
-//!    makes the file unreadable instead of being dropped.
+//!    makes the file unreadable instead of being dropped;
+//! 5. working in the round, parts worked flat, needle groups, pick-ups, shaping and closing keep the
+//!    same accounting: a pick-up adds exactly its stitches, a short row's decrease takes exactly
+//!    one, a shaping step reaches exactly its count by whole repeats, a close moves every stitch to
+//!    grafted or bound off, and the needle groups always hold exactly the stitches on the needle.
 //!
 //! Run: `cargo test -p ply-knit --test sections_proptest`
 
@@ -76,17 +80,31 @@ fn arb_plain_action() -> impl Strategy<Value = StepAction> {
             arb_stitch(),
             prop_oneof![
                 count().prop_map(TurnAt::Last),
-                count().prop_map(TurnAt::Count)
+                count().prop_map(TurnAt::Count),
+                (0u32..4).prop_map(TurnAt::BeforeGap),
+                (0u32..4).prop_map(TurnAt::PastGap),
             ],
             arb_method(),
-            any::<bool>()
+            any::<bool>(),
+            prop::option::of((
+                prop_oneof![
+                    Just(Decrease::K2tog),
+                    Just(Decrease::Ssk),
+                    Just(Decrease::P2tog),
+                    Just(Decrease::Ssp)
+                ],
+                0u32..3
+            ))
         )
-            .prop_map(|(stitch, to, method, resolve_turns)| StepAction::ShortRow {
-                stitch,
-                to,
-                method,
-                resolve_turns
-            }),
+            .prop_map(
+                |(stitch, to, method, resolve_turns, dec)| StepAction::ShortRow {
+                    stitch,
+                    to,
+                    method,
+                    resolve_turns,
+                    decrease: dec.map(|(kind, after)| TurnDecrease { kind, after }),
+                }
+            ),
         prop_oneof![count(), Just(u32::MAX), Just(1_000_000)]
             .prop_map(|count| StepAction::CastOn { count }),
         (prop::option::of(count()), any::<bool>()).prop_map(|(count, resolve_turns)| {
@@ -113,9 +131,78 @@ fn arb_plain_action() -> impl Strategy<Value = StepAction> {
     ]
 }
 
+/// The version-5 step kinds: rounds, parts worked flat, rows, shaping, pick-ups, groups, closing.
+fn arb_round_action() -> impl Strategy<Value = StepAction> {
+    let group = || {
+        prop_oneof![
+            Just("sole".to_string()),
+            Just("instep".to_string()),
+            Just("x".to_string())
+        ]
+    };
+    prop_oneof![
+        Just(StepAction::JoinRound {}),
+        Just(StepAction::RoundStart {}),
+        (count(), any::<bool>()).prop_map(|(count, slip_edges)| StepAction::WorkFlat {
+            count,
+            name: "heel".into(),
+            slip_edges
+        }),
+        prop_oneof![0u32..5, Just(u32::MAX)].prop_map(|count| StepAction::Rows {
+            count,
+            text: "knit".into()
+        }),
+        (
+            prop_oneof![-3i64..3, Just(1_000_000), Just(-1_000_000)],
+            0u32..4,
+            prop_oneof![
+                prop_oneof![0u32..6, Just(u32::MAX)].prop_map(ShapeUntil::Times),
+                (0u32..20).prop_map(ShapeUntil::Remain)
+            ],
+            prop::collection::vec(group(), 0..3)
+        )
+            .prop_map(|(change, every, until, groups)| StepAction::Shape {
+                change,
+                every,
+                until,
+                groups,
+                text: String::new()
+            }),
+        (
+            prop_oneof![count(), Just(u32::MAX)],
+            prop_oneof![
+                arb_ref().prop_map(PickUpAlong::Piece),
+                Just(PickUpAlong::Edge("the edge".into()))
+            ],
+            prop::option::of(group())
+        )
+            .prop_map(|(count, along, group)| StepAction::PickUp {
+                count,
+                along,
+                group
+            }),
+        prop::collection::vec((group(), 0u32..10), 0..3).prop_map(|g| StepAction::Groups {
+            groups: g
+                .into_iter()
+                .map(|(name, count)| NeedleGroup {
+                    name,
+                    count,
+                    notes: String::new()
+                })
+                .collect()
+        }),
+        prop_oneof![
+            Just(CloseMethod::Graft),
+            Just(CloseMethod::ThreeNeedleBindOff)
+        ]
+        .prop_map(|method| StepAction::Close { method }),
+    ]
+}
+
 fn arb_action() -> impl Strategy<Value = StepAction> {
     prop_oneof![
         8 => arb_plain_action(),
+        4 => arb_round_action(),
         1 => (0u32..5, 0u32..5).prop_map(|(first, last)| StepAction::ChartRows { first, last }),
     ]
 }
@@ -134,6 +221,7 @@ fn sections_of(groups: Vec<Vec<StepAction>>) -> Vec<Section> {
                 String::new()
             },
             notes: String::new(),
+            construction: None,
             steps: actions
                 .into_iter()
                 .map(|action| {
@@ -190,7 +278,7 @@ fn arb_pattern(actions: BoxedStrategy<StepAction>) -> impl Strategy<Value = Knit
     (
         prop::option::of(prop_oneof![8 => 0u32..16, 1 => Just(u32::MAX)]),
         arb_side(),
-        prop::bool::weighted(0.1),
+        prop::bool::weighted(0.4),
         0usize..10,
         prop::collection::vec(prop::collection::vec(actions, 0..8), 1..4),
     )
@@ -200,7 +288,12 @@ fn arb_pattern(actions: BoxedStrategy<StepAction>) -> impl Strategy<Value = Knit
 }
 
 fn total(c: &NeedleCount) -> u64 {
-    c.on_needle + c.held_total() + c.bound_off
+    c.on_needle + c.held_total() + c.bound_off + c.grafted
+}
+
+/// The stitches being worked: the part worked flat, or the whole needle.
+fn working(c: &NeedleCount) -> u64 {
+    c.flat.unwrap_or(c.on_needle)
 }
 
 proptest! {
@@ -226,13 +319,13 @@ proptest! {
         p in arb_pattern(arb_action().boxed())
     ) {
         let l = ledger(&p);
-        let start = match (p.construction, p.cast_on) {
-            (Construction::Flat, Some(n)) => u64::from(n),
-            _ => 0,
-        };
+        // The pattern's cast-on is on the needle at the start, flat or joined into a round.
+        let start = p.cast_on.map_or(0, u64::from);
         let mut prev = Some(start);
         // What was left to work in the row before the line (for a chart row's consumption).
         let mut to_work: Option<u64> = Some(start);
+        // The stitches being worked before the line (for a shaping step's target).
+        let mut worked: Option<u64> = Some(start);
         for line in &l.lines {
             let step = &p.sections[line.section].steps[line.step];
             match &line.count {
@@ -249,6 +342,20 @@ proptest! {
                         }
                         (StepAction::CastOn { count }, None) => i64::from(*count),
                         (StepAction::Opaque { stitch_change: Some(d), .. }, None) => *d,
+                        (StepAction::PickUp { count, .. }, None) => i64::from(*count),
+                        (StepAction::ShortRow { decrease: Some(_), .. }, None) => -1,
+                        (StepAction::Shape { change, until, groups, .. }, None) => {
+                            let per = change * groups.len().max(1) as i64;
+                            let before = worked.expect("a counted shaping step works a counted needle");
+                            let after = working(c);
+                            let d = after as i64 - before as i64;
+                            prop_assert!(d % per == 0, "whole repeats: {d} by {per}");
+                            match until {
+                                ShapeUntil::Times(t) => prop_assert_eq!(d, per * i64::from(*t)),
+                                ShapeUntil::Remain(t) => prop_assert_eq!(after, u64::from(*t)),
+                            }
+                            d
+                        }
                         _ => 0,
                     };
                     if let Some(before) = prev {
@@ -260,6 +367,7 @@ proptest! {
                     }
                     prev = Some(total(c));
                     to_work = Some(c.to_work);
+                    worked = Some(working(c));
                 }
                 LineCount::NotCounted => {
                     // Not applied: the next counted line continues from the same total.
@@ -274,6 +382,31 @@ proptest! {
                 LineCount::Unknown => {
                     prev = None;
                     to_work = None;
+                    worked = None;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn counts_stay_consistent_with_groups_rounds_and_flat_parts(
+        p in arb_pattern(arb_action().boxed())
+    ) {
+        let l = ledger(&p);
+        for line in &l.lines {
+            if let LineCount::Counted(c) = &line.count {
+                let groups: u64 = c.groups.iter().map(|g| g.count).sum();
+                prop_assert!(c.groups.is_empty() || groups == c.on_needle, "{:?}", c);
+                prop_assert!(c.groups.iter().all(|g| g.count > 0));
+                if let Some(f) = c.flat {
+                    prop_assert!(f <= c.on_needle);
+                    prop_assert!(!c.in_round, "never both in the round and worked flat");
+                }
+                prop_assert!(c.to_work <= working(c));
+                prop_assert!(c.past_turns <= working(c));
+                if c.in_round {
+                    prop_assert_eq!(c.past_turns, 0, "no short-row waiting in the round");
+                    prop_assert_eq!(c.side, Some(Side::Rs));
                 }
             }
         }
@@ -319,6 +452,8 @@ proptest! {
         prop_assume!(!matches!(
             kind.as_str(),
             "Work" | "Hold" | "Resume" | "Opaque" | "CastOn" | "BindOff" | "ShortRow" | "ChartRows"
+                | "JoinRound" | "WorkFlat" | "Rows" | "Shape" | "PickUp" | "Groups" | "Close"
+                | "RoundStart"
         ));
         let p = pattern(Some(4), Side::Rs, false, 4, Vec::new());
         let mut v: serde_json::Value = serde_json::from_str(&native::write(&p).unwrap()).unwrap();

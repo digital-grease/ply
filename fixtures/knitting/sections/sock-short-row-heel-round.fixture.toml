@@ -1,0 +1,33 @@
+# Fixture record for sock-short-row-heel-round (see fixtures/README.md).
+
+id = "knitting/sections/sock-short-row-heel-round"
+title = "Child's sock with a German short-row heel in the round"
+technique = "working in the round, German short rows over half the round (shortening and lengthening), double stitches, joining the heel back into the round, toe shaping, Kitchener stitch"
+files = ["sock-short-row-heel-round.plyknit", "sock-short-row-heel-round.expect.json"]
+created = "2026-11-15"
+license = "original"
+provenance = """
+Written for Ply's tests: the document was typed by hand and saved through the engine's own .plyknit writer (schema version 5). A 32-stitch child's sock with a short-row heel over the 16 sole stitches, in the shape of the common German short-row heel (each row of the first half stops at the double stitch made at the last turn on that side; each row of the second half works one stitch past the gap); the counts were chosen for the test and no published pattern, chart or text was copied. The first two short rows turn with one stitch left rather than at the edge, which Ply's short rows require. The oracle was worked out by hand, stitch by stitch (where each double stitch is made, slipped and worked), before the engine was run on the file, and then compared with it."""
+
+[sources]
+# Conventions the oracle's written text and ledger follow (cited, nothing reproduced).
+references = [
+  "addi, \"Bumerangferse (boomerang heel)\", https://addi.de/en/story/bumerangferse/ (half the stitches worked in short rows with double stitches, shortening then lengthening, the double stitches worked as one, then back to rounds).",
+  "Brooklyn Tweed, \"How to Knit German Short Rows\", https://brooklyntweed.com/pages/how-to-knit-german-short-rows-one (making and working a double stitch).",
+  "Knotions, \"German Short Rows Tutorial\", https://knotions.com/techniques/german-short-rows-tutorial/ (the double stitch counts as one stitch).",
+  "Jimmy Beans Wool, \"Kitchener Stitch Knitting Tutorial\", https://jimmybeanswool.com/blogs/tutorials/kitchener-stitch-knitting-tutorial (grafting the toe).",
+]
+
+[verification]
+automated_checks = "pass"
+automated_detail = """
+rust/ply-knit/tests/section_fixtures.rs (section_fixtures_match_their_oracles): the file parses as \
+a current .plyknit envelope and re-saves to the same bytes; the written instructions equal the \
+oracle line for line; every ledger line has the oracle's text, place and count (on the needle, still \
+to work, waiting past a turn, wraps and double stitches pending, each group on hold, bound off, side, \
+in the round, each needle group, worked flat, grafted); validation reports exactly the oracle's \
+issues. app/test/knit_sections_fixture_test.dart reads the same files (the current schema version, \
+the sections' shape, and the PDF and screen text built from the oracle)."""
+practitioner_knit_check = "pending"
+practitioner_reviewer = "owner"
+known_limits = "Gauge, yarn, the leg and foot lengths and the grafting sequence are not part of the fixture. Ply does not yet start a German short row at the very edge (the boomerang heel's first turn), so this heel starts one stitch in."

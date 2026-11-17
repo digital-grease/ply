@@ -6,7 +6,7 @@ import 'package:ply/src/rust/dto.dart' show ColorDto, SeverityKind, UnitKind;
 import 'package:ply/src/rust/knit_dto.dart';
 
 // Host-side helpers for the knitting section tests. Host tests cannot load the engine, so this reads
-// a `.plyknit` file's document (the engine's serde shape, schema version 4) straight into the bridge
+// a `.plyknit` file's document (the engine's serde shape, schema version 5) straight into the bridge
 // DTOs, and rebuilds the engine's construction result from a fixture's hand-derived oracle. Reading
 // every field of the shared fixtures this way also proves the Dart DTOs can carry each of them.
 
@@ -15,6 +15,9 @@ const List<String> kSectionFixtures = [
   'shoulder-short-rows-flat',
   'neckline-hold-flat',
   'ledger-problems-flat',
+  'sock-heel-flap-round',
+  'sock-short-row-heel-round',
+  'round-problems',
 ];
 
 String sectionFixtureText(String name, String ext) =>
@@ -91,6 +94,7 @@ KnitPatternDto patternFromPlyknit(String text) {
           id: s['id'] as String,
           name: s['name'] as String,
           notes: s['notes'] as String,
+          construction: _construction(s['construction'] as String?),
           steps: [
             for (final st in s['steps'] as List)
               KnitStepDto(id: st['id'] as String, action: _action(st['action'])),
@@ -99,6 +103,12 @@ KnitPatternDto patternFromPlyknit(String text) {
     ],
   );
 }
+
+ConstructionKind? _construction(String? c) => switch (c) {
+      'Flat' => ConstructionKind.flat,
+      'InTheRound' => ConstructionKind.inTheRound,
+      _ => null,
+    };
 
 SideKind? _side(String? s) => switch (s) {
       'Rs' => SideKind.rs,
@@ -132,17 +142,31 @@ KnitStepActionDto _action(Object? json) {
       );
     case 'ShortRow':
       final to = v['to'] as Map;
+      final dec = v['decrease'] as Map?;
       return KnitStepActionDto.shortRow(
         stitch: _stitch(v['stitch'] as String),
-        to: to.containsKey('Last')
-            ? TurnAtDto.last(count: to['Last'] as int)
-            : TurnAtDto.count(count: to['Count'] as int),
+        to: switch (to.keys.single) {
+          'Last' => TurnAtDto.last(count: to['Last'] as int),
+          'Count' => TurnAtDto.count(count: to['Count'] as int),
+          'BeforeGap' => TurnAtDto.beforeGap(count: to['BeforeGap'] as int),
+          _ => TurnAtDto.pastGap(count: to['PastGap'] as int),
+        },
         method: switch (v['method']) {
           'WrapAndTurn' => TurnMethodKind.wrapAndTurn,
           'German' => TurnMethodKind.german,
           _ => TurnMethodKind.unspecified,
         },
         resolveTurns: v['resolve_turns'] as bool,
+        decrease: dec == null
+            ? null
+            : TurnDecreaseDto(
+                kind: switch (dec['kind']) {
+                  'K2tog' => DecreaseKind.k2Tog,
+                  'Ssk' => DecreaseKind.ssk,
+                  'P2tog' => DecreaseKind.p2Tog,
+                  _ => DecreaseKind.ssp,
+                },
+                after: dec['after'] as int),
       );
     case 'CastOn':
       return KnitStepActionDto.castOn(count: v['count'] as int);
@@ -157,13 +181,53 @@ KnitStepActionDto _action(Object? json) {
     case 'Opaque':
       return KnitStepActionDto.opaque(
           text: v['text'] as String, stitchChange: v['stitch_change'] as int?);
+    case 'JoinRound':
+      return const KnitStepActionDto.joinRound();
+    case 'RoundStart':
+      return const KnitStepActionDto.roundStart();
+    case 'WorkFlat':
+      return KnitStepActionDto.workFlat(
+          count: v['count'] as int, name: v['name'] as String, slipEdges: v['slip_edges'] as bool);
+    case 'Rows':
+      return KnitStepActionDto.rows(count: v['count'] as int, text: v['text'] as String);
+    case 'Shape':
+      final until = v['until'] as Map;
+      return KnitStepActionDto.shape(
+        change: v['change'] as int,
+        every: v['every'] as int,
+        until: until.containsKey('Times')
+            ? ShapeUntilDto.times(count: until['Times'] as int)
+            : ShapeUntilDto.remain(count: until['Remain'] as int),
+        groups: [for (final g in v['groups'] as List) g as String],
+        text: v['text'] as String,
+      );
+    case 'PickUp':
+      final along = v['along'] as Map;
+      return KnitStepActionDto.pickUp(
+        count: v['count'] as int,
+        along: along.containsKey('Piece')
+            ? PickUpAlongDto.piece(step: along['Piece'] as String)
+            : PickUpAlongDto.edge(text: along['Edge'] as String),
+        group: v['group'] as String?,
+      );
+    case 'Groups':
+      return KnitStepActionDto.groups(groups: [
+        for (final g in v['groups'] as List)
+          NeedleGroupDto(
+              name: g['name'] as String, count: g['count'] as int, notes: g['notes'] as String),
+      ]);
+    case 'Close':
+      return KnitStepActionDto.close(
+          method:
+              v['method'] == 'Graft' ? CloseMethodKind.graft : CloseMethodKind.threeNeedleBindOff);
   }
   throw FormatException('a step kind this build does not know: $kind');
 }
 
 /// A written line's row label, as the engine writes them.
 final _label = RegExp(r'^(Row \d+ \((?:RS|WS)\)|Round \d+|Short row \d+(?: \((?:RS|WS)\))?'
-    r'|Next row(?: \((?:RS|WS)\))?|Not checked by Ply): (.*)$');
+    r'|Next row(?: \((?:RS|WS)\))?|Next rnd|Next \d+ rows(?: \(first row (?:RS|WS)\))?'
+    r'|Next \d+ rnds|Not checked by Ply): (.*)$');
 
 /// The engine's validation of a fixture, from its oracle.
 List<KnitIssueDto> oracleIssues(Map<String, dynamic> oracle) => [
@@ -218,6 +282,14 @@ KnitConstructionDto oracleConstruction(KnitPatternDto p, Map<String, dynamic> or
                 'WS' => SideKind.ws,
                 _ => null,
               },
+              // Added for work in the round; the first slice's oracles leave them out.
+              inRound: count['in_round'] as bool? ?? false,
+              groups: [
+                for (final g in count['groups'] as List? ?? const [])
+                  KnitGroupCountDto(name: g[0] as String, count: g[1] as int),
+              ],
+              flat: count['flat'] as int?,
+              grafted: count['grafted'] as int? ?? 0,
             )
           : null,
       countText: written.substring(open + 2, written.length - 1),

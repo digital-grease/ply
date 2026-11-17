@@ -132,6 +132,34 @@ plain so it can double as user-facing help content.
 - **Section**: in Ply, a named part of a pattern's construction (such as Back or Left shoulder),
   with its steps in order. Ply counts the stitches on the needle, on hold and bound off after every
   step.
+- **Join in the round**: bring the two ends of the knitting together so it goes on around as a tube
+  instead of turning; after a cast-on, take care not to twist the stitches.
+- **Heel flap**: in a sock knitted from the cuff down, a flap worked back and forth over the heel
+  stitches while the instep stitches wait. Slipping the first stitch of every row makes a chain of
+  edge stitches, one for every two rows, to pick up the gusset from.
+- **Heel turn** (turning the heel): short rows across the bottom of the heel flap that cup the
+  heel. Each row works to the gap, decreases across it, works a stitch or so more and turns, until
+  every heel stitch is worked.
+- **Gap** (in short rows): the place where an earlier short row on the same side turned, between the
+  stitches it worked and the ones it left. A heel turn works to it and decreases across it.
+- **Gusset**: the stitches picked up along the sides of a heel flap, then decreased every other
+  round until the sock is back to its stitch count, which shapes the foot below the ankle.
+- **Instep**: the top of the foot. In a sock, the stitches that wait while the heel is worked.
+- **Pick up and knit**: draw new loops through an edge of the knitting, such as the slipped stitches
+  along a heel flap, and knit them, adding stitches to the needle. The pattern says how many to pick
+  up, often one for each slipped edge stitch and an extra one at a corner.
+- **Short-row heel**: a sock heel worked back and forth over half the stitches with short rows, each
+  row shorter and then longer again, with no flap or gusset; the wraps or double stitches are worked
+  as the rows grow, and the knitting goes back to rounds.
+- **Kitchener stitch** (grafting): sewing two needles of live stitches together with a tapestry
+  needle, so the join looks like a row of knitting. It closes a sock toe.
+- **Three-needle bind-off**: binding off the stitches of two needles together, with the right sides
+  facing each other and a third needle, which joins two pieces such as shoulders.
+- **Needle group**: in Ply, a named group of the stitches on the needle, such as the instep and the
+  sole, so the count after each step gives each group.
+- **Start of the round** (beginning of round): the point where each round begins, usually kept with
+  a marker. Sock patterns often move it, for example to the center of the heel after picking up the
+  gusset stitches.
 
 ### Knitting abbreviations
 - **Beginning** (beg) — the start of a row or round.

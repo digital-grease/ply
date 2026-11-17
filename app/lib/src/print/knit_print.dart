@@ -377,11 +377,14 @@ PrintDocument buildKnitPrintDocument(KnitPrintSource s, {required bool withProbl
           const PrintParagraph('There are no written instructions yet: the chart has no rows.')
         else if (hasSections) ...[
           PrintParagraph(
-            'Worked section by section, in order. RS is the right side, WS the wrong side. The '
-            'count in brackets after each step is what is on the needle once the step is done, '
-            'with any stitches on hold and bound off. "Waiting past a turn" counts the stitches a '
-            'short row has left unworked. A step marked "Not checked by Ply" is in the pattern\'s '
-            'own words and Ply did not check it.'
+            'Worked section by section, in order. RS is the right side, WS the wrong side, and a '
+            'rnd is a round. The count in brackets after each step is what is on the needle once '
+            'the step is done, with any stitches on hold and bound off. "Waiting past a turn" '
+            'counts the stitches a short row has left unworked. When the stitches are in needle '
+            'groups, the count gives each group (such as the instep and the sole); "worked flat" '
+            'and "resting" count the stitches of a part worked back and forth, such as a heel '
+            'flap, and those waiting on the needle meanwhile. A step marked "Not checked by Ply" '
+            'is in the pattern\'s own words and Ply did not check it.'
             '${labels == null ? '' : ' MC is the main color and CC a contrast color (see the color key).'}',
             style: PrintTextStyle.muted,
           ),
@@ -423,7 +426,7 @@ String knitGaugeText(GaugeDto g) =>
 
 final _labelledLine = RegExp(
     r'^(Row \d+ \((?:RS|WS)\)|Round \d+|Short row \d+(?: \((?:RS|WS)\))?|Next row(?: \((?:RS|WS)\))?'
-    r'|Not checked by Ply): (.*)$',
+    r'|Next rnd|Next \d+ rows(?: \(first row (?:RS|WS)\))?|Next \d+ rnds|Not checked by Ply): (.*)$',
     dotAll: true);
 
 /// The count a section step's line ends with when the step could not be counted.
