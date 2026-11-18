@@ -3,7 +3,7 @@
 Milestones are roughly ordered. The guiding principle: **make one craft excellent end to
 end (weaving) to harden the shared shell before fanning out.**
 
-## Current state (verified 2026-11-16)
+## Current state (verified 2026-11-18)
 
 M0 to M6 have shipped. Status words: **Verified** (works in the current checkout), **Partial**
 (exists, but important behavior is missing), **Not built**.
@@ -25,10 +25,11 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 | Materials and swatches | Verified | Yarns and measured swatches for every craft, with every number in its unit and marked measured or entered; what Ply works out from a swatch (gauge, shrinkage, take-up, draw-in) is shown, never saved over the measurements. Projects link to them, one swatch can serve many projects, and the knitting and weaving calculators and the warp and weft plan can use a swatch and list where each input came from. There is no nalbinding calculator |
 | Tablet weaving | Verified | A Tablet weaving tab (card weaving finds it too) with an editor for the cards (threads per hole, S or Z threading, a starting position from two named presets, packs), the turning per card and per pack (forward, backward, idle, turns written as words, flips, twist releases, repeats), a pick-by-pick stepper showing each card's position and twist, the band's top face and back (pick 1 at the bottom), and the checks with their places. Ply works out which thread shows on each face and keeps a twist count for every card, and reports long floats, too much twist and the setups it does not model (half turns, other hole counts) instead of guessing. Bands are saved as `.plytab` files, carried by backups and printed with the setup, the turning chart, the band and written instructions. Checked against three hand-worked bands; the rules await a tablet weaver's review, and no band has been woven from Ply yet |
 | Ready to make or share | Verified | Saving never checks anything. Printing or sharing a PDF first checks the pattern for each craft: errors stop a ready copy (the dialog's default is Go back), and the pattern can only be printed as a separately chosen draft copy whose every page says it is not ready and how many errors it has; warnings and what Ply could not check are listed in full and acknowledged in one step. Each weaving, knitting and nalbinding problem says where it is (end, pick, chart row and column, section and step, notation position, recipe step) with a Show button that goes there. The loom check and the warp and weft plan warn but never block. WIF files, project exports and backups are never gated, and no editor asks before saving |
-| Native file formats | Verified | `.plyknit`, `.plynal` and `.plytab` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten; the loom profiles and materials files follow the same rules. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead) |
-| Library backup and restore | Verified | Settings saves every project of every craft (with photos, your loom profiles, and your materials and swatches with their photos, and optionally app settings) to one `.plybackup` file wherever you choose; any single project can be exported the same way. Restore checks every file first (a pattern from a newer Ply is refused from its version alone, and a file far more complex than any Ply makes is refused without being read), previews new, identical and differing projects, adds differing ones as copies without replacing anything, and restores settings only if ticked |
+| Progress tracking | Partial | Weave pick by pick and knit row by row (chart rows, or section steps with a row counter inside them): Ply shows what to press or lift, or what to knit and from which side, keeps your place, a short log and notes apart from the pattern, and resumes after a restart. When the pattern changes at or before your place it asks you to check the place instead of moving it. Backups carry your place. Nalbinding (beyond the recipe's Done ticks) and tablet weaving have no tracker yet, the place is not shown in the library, and the wording awaits a weaver's and a knitter's check |
+| Native file formats | Verified | `.plyknit`, `.plynal` and `.plytab` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten; the loom profiles and materials files and the progress records follow the same rules. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead) |
+| Library backup and restore | Verified | Settings saves every project of every craft (with photos and your place in it, your loom profiles, and your materials and swatches with their photos, and optionally app settings) to one `.plybackup` file wherever you choose; any single project can be exported the same way. Restore checks every file first (a pattern from a newer Ply is refused from its version alone, and a file far more complex or more deeply nested than any Ply makes is refused without being decoded), previews new, identical and differing projects, adds differing ones as copies without replacing anything (a project that differs only in your place counts as already there and keeps your place), and restores settings only if ticked. Long nalbinding notes no longer stop a backup and weaving notes are limited to 10,000 characters, but weaving notes over about 1 MB saved before that limit still stop one, and a saved draft's notes cannot be edited yet |
 | Printable patterns (PDF) | Partial | Weaving drafts (a four-quadrant book draft with the tie-up in any corner, split into numbered parts when large; the colored drawdown; Use tabby when exact; role letters, shot groups, shuttles and pass directions, fold and open edges; written directions), knitting patterns (gauge, cast-on, stitch key, chart with numbers and repeat boxes, written instructions, problems) and nalbinding projects (notation, loop diagram, findings, notes, photos) and tablet bands (setup, turning chart, band, written instructions) print or share as PDF, offline, A4 or US Letter by your units; a pattern with errors prints only as a marked draft copy. Printed weaving drafts still await a weaver's comparison with reference patterns; threading repeats and profile blocks are not printed because drafts do not record them |
-| Engineering gates | Verified | 880 Rust + 1621 Flutter host tests green; all 66 device integration tests (28 files) pass on the emulator (full run 2026-11-17); CI also gates on `cargo fmt` and `cargo clippy -D warnings`. The Android build uses Gradle 9 and AGP 9, so it runs on current JDKs |
+| Engineering gates | Verified | 934 Rust + 1725 Flutter host tests green; the 66 device integration tests of the full run on 2026-11-17 all passed on the emulator, and the 8 device tests added since (backup limits and progress tracking, 2 files) have not run on a device yet; CI also gates on `cargo fmt` and `cargo clippy -D warnings`. The Android build uses Gradle 9 and AGP 9, so it runs on current JDKs |
 
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
@@ -196,11 +197,23 @@ M9 garment construction and print, M10 tablet weaving, M11 crochet.
   with errors only as a marked draft copy; previews and charts that cannot be drawn say so.
 - ✅ Tablet weaving in the app (M10-02): the editor, stepper, band preview, `.plytab` files, backup
   and restore, and a printable setup and turning chart.
+- ✅ Backup and restore hardening: long nalbinding notes no longer stop a backup; restore counts the
+  values and depth of the backup's index and of each sidecar before reading them; a knitting pattern
+  of the current version is read without a general-purpose copy in memory (at most about 160 MiB for
+  a crafted file, down from about 900 MiB); weaving notes are limited to 10,000 characters.
+- ✅ Progress tracking, first slice (M8-05): weaving and knitting trackers that keep your place apart
+  from the pattern, resume after a restart, never move a place silently when the pattern changes,
+  and travel in backups.
+- ✅ Crochet research and proposed conventions (M11-00): stitches identified by structure with US and
+  UK names as labels, explicit attachment for every stitch, turning chains, joined, spiral and
+  turned rounds, and worked examples counted by hand. They await the owner's choices and a
+  crocheter's review before the crochet engine (M11-01) starts.
 - ⬜ Next: a weaver's check of the printed drafts, the shadow-weave and double-weave fixtures, the
   loom checks and the warp and weft plans; a knitter's check of the section wording and the sock,
   mitten, yoke and raglan fixtures; a nalbinder's check of the recipes; a tablet weaver's check of
-  the card-turn rules and a woven band; a full device run; then the P2 work (progress tracking,
-  full profile drafting, a project completion record) and crochet research (M11-00).
+  the card-turn rules and a woven band; a device run of the new tests; then the rest of progress
+  tracking (nalbinding and tablet trackers, the place in the library), full profile drafting, a
+  project completion record, and the crochet engine once its conventions are accepted.
 
 ## Later / opportunistic
 - Desktop companion (Iced or Flutter desktop) reusing the same engine crates.
