@@ -29,12 +29,26 @@ import 'package:ply/src/state/nalbind_providers.dart';
 
 Finder _key(String k) => find.byKey(ValueKey(k));
 
-Future<void> _tap(WidgetTester tester, Finder f) async {
+/// Bring [f] on screen and tap it. The screens are lazy lists, which build only what is near the
+/// screen: on a phone the project's recipe buttons sit below the loop diagram, the Add a step
+/// button below the steps, and a step's menu can be scrolled far above. So when [f] is not on
+/// screen, [list] (the page's list unless given) is scrolled from its top until it is.
+Future<void> _tap(WidgetTester tester, Finder f, {Finder? list}) async {
+  if (f.evaluate().isEmpty) {
+    final scrollable = list ?? find.byType(Scrollable).first;
+    (tester.state(scrollable) as ScrollableState).position.jumpTo(0);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(f, 200, scrollable: scrollable);
+  }
   await tester.ensureVisible(f);
   await tester.pumpAndSettle();
   await tester.tap(f);
   await tester.pumpAndSettle();
 }
+
+/// The list in the sheet of step kinds.
+final _kindSheet =
+    find.descendant(of: find.byType(DraggableScrollableSheet), matching: find.byType(Scrollable));
 
 Future<void> _pick(WidgetTester tester, String key, String item) async {
   await _tap(tester, _key(key));
@@ -51,7 +65,7 @@ Future<void> _addStep(
   Map<String, String> fields = const {},
 }) async {
   await _tap(tester, _key('recipe-add-step'));
-  await _tap(tester, _key('segment-kind-${kind.json}'));
+  await _tap(tester, _key('segment-kind-${kind.json}'), list: _kindSheet.first);
   if (title != null) await tester.enterText(_key('segment-title'), title);
   for (final p in picks.entries) {
     await _pick(tester, p.key, p.value);

@@ -42,6 +42,21 @@ Future<void> settle(WidgetTester tester, {int frames = 20}) async {
   }
 }
 
+/// On a device, enterText types through the real soft keyboard: it slides up, the form shrinks and
+/// scrolls the field into view, and a tap made meanwhile can miss (the list ignores taps while it
+/// scrolls). Close the keyboard, as a person would, and let the screen settle before the next tap.
+Future<void> hideKeyboard(WidgetTester tester) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await settle(tester);
+}
+
+/// Bring [f] on screen, let the scroll finish, then tap it.
+Future<void> tapShown(WidgetTester tester, Finder f) async {
+  await tester.ensureVisible(f);
+  await settle(tester, frames: 6);
+  await tester.tap(f);
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -51,6 +66,9 @@ void main() {
 
   testWidgets('a measured swatch with a photo, linked to two patterns, cited by the calculator',
       (tester) async {
+    // A tap that misses fails here, where it missed, not as a puzzle several steps later.
+    WidgetController.hitTestWarningShouldBeFatal = true;
+    addTearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
     final materials = MaterialsRepository();
     final knits = KnitRepository();
     final links = ProjectLinksRepository();
@@ -75,6 +93,14 @@ void main() {
       repositoryProvider.overrideWithValue(DraftRepository()),
       swatchPhotoPickerProvider.overrideWithValue((_) async => picked.path),
     ];
+    // A fresh app on [home] (a relaunch: new providers, read again from disk). The old app is taken
+    // down first: pumping a new MaterialApp over it would keep its navigator, and the swatch form
+    // still pushed on top would hide the new home.
+    Future<void> launch(Widget home) async {
+      await tester.pumpWidget(const SizedBox());
+      await settle(tester, frames: 4);
+      await tester.pumpWidget(ProviderScope(overrides: overrides, child: MaterialApp(home: home)));
+    }
 
     // 1. Record a measured swatch through the form; the engine checks it and writes the file.
     await tester.pumpWidget(ProviderScope(
@@ -83,20 +109,22 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('add-swatch')));
     await settle(tester);
     await tester.enterText(find.byKey(const ValueKey('swatch-name')), 'Device swatch');
-    await tester.tap(find.byKey(const ValueKey('swatch-craft-knitting')));
+    await hideKeyboard(tester);
+    await tapShown(tester, find.byKey(const ValueKey('swatch-craft-knitting')));
     await settle(tester, frames: 4);
     await tester.enterText(find.byKey(const ValueKey('swatch-date')), '2026-11-10');
+    await hideKeyboard(tester);
     Future<void> type(String key, String text) async {
       final f = find.byKey(ValueKey(key));
       await tester.scrollUntilVisible(f, 200, scrollable: find.byType(Scrollable).first);
       await tester.enterText(f, text);
-      await settle(tester, frames: 2);
+      await hideKeyboard(tester);
     }
 
     // Counted over 4 in, whatever units the device is set to.
     Future<void> overFourInches(String key) async {
       await type('$key-span', '4');
-      await tester.tap(find.byKey(ValueKey('$key-unit')));
+      await tapShown(tester, find.byKey(ValueKey('$key-unit')));
       await settle(tester);
       await tester.tap(find.text('in').last);
       await settle(tester);
@@ -111,7 +139,7 @@ void main() {
     await overFourInches('swatch-after-across');
     await type('swatch-finishing', 'washed, dried flat');
     await type('swatch-mass', '9');
-    await tester.tap(find.byKey(const ValueKey('swatch-save')));
+    await tapShown(tester, find.byKey(const ValueKey('swatch-save')));
     await settle(tester, frames: 30);
 
     final saved = await materials.load();
@@ -138,7 +166,7 @@ void main() {
     // 2. Add a photo (the form saved in place, so the photo strip is there now).
     final addPhoto = find.text('Add');
     await tester.scrollUntilVisible(addPhoto, 200, scrollable: find.byType(Scrollable).first);
-    await tester.tap(addPhoto);
+    await tapShown(tester, addPhoto);
     await settle(tester);
     await tester.tap(find.text('Choose from gallery'));
     await settle(tester, frames: 30);
@@ -158,10 +186,7 @@ void main() {
       addTearDown(() => knits.deleteKnit(id));
     }
     for (final id in ids) {
-      await tester.pumpWidget(ProviderScope(
-          overrides: overrides,
-          child: MaterialApp(
-              home: Scaffold(body: ProjectMaterialsSheet(craft: BackupCraft.knitting, id: id)))));
+      await launch(Scaffold(body: ProjectMaterialsSheet(craft: BackupCraft.knitting, id: id)));
       await settle(tester);
       await tester.tap(find.byKey(const ValueKey('link-swatch')));
       await settle(tester);
@@ -173,8 +198,7 @@ void main() {
     expect(usage.ofSwatch(swatch.id).map((r) => r.id), unorderedEquals(ids));
 
     // 4. The knitting editor's calculator uses the swatch and cites it, through the engine.
-    await tester.pumpWidget(ProviderScope(
-        overrides: overrides, child: MaterialApp(home: KnitEditorScreen(openId: ids.first))));
+    await launch(KnitEditorScreen(openId: ids.first));
     await settle(tester, frames: 30);
     await tester.tap(find.byTooltip('More'));
     await settle(tester);
@@ -187,9 +211,8 @@ void main() {
     final width = find.widgetWithText(TextFormField, 'Finished width (in)');
     await tester.ensureVisible(width);
     await tester.enterText(width, '20');
-    final calc = find.widgetWithText(FilledButton, 'Calculate cast-on');
-    await tester.ensureVisible(calc);
-    await tester.tap(calc);
+    await hideKeyboard(tester);
+    await tapShown(tester, find.widgetWithText(FilledButton, 'Calculate cast-on'));
     await settle(tester, frames: 30);
     // 20 sts over 4 in is 5 sts per in: (20 in + 0) x 5 = 100.
     expect(find.text('Cast on 100 stitches'), findsOneWidget);
@@ -199,8 +222,7 @@ void main() {
         findsOneWidget);
 
     // 5. Reopen Materials: the swatch is there, used by two patterns, with its photo.
-    await tester.pumpWidget(ProviderScope(
-        overrides: overrides, child: const MaterialApp(home: MaterialsScreen(initialTab: 1))));
+    await launch(const MaterialsScreen(initialTab: 1));
     await settle(tester, frames: 30);
     expect(find.text('Device swatch'), findsOneWidget);
     expect(find.textContaining('Used by 2 projects'), findsOneWidget);

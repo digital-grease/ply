@@ -154,10 +154,22 @@ Future<void> setAside(File file) async {
 
 Finder inPlan(Finder f) => find.descendant(of: find.byType(WeavePlanScreen), matching: f);
 
-Future<void> reveal(WidgetTester tester, Finder f) => tester.scrollUntilVisible(f, 200,
-    scrollable: find
-        .descendant(of: find.byKey(const ValueKey('weave-plan')), matching: find.byType(Scrollable))
-        .first);
+/// Scroll the plan until [f] is on screen. The plan is a lazy list: on a phone a row above the
+/// current position may not be built at all, and scrolling on down would never find it. So when
+/// [f] is not on screen, start again from the top of the plan. The last scroll is a jump, so pump
+/// a few frames after it: a tap reads where things were laid out, and until the next frame that is
+/// still where they were before the jump.
+Future<void> reveal(WidgetTester tester, Finder f) async {
+  final plan = find
+      .descendant(of: find.byKey(const ValueKey('weave-plan')), matching: find.byType(Scrollable))
+      .first;
+  if (f.evaluate().isEmpty) {
+    tester.state<ScrollableState>(plan).position.jumpTo(0);
+    await settle(tester, frames: 4);
+  }
+  await tester.scrollUntilVisible(f, 200, scrollable: plan);
+  await settle(tester, frames: 4);
+}
 
 Future<void> choose(WidgetTester tester, String key, String item) async {
   await reveal(tester, find.byKey(ValueKey(key)));
@@ -167,10 +179,14 @@ Future<void> choose(WidgetTester tester, String key, String item) async {
   await settle(tester);
 }
 
+/// Type into a plan field. On a device enterText types through the real soft keyboard, which
+/// slides up and makes the plan scroll the field into view; a tap made meanwhile can miss (the list
+/// ignores taps while it scrolls). So close the keyboard, as a weaver would, and let it settle.
 Future<void> type(WidgetTester tester, String key, String text) async {
   await reveal(tester, find.byKey(ValueKey(key)));
   await tester.enterText(find.byKey(ValueKey(key)), text);
-  await settle(tester, frames: 6);
+  FocusManager.instance.primaryFocus?.unfocus();
+  await settle(tester);
 }
 
 void main() {
@@ -182,6 +198,9 @@ void main() {
 
   testWidgets('four towels planned from a washed sample to the yarn, saved with the draft',
       (tester) async {
+    // A tap that misses fails here, where it missed, not as a puzzle several steps later.
+    WidgetController.hitTestWarningShouldBeFatal = true;
+    addTearDown(() => WidgetController.hitTestWarningShouldBeFatal = false);
     final materials = MaterialsRepository();
     final looms = LoomRepository();
     final drafts = DraftRepository();
@@ -210,8 +229,12 @@ void main() {
       repositoryProvider.overrideWithValue(drafts),
       appSettingsProvider.overrideWith(InchesSettings.new),
     ];
+    // A fresh app on the editor (a relaunch: the old app, if any, is taken down first, so the
+    // reopened editor reads the draft and its plan from disk rather than keeping them in memory).
     Future<void> openEditor() async {
       final entry = await drafts.open(id);
+      await tester.pumpWidget(const SizedBox());
+      await settle(tester, frames: 4);
       await tester.pumpWidget(ProviderScope(
         overrides: overrides,
         child: MaterialApp(

@@ -101,12 +101,16 @@ void main() {
     ));
     await pumpFor(tester, const Duration(seconds: 1));
     // Two edits through the screen: card 8 to S and back to Z, so the editor's own controls are
-    // exercised (and the band is unsaved until the Save button writes it).
-    await tester.tap(find.byKey(const ValueKey('tablet-threading-7')));
+    // exercised (and the band is unsaved until the Save button writes it). On a phone the threading
+    // row sits below the start presets, off screen, so scroll it into view before tapping it.
+    final threading8 = find.byKey(const ValueKey('tablet-threading-7'));
+    await tester.ensureVisible(threading8);
+    await tester.pump();
+    await tester.tap(threading8);
     await tester.pump();
     expect(container.read(tabletDocProvider).cards[7].threading, TabletThreadingKind.s,
         reason: 'the first tap changed card 8 from Z to S');
-    await tester.tap(find.byKey(const ValueKey('tablet-threading-7')));
+    await tester.tap(threading8);
     await tester.pump();
     expect(container.read(tabletDocProvider).cards[7].threading, TabletThreadingKind.z);
     await tester.tap(find.byTooltip('Save'));
@@ -203,6 +207,10 @@ void main() {
     expect(tabletReadiness(source.report).verdict, ReadinessVerdict.ready);
 
     // Open it in the editor and step to pick 9: card 5 shows D (gold) on the top face, twist +1.
+    // The drafting editor is taken down first, so this is a fresh editor that reads the saved band
+    // (pumping the new screen over the old one would keep the old screen's state and its band).
+    await tester.pumpWidget(const SizedBox());
+    await pumpFor(tester, const Duration(milliseconds: 300));
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,
       child: MaterialApp(home: TabletEditorScreen(openId: entry.id)),
@@ -213,10 +221,29 @@ void main() {
     container.read(tabletPickProvider.notifier).state = 9;
     await pumpFor(tester, const Duration(seconds: 1));
     expect(find.text('Pick 9 of 12'), findsOneWidget);
+    // The engine works the pick out a moment later, longer on a slow device where the reopened band
+    // is also being checked and drawn (until then the card strip shows a spinner): wait for it.
+    for (var i = 0; i < 100; i++) {
+      final step = container.read(tabletStepProvider);
+      if (!step.isLoading && step.valueOrNull?.pick == 9) break;
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(container.read(tabletStepProvider).valueOrNull?.pick, 9,
+        reason: 'pick 9 is worked out within 10 s');
+    // On a phone the card strip shows about two and a half tiles, so card 5 is off to the right:
+    // bring the strip on screen, then scroll it sideways until card 5's tile is in view.
+    final semantics = tester.ensureSemantics();
+    final strip = find.byKey(const ValueKey('tablet-card-strip'));
+    await tester.ensureVisible(strip);
+    await pumpFor(tester, const Duration(milliseconds: 300));
+    await tester.scrollUntilVisible(find.byKey(const ValueKey('tablet-card-tile-4')), 158,
+        scrollable: find.descendant(of: strip, matching: find.byType(Scrollable)).first);
+    await pumpFor(tester, const Duration(milliseconds: 500));
     expect(
       find.bySemanticsLabel(RegExp(r'^Card 5 at pick 9: B, backward\. .*Twist \+1 .*Top: D, '
           r'colour 4 \(#d4a017\)\.')),
       findsOneWidget,
     );
+    semantics.dispose();
   });
 }
