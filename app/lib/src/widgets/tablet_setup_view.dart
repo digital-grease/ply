@@ -50,10 +50,6 @@ class TabletSetupView extends ConsumerWidget {
           ),
         ),
         for (final preset in tabletPresetsInOrder) _PresetTile(preset: preset),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(kFirstPresetNote, style: muted),
-        ),
         const _Heading('Cards'),
         _CardCountRow(count: doc.cards.length),
         const _PaletteBar(),

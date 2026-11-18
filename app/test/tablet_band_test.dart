@@ -13,11 +13,11 @@ import 'tablet_test_support.dart';
 
 void main() {
   group('presets and arrangements (ADR 0018 sections 2 and 4)', () {
-    test('Ply home is the first and default preset, listed first, and said to be provisional', () {
+    test('Ply home is the first and default preset, listed first (settled, ADR 0018 question 2)',
+        () {
       expect(kFirstTabletPreset, TabletPreset.plyHome);
       expect(tabletPresetsInOrder.first, kFirstTabletPreset);
       expect(tabletPresetsInOrder.toSet(), TabletPreset.values.toSet());
-      expect(kFirstPresetNote, contains('awaits'));
       expect(blankTabletDocument().cards.every((c) => sameArrangement(c.start, kPlyHome)), isTrue);
     });
 

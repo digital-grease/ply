@@ -84,11 +84,13 @@ void main() {
     expect(semantics(RegExp(r'^Card 1, S-threaded')), findsOneWidget);
     expect(semantics(RegExp(r'^Card 5, Z-threaded')), findsOneWidget);
     expect(semantics(RegExp('^Card 1 starts with A at the near top')), findsOneWidget);
-    // Both presets, Ply home first, and the provisional note.
+    // Both presets, Ply home first. The first preset is settled (ADR 0018 question 2), so there is
+    // no "for now" note beside them.
     final first = tester.getTopLeft(find.byKey(const ValueKey('tablet-preset-plyHome')));
     final second = tester.getTopLeft(find.byKey(const ValueKey('tablet-preset-printedFaceRight')));
     expect(first.dy, lessThan(second.dy));
-    expect(find.text(kFirstPresetNote), findsOneWidget);
+    expect(find.textContaining('Listed first'), findsNothing);
+    expect(find.textContaining("weaver's view"), findsNothing);
     handle.dispose();
   });
 
@@ -467,7 +469,9 @@ void main() {
             location(TabletLocationKind.card, card: 7)),
       ]),
     );
-    final c = await pumpEditor(tester, repo, size: const Size(360, 1400));
+    // Phone width, so card 7 is off the chart's first screen, and tall enough that card 1's holes
+    // are on screen for the tap below.
+    final c = await pumpEditor(tester, repo, size: const Size(360, 1800));
     await openTab(tester, 'Checks');
     await tester.tap(find.text('Card 7 cannot start so.'));
     await pumpFrames(tester);
@@ -480,8 +484,16 @@ void main() {
     // The weaver scrolls back and paints a hole: the chart stays where they put it.
     chart.position.jumpTo(0);
     await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('tablet-hole-0-A')));
+    // A brush unlike the hole's colour now, so the tap is a real edit.
+    final before = c.read(tabletDocProvider).cards[0].a;
+    final brush = before == 1 ? 2 : 1;
+    c.read(tabletBrushProvider.notifier).state = brush;
+    await tester.pump();
+    final hole = find.byKey(const ValueKey('tablet-hole-0-A'));
+    expect(hole.hitTestable(), findsOneWidget, reason: 'the hole is on screen to tap');
+    await tester.tap(hole);
     await pumpFrames(tester);
+    expect(c.read(tabletDocProvider).cards[0].a, brush, reason: 'the tap painted the hole');
     expect(chart.position.pixels, 0);
     expect(c.read(tabletFocusProvider)?.card, 6, reason: 'a hole does not move the cards');
     // Inserting a card moves them: the focus goes.

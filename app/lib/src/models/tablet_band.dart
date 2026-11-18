@@ -45,18 +45,16 @@ enum TabletPreset {
       };
 }
 
-/// The preset the editor offers FIRST and gives every new band. PROVISIONAL (ADR 0018 open question
-/// 2): which preset comes first waits for a tablet weaver's view, so it is chosen here, once, and
-/// the editor says so ([kFirstPresetNote]).
+/// The preset the editor offers FIRST and gives every new band: Ply home, A at the near top (ADR 0018
+/// open question 2, settled 2026-11-17). It is the engine's canonical frame, so forward turns bring
+/// A, B, C, D across the top and the threading chart reads as the first four forward picks; the
+/// hand-worked oracle bands use it; and the printed-face-right preset is one tap away, with every
+/// card storing its own arrangement, so the choice loses nothing.
 const TabletPreset kFirstTabletPreset = TabletPreset.plyHome;
 
 /// The presets in the order the editor lists them: [kFirstTabletPreset] first.
 List<TabletPreset> get tabletPresetsInOrder =>
     [kFirstTabletPreset, ...TabletPreset.values.where((p) => p != kFirstTabletPreset)];
-
-/// Said next to the preset choice while the order is provisional.
-const String kFirstPresetNote =
-    'Listed first for now: which start is more natural to tablet weavers awaits a weaver\'s view.';
 
 /// Said with every computed face, chart and twist while the engine reports the review as pending
 /// (`ply_tablet::PRACTITIONER_REVIEW_PENDING`, carried on every result).

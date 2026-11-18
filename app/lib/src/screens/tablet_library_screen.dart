@@ -354,8 +354,8 @@ class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen> {
       );
 }
 
-/// Ask for a new band's cards and start position; null when cancelled. The first start offered is
-/// [kFirstTabletPreset] (provisional, and said so).
+/// Ask for a new band's cards and start position; null when cancelled. The first start offered, and
+/// the one chosen until the weaver picks another, is [kFirstTabletPreset].
 Future<TabletDocumentDto?> showNewBandDialog(BuildContext context) {
   return showDialog<TabletDocumentDto>(
     context: context,
@@ -422,8 +422,6 @@ class _NewBandDialogState extends State<_NewBandDialog> {
                   ),
               ]),
             ),
-            Text(kFirstPresetNote, style: muted),
-            const SizedBox(height: 4),
             Text(
                 'Cards on the left half start S-threaded, the right half Z-threaded. You can change '
                 'every card afterwards.',

@@ -18,7 +18,7 @@ import 'tablet_test_support.dart';
 
 // Host coverage for the Tablet weaving tab of the library (M10-02): the tab in the unified home, the
 // empty state, the band tiles (one screen-reader node each), and the New band dialog, which offers
-// both start presets with Ply home first and says that order is provisional.
+// both start presets with Ply home first and chosen.
 
 class ListingTabletRepo extends FakeTabletRepo {
   ListingTabletRepo(this.entries) : super(oracle: Oracle('band-1-threaded-in'));
@@ -101,7 +101,7 @@ void main() {
     expect(find.byIcon(Icons.view_week_outlined), findsOneWidget);
   });
 
-  testWidgets('the New band dialog offers both presets, Ply home first and provisional',
+  testWidgets('the New band dialog offers both presets, Ply home first and chosen',
       (tester) async {
     await pumpLibrary(tester, ListingTabletRepo(const []));
     await tester.tap(find.widgetWithText(FilledButton, 'New band'));
@@ -109,7 +109,15 @@ void main() {
     final home = find.byKey(const ValueKey('new-band-plyHome'));
     final printed = find.byKey(const ValueKey('new-band-printedFaceRight'));
     expect(tester.getTopLeft(home).dy, lessThan(tester.getTopLeft(printed).dy));
-    expect(find.text(kFirstPresetNote), findsOneWidget);
+    expect(
+        tester
+            .widget<RadioGroup<TabletPreset>>(find.byType(RadioGroup<TabletPreset>))
+            .groupValue,
+        TabletPreset.plyHome,
+        reason: 'a new band starts at Ply home unless the weaver picks the other');
+    // The first preset is settled (ADR 0018 question 2): no "for now" note.
+    expect(find.textContaining('Listed first'), findsNothing);
+    expect(find.textContaining("weaver's view"), findsNothing);
     expect(find.text('8'), findsOneWidget);
     await tester.tap(find.byTooltip('More cards'));
     await tester.pump();
