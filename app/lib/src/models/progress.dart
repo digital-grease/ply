@@ -42,6 +42,16 @@ abstract final class ProgressLimits {
   /// A stored time.
   static const int maxTimeChars = 40;
 
+  /// The most JSON values a record may have, counted before it is decoded. The largest record the
+  /// bounds above allow has 19,991; this is five times that, for keys a later build adds within the
+  /// same version.
+  static const int maxValues = 100000;
+
+  /// The deepest nesting of lists and objects a record may have (Ply writes 5: an undo frame's
+  /// entry's place). A deeper one, or one holding a number too large for a double, is unreadable:
+  /// writing it again would recurse past the stack or refuse the number.
+  static const int maxDepth = 64;
+
   /// Consecutive steps the same way within this gap of the last one extend its log entry.
   static const Duration sessionGap = Duration(minutes: 30);
 }
@@ -793,6 +803,14 @@ class Progress {
     final version = json['schemaVersion'];
     if (version is! int || version < 1) {
       throw const ProgressFileException(ProgressProblem.unreadable, detail: 'bad version');
+    }
+    // A repeated key decodes to its last value: a record whose first bytes state another version
+    // than the one it decodes to is not one Ply wrote, whichever of the two is meant.
+    final stated = probeVersion(text.length > ProgressLimits.versionProbeBytes
+        ? text.substring(0, ProgressLimits.versionProbeBytes)
+        : text);
+    if (stated != null && stated != version) {
+      throw const ProgressFileException(ProgressProblem.unreadable, detail: 'two schema versions');
     }
     if (version > kProgressSchemaVersion) {
       throw ProgressFileException(ProgressProblem.newerVersion, detail: 'version $version');

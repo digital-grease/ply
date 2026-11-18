@@ -164,6 +164,9 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
     );
   }
 
+  /// A project's lines under its name in the preview, one a line; none when there are none.
+  static Widget? _projectNotes(List<String> lines) => lines.isEmpty ? null : Text(lines.join('\n'));
+
   List<Widget> _craftSection(BackupCraft craft, TextStyle? muted) {
     final added = _plan.forCraft(craft, RestoreStatus.add);
     final conflicts = _plan.forCraft(craft, RestoreStatus.conflict);
@@ -180,7 +183,10 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
           ListTile(
             dense: true,
             title: Text(p.name),
-            subtitle: p.photoCount > 0 ? Text(plural(p.photoCount, 'photo')) : null,
+            subtitle: _projectNotes([
+              if (p.photoCount > 0) plural(p.photoCount, 'photo'),
+              if (p.progressLeftOut) RestoreProject.progressLeftOutText,
+            ]),
           ),
       ],
       if (conflicts.isNotEmpty) ...[
@@ -198,7 +204,10 @@ class _RestorePreviewScreenState extends ConsumerState<RestorePreviewScreen> {
                 ? null
                 : (on) => setState(() => on == true ? _skipped.remove(p.key) : _skipped.add(p.key)),
             title: Text(p.name),
-            subtitle: Text('Restore as "${p.targetName}"'),
+            subtitle: _projectNotes([
+              'Restore as "${p.targetName}"',
+              if (p.progressLeftOut) RestoreProject.progressLeftOutText,
+            ]),
           ),
       ],
       if (present.isNotEmpty) ...[

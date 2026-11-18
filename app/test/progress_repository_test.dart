@@ -149,6 +149,33 @@ void main() {
     }
   });
 
+  test('a record that could never be written again is unreadable, measured before it is decoded',
+      () async {
+    final valid = utf8.decode(utf8.encode(woven(2).encodeFitted().text));
+    final body = valid.substring('{"format":"ply.progress","schemaVersion":1,'.length);
+    String withLater(String later, {int head = 1}) =>
+        '{"format":"ply.progress","schemaVersion":$head,'
+        '${body.replaceFirst(RegExp(r'}$'), ',"later":$later,"schemaVersion":1}')}';
+    for (final MapEntry(:key, :value) in {
+      'a number too large for a double': withLater('1e400'),
+      'nested 260,000 deep': withLater('${'[' * 260000}${']' * 260000}'),
+      'two versions': withLater('0', head: 2),
+    }.entries) {
+      expect(utf8.encode(value).length, lessThan(ProgressLimits.maxFileBytes), reason: key);
+      record().writeAsStringSync(value);
+      expect((await repo.load(BackupCraft.weaving, id)).status, ProgressStatus.unreadable,
+          reason: key);
+      await expectLater(
+          repo.save(BackupCraft.weaving, id, woven(3)), throwsA(isA<ProgressFileException>()),
+          reason: key);
+      // Start again moves it aside, and tracking goes on.
+      await repo.setAside(BackupCraft.weaving, id);
+      await repo.save(BackupCraft.weaving, id, woven(3));
+      expect((await repo.load(BackupCraft.weaving, id)).status, ProgressStatus.ok, reason: key);
+      await repo.delete(BackupCraft.weaving, id);
+    }
+  });
+
   test('a project that is gone gets no record', () async {
     inDrafts('$id.json').deleteSync();
     await expectLater(

@@ -2,6 +2,7 @@
 // next to the project's other files and apart from them. Nothing here reads or writes the pattern or
 // its sidecar; a write only checks, under the sidecar's lock, that the project still exists.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -9,7 +10,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/progress.dart';
-import 'library_backup.dart' show BackupCraft, isBackupProjectId;
+import 'json_count.dart';
+import 'library_backup.dart' show BackupCraft, backupProgressExtension, isBackupProjectId;
 import 'sidecar_writes.dart';
 
 /// What reading a project's progress found.
@@ -43,7 +45,7 @@ class ProgressRepository {
   final Directory? _docsOverride;
 
   /// The file extension (lower case, no dot).
-  static const String extension = 'plyprogress';
+  static const String extension = backupProgressExtension;
 
   /// The most records of one project kept aside (`.corrupt`, `.corrupt.2`, ...).
   static const int maxSetAside = 100;
@@ -116,7 +118,16 @@ class ProgressRepository {
         // Too large to decode: its first bytes still say whether a newer Ply wrote it.
         return ProgressLoad(await _newerHead(f) ? ProgressStatus.newer : ProgressStatus.unreadable);
       }
-      final text = await f.readAsString();
+      final bytes = await f.readAsBytes();
+      // Measured before it is decoded: a record nested too deep or holding a number too large for
+      // a double could never be written again, so it would wedge every later save.
+      final shape = measureJson(bytes, stop: ProgressLimits.maxValues);
+      if (shape.values > ProgressLimits.maxValues ||
+          shape.depth > ProgressLimits.maxDepth ||
+          shape.nonFinite) {
+        return const ProgressLoad(ProgressStatus.unreadable);
+      }
+      final text = utf8.decode(bytes);
       return ProgressLoad(ProgressStatus.ok, Progress.decode(text, craft: craft));
     } on ProgressFileException catch (e) {
       return ProgressLoad(e.problem == ProgressProblem.newerVersion

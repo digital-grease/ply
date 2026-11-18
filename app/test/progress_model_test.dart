@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ply/src/data/json_count.dart';
+import 'package:ply/src/data/library_backup.dart' show BackupLimits;
 import 'package:ply/src/models/progress.dart';
 
 // The progress record (ADR 0023) as pure data: the file round-trips with unknown keys kept, a newer
@@ -85,6 +87,21 @@ void main() {
       expect(reread(p).log.single.to, const KnitPlace(1, sectionId: 'section-1', stepId: 'step-2'));
       expect(json['place'],
           {'unit': 1, 'row': 1, 'repeat': 1, 'section': 'section-1', 'step': 'step-2'});
+    });
+
+    test('a record stating one version first and decoding to another is unreadable', () {
+      final valid = weave(const Progress(craft: ProgressCraft.weaving), 1, 3).encodeFitted().text;
+      final body = valid.substring('{"format":"ply.progress","schemaVersion":1,'.length);
+      for (final text in [
+        '{"format":"ply.progress","schemaVersion":2,${body.replaceFirst(RegExp(r'}$'), ',"schemaVersion":1}')}',
+        '{"format":"ply.progress","schemaVersion":1,${body.replaceFirst(RegExp(r'}$'), ',"schemaVersion":2}')}',
+      ]) {
+        expect(
+            () => Progress.decode(text, craft: ProgressCraft.weaving),
+            throwsA(isA<ProgressFileException>()
+                .having((e) => e.problem, 'problem', ProgressProblem.unreadable)),
+            reason: text.substring(0, 60));
+      }
     });
 
     test('a newer record is refused from its version keys alone', () {
@@ -414,6 +431,14 @@ void main() {
       // ignore: avoid_print
       print('largest progress record: $bytes bytes (${(bytes / 1024).toStringAsFixed(1)} KiB)');
       expect(Progress.decode(out.text, craft: ProgressCraft.knitting).notes, hasLength(100));
+      // What a backup restore measures before it decodes a record (ADR 0023, section 9).
+      final shape = measureJson(utf8.encode(out.text));
+      // ignore: avoid_print
+      print('largest progress record: ${shape.values} JSON values, nested ${shape.depth} deep');
+      const limits = BackupLimits();
+      expect(shape.values * 4, lessThan(limits.maxProgressValues));
+      expect(shape.depth, 5);
+      expect(bytes, lessThanOrEqualTo(limits.maxProgressBytes));
     });
 
     test('unknown keys that would pass the bound drop the oldest log entries, counted', () {

@@ -8,6 +8,7 @@
 //   knits/<id>.plyknit + knits/<id>.json + knits/<id>.plyknit.v<n>.bak (format-upgrade backups)
 //   nalbinds/<id>.plynal + nalbinds/<id>.json + nalbinds/<id>.photos/<name>.<ext>
 //   tablets/<id>.plytab + tablets/<id>.json (tablet weaving bands; ADR 0018)
+//   <craft folder>/<id>.plyprogress (a project's place, log and notes, when it has them; ADR 0023)
 //
 // A full backup may also carry `app_settings.json` (opt-in, the settings in effect), `looms.json`
 // (the weaver's loom profiles, whenever there are any; ADR 0014) and `materials.json` with every
@@ -42,6 +43,11 @@
 // the copy's name is the only thing rewritten (in its sidecar, and for nalbinding also in its
 // `.plynal`, which carries the name the project screen shows; that rewrite also runs on a background
 // isolate).
+//
+// A progress record is the crafter's place, not the pattern: it never refuses a project or the
+// backup. One a restore cannot vouch for (too large, too complex, unreadable) is left out and the
+// project restores without it; one from a newer Ply is carried as it is; a project that differs
+// from the library only in its progress is already in the library (whose own place is kept).
 
 import 'dart:convert';
 import 'dart:io';
@@ -62,6 +68,14 @@ import '../models/material_record.dart';
 import '../models/nalbind_project.dart';
 import '../models/native_format.dart';
 import '../models/project_materials.dart';
+import '../models/progress.dart'
+    show
+        Progress,
+        ProgressCraft,
+        ProgressFileException,
+        ProgressLimits,
+        ProgressProblem,
+        kProgressSchemaVersion;
 import '../models/weave_plan.dart' show WeavePlan;
 import 'app_settings_repository.dart';
 import 'json_count.dart';
@@ -117,7 +131,14 @@ enum BackupFileRole {
 
   /// A nalbinding project photo, `<id>.photos/<name>.<ext>`.
   photo,
+
+  /// The project's progress record, `<id>.plyprogress` (ADR 0023): carried with the project, never
+  /// compared with the library's, and left out (never refused) when a restore cannot vouch for it.
+  progress,
 }
+
+/// The extension of a progress record (`ProgressRepository.extension`).
+const String backupProgressExtension = 'plyprogress';
 
 /// A path of the library layout, classified.
 class LibraryPath {
@@ -142,6 +163,7 @@ class LibraryPath {
       BackupFileRole.sidecar => '$dir/$id.json',
       BackupFileRole.upgradeBackup => '$dir/$id.plyknit.v$version.bak',
       BackupFileRole.photo => '$dir/$id.photos/$photoName',
+      BackupFileRole.progress => '$dir/$id.$backupProgressExtension',
     };
   }
 }
@@ -193,6 +215,7 @@ LibraryPath? classifyLibraryPath(String path) {
     final rest = file.substring(dot + 1);
     if (rest == 'json') return LibraryPath._(craft, id, BackupFileRole.sidecar);
     if (rest == craft.nativeExtension) return LibraryPath._(craft, id, BackupFileRole.native);
+    if (rest == backupProgressExtension) return LibraryPath._(craft, id, BackupFileRole.progress);
     if (craft == BackupCraft.knitting) {
       final m = _upgradeBackupPattern.firstMatch(rest);
       if (m != null) {
@@ -232,6 +255,9 @@ class BackupLimits {
     this.maxSettingsBytes = 64 * 1024,
     this.maxLoomsBytes = _mib,
     this.maxMaterialsBytes = 2 * _mib,
+    this.maxProgressBytes = ProgressLimits.maxFileBytes,
+    this.maxProgressValues = ProgressLimits.maxValues,
+    this.maxProgressDepth = ProgressLimits.maxDepth,
   });
 
   /// The limits for the device this runs on: a phone saves a backup through the system save dialog,
@@ -295,8 +321,26 @@ class BackupLimits {
   /// The largest `materials.json` entry (the engine reads at most 2 MB).
   final int maxMaterialsBytes;
 
-  int maxBytesFor(BackupFileRole role) =>
-      role == BackupFileRole.sidecar ? maxSidecarBytes : maxFileBytes;
+  /// The largest progress record a backup carries: the record's own file bound (ADR 0023). A larger
+  /// one is left out (never refused): a backup does not carry it and a restore does not read it.
+  final int maxProgressBytes;
+
+  /// The most JSON values a progress record may have on restore, counted before it is decoded. The
+  /// largest record Ply writes (every bound at its largest: 400 log entries, 50 undo frames and 100
+  /// notes, places whole with their ids) has 19,991; this is five times that, for keys a
+  /// later build adds within the same version. Past it, the record is left out.
+  final int maxProgressValues;
+
+  /// The deepest nesting of lists and objects a progress record may have on restore (Ply writes
+  /// 5: an undo frame's entry's place). Past it, or with a number too large for a double, the
+  /// record is left out.
+  final int maxProgressDepth;
+
+  int maxBytesFor(BackupFileRole role) => switch (role) {
+        BackupFileRole.sidecar => maxSidecarBytes,
+        BackupFileRole.progress => maxProgressBytes,
+        _ => maxFileBytes,
+      };
 }
 
 /// What stopped a backup or a restore. [message] is the user-facing sentence; [detail] is for logs.
@@ -567,7 +611,10 @@ class BackupManifest {
       if (craftName != classified.craft.manifestName || project != classified.projectId) {
         throw damaged('craft or project of $path');
       }
-      if (size > limits.maxBytesFor(classified.role)) {
+      // A progress record past its limit is left out of its project on restore, never a reason to
+      // refuse the backup (ADR 0023).
+      if (classified.role != BackupFileRole.progress &&
+          size > limits.maxBytesFor(classified.role)) {
         throw BackupException(BackupProblem.unsafe, detail: '$path is $size bytes');
       }
       files.add(BackupManifestFile(
@@ -864,6 +911,7 @@ class RestoreProject {
     this.loomPlanId,
     this.linkedMaterials = const {},
     this.linkedSwatches = const {},
+    this.progressLeftOut = false,
   }) : _files = files;
 
   final BackupCraft craft;
@@ -890,6 +938,17 @@ class RestoreProject {
   /// as a copy, the project is pointed at the copy.
   final Set<String> linkedMaterials;
   final Set<String> linkedSwatches;
+
+  /// The backup holds a progress record for this project that could not be restored (too large,
+  /// too complex or unreadable; ADR 0023): the project restores without it, and the preview says
+  /// so with [progressLeftOutText].
+  final bool progressLeftOut;
+
+  /// The preview's line for a project restored without its progress record.
+  static const String progressLeftOutText = 'Your place in it could not be restored.';
+
+  /// Whether the project brings a progress record with it.
+  bool get carriesProgress => _files.any((f) => f.layout.role == BackupFileRole.progress);
 
   final List<_ArchivedFile> _files;
 
@@ -1370,7 +1429,6 @@ class LibraryBackup {
       }
       photos = found.length;
     }
-
     final files = <BackupFile>[];
     for (final (layout, file) in layoutFiles) {
       final max = limits.maxBytesFor(layout.role);
@@ -1390,6 +1448,12 @@ class LibraryBackup {
         projectId: id,
       ));
     }
+    // The progress record (ADR 0023), before the sidecar.
+    final progress = names['$id.$backupProgressExtension'];
+    if (progress is File) {
+      final record = await _progressForBackup(craft, id, progress);
+      if (record != null) files.add(record);
+    }
     // The sidecar last, as the bytes already read (and checked) for its name.
     final rewritten = carried.source != null;
     files.add(BackupFile(
@@ -1404,6 +1468,38 @@ class LibraryBackup {
       sourceSha256: carried.source?.sha256,
     ));
     return (files: files, photos: photos, name: name);
+  }
+
+  /// The progress record [file] of project [id] of [craft] as a backup carries it (byte for byte),
+  /// or null when it is left out: past [BackupLimits.maxProgressBytes] (no record Ply writes, and a
+  /// restore would leave it out), or gone or unreadable while the backup is planned (Clear my place
+  /// or Start again in the tracker). A progress record never stops a backup at planning; one that
+  /// changes after planning still stops the build, as every file does.
+  Future<BackupFile?> _progressForBackup(BackupCraft craft, String id, File file) async {
+    final max = limits.maxProgressBytes;
+    final what = '${craft.directory}/$id.$backupProgressExtension';
+    try {
+      if (await file.length() > max) {
+        PlyLog.instance.warn('Backup: left out $what (too large).');
+        return null;
+      }
+      final (digest, size) = await _hashFile(file, max);
+      if (size > max) {
+        PlyLog.instance.warn('Backup: left out $what (too large).');
+        return null;
+      }
+      return BackupFile(
+        archivePath: LibraryPath._(craft, id, BackupFileRole.progress).pathFor(id),
+        sourcePath: file.path,
+        size: size,
+        sha256: digest,
+        craft: craft,
+        projectId: id,
+      );
+    } on FileSystemException catch (e) {
+      PlyLog.instance.warn('Backup: left out $what (it could not be read: $e).');
+      return null;
+    }
   }
 
   /// The sidecar of project [id] of [craft] as a backup carries it, with the project's name and,
@@ -1705,7 +1801,11 @@ class LibraryBackup {
       for (final craft in BackupCraft.values) {
         final dir = Directory(p.join(docs.path, craft.directory));
         final stems = await _stems(dir);
-        final ofCraft = accumulators.values.where((a) => a.craft == craft).toList()
+        // A progress record with nothing else of its project is no project to list (a hand-made
+        // backup): it is not restored, and nothing is said about it.
+        final ofCraft = accumulators.values
+            .where((a) => a.craft == craft && !a.onlyProgress)
+            .toList()
           ..sort((a, b) => a.id.compareTo(b.id));
         for (final acc in ofCraft) {
           projects.add(await _classify(raf, acc, dir, stems, relinks, materialRelinks));
@@ -1801,20 +1901,27 @@ class LibraryBackup {
         if (record.size != entry.size) {
           throw BackupException(BackupProblem.damaged, detail: '$path size');
         }
-        final max = layout != null
-            ? limits.maxBytesFor(layout.role)
-            : isLooms
-                ? limits.maxLoomsBytes
-                : isMaterials
-                    ? limits.maxMaterialsBytes
-                    : swatchPhoto != null
-                        ? limits.maxFileBytes
-                        : limits.maxSettingsBytes;
+        // A progress record is never a reason to refuse the backup: past its limit it is only
+        // hashed (as the manifest requires) and left out of its project.
+        final progressEntry = layout?.role == BackupFileRole.progress;
+        final max = progressEntry
+            ? limits.maxArchiveBytes
+            : layout != null
+                ? limits.maxBytesFor(layout.role)
+                : isLooms
+                    ? limits.maxLoomsBytes
+                    : isMaterials
+                        ? limits.maxMaterialsBytes
+                        : swatchPhoto != null
+                            ? limits.maxFileBytes
+                            : limits.maxSettingsBytes;
         if (entry.size > max) {
           throw BackupException(BackupProblem.unsafe, detail: '$path is ${entry.size} bytes');
         }
         final (digest, content) = await _hashSlice(raf, entry.dataOffset, entry.size,
-            keep: layout?.role != BackupFileRole.photo && swatchPhoto == null);
+            keep: progressEntry
+                ? entry.size <= limits.maxProgressBytes
+                : layout?.role != BackupFileRole.photo && swatchPhoto == null);
         if (digest != record.sha256) {
           throw BackupException(BackupProblem.damaged, detail: '$path checksum');
         }
@@ -1838,6 +1945,16 @@ class LibraryBackup {
         final acc = accumulators.putIfAbsent(
             '${layout.craft.manifestName}/${layout.projectId}',
             () => _ProjectAccumulator(layout.craft, layout.projectId));
+        if (progressEntry) {
+          // Carried only when the restore can vouch for it; otherwise the project restores without
+          // it, and the preview says its place could not be restored.
+          if (content != null && await _progressCarried(layout.craft, content)) {
+            acc.files.add(_ArchivedFile(layout, entry.size, entry.dataOffset, digest));
+          } else {
+            acc.progressLeftOut = true;
+          }
+          continue;
+        }
         acc.files.add(_ArchivedFile(layout, entry.size, entry.dataOffset, digest));
         if (content != null) await _inspect(acc, layout, content, knit, tablet);
       }
@@ -2041,7 +2158,7 @@ class LibraryBackup {
       BackupFileRole.native => await _checkNative(acc.craft, text, knitVersion, tabletVersion),
       BackupFileRole.upgradeBackup =>
         await _checkUpgradeBackup(layout.version!, text, knitVersion),
-      BackupFileRole.photo => null,
+      BackupFileRole.photo || BackupFileRole.progress => null,
     };
     if (layout.role == BackupFileRole.native) acc.hasNative = true;
     if (layout.role == BackupFileRole.sidecar) acc.hasSidecar = true;
@@ -2072,6 +2189,67 @@ class LibraryBackup {
     acc.linkedMaterials = read.materials;
     acc.linkedSwatches = read.swatches;
     return read.newer ? RestoreRefusal.newerVersion : null;
+  }
+
+  /// Whether a progress record from a backup (ADR 0023) is carried with its project, as untrusted
+  /// input (it is at most [BackupLimits.maxProgressBytes]; the caller leaves a larger one out):
+  /// - its JSON values are counted before it is decoded, and one past
+  ///   [BackupLimits.maxProgressValues], nested past [BackupLimits.maxProgressDepth] or holding a
+  ///   number too large for a double is left out, whatever version it states;
+  /// - then it is read with the tracker's own reader (`Progress.decode`; on a background isolate
+  ///   past [inlineSidecarValues] values), and carried when it reads or is newer (the tracker
+  ///   neither reads nor replaces a newer one), left out otherwise: unreadable, or stating one
+  ///   version in its first bytes and decoding to another (a repeated key). A record of a craft
+  ///   this build does not track yet is carried when its envelope names that craft and one version
+  ///   (only a later build reads it).
+  /// It is copied byte for byte either way.
+  Future<bool> _progressCarried(BackupCraft craft, Uint8List bytes) async {
+    final shape = measureJson(bytes, stop: limits.maxProgressValues);
+    if (shape.values > limits.maxProgressValues ||
+        shape.depth > limits.maxProgressDepth ||
+        shape.nonFinite) {
+      return false;
+    }
+    final String text;
+    try {
+      text = utf8.decode(bytes);
+    } on FormatException {
+      return false;
+    }
+    if (shape.values <= inlineSidecarValues) return _progressReads(text, craft.manifestName);
+    final key = craft.manifestName;
+    return Isolate.run(() => _progressReads(text, key), debugName: 'progress record');
+  }
+
+  /// Whether [text] is a progress record of the craft named [craftKey] this build would keep: one
+  /// the tracker reads, or a newer one. For a craft this build does not track, a record whose
+  /// envelope names the craft (a newer one need not) and the same version in its first bytes as
+  /// it decodes to.
+  static bool _progressReads(String text, String craftKey) {
+    final tracked = ProgressCraft.values.firstWhereOrNull((c) => c.key == craftKey);
+    if (tracked == null) {
+      try {
+        final json = jsonDecode(text);
+        if (json is! Map<String, dynamic>) return false;
+        final version = json['schemaVersion'];
+        final stated = Progress.probeVersion(text.length > ProgressLimits.versionProbeBytes
+            ? text.substring(0, ProgressLimits.versionProbeBytes)
+            : text);
+        return json['format'] == 'ply.progress' &&
+            version is int &&
+            version >= 1 &&
+            (stated == null || stated == version) &&
+            (version > kProgressSchemaVersion || json['craft'] == craftKey);
+      } on FormatException {
+        return false;
+      }
+    }
+    try {
+      Progress.decode(text, craft: tracked);
+      return true;
+    } on ProgressFileException catch (e) {
+      return e.problem == ProgressProblem.newerVersion;
+    }
   }
 
   /// [_backupSidecarFacts] of [text], on this isolate when [inline], else on a background isolate.
@@ -2229,6 +2407,7 @@ class LibraryBackup {
           loomPlanId: acc.loomPlanId,
           linkedMaterials: acc.linkedMaterials,
           linkedSwatches: acc.linkedSwatches,
+          progressLeftOut: acc.progressLeftOut,
         );
     if (refusal != null) return make(RestoreStatus.refused);
 
@@ -2359,12 +2538,14 @@ class LibraryBackup {
   /// Whether the library already holds everything the backup has for this project, under [id]:
   /// the same native file (or, when given, the [native] size and digest instead of the backup's),
   /// a sidecar with [sidecarDigest] (see [LibraryBackup.sidecarDigest]), and every upgrade backup
-  /// and photo of the backup with the same bytes.
+  /// and photo of the backup with the same bytes. A progress record does not count (ADR 0023): a
+  /// project that differs only in its place is already in the library, which keeps its own.
   Future<bool> _sameAsLibrary(
       Directory dir, String id, List<_ArchivedFile> files, String sidecarDigest,
       {({int size, String sha256})? native}) async {
     try {
       for (final f in files) {
+        if (f.layout.role == BackupFileRole.progress) continue;
         final local = File(p.joinAll([dir.path, ...f.layout.pathFor(id).split('/').skip(1)]));
         if (await FileSystemEntity.type(local.path, followLinks: false) !=
             FileSystemEntityType.file) {
@@ -2435,9 +2616,13 @@ class LibraryBackup {
     return Uint8List.fromList(utf8.encode(jsonEncode(map)));
   }
 
-  /// A version-8 (custom) UUID derived from the project's craft, id and file digests.
+  /// A version-8 (custom) UUID derived from the project's craft, id and file digests (its progress
+  /// record aside, as the comparison leaves it aside).
   static String _copyId(_ProjectAccumulator acc) {
-    final listing = [for (final f in acc.files) '${f.layout.pathFor(acc.id)} ${f.sha256}']..sort();
+    final listing = [
+      for (final f in acc.files)
+        if (f.layout.role != BackupFileRole.progress) '${f.layout.pathFor(acc.id)} ${f.sha256}',
+    ]..sort();
     final digest = sha256.convert(utf8.encode(
         'ply.backup restored copy\n${acc.craft.manifestName}\n${acc.id}\n${listing.join('\n')}'));
     final b = digest.bytes.sublist(0, 16);
@@ -2546,10 +2731,12 @@ class LibraryBackup {
         if (!taken.add(id.toLowerCase())) {
           throw StateError('${craft.directory}/$id appeared in the library during the restore');
         }
-        // Document, upgrade backups, the photo folder (moved whole), and the sidecar LAST.
+        // Document, upgrade backups, the progress record, the photo folder (moved whole), and the
+        // sidecar LAST.
         final order = [
           ...project._files.where((f) => f.layout.role == BackupFileRole.native),
           ...project._files.where((f) => f.layout.role == BackupFileRole.upgradeBackup),
+          ...project._files.where((f) => f.layout.role == BackupFileRole.progress),
         ].map((f) => f.layout.pathFor(id)).toList();
         if (project.photoCount > 0) order.add('${craft.directory}/$id.photos');
         order.add('${craft.directory}/$id.json');
@@ -2848,6 +3035,14 @@ class _ProjectAccumulator {
   bool newer = false;
   bool unreadable = false;
   bool tooComplex = false;
+
+  /// The backup has a progress record for this project that the restore cannot vouch for (ADR
+  /// 0023): left out, the project restoring without it.
+  bool progressLeftOut = false;
+
+  /// The backup holds nothing of this project but a progress record (carried or left out).
+  bool get onlyProgress =>
+      !hasNative && !hasSidecar && files.every((f) => f.layout.role == BackupFileRole.progress);
   String? name;
 
   /// [LibraryBackup.sidecarDigest] of the sidecar, as is and renamed for a copy.
