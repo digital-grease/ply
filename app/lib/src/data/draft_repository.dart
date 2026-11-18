@@ -634,7 +634,8 @@ class DraftRepository {
   }
 
   /// Validate an editor [DraftDoc], returning structured [DraftIssue]s (empty = clean) the
-  /// editor can color and gate Save on. Runs through the engine validator over the wire DTO.
+  /// editor can color, list, and check at print or share. Runs through the engine validator over
+  /// the wire DTO.
   Future<List<DraftIssue>> validateDto(DraftDoc doc) async {
     final issues = await validateDraft(dto: toDto(doc));
     return issues.map(_issueFromDto).toList();

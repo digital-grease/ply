@@ -36,23 +36,18 @@ class FakeRepo extends DraftRepository {
   /// When true, toLiftplanDoc throws (the engine Err path) so a test can assert the SnackBar.
   bool convertError = false;
 
-  /// What validateDto returns. Default clean so every pre-3.4 save/convert test is unchanged. The
-  /// validation provider AND the Save error-gate both call this; a test flips it to drive the gate.
+  /// What validateDto returns. Default clean. Only the live validation band calls this; saving
+  /// never checks for problems, so a test sets it to prove a draft with errors still saves.
   List<DraftIssue> issues = const [];
 
-  /// When true, validateDto throws — exercises the Save gate's fail-closed path.
+  /// When true, validateDto throws (the band then shows nothing), to prove a save does not care.
   bool validateError = false;
   int validateCount = 0;
-
-  /// When set, validateDto suspends on this — lets a test hold the Save gate's validate in flight
-  /// and land a concurrent edit during the FFI hop.
-  Completer<void>? validateGate;
 
   @override
   Future<List<DraftIssue>> validateDto(DraftDoc doc) async {
     validateCount++;
     if (validateError) throw Exception('validate boom');
-    if (validateGate != null) await validateGate!.future;
     return issues;
   }
 
@@ -61,7 +56,7 @@ class FakeRepo extends DraftRepository {
     if (parseError) throw const FormatException('not a pattern');
     // A NON-EMPTY 4x4 straight-draw cloth: distinct from DraftDoc.blank() (the build() default) so
     // "load reflects the draft" is real, AND with ends/picks > 0 so a save clears the editor's
-    // GATE 0 (an empty draft is refused) — every save/gate test operates on this loaded draft.
+    // GATE 0 (an empty draft is refused); every save test operates on this loaded draft.
     return DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
       name: 'loaded',
       threading: const [
@@ -704,46 +699,34 @@ void main() {
     expect(find.text('Book view'), findsOneWidget);
   });
 
-  // --- Phase 3.4: Save error-gating ------------------------------------------
+  // --- Saving never checks for problems (ADR 0021; owner decision 2026-11-17) ---------------
+  // Whether a pattern is ready to make or share is checked only when printing or sharing. A draft
+  // with errors saves like any other, and the validation band keeps listing its problems.
 
-  testWidgets('saving a draft with an Error warns, then Save anyway proceeds', (tester) async {
-    final fake = FakeRepo()..issues = const [_err];
+  testWidgets('a draft with an Error saves with no prompt, and the band keeps listing it',
+      (tester) async {
+    final fake = FakeRepo()
+      ..issues = const [_err]
+      ..saveGate = Completer<void>();
     await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.save_outlined));
-    await letAsyncSettle(tester);
-    expect(find.text('Save with problems?'), findsOneWidget);
-    expect(fake.sawSave, isFalse, reason: 'nothing written until the user consents');
+    expect(find.text(_err.message), findsOneWidget, reason: 'the band lists the problem');
 
-    await tester.tap(find.text('Save anyway'));
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await tester.pump(); // straight into the write, which parks on saveGate
+    expect(find.byType(AlertDialog), findsNothing, reason: 'no dialog asks before saving');
+    expect(fake.saveCount, 1, reason: 'the write started at once');
+    expect(find.text(_err.message), findsOneWidget, reason: 'the problem is still listed');
+
+    fake.saveGate!.complete();
     await letAsyncSettle(tester);
     expect(fake.sawSave, isTrue);
+    expect(fake.capturedSourceWif, 'WIF', reason: 'unedited, so the original WIF is kept verbatim');
   });
 
-  testWidgets('Cancel on the Error dialog aborts the save and re-enables Save', (tester) async {
-    final fake = FakeRepo()..issues = const [_err];
-    await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.save_outlined));
-    await letAsyncSettle(tester);
-    await tester.tap(find.text('Cancel'));
-    await letAsyncSettle(tester);
-    expect(fake.sawSave, isFalse);
-    expect(iconButton(tester, Icons.save_outlined).onPressed, isNotNull,
-        reason: 'a cancelled gate resets _saving');
-  });
-
-  testWidgets('Show me on the Error dialog expands the panel and aborts the save', (tester) async {
-    final fake = FakeRepo()..issues = const [_err];
-    final container = await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.save_outlined));
-    await letAsyncSettle(tester);
-    await tester.tap(find.text('Show me'));
-    await letAsyncSettle(tester);
-    expect(fake.sawSave, isFalse, reason: 'Show me reads, it does not save');
-    expect(container.read(editorIssuesExpandedProvider), isTrue,
-        reason: 'the inline panel is expanded so the user can read the problems');
-  });
-
-  testWidgets('the Error gate runs BEFORE the lossy-save gate', (tester) async {
+  testWidgets('an edited draft with an Error goes straight to the lossy-save warning',
+      (tester) async {
+    // The only question left before saving an edited import is the lossy rewrite warning; errors
+    // add nothing to it.
     final fake = FakeRepo()..issues = const [_err];
     final container = await pumpEditor(tester, fake);
     container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirtyStructural = true
@@ -751,60 +734,59 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.save_outlined));
     await letAsyncSettle(tester);
-    expect(find.text('Save with problems?'), findsOneWidget, reason: 'correctness gate first');
-    expect(find.text('Save changes?'), findsNothing, reason: 'the lossy gate is not reached yet');
+    expect(find.text('Save changes?'), findsOneWidget, reason: 'the lossy warning only');
+    expect(find.byType(AlertDialog), findsOneWidget, reason: 'no second, problem-related dialog');
 
-    await tester.tap(find.text('Save anyway')); // past the error gate
-    await letAsyncSettle(tester);
-    expect(find.text('Save changes?'), findsOneWidget, reason: 'THEN the lossy gate');
-    expect(fake.sawSave, isFalse);
-
-    await tester.tap(find.text('Save anyway')); // past the lossy gate
+    await tester.tap(find.text('Save anyway')); // past the lossy warning
     await letAsyncSettle(tester);
     expect(fake.sawSave, isTrue);
-    expect(fake.capturedSourceWif, isNull, reason: 're-serialized after both gates');
+    expect(fake.capturedSourceWif, isNull, reason: 'edited, so it is re-serialized');
   });
 
-  testWidgets('a clean-but-errored from-scratch draft gates on Errors with NO lossy dialog',
+  testWidgets('a new draft with an Error goes straight to the name prompt, problem still listed',
       (tester) async {
     final fake = FakeRepo()..issues = const [_err];
-    final container = await pumpEditor(tester, fake);
-    // A from-scratch draft (no sourceWif): the verbatim path is gone, so the lossy gate never fires.
-    // Non-empty (grown) so it clears GATE 0 and reaches the Error gate under test.
-    container.read(draftEditorProvider.notifier).load(grownNewDraft());
-    await tester.pump();
+    await pumpEditor(tester, fake, newDraft: true);
+    expect(find.text(_err.message), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.save_outlined));
     await letAsyncSettle(tester);
-    expect(find.text('Save with problems?'), findsOneWidget);
-    await tester.tap(find.text('Save anyway'));
+    expect(find.text('Save pattern'), findsOneWidget, reason: 'the name prompt, nothing before it');
+    expect(find.byType(AlertDialog), findsOneWidget, reason: 'only the name prompt is open');
+    expect(find.text(_err.message), findsOneWidget, reason: 'the band still lists the problem');
+
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'With a problem');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await letAsyncSettle(tester);
-    expect(find.text('Save changes?'), findsNothing, reason: 'no imported WIF to lose');
+    expect(fake.sawSave, isTrue);
+    expect(fake.capturedMeta!.name, 'With a problem');
+  });
+
+  testWidgets('Warnings and mixed issue sets save with no prompt', (tester) async {
+    // Hold the write, so the "no dialog" check runs while the editor is still open.
+    final fake = FakeRepo()
+      ..issues = const [_err, _warn, _warn]
+      ..saveGate = Completer<void>();
+    await pumpEditor(tester, fake);
+    expect(find.text('1 error, 2 warnings'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await letAsyncSettle(tester);
+    expect(fake.saveCount, 1, reason: 'the write started at once');
+    expect(find.byType(EditorScreen), findsOneWidget, reason: 'still open while it writes');
+    expect(find.byType(AlertDialog), findsNothing);
+    fake.saveGate!.complete();
+    await letAsyncSettle(tester);
     expect(fake.sawSave, isTrue);
   });
 
-  testWidgets('Warnings do NOT gate Save', (tester) async {
-    final fake = FakeRepo()..issues = const [_warn];
+  testWidgets('Save runs no problem check of its own', (tester) async {
+    final fake = FakeRepo()..issues = const [_err];
     await pumpEditor(tester, fake);
+    final before = fake.validateCount; // the band's own live validation
     await tester.tap(find.byIcon(Icons.save_outlined));
     await letAsyncSettle(tester);
-    expect(find.text('Save with problems?'), findsNothing);
-    expect(fake.sawSave, isTrue, reason: 'a warning is advisory, never blocks a save');
-  });
-
-  testWidgets('the Save gate re-validates fresh and catches an Error the live panel missed',
-      (tester) async {
-    // STALE-AT-SAVE: the async panel validated clean; Save must compute its OWN ground truth so an
-    // Error introduced after the last panel validate is not missed.
-    final fake = FakeRepo(); // issues = [] -> the panel shows nothing
-    await pumpEditor(tester, fake);
-    expect(find.text('Save with problems?'), findsNothing);
-
-    fake.issues = const [_err]; // a problem the panel's stale AsyncValue hasn't observed
-    await tester.tap(find.byIcon(Icons.save_outlined));
-    await letAsyncSettle(tester);
-    expect(find.text('Save with problems?'), findsOneWidget,
-        reason: 'the Save gate re-validates the exact draft it will persist');
+    expect(fake.validateCount, before, reason: 'saving does not validate the draft again');
+    expect(fake.sawSave, isTrue);
   });
 
   testWidgets('a NEW draft prompts for name on first save, then saves with that meta', (tester) async {
@@ -894,32 +876,34 @@ void main() {
     expect(fake.sawSave, isTrue);
   });
 
-  testWidgets('the Save gate fails closed when the validity check throws', (tester) async {
+  testWidgets('a validity check that fails does not stop a save', (tester) async {
+    // Saving never checks for problems, so a validator that throws (the band then shows nothing)
+    // has no say in whether the draft is saved.
     final fake = FakeRepo()..validateError = true;
     await pumpEditor(tester, fake);
     await tester.tap(find.byIcon(Icons.save_outlined));
     await letAsyncSettle(tester);
-    // The root ScaffoldMessenger mirrors the snackbar onto both the test-host and editor Scaffolds,
-    // so assert "at least one" (the count is a nested-Scaffold test artifact, not production).
-    expect(find.textContaining('Could not check the pattern'), findsAtLeastNWidgets(1));
-    expect(fake.sawSave, isFalse, reason: 'refuse to save when correctness cannot be confirmed');
+    expect(find.textContaining('Could not check the pattern'), findsNothing);
+    expect(fake.sawSave, isTrue);
   });
 
-  testWidgets('an edit landing during the Save validate hop is preserved (stale save bails)',
+  testWidgets('an edit landing while the lossy-save dialog is open is preserved (stale save bails)',
       (tester) async {
-    // The Save twin of the convert/resize latest-wins guard: the canvas stays live during the gate's
-    // validate FFI hop, so an edit landing there must survive, and the stale capture must NOT persist.
+    // The Save twin of the convert/resize latest-wins guard: if an edit lands across the dialog's
+    // await, it must survive, and the stale capture must NOT persist.
     final fake = FakeRepo();
-    final container = await pumpEditor(tester, fake); // initial validate (clean) resolves
-    fake.validateGate = Completer<void>();
+    final container = await pumpEditor(tester, fake);
+    container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirty, so the dialog shows
+    await tester.pump();
 
     await tester.tap(find.byIcon(Icons.save_outlined));
-    await tester.pump(); // _saving set; the gate's validateDto parks on validateGate
-    container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // edit during the hop
+    await letAsyncSettle(tester);
+    expect(find.text('Save changes?'), findsOneWidget);
+    container.read(draftEditorProvider.notifier).toggleTieupCell(2, 2); // edit under the dialog
     final edited = container.read(draftEditorProvider).draft;
     await tester.pump();
 
-    fake.validateGate!.complete();
+    await tester.tap(find.text('Save anyway'));
     await letAsyncSettle(tester);
     expect(fake.sawSave, isFalse, reason: 'the stale capture was not persisted');
     expect(container.read(draftEditorProvider).draft, equals(edited),
@@ -930,10 +914,8 @@ void main() {
       (tester) async {
     final fake = FakeRepo()..issues = const [_err];
     final container = await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.save_outlined));
-    await letAsyncSettle(tester);
-    await tester.tap(find.text('Show me'));
-    await letAsyncSettle(tester);
+    await tester.tap(find.text(_err.message)); // the band's header expands it
+    await tester.pump();
     expect(container.read(editorIssuesExpandedProvider), isTrue);
 
     // A fresh editor session (new EditorScreen -> _load) must reset the expanded chrome.
@@ -946,38 +928,6 @@ void main() {
     await letAsyncSettle(tester);
     expect(container.read(editorIssuesExpandedProvider), isFalse,
         reason: 'a new editor load resets the panel-expanded chrome');
-  });
-
-  testWidgets('a mixed issue set gates on the ERROR count only', (tester) async {
-    final fake = FakeRepo()..issues = const [_err, _warn, _warn];
-    await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.save_outlined));
-    await letAsyncSettle(tester);
-    // 1 error + 2 warnings -> the dialog counts the 1 error, not all 3 issues.
-    expect(find.textContaining('1 problem'), findsOneWidget);
-    expect(find.textContaining('3 problem'), findsNothing);
-    await tester.tap(find.text('Save anyway'));
-    await letAsyncSettle(tester);
-    expect(fake.sawSave, isTrue, reason: 'the two warnings never re-gate');
-  });
-
-  testWidgets('Show me, then re-tapping Save re-gates and Save anyway proceeds', (tester) async {
-    final fake = FakeRepo()..issues = const [_err];
-    await pumpEditor(tester, fake);
-    await tester.tap(find.byIcon(Icons.save_outlined));
-    await letAsyncSettle(tester);
-    await tester.tap(find.text('Show me'));
-    await letAsyncSettle(tester);
-    expect(fake.sawSave, isFalse);
-    expect(iconButton(tester, Icons.save_outlined).onPressed, isNotNull, reason: 'Save re-enabled');
-
-    // The dialog is not suppressed, so a second Save tap re-gates.
-    await tester.tap(find.byIcon(Icons.save_outlined));
-    await letAsyncSettle(tester);
-    expect(find.text('Save with problems?'), findsOneWidget);
-    await tester.tap(find.text('Save anyway'));
-    await letAsyncSettle(tester);
-    expect(fake.sawSave, isTrue);
   });
 
   testWidgets('the AppBar actions carry their tooltips into the semantics (M4 a11y)', (tester) async {
@@ -1038,9 +988,10 @@ void main() {
     });
 
     testWidgets('Save from the leave prompt runs the full save flow then exits', (tester) async {
-      // A from-scratch draft: no sourceWif (so no lossy gate), so the only nested step is the
-      // metadata prompt — proving the prompt's Save delegates to the real gated _save.
-      final fake = FakeRepo();
+      // A from-scratch draft with an Error: no sourceWif (so no lossy warning) and no problem
+      // prompt, so the only nested step is the metadata prompt. This proves the leave prompt's Save
+      // delegates to the real _save, which never asks about problems.
+      final fake = FakeRepo()..issues = const [_err];
       final popLog = <bool?>[];
       final container = await pumpEditor(tester, fake, newDraft: true, popLog: popLog);
       container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirty
@@ -1049,7 +1000,8 @@ void main() {
       await letAsyncSettle(tester);
       await tester.tap(find.widgetWithText(FilledButton, 'Save'));
       await letAsyncSettle(tester);
-      expect(find.text('Save pattern'), findsOneWidget, reason: 'Save routes into the gated _save');
+      expect(find.text('Save pattern'), findsOneWidget, reason: 'Save routes into the real _save');
+      expect(find.byType(AlertDialog), findsOneWidget, reason: 'no problem prompt on this path');
       await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Kept');
       await tester.tap(find.widgetWithText(FilledButton, 'Save'));
       await tester.pumpAndSettle();
@@ -1057,6 +1009,8 @@ void main() {
       expect(fake.capturedMeta!.name, 'Kept');
       expect(find.byType(EditorScreen), findsNothing, reason: 'a successful save exits');
       expect(popLog.single, isTrue, reason: 'a saved exit pops true so the caller refreshes');
+      expect(container.read(draftLibraryWritesProvider), 0,
+          reason: 'an ordinary save relies on the true result, not the late-write signal');
     });
 
     testWidgets('the Save AppBar action still exits a dirty draft directly (PopScope gates only back)',
@@ -1103,7 +1057,7 @@ void main() {
     testWidgets('Save from the leave prompt on a still-empty 0x0 draft shows GATE 0 and stays',
         (tester) async {
       // A draft shrunk to 0x0 is dirty but unsaveable (GATE 0). The leave prompt's Save delegates to
-      // the gated _save, which surfaces the clear "add a cell" message and leaves the user in the
+      // the real _save, which surfaces the clear "add a cell" message and leaves the user in the
       // editor (free to Discard or grow) — not a silent dead-end, and never a persisted empty entry.
       final fake = FakeRepo();
       final container = await pumpEditor(tester, fake); // loaded non-empty, dirty=false
@@ -1122,18 +1076,22 @@ void main() {
 
     testWidgets('REPRO: AppBar Save in flight + back -> Discard double-pop past the parent',
         (tester) async {
-      // A from-scratch draft so there is no lossy gate; after validate resolves the save would go
-      // straight to the metadata prompt (and on its OK, pop). Hold the SAVE validate in flight, then
-      // press back and Discard. If the finding is real, the Discard's imperative pop AND the resumed
-      // _save's pop both fire, over-popping past the parent (host) route.
+      // A from-scratch draft so there is no lossy warning: Save goes to the metadata prompt and, on
+      // its OK, into the write. Hold that write in flight, then press back and Discard. If the
+      // finding is real, the Discard's imperative pop AND the resumed _save's pop both fire,
+      // over-popping past the parent (host) route.
       final fake = FakeRepo();
       final container = await pumpEditor(tester, fake, newDraft: true);
       container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirty
       await tester.pump();
 
-      fake.validateGate = Completer<void>(); // park the Save gate's validate FFI hop
+      fake.saveGate = Completer<void>(); // park the write
       await tester.tap(find.byIcon(Icons.save_outlined));
-      await tester.pump(); // _saving set; validate parks
+      await letAsyncSettle(tester);
+      await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Kept');
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await letAsyncSettle(tester); // the name prompt closes; saveDto parks
+      expect(fake.saveCount, 1);
       expect(find.byType(EditorScreen), findsOneWidget);
 
       // Back-press DURING the in-flight save -> the leave prompt (back path is NOT _saving-gated).
@@ -1146,7 +1104,7 @@ void main() {
       // the resumed _save races the discard's exit transition (the realistic timing).
       await tester.tap(find.widgetWithText(TextButton, 'Discard'));
       await tester.pump(); // let the discard pop start (transition begins)
-      fake.validateGate!.complete(); // _save resumes now, mid-transition
+      fake.saveGate!.complete(); // _save resumes now, mid-transition
       await tester.pump();
       await tester.pumpAndSettle();
 
@@ -1155,41 +1113,42 @@ void main() {
       expect(find.byType(EditorScreen), findsNothing, reason: 'the editor is gone (discarded)');
       expect(find.text('open'), findsOneWidget,
           reason: 'the parent route must survive: the resumed save must not pop a second time');
-      expect(fake.sawSave, isFalse,
-          reason: 'a discarded editor must not persist via the resumed save');
+      expect(fake.saveCount, 1, reason: 'the write already under way is not repeated');
+      expect(container.read(draftLibraryWritesProvider), 1,
+          reason: 'the write landed after the editor was left, so the library is told to relist');
     });
 
-    testWidgets('REPRO (edit path, tightest race): saved-draft Save in flight + back -> Discard',
+    testWidgets('REPRO (edit path): saved-draft Save in flight + back -> Discard',
         (tester) async {
-      // The SAVED-draft path is the worst case for the finding: after validate resolves there is NO
-      // metadata dialog, so the only async hop between resume and navigator.pop(true) is saveDto.
+      // The SAVED-draft path: there is NO metadata dialog, so once the lossy warning is accepted the
+      // only async hop between the write and navigator.pop(true) is saveDto itself.
       final fake = FakeRepo();
       final container = await pumpEditor(tester, fake); // saved draft (meta present, sourceWif set)
       container.read(draftEditorProvider.notifier).toggleTieupCell(1, 1); // dirty
       await tester.pump();
 
-      fake.validateGate = Completer<void>();
+      fake.saveGate = Completer<void>();
       await tester.tap(find.byIcon(Icons.save_outlined));
-      await tester.pump(); // _saving set; validate parks (lossy gate is AFTER validate, not reached)
+      await letAsyncSettle(tester);
+      await tester.tap(find.text('Save anyway')); // past the lossy warning
+      await letAsyncSettle(tester); // saveDto parks
+      expect(fake.saveCount, 1);
 
       await tester.tap(find.byType(BackButton));
       await letAsyncSettle(tester);
       expect(find.text('Leave without saving?'), findsOneWidget);
-      // Tightest possible race: complete the gate in the SAME turn as the Discard tap, BEFORE any
-      // pump, so the microtask resuming _save is queued right behind the imperative discard pop and
-      // the route's exit transition has not advanced at all.
-      // Realistic ordering: a real validateDto FFI resolves on a LATER event-loop turn, never
-      // synchronously inside the Discard tap handler. Pump the discard pop first, THEN resolve.
+      // Realistic ordering: a real saveDto resolves on a LATER event-loop turn, never synchronously
+      // inside the Discard tap handler. Pump the discard pop first, THEN resolve.
       await tester.tap(find.widgetWithText(TextButton, 'Discard'));
       await tester.pump(); // discard pop begins its exit transition
-      fake.validateGate!.complete(); // _save resumes on the next turn, mid-transition
+      fake.saveGate!.complete(); // _save resumes on the next turn, mid-transition
       await tester.pumpAndSettle();
 
       expect(find.text('open'), findsOneWidget,
           reason: 'parent route survives: no second pop from the resumed edit-path save');
       expect(find.byType(EditorScreen), findsNothing, reason: 'the editor is gone (discarded)');
-      expect(fake.sawSave, isFalse,
-          reason: 'the resumed save bailed at !mounted (saveCount stays 0) before persisting');
+      expect(fake.saveCount, 1, reason: 'the write already under way is not repeated');
+      expect(container.read(draftLibraryWritesProvider), 1);
     });
   });
 

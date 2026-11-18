@@ -1,8 +1,9 @@
-// M2 Phase-3.4 device proof: inline validation + Save error-gating against the REAL engine.
+// M2 Phase-3.4 device proof: inline validation against the REAL engine, and Save never asking.
 //
-// Proves the plan's claim end to end with real FFI: a dangling shaft is surfaced as an Error inline
-// (red) and warns at Save; a warp/weft count mismatch is a Warning (amber) that does NOT gate; a
-// clean draft shows nothing. The severities come from the actual ply-weave validate(), not a fake.
+// Proves end to end with real FFI: a dangling shaft is surfaced as an Error inline (red), and Save
+// goes straight on without any problem prompt (saving never checks for problems; readiness is
+// checked only when printing or sharing, ADR 0021); a warp/weft count mismatch is a Warning (amber);
+// a clean draft shows nothing. The severities come from the actual ply-weave validate(), not a fake.
 //
 //   flutter test integration_test/m3_validation_test.dart -d emulator-5554
 
@@ -123,14 +124,14 @@ void main() {
     expect(find.byIcon(Icons.error), findsNothing);
   });
 
-  testWidgets('DANGLING SHAFT: Error inline (red) AND Save warns (real FFI gate)', (tester) async {
+  testWidgets('DANGLING SHAFT: Error inline (red), and Save does not ask about it', (tester) async {
     final repo = DraftRepository();
     final issues = await repo.validateDto(danglingTieup());
     expect(issues.any((i) => i.isError && i.message.contains('treadle 1 ties shaft 5')), isTrue,
         reason: 'a dangling tie-up shaft is an Error');
 
     // Pump the full EditorScreen as a PUSHED route (so a pop is valid), load the dangling draft
-    // directly, and drive Save through the real engine gate.
+    // directly, and drive Save with the real engine behind it.
     final wif = await repo.resolveSaveWif(plainWeave(), null); // a valid WIF to open the editor
     final container = ProviderContainer(
       overrides: [
@@ -170,13 +171,16 @@ void main() {
     }
     expect(find.byIcon(Icons.error), findsWidgets, reason: 'the Error is shown inline');
 
-    // Tap Save: the gate re-validates via the real engine and warns. We STOP at the dialog (never
-    // confirm), so nothing is written to the device.
+    // Tap Save: this editor has no saved meta, so the save goes straight to the name prompt with no
+    // problem prompt before it. We STOP at the name prompt (never confirm), so nothing is written to
+    // the device.
     await tester.tap(find.byIcon(Icons.save_outlined));
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 30));
     }
-    expect(find.text('Save with problems?'), findsOneWidget,
-        reason: 'saving a draft with an Error warns first');
+    expect(find.text('Save pattern'), findsOneWidget,
+        reason: 'saving a draft with an Error goes straight on to naming it');
+    expect(find.byType(AlertDialog), findsOneWidget, reason: 'the name prompt is the only dialog');
+    expect(find.byIcon(Icons.error), findsWidgets, reason: 'the Error is still listed inline');
   });
 }

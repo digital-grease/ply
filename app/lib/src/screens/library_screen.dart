@@ -10,6 +10,7 @@ import '../data/draft_repository.dart';
 import '../data/library_backup.dart' show BackupCraft;
 import '../models/draft_meta.dart';
 import '../models/loom_type.dart';
+import '../state/editor_providers.dart' show draftLibraryWritesProvider;
 import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/loom_type_picker.dart';
@@ -333,6 +334,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // A draft the editor finished writing after it was left (a Discard while the write was under
+    // way) is listed once it lands; the editor popped without `true`, so nothing else refreshes.
+    ref.listen<int>(draftLibraryWritesProvider, (_, __) => _refresh());
     // Wrap the Scaffold in the FutureBuilder so the FAB can see the load state: an EMPTY library
     // shows a centered New-draft / Import call to action in _emptyState(), so suppress the FABs
     // there to avoid offering the same two actions twice. They return once a pattern exists.

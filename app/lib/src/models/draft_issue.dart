@@ -4,9 +4,9 @@
 // UI/state layers never touch generated symbols, the same isolation DraftDoc keeps). The
 // repository maps `ValidationIssueDto` -> [DraftIssue] at the wire boundary. The point of
 // carrying a real [IssueSeverity] enum (rather than M1's flattened "Error: ..." string) is so
-// the editor can color Errors red vs Warnings amber and gate Save on Errors. Each issue also
-// carries the engine's stable code, its place in words and a typed [DraftPlace] the editor can go
-// to (ADR 0021).
+// the editor can color Errors red vs Warnings amber, list them, and check at print or share
+// (saving never checks). Each issue also carries the engine's stable code, its place in words and a
+// typed [DraftPlace] the editor can go to (ADR 0021).
 
 /// Severity of a [DraftIssue]: the shared vocabulary (ADR 0021), domain twin of the wire
 /// `SeverityKind`. [info] is advice about a deliberate instruction (for example how to catch the
@@ -85,7 +85,8 @@ class DraftIssue {
     this.location,
   });
 
-  /// Error gates Save; Warning is advisory; Info is advice.
+  /// Error keeps a pattern from being ready to print or share (never from saving); Warning is
+  /// advisory; Info is advice.
   final IssueSeverity severity;
 
   /// Human-readable description, already formatted by the engine validator.

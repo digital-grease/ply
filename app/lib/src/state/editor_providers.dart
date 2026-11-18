@@ -25,6 +25,12 @@ final repositoryProvider = Provider<DraftRepository>((ref) {
   );
 });
 
+/// Bumped when the weaving editor finishes writing a draft after it has already been left (a
+/// Discard chosen while the write was under way). The write still lands, but the editor popped
+/// without `true`, so the weaving library listens to this to list the draft. An ordinary save pops
+/// `true` and the library refreshes on that instead.
+final draftLibraryWritesProvider = StateProvider<int>((ref) => 0);
+
 /// Pixels-per-intersection the ENGINE renders the drawdown at (internal raster pitch). The
 /// integrated view scales this bitmap to the on-screen pitch via RawImage; the engine never
 /// re-renders on zoom. Crispness only. (The editor's render is the [structuralDraft], so every
@@ -437,9 +443,8 @@ class ValidationController extends AutoDisposeAsyncNotifier<List<DraftIssue>> {
 }
 
 /// Whether the inline ValidationPanel is expanded to its full issue list (vs the one-line collapsed
-/// summary). Pure view chrome (ephemeral like [zoomCellProvider]), kept out of EditorState — it must
-/// survive a validate re-resolve AND be settable cross-widget from the Save-with-errors dialog's
-/// "Show me" action.
+/// summary). Pure view chrome (ephemeral like [zoomCellProvider]), kept out of EditorState: it must
+/// survive a validate re-resolve AND be settable cross-widget (the editor resets it on each load).
 final editorIssuesExpandedProvider = StateProvider<bool>((ref) => false);
 
 /// A place in the draft the editor was asked to show (ADR 0021): a validation finding's "Show". The

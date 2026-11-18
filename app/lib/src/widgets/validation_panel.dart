@@ -6,9 +6,9 @@
 // ZERO CHROME WHEN CLEAN. A clean draft (or a still-loading / errored validation) collapses to a
 // SizedBox.shrink — validation is ADVISORY, so the band never blinks a spinner or an error card; it
 // only appears when there are real issues. Collapsed to a one-line summary by default; tapping the
-// header (or the Save-with-errors dialog's "Show me") expands it to a bounded, scrollable list with
-// Errors sorted first. The band has INTRINSIC height (it is NOT inside the body's Expanded), so it
-// shrinks the drawdown viewport only when issues exist and never steals space from a clean draft.
+// header expands it to a bounded, scrollable list with Errors sorted first. The band has INTRINSIC
+// height (it is NOT inside the body's Expanded), so it shrinks the drawdown viewport only when issues
+// exist and never steals space from a clean draft.
 
 import 'dart:math' as math;
 

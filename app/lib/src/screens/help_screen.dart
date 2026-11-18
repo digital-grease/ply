@@ -220,7 +220,7 @@ const List<FaqSection> kFaq = [
     ),
     FaqEntry(
       "Will Ply stop me from saving if my pattern has problems?",
-      "No. In the weaving editor, errors prompt you with a confirmation before saving, but you can choose to save anyway, so nothing is ever locked behind a fix; warnings never block saving since they are only advisory. The one hard stop is an empty cloth: you need at least one end and one pick before a weave can be saved. The knitting editor saves without that prompt (problems stay listed in the validation band), and needs at least one row and stitch. In every editor, leaving with unsaved changes asks whether to save or discard them. Whether a pattern is ready to make or share is checked only when you print or share it, never when you save.",
+      "No. No editor asks about problems before saving, whatever errors or warnings a pattern has, so nothing is ever locked behind a fix. The problems stay listed where you saw them: the validation band in the weaving and knitting editors, the Checks tab of a tablet weaving band, and the list under the notation in a nalbinding project. The only hard stops are for an empty pattern: a weave needs at least one end and one pick, and a knitting pattern needs some rows and stitches in its chart, or a section. A first save asks for a name, and the weaving editor asks once before rewriting an imported WIF file it has to change. In every editor, leaving with unsaved changes asks whether to save or discard them. Whether a pattern is ready to make or share is checked only when you print or share it, never when you save.",
     ),
     FaqEntry(
       "How do undo, redo, and zoom work?",

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -102,7 +104,8 @@ void main() {
   });
 
   testWidgets('not feasible never gates saving', (tester) async {
-    final drafts = FakeRepo();
+    // Hold the write, so the "no dialog" check runs while the editor is still open.
+    final drafts = FakeRepo()..saveGate = Completer<void>();
     final plan = LoomPlan(loomId: floorLoom.id, loomName: 'Floor loom');
     await pumpEditorWithLooms(tester,
         drafts: drafts,
@@ -110,8 +113,12 @@ void main() {
         meta: metaWith(plan: plan));
     await tester.tap(find.byIcon(Icons.save_outlined));
     await letAsyncSettle(tester);
+    expect(drafts.saveCount, 1, reason: 'the write started at once');
+    expect(find.byType(EditorScreen), findsOneWidget, reason: 'still open while it writes');
+    expect(find.byType(AlertDialog), findsNothing, reason: 'no dialog asks before saving');
+    drafts.saveGate!.complete();
+    await letAsyncSettle(tester);
     expect(drafts.sawSave, isTrue);
-    expect(find.text('Save with problems?'), findsNothing);
     expect(drafts.capturedMeta!.loomPlan, plan, reason: 'an untouched choice is kept as it was');
   });
 

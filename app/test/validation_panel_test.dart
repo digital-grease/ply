@@ -111,8 +111,8 @@ void main() {
   });
 
   testWidgets('a thrown validation (AsyncError) renders zero chrome', (tester) async {
-    // The panel twin of the Save gate's fail-closed test: a validate throw shows nothing inline
-    // (the gate, not the advisory band, is what refuses the save).
+    // A validate throw shows nothing inline: the band is advisory, and saving never checks for
+    // problems (readiness is checked only when printing or sharing).
     await pumpPanel(tester, const [], fail: true);
     expect(find.byIcon(Icons.error), findsNothing);
     expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
@@ -156,7 +156,7 @@ void main() {
     expect(find.text('3 errors, 2 warnings'), findsOneWidget);
     expect(find.text('E1'), findsNothing, reason: 'collapsed shows the summary, not each issue');
 
-    // Expand via the shared provider (the Save dialog's "Show me" uses the same path).
+    // Expand via the shared provider (the header tap uses the same path).
     c.read(editorIssuesExpandedProvider.notifier).state = true;
     await tester.pump();
 

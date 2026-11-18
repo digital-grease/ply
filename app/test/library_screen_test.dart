@@ -12,6 +12,7 @@ import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/models/loom_type.dart';
 import 'package:ply/src/screens/editor_screen.dart';
 import 'package:ply/src/screens/library_screen.dart';
+import 'package:ply/src/state/draft_editor_notifier.dart';
 import 'package:ply/src/state/editor_providers.dart';
 
 // Host coverage for the Phase 5.2 Library changes: the two-FAB layout (distinct hero tags), the
@@ -59,7 +60,28 @@ DraftEntry _entry(String id) => DraftEntry(
       ),
     );
 
-Future<void> pumpLibrary(WidgetTester tester, FakeLibraryRepo repo) async {
+/// A library whose first save of a new draft waits on [gate], then lists the draft.
+class SlowSaveLibraryRepo extends FakeLibraryRepo {
+  SlowSaveLibraryRepo(super.entries);
+
+  final Completer<void> gate = Completer<void>();
+  int saves = 0;
+
+  @override
+  Future<String> saveDto(
+    DraftDoc doc, {
+    required DraftMeta meta,
+    String? id,
+    String? sourceWif,
+  }) async {
+    saves++;
+    await gate.future;
+    entries.add(DraftEntry(id: 'new', wifPath: '/tmp/new.wif', meta: meta));
+    return 'new';
+  }
+}
+
+Future<ProviderContainer> pumpLibrary(WidgetTester tester, FakeLibraryRepo repo) async {
   final container = ProviderContainer(
     overrides: [repositoryProvider.overrideWithValue(repo)],
   );
@@ -71,6 +93,15 @@ Future<void> pumpLibrary(WidgetTester tester, FakeLibraryRepo repo) async {
     ),
   );
   await tester.pumpAndSettle();
+  return container;
+}
+
+/// Pump a bounded number of frames (the editor's loading spinner never settles).
+Future<void> pumpFrames(WidgetTester tester) async {
+  await tester.pump();
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 30));
+  }
 }
 
 void main() {
@@ -136,5 +167,51 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 30));
     expect(find.byType(EditorScreen), findsOneWidget);
+  });
+
+  testWidgets('a new draft whose write lands after a Discard is still listed', (tester) async {
+    // Discard chosen while the first save's write is under way pops the editor without `true`,
+    // but the write still lands; the library must list the draft once it does.
+    final repo = SlowSaveLibraryRepo([_entry('a')]);
+    final container = await pumpLibrary(tester, repo);
+    await tester.tap(find.widgetWithText(FloatingActionButton, 'New draft'));
+    await tester.pumpAndSettle(); // the loom-type picker
+    await tester.tap(find.text('Jack (floor loom)'));
+    await pumpFrames(tester);
+    // Grow the blank draft to one cell and edit it, so it is saveable and has unsaved work.
+    final grown = DraftDoc.blank(shafts: 4, treadles: 4).copyWith(
+      threading: const [
+        [1],
+      ],
+      drive: DraftTreadled(tieup: const [
+        [1],
+      ], treadling: const [
+        [1],
+      ]),
+      warpColors: const [0],
+      weftColors: const [0],
+    );
+    container.read(draftEditorProvider.notifier).load(grown);
+    container.read(draftEditorProvider.notifier).toggleTieupCell(1, 2);
+    await pumpFrames(tester);
+
+    await tester.tap(find.byIcon(Icons.save_outlined));
+    await pumpFrames(tester);
+    await tester.enterText(find.widgetWithText(TextField, 'Name'), 'Late scarf');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await pumpFrames(tester); // the write parks on the gate
+    expect(repo.saves, 1);
+
+    await tester.tap(find.byType(BackButton));
+    await pumpFrames(tester);
+    await tester.tap(find.widgetWithText(TextButton, 'Discard'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EditorScreen), findsNothing, reason: 'Discard left the editor at once');
+    expect(find.text('Late scarf'), findsNothing, reason: 'the write has not landed yet');
+
+    repo.gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Late scarf'), findsOneWidget, reason: 'listed once the write lands');
+    expect(find.text('Pattern a'), findsOneWidget);
   });
 }

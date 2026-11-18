@@ -190,9 +190,10 @@ fn render_region_within(
 }
 
 /// Validate an editor `DraftDto`; returns one structured issue per problem (empty = clean),
-/// each carrying its `SeverityKind` so the editor can color the gutter and gate Save on
-/// Errors. `Err` only if the DTO can't convert back to a `Draft`. Replaces M1's
-/// `Vec<String>` (which flattened `Severity` into the message).
+/// each carrying its `SeverityKind` so the editor can color the gutter and list the problems.
+/// Saving never asks: errors are listed, and checked when the draft is printed or shared. `Err`
+/// only if the DTO can't convert back to a `Draft`. Replaces M1's `Vec<String>` (which flattened
+/// `Severity` into the message).
 pub fn validate_draft(dto: DraftDto) -> Result<Vec<ValidationIssueDto>, String> {
     let draft = Draft::try_from(dto)?;
     Ok(weave::validate::validate(&draft)

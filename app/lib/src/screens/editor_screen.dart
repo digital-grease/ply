@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/library_backup.dart' show BackupCraft;
 import '../models/double_weave_layers.dart';
 import '../models/draft_doc.dart';
-import '../models/draft_issue.dart';
 import '../models/draft_meta.dart';
 import '../models/loom_type.dart';
 import '../print/print_export.dart' show PdfExportText;
@@ -111,9 +110,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
 
   /// True while the leave-guard flow is open (the "Leave without saving?" dialog and, on the Save
   /// branch, the nested save). The back path is NOT a disable-able button, so a second system back
-  /// fired during the dialog — or during the nested save's pre-modal validate FFI hop, when no
-  /// barrier is on screen and canPop is still false — would otherwise re-enter [_onLeave] and stack
-  /// a second dialog / pop the wrong route. This flag drops that re-entrant back. Twin of [_saving].
+  /// fired during the dialog (or during the nested save's write, when no barrier is on screen and
+  /// canPop is still false) would otherwise re-enter [_onLeave] and stack a second dialog or pop the
+  /// wrong route. This flag drops that re-entrant back. Twin of [_saving].
   bool _leaving = false;
 
   /// True once SOMETHING has begun popping the editor (a successful save OR a Discard). Both exit
@@ -148,8 +147,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       if (!mounted) return;
       ref.read(draftEditorProvider.notifier).load(doc, sourceWif: source);
       // Reset the inline-panel chrome for this fresh editor session: editorIssuesExpandedProvider is
-      // a global StateProvider, so a previous draft's "Show me"/expanded state would otherwise bleed
-      // into this one.
+      // a global StateProvider, so a previous draft's expanded state would otherwise bleed into this
+      // one.
       ref.read(editorIssuesExpandedProvider.notifier).state = false;
       // Re-arm the open-time auto-fit so THIS draft sizes its pitch to the viewport (a prior draft's
       // manual zoom would otherwise stick).
@@ -194,44 +193,22 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     setState(() => _saving = true);
     try {
       final repo = ref.read(repositoryProvider);
-      // Capture ONCE: this exact draft instance is the one we validate AND persist, so "what was
-      // checked" can never diverge from "what was saved".
+      // Capture ONCE: this exact draft instance is the one we persist.
       final state = ref.read(draftEditorProvider);
 
-      // GATE 0 — non-empty cloth. A from-scratch draft starts 0x0 (the editor shows a placeholder
-      // until it's grown via the dimensions bar). An empty draft validates clean but isn't a
-      // meaningful library entry, and its 0-area drawdown can't be rendered into a thumbnail. Refuse
-      // rather than persist a degenerate cloth. (The repo's decode also fails fast on 0-area as a
-      // backstop, but blocking here gives the weaver a clear reason instead of a swallowed save.)
+      // The one hard stop: an empty cloth. A from-scratch draft starts 0x0 (the editor shows a
+      // placeholder until it's grown via the dimensions bar). An empty draft isn't a meaningful
+      // library entry, and its 0-area drawdown can't be rendered into a thumbnail. Refuse rather
+      // than persist a degenerate cloth. (The repo's decode also fails fast on 0-area as a backstop,
+      // but blocking here gives the weaver a clear reason instead of a swallowed save.)
+      //
+      // Saving never checks for problems (ADR 0021): a draft with errors saves like any other, and
+      // its problems stay listed in the validation band. Whether a pattern is ready to make or share
+      // is checked only when it is printed or shared.
       if (state.draft.ends == 0 || state.draft.picks == 0) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Add at least one end and one pick before saving.')));
         return;
-      }
-
-      // GATE 1 — structural Errors (correctness). Re-validate the EXACT draft fresh rather than
-      // reading the async [validationProvider] (which may be stale/in-flight at the tap), so an Error
-      // from the most recent edit can't be missed. Fail-CLOSED: if the check itself fails, refuse to
-      // save rather than risk persisting a mis-rendering cloth. Warnings never gate (advisory only).
-      final List<DraftIssue> issues;
-      try {
-        issues = await repo.validateDto(state.draft);
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Could not check the pattern for problems; not saved.')));
-        return;
-      }
-      // Also bail if a Discard fired during the validate FFI hop (the back path stays live during
-      // this non-modal await). _exiting means the editor is already popping; continuing would show a
-      // stray gate dialog or persist a draft the user just discarded.
-      if (!mounted || _exiting) return;
-      final errorCount = issues.where((i) => i.isError).length;
-      if (errorCount > 0) {
-        final proceed = await _confirmSaveWithErrors(errorCount);
-        // Cancel, "Show me" (which expands the panel), or unmounted -> abort before any write. The
-        // lossy gate below is never reached, and _warnedLossy stays untouched.
-        if (proceed != true || !mounted) return;
       }
 
       // Dual path. A cosmetically-clean draft saves its imported WIF BYTE-IDENTICAL (lossless).
@@ -246,11 +223,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         _warnedLossy = true;
       }
 
-      // LATEST-WINS (mirrors _convertToLiftplan / DimensionsBar._resize). An edit can land during the
-      // gate's validate FFI hop — the canvas + dimensions bar stay live until a modal opens, and
-      // _saving disables only the Save button — making the captured `state` stale. Persisting it
-      // would drop that edit AND could pick the wrong save path (its dirtyStructural/sourceWif are
-      // from the stale snapshot). Bail so the user re-saves on the current draft.
+      // LATEST-WINS (mirrors _convertToLiftplan / DimensionsBar._resize). Belt and braces: the lossy
+      // dialog above is modal, so no tap reaches the canvas while it is open, but if an edit did land
+      // across that await the captured `state` is stale. Persisting it would drop that edit AND could
+      // pick the wrong save path (its dirtyStructural/sourceWif are from the stale snapshot). Bail so
+      // the user re-saves on the current draft.
       if (!mounted || !identical(ref.read(draftEditorProvider).draft, state.draft)) return;
 
       // METADATA. A saved/imported draft reuses its existing sidecar meta (overwrite in place); a
@@ -297,9 +274,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         docToSave = state.draft.copyWith(name: input.name);
       }
       final messenger = ScaffoldMessenger.of(context);
+      // Captured before the write: if the editor is left while it is under way, `ref` is gone by
+      // the time it lands.
+      final container = ProviderScope.containerOf(context, listen: false);
       final sourceWif = reSerializing ? null : state.sourceWif;
       await repo.saveDto(docToSave, meta: meta, id: widget.id, sourceWif: sourceWif);
-      if (!mounted || _exiting) return;
+      if (!mounted || _exiting) {
+        // Left (a Discard) while the write was under way: the draft is saved all the same, but the
+        // caller saw no `true`, so tell the weaving library to list it again.
+        container.read(draftLibraryWritesProvider.notifier).state++;
+        return;
+      }
       // Feedback ONCE. An edit pops back to the preview (which shows nothing), so the editor owns the
       // confirmation. A from-scratch draft (meta == null) pops to the Library, which shows its own
       // "Saved to library." — staying silent here avoids a double toast and matches the import path.
@@ -324,9 +309,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   ///
   /// - Discard: an UNCONDITIONAL `Navigator.pop()` (not maybePop, so PopScope does not re-intercept)
   ///   with NO result, so callers see "nothing saved" (no library refresh).
-  /// - Save: delegate to [_save], which runs the full gated flow (metadata prompt / error + lossy
-  ///   gates / latest-wins) and pops `true` ONLY on success — a cancelled or gated save simply
-  ///   leaves us in the editor, which is the right outcome for a back that the user backed out of.
+  /// - Save: delegate to [_save], which runs the full save flow (empty-cloth stop, lossy warning,
+  ///   latest-wins, metadata prompt) and pops `true` ONLY on success. A cancelled or refused save
+  ///   simply leaves us in the editor, which is the right outcome for a back that the user backed
+  ///   out of.
   /// - Keep editing (or a dismissed dialog): stay put.
   ///
   /// The `result` of the blocked pop is unused: the only pop we ever want to honor here is decided
@@ -335,7 +321,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   Future<void> _onLeave(bool didPop, bool? _) async {
     if (didPop) return;
     // Re-entrancy: a second back during the leave dialog (or during the Save branch's nested save,
-    // whose pre-modal validate hop leaves no barrier on screen) must not stack another dialog. Set
+    // whose write leaves no barrier on screen) must not stack another dialog. Set
     // _leaving synchronously BEFORE the first await so the second back returns immediately. NOTE we
     // do NOT gate on _saving: a back DURING an in-flight AppBar save SHOULD still open the prompt;
     // the double-pop that could follow is handled by the shared _exiting latch in _popEditor.
@@ -348,7 +334,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         case LeaveAction.discard:
           _popEditor(); // single-pop latched; no result -> callers see "nothing saved"
         case LeaveAction.save:
-          await _save(); // pops true on success; a gated/cancelled save just leaves us here
+          await _save(); // pops true on success; a refused/cancelled save just leaves us here
         case LeaveAction.keepEditing:
           break;
       }
@@ -390,42 +376,6 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Save anyway'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Confirm saving a draft that has structural Errors (it will render incorrectly). Returns true to
-  /// proceed. "Show me" expands the inline validation panel and ABORTS the save (returns false) so
-  /// the user can read which problems they're consenting to. Shown every save (the error set changes
-  /// as the user edits, and the consequence is severe), never suppressed once-per-session.
-  Future<bool?> _confirmSaveWithErrors(int count) {
-    final problems = count == 1 ? '1 problem' : '$count problems';
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Save with problems?'),
-        content: Text(
-          'This pattern has $problems that make it render incorrectly (some threads show as '
-          'blank). You can fix them first, or save anyway.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              // Open the panel to the full issue list, then abort the save so the user reads them.
-              ref.read(editorIssuesExpandedProvider.notifier).state = true;
-              Navigator.pop(ctx, false);
-            },
-            child: const Text('Show me'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
