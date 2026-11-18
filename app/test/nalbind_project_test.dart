@@ -268,10 +268,55 @@ void main() {
       await repo.saveProject(const NalbindProject(name: 'Hood', notes: 'v2'), id: id);
       final after = DraftMeta.fromJson(jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>);
       expect(after.name, 'Hood');
-      expect(after.notes, 'v2');
       expect(after.author, 'Ada');
       expect(after.savedAt, DateTime.utc(2020));
       expect(after.extra['futureKey'], [1, 2, 3]);
+      expect((await repo.readProject(id)).notes, 'v2');
+    });
+
+    test('the notes are saved in the project file only, never copied into the sidecar', () async {
+      final notes = 'Cast on 32 loops. ${'Round by round. ' * 10}';
+      final id = await repo.saveProject(NalbindProject(name: 'Hat', notes: notes));
+      final path = '${dir.path}/$id.json';
+      Map<String, dynamic> sidecarNow() =>
+          jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
+      expect(sidecarNow()['notes'], '');
+      expect((await repo.readProject(id)).notes, notes);
+      await repo.saveProject(NalbindProject(name: 'Hat', notes: '$notes More.'), id: id);
+      expect(sidecarNow()['notes'], '');
+      expect((await repo.readProject(id)).notes, '$notes More.');
+    });
+
+    test('an earlier build\'s copy of the notes in the sidecar is dropped on the next open or save',
+        () async {
+      // Earlier builds copied the notes into the sidecar on every save: over 1 MB of them made the
+      // sidecar too large for a backup. Every other key stays.
+      final big = 'n' * (1024 * 1024 + 10);
+      Future<String> seed() async {
+        final id = await repo.saveProject(NalbindProject(name: 'Old', notes: big));
+        final path = '${dir.path}/$id.json';
+        final sidecar = jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
+        File(path).writeAsStringSync(
+            jsonEncode({...sidecar, 'notes': big, 'author': 'Ada', 'futureKey': true}));
+        return id;
+      }
+
+      Map<String, dynamic> sidecarOf(String id) =>
+          jsonDecode(File('${dir.path}/$id.json').readAsStringSync()) as Map<String, dynamic>;
+
+      final opened = await seed();
+      await repo.touchOpened(opened);
+      expect(sidecarOf(opened)['notes'], '');
+      expect(sidecarOf(opened)['author'], 'Ada');
+      expect(sidecarOf(opened)['futureKey'], true);
+      expect(File('${dir.path}/$opened.json').lengthSync(), lessThan(1024));
+      expect((await repo.readProject(opened)).notes, big, reason: 'the project keeps its notes');
+
+      final saved = await seed();
+      await repo.saveProject(await repo.readProject(saved), id: saved);
+      expect(sidecarOf(saved)['notes'], '');
+      expect(sidecarOf(saved)['futureKey'], true);
+      expect((await repo.readProject(saved)).notes, big);
     });
 
     test('a sidecar without its .plynal body is skipped (atomic save invariant)', () async {

@@ -1,7 +1,8 @@
 // Portable backup and restore of the on-device library (roadmap M7-07; see the backup ADR).
 //
 // A backup is one `.plybackup` file: an UNCOMPRESSED POSIX ustar archive (see `ustar.dart`) whose
-// first entry is `manifest.json`, followed by every project's files copied VERBATIM from the library:
+// first entry is `manifest.json`, followed by every project's files copied VERBATIM from the
+// library (but for the old copy of a nalbinding project's notes in its sidecar, left out):
 //
 //   drafts/<id>.wif + drafts/<id>.json
 //   knits/<id>.plyknit + knits/<id>.json + knits/<id>.plyknit.v<n>.bak (format-upgrade backups)
@@ -20,15 +21,19 @@
 // paths, `..`, backslashes, duplicates, links or devices); every entry listed in the manifest with
 // its size and SHA-256, and every SHA-256 verified; no newer backup schema; and each project's files
 // checked (a project newer than this build is refused, with the reason), as are the app settings
-// (offered only when they parse as the settings model). The version a pattern, project or band (or
-// a pattern's upgrade backup) states is read by the engine from the file's version keys alone, never
-// by decoding the file here, so a newer file is refused before any of it is decoded. A pattern or
-// nalbinding project whose version this build reads then has its JSON values counted by the engine,
-// also without decoding it, and one with more values than any the app can make is refused as too
-// complex to check: a guard against files crafted to blow up in memory when decoded, which bounds
-// that memory only roughly (to about 900 MiB for a pattern, 65 MiB for a project, measured). Then
-// the file is read in full: by the engine, or for a nalbinding project (whose document is the app's)
-// by the Dart reader on a background isolate. A preview is built only once every check has passed,
+// (offered only when they parse as the settings model). The manifest and each sidecar, which are
+// decoded here, first have their JSON values counted (`json_count.dart`) against a limit far above
+// what Ply writes: many tiny values decode to far more memory than their text. The version a
+// pattern, project or band (or a pattern's upgrade backup) states is read by the engine from the
+// file's version keys alone, never by decoding the file here, so a newer file is refused before any
+// of it is decoded. A pattern or nalbinding project whose version this build reads then has its
+// JSON values counted by the engine, also without decoding it, and one with more values than any
+// the app can make is refused as too complex to check: a guard against files crafted to blow up in
+// memory when decoded, which bounds that memory only roughly (measured: about 144 MiB for a pattern
+// at the current version, which the engine decodes into its own types, 900 MiB for an older one,
+// which it decodes into a generic tree for the migrations, and 65 MiB for a project). Then the file
+// is read in full: by the engine, or for a nalbinding project (whose document is the app's) by the
+// Dart reader on a background isolate. A preview is built only once every check has passed,
 // and nothing in the library is written until the user confirms it. The commit stages every file
 // inside the documents directory, then moves each project into place with its sidecar LAST (the
 // library lists sidecars), applies the app settings only if the user ticked them, and on any failure
@@ -59,6 +64,7 @@ import '../models/native_format.dart';
 import '../models/project_materials.dart';
 import '../models/weave_plan.dart' show WeavePlan;
 import 'app_settings_repository.dart';
+import 'json_count.dart';
 import 'loom_repository.dart' show LoomFileException, LoomFileProblem;
 import 'materials_repository.dart'
     show MaterialLibrary, MaterialsFileException, MaterialsFileProblem;
@@ -218,7 +224,10 @@ class BackupLimits {
     this.maxEntries = 10000,
     this.maxPathLength = 200,
     this.maxManifestBytes = 4 * _mib,
+    this.maxManifestValues = 250000,
     this.maxSidecarBytes = _mib,
+    this.maxSidecarValues = 200000,
+    this.maxSidecarDepth = 64,
     this.maxFileBytes = 64 * _mib,
     this.maxSettingsBytes = 64 * 1024,
     this.maxLoomsBytes = _mib,
@@ -246,8 +255,33 @@ class BackupLimits {
   /// The largest manifest.
   final int maxManifestBytes;
 
+  /// The most JSON values a manifest may have ([countJsonValues]), counted before it is decoded:
+  /// many tiny values decode to far more memory than their text (4 MB of `{}` to over 330 MB).
+  /// Ply writes 13 plus 11 a file (7 for the settings, looms, materials and swatch photos), so at
+  /// most 110,002 at [maxEntries]; this leaves room for 24 a file, six more keys a file than Ply
+  /// writes. At the limit the costliest manifest (empty objects) decodes to about 64 MB.
+  final int maxManifestValues;
+
   /// The largest sidecar.
   final int maxSidecarBytes;
+
+  /// The most JSON values a sidecar may have, counted before it is decoded (see
+  /// [maxManifestValues]). The largest sidecar Ply writes has about 7,200 (every material and
+  /// swatch linked, a warp and weft plan, a loom plan): this is over 25 times that, for keys a
+  /// later build adds. Ply's sidecars average about 11 bytes a value, and any whose values average
+  /// over 5.3 meets [maxSidecarBytes] first; only a file of tiny values (`{}`, `0`) meets this. At
+  /// the limit the costliest sidecar decodes to about 64 MB (a 1 MB one of empty objects to about
+  /// 100 MB), the same budget as the value guard of a nalbinding project; one with more than
+  /// [LibraryBackup.inlineSidecarValues] is decoded on a background isolate. A backup refuses to
+  /// carry a sidecar past it, and a restore refuses that project alone.
+  final int maxSidecarValues;
+
+  /// The deepest nesting of lists and objects a sidecar may have on restore ([measureJson]); past
+  /// it, or with a number too large for a double, the project is refused as too complex, alone.
+  /// The deepest sidecar Ply writes nests 4 levels (a warp and weft plan's override, a material
+  /// link); decoding takes any depth, but comparing and rewriting a sidecar encodes it again, which
+  /// recurses and refuses infinity (`jsonEncode` overflows the stack at a few thousand levels).
+  final int maxSidecarDepth;
 
   /// The largest native file, upgrade backup or photo.
   final int maxFileBytes;
@@ -272,6 +306,12 @@ enum BackupProblem {
   libraryTooLarge,
   libraryTooManyFiles,
   fileTooLarge,
+
+  /// A sidecar with more JSON values than a restore checks ([BackupLimits.maxSidecarValues]).
+  fileTooComplex,
+
+  /// A sidecar that could not be read from the device (permissions, a disk error).
+  fileUnreadable,
   libraryChanged,
   // Exporting one project.
   projectNotFound,
@@ -297,7 +337,8 @@ class BackupException implements Exception {
   /// Diagnostic only, never the main message.
   final String? detail;
 
-  /// The project a [BackupProblem.fileTooLarge] is about.
+  /// The project a [BackupProblem.fileTooLarge], [BackupProblem.fileTooComplex] or
+  /// [BackupProblem.fileUnreadable] is about.
   final String? projectName;
 
   /// The limit (bytes, or files) that was exceeded.
@@ -311,6 +352,10 @@ class BackupException implements Exception {
           'Your library has too many files for one backup (over ${limit ?? 0}).',
         BackupProblem.fileTooLarge =>
           'A file in "${projectName ?? ''}" is too large to back up (over ${formatBytes(limit ?? 0)}).',
+        BackupProblem.fileTooComplex =>
+          'A file in "${projectName ?? ''}" is too complex to back up.',
+        BackupProblem.fileUnreadable =>
+          'A file in "${projectName ?? ''}" could not be read, so it cannot be backed up.',
         BackupProblem.libraryChanged =>
           'Your library changed while the backup was being made. Try again.',
         BackupProblem.projectNotFound => 'This project is no longer in your library.',
@@ -434,10 +479,15 @@ class BackupManifest {
       Uint8List.fromList(utf8.encode(const JsonEncoder.withIndent(' ').convert(toJson())));
 
   /// Parse and check a manifest. Throws a [BackupException]: [BackupProblem.notABackup] when it is
-  /// not a Ply backup manifest at all, [BackupProblem.newerBackup] for a newer schema (checked before
-  /// anything else is read), [BackupProblem.unsafe] for a path outside the library layout or a
-  /// duplicate, and [BackupProblem.damaged] for any other malformed field.
+  /// not a Ply backup manifest at all (or has more JSON values than
+  /// [BackupLimits.maxManifestValues], counted before anything is decoded),
+  /// [BackupProblem.newerBackup] for a newer schema (checked before any other field is read),
+  /// [BackupProblem.unsafe] for a path outside the library layout or a duplicate, and
+  /// [BackupProblem.damaged] for any other malformed field.
   static BackupManifest parse(Uint8List bytes, BackupLimits limits) {
+    if (!jsonValuesWithin(bytes, limits.maxManifestValues)) {
+      throw const BackupException(BackupProblem.notABackup, detail: 'manifest has too many values');
+    }
     final Object? json;
     try {
       json = jsonDecode(utf8.decode(bytes));
@@ -545,7 +595,10 @@ class BackupFile {
     required this.sha256,
     required this.craft,
     required this.projectId,
-  });
+    this.bytes,
+    this.sourceSize,
+    this.sourceSha256,
+  }) : assert((bytes == null) == (sourceSha256 == null) && (bytes == null) == (sourceSize == null));
 
   final String archivePath;
   final String sourcePath;
@@ -553,6 +606,17 @@ class BackupFile {
   final String sha256;
   final BackupCraft craft;
   final String projectId;
+
+  /// What the backup carries for this file when it is not the file's bytes on disk: a nalbinding
+  /// sidecar without the old copy of the project's notes (see [LibraryBackup.sidecarNotesIgnored]).
+  /// Its file is still read again when the backup is written and must be [sourceSize] bytes with
+  /// [sourceSha256], as planned, or the backup stops (the library changed). Null (every other
+  /// file): the file itself is read again and checked against [sha256].
+  final Uint8List? bytes;
+
+  /// The size and SHA-256 (lowercase hex) of the file on disk when [bytes] stands in for it.
+  final int? sourceSize;
+  final String? sourceSha256;
 }
 
 /// The app settings a full backup can carry: the `app_settings.json` it writes, encoded the way
@@ -1262,26 +1326,18 @@ class LibraryBackup {
   }
 
   /// The files of project [id] of [craft] (from its folder's [names]), hashed, sidecar last, or null
-  /// when the library would not list it (no native file, or a sidecar it cannot read). Throws
-  /// [BackupProblem.fileTooLarge] for a file over its limit.
+  /// when the library would not list it (no native file, or a sidecar file that is not a sidecar).
+  /// Throws [BackupProblem.fileTooLarge] or [BackupProblem.fileTooComplex] for a file over its
+  /// limit, and [BackupProblem.fileUnreadable] for a sidecar that cannot be read (see
+  /// [_sidecarForBackup]).
   Future<({List<BackupFile> files, int photos, String name})?> _collectProject(
       BackupCraft craft, String id, Map<String, FileSystemEntity> names) async {
     final native = names['$id.${craft.nativeExtension}'];
     final sidecar = names['$id.json'];
     if (native is! File || sidecar is! File) return null;
-    final String name;
-    try {
-      if (await sidecar.length() > limits.maxSidecarBytes) {
-        throw BackupException(BackupProblem.fileTooLarge,
-            projectName: id, limit: limits.maxSidecarBytes);
-      }
-      final json = jsonDecode(await sidecar.readAsString());
-      name = DraftMeta.fromJson(json as Map<String, dynamic>).name;
-    } on BackupException {
-      rethrow;
-    } catch (_) {
-      return null; // an unreadable sidecar: the library does not list it either
-    }
+    final carried = await _sidecarForBackup(craft, id, sidecar);
+    if (carried == null) return null; // not a sidecar: the library does not list it either
+    final name = carried.name;
     final layoutFiles = <(LibraryPath, File)>[
       (LibraryPath._(craft, id, BackupFileRole.native), native),
     ];
@@ -1314,7 +1370,6 @@ class LibraryBackup {
       }
       photos = found.length;
     }
-    layoutFiles.add((LibraryPath._(craft, id, BackupFileRole.sidecar), sidecar));
 
     final files = <BackupFile>[];
     for (final (layout, file) in layoutFiles) {
@@ -1335,7 +1390,122 @@ class LibraryBackup {
         projectId: id,
       ));
     }
+    // The sidecar last, as the bytes already read (and checked) for its name.
+    final rewritten = carried.source != null;
+    files.add(BackupFile(
+      archivePath: LibraryPath._(craft, id, BackupFileRole.sidecar).pathFor(id),
+      sourcePath: sidecar.path,
+      size: carried.bytes.length,
+      sha256: _hexSha256(carried.bytes),
+      craft: craft,
+      projectId: id,
+      bytes: rewritten ? carried.bytes : null,
+      sourceSize: carried.source?.size,
+      sourceSha256: carried.source?.sha256,
+    ));
     return (files: files, photos: photos, name: name);
+  }
+
+  /// The sidecar of project [id] of [craft] as a backup carries it, with the project's name and,
+  /// when it is carried rewritten, the size and SHA-256 of the file on disk ([source]). Null when
+  /// the file is not a sidecar (not UTF-8, not JSON, not an object): the library does not list it
+  /// either. Throws [BackupProblem.fileTooLarge] or [BackupProblem.fileTooComplex] for one a
+  /// restore would refuse, and [BackupProblem.fileUnreadable] (naming the project) when the device
+  /// cannot read it. Anything else (no memory, an isolate that cannot start) is thrown as it is:
+  /// the backup fails rather than leave the project out.
+  ///
+  /// It is carried byte for byte, except a nalbinding sidecar holding a copy of the project's notes
+  /// (see [sidecarNotesIgnored]): earlier builds wrote that copy on every save, so notes of about a
+  /// megabyte made the sidecar too large for any backup. It is carried with `notes` empty, as a
+  /// save now writes it (every other key kept, with its value and in its place), and is read up to
+  /// the size of a document for that, on a background isolate when it is over the sidecar limit.
+  Future<({String name, Uint8List bytes, ({int size, String sha256})? source})?>
+      _sidecarForBackup(BackupCraft craft, String id, File sidecar) async {
+    final dropNotes = sidecarNotesIgnored(craft);
+    final readLimit = dropNotes ? limits.maxFileBytes : limits.maxSidecarBytes;
+    final Uint8List bytes;
+    try {
+      if (await sidecar.length() > readLimit) {
+        throw BackupException(BackupProblem.fileTooLarge,
+            projectName: await _nameAtHead(sidecar) ?? id, limit: limits.maxSidecarBytes);
+      }
+      bytes = await sidecar.readAsBytes();
+    } on FileSystemException catch (e) {
+      throw BackupException(BackupProblem.fileUnreadable,
+          projectName: await _nameAtHead(sidecar) ?? id, detail: '${sidecar.path}: $e');
+    }
+    final read = bytes.length > limits.maxSidecarBytes
+        ? await _prepareSidecarInBackground(bytes, dropNotes)
+        : _prepareSidecar(bytes, dropNotes);
+    if (read == null) return null;
+    final carried = read.rewritten ?? bytes;
+    if (carried.length > limits.maxSidecarBytes) {
+      throw BackupException(BackupProblem.fileTooLarge,
+          projectName: read.name, limit: limits.maxSidecarBytes);
+    }
+    if (!jsonValuesWithin(carried, limits.maxSidecarValues)) {
+      throw BackupException(BackupProblem.fileTooComplex, projectName: read.name);
+    }
+    return (
+      name: read.name,
+      bytes: carried,
+      source: read.rewritten == null
+          ? null
+          : (size: bytes.length, sha256: await _hashBytes(bytes)),
+    );
+  }
+
+  /// The project name at the head of a sidecar too large to read, for the message that refuses it:
+  /// Ply writes `name` first, so the first 4 KB hold it. Null when they do not.
+  static Future<String?> _nameAtHead(File sidecar) async {
+    try {
+      final head = BytesBuilder(copy: false);
+      await for (final chunk in sidecar.openRead(0, 4096)) {
+        head.add(chunk);
+      }
+      final text = utf8.decode(head.takeBytes(), allowMalformed: true);
+      final m = RegExp(r'"name"\s*:\s*("(?:[^"\\]|\\.)*")').firstMatch(text);
+      final name = m == null ? null : jsonDecode(m.group(1)!);
+      return name is String && name.trim().isNotEmpty ? name : null;
+    } catch (_) {
+      return null; // only the message is at stake: it names the id instead
+    }
+  }
+
+  /// [_prepareSidecar] on a background isolate.
+  static Future<({String name, Uint8List? rewritten})?> _prepareSidecarInBackground(
+          Uint8List bytes, bool dropNotes) =>
+      Isolate.run(() => _prepareSidecar(bytes, dropNotes), debugName: 'sidecar notes');
+
+  /// The name in a sidecar's [bytes], and, with [dropNotes], the sidecar with a non-empty `notes`
+  /// set to empty (null when there is nothing to drop). Null when [bytes] is not a sidecar (not
+  /// UTF-8 or JSON: a [FormatException]; not an object: a [TypeError]), the files the library
+  /// listing skips too.
+  static ({String name, Uint8List? rewritten})? _prepareSidecar(Uint8List bytes, bool dropNotes) {
+    final Map<String, dynamic> json;
+    final String name;
+    try {
+      json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      name = DraftMeta.fromJson(json).name;
+    } on FormatException {
+      return null;
+    } on TypeError {
+      return null;
+    }
+    if (!dropNotes || !json.containsKey('notes') || json['notes'] == '') {
+      return (name: name, rewritten: null);
+    }
+    json['notes'] = '';
+    try {
+      return (name: name, rewritten: Uint8List.fromList(utf8.encode(jsonEncode(json))));
+    } on JsonUnsupportedObjectError {
+      // A number too large for a double (decoded as infinity) cannot be written again: no Ply
+      // build wrote one. Carried as it is, within the sidecar's limit; past it, refused by name.
+      return (name: name, rewritten: null);
+    } on StackOverflowError {
+      // Nesting thousands of levels deep, which no Ply build wrote: the same.
+      return (name: name, rewritten: null);
+    }
   }
 
   /// The app settings in effect as the `app_settings.json` a backup writes, or null when there is no
@@ -1387,6 +1557,16 @@ class LibraryBackup {
   /// variant), so Ply never hands out a file it would refuse to restore.
   BackupPlan _checked(BackupPlan plan) {
     final largest = plan.withSettings(true);
+    // Within the entry limit the manifest is always within its value limit (see
+    // [BackupLimits.maxManifestValues]); checked anyway, as a restore checks it.
+    if (!jsonValuesWithin(largest.manifestBytes, limits.maxManifestValues)) {
+      throw BackupException(
+        plan.contents == BackupContents.project
+            ? BackupProblem.projectTooManyFiles
+            : BackupProblem.libraryTooManyFiles,
+        limit: limits.maxEntries,
+      );
+    }
     if (largest.manifestBytes.length > limits.maxManifestBytes ||
         largest.archiveSize > limits.maxExportBytes) {
       throw BackupException(
@@ -1435,13 +1615,31 @@ class LibraryBackup {
       data(materialsFile.bytes);
     }
 
-    for (final f in [
+    for (final f in <({String archivePath, String sourcePath, int size, String sha256,
+        BackupFile? planned})>[
       ...plan.swatchPhotos.map((s) => (archivePath: s.archivePath, sourcePath: s.sourcePath,
-          size: s.size, sha256: s.sha256)),
+          size: s.size, sha256: s.sha256, planned: null)),
       ...plan.files.map((f) => (archivePath: f.archivePath, sourcePath: f.sourcePath,
-          size: f.size, sha256: f.sha256)),
+          size: f.size, sha256: f.sha256, planned: f)),
     ]) {
       header(f.archivePath, f.size);
+      final carried = f.planned?.bytes;
+      if (carried != null) {
+        // A sidecar carried rewritten (see [BackupFile.bytes]): its file must still be the one
+        // planned, as every other file must; then the planned bytes are written.
+        final planned = f.planned!;
+        final (String, int) onDisk;
+        try {
+          onDisk = await _hashFile(File(f.sourcePath), planned.sourceSize!);
+        } on FileSystemException catch (e) {
+          throw BackupException(BackupProblem.libraryChanged, detail: '${f.archivePath}: $e');
+        }
+        if (onDisk.$2 != planned.sourceSize || onDisk.$1 != planned.sourceSha256) {
+          throw BackupException(BackupProblem.libraryChanged, detail: f.archivePath);
+        }
+        data(carried);
+        continue;
+      }
       RandomAccessFile? raf;
       try {
         raf = await File(f.sourcePath).open();
@@ -1555,7 +1753,7 @@ class LibraryBackup {
         throw const BackupException(BackupProblem.notABackup, detail: 'manifest too large');
       }
       final bytes = await _readSlice(raf, first.dataOffset, first.size);
-      manifest = BackupManifest.parse(bytes, limits);
+      manifest = await _parseManifestInBackground(bytes, limits);
     } on UstarFormatException catch (e) {
       throw BackupException(BackupProblem.notABackup, detail: '$e');
     }
@@ -1656,6 +1854,11 @@ class LibraryBackup {
     }
     return (manifest, accumulators, settings, loomBytes, materialBytes, swatchPhotos);
   }
+
+  /// [BackupManifest.parse] (up to 4 MB of JSON, its values counted before it is decoded) on a
+  /// background isolate, so the decode never holds up the UI.
+  static Future<BackupManifest> _parseManifestInBackground(Uint8List bytes, BackupLimits limits) =>
+      Isolate.run(() => BackupManifest.parse(bytes, limits), debugName: 'backup manifest');
 
   /// The looms of a backup, as untrusted input, compared with My looms by id: new (added under
   /// their id), the same field for field (skipped), or different (offered as a copy named
@@ -1834,7 +2037,7 @@ class LibraryBackup {
       return;
     }
     final verdict = switch (layout.role) {
-      BackupFileRole.sidecar => _checkSidecar(acc, text),
+      BackupFileRole.sidecar => await _checkSidecar(acc, bytes, text),
       BackupFileRole.native => await _checkNative(acc.craft, text, knitVersion, tabletVersion),
       BackupFileRole.upgradeBackup =>
         await _checkUpgradeBackup(layout.version!, text, knitVersion),
@@ -1847,40 +2050,73 @@ class LibraryBackup {
     if (verdict == RestoreRefusal.tooComplex) acc.tooComplex = true;
   }
 
-  RestoreRefusal? _checkSidecar(_ProjectAccumulator acc, String text) {
+  /// A sidecar from a backup, as untrusted input: its JSON values are counted before it is decoded,
+  /// and one past [BackupLimits.maxSidecarValues], nested past [BackupLimits.maxSidecarDepth] or
+  /// holding a number too large for a double refuses its project as too complex, alone. One with
+  /// more than [inlineSidecarValues] values is decoded on a background isolate.
+  Future<RestoreRefusal?> _checkSidecar(
+      _ProjectAccumulator acc, Uint8List bytes, String text) async {
+    final shape = measureJson(bytes, stop: limits.maxSidecarValues);
+    if (shape.values > limits.maxSidecarValues ||
+        shape.depth > limits.maxSidecarDepth ||
+        shape.nonFinite) {
+      return RestoreRefusal.tooComplex;
+    }
+    final read =
+        await _readBackupSidecar(text, acc.craft, inline: shape.values <= inlineSidecarValues);
+    if (read == null) return RestoreRefusal.unreadable;
+    acc.name = read.name;
+    acc.sidecarDigest = read.digest;
+    acc.copySidecarDigest = read.copyDigest;
+    acc.loomPlanId = read.loomPlanId;
+    acc.linkedMaterials = read.materials;
+    acc.linkedSwatches = read.swatches;
+    return read.newer ? RestoreRefusal.newerVersion : null;
+  }
+
+  /// [_backupSidecarFacts] of [text], on this isolate when [inline], else on a background isolate.
+  static Future<_SidecarFacts?> _readBackupSidecar(String text, BackupCraft craft,
+      {required bool inline}) async {
+    if (inline) return _backupSidecarFacts(text, craft);
+    return Isolate.run(() => _backupSidecarFacts(text, craft), debugName: 'sidecar check');
+  }
+
+  /// What a restore needs from a backup's sidecar of [craft], or null when it is not a sidecar
+  /// this build reads (not JSON, not an object, not a sidecar model).
+  static _SidecarFacts? _backupSidecarFacts(String text, BackupCraft craft) {
     final Object? json;
     try {
       json = jsonDecode(text);
     } on FormatException {
-      return RestoreRefusal.unreadable;
+      return null;
     }
-    if (json is! Map<String, dynamic>) return RestoreRefusal.unreadable;
+    if (json is! Map<String, dynamic>) return null;
     final DraftMeta meta;
     try {
       meta = DraftMeta.fromJson(json);
     } catch (_) {
-      return RestoreRefusal.unreadable;
+      return null;
     }
-    acc.name = meta.name;
-    acc.sidecarDigest = sidecarDigest(json);
-    acc.copySidecarDigest = sidecarDigest(json, name: copyNameFor(meta.name));
+    final ignoreNotes = sidecarNotesIgnored(craft);
     final plan = json['loomPlan'];
-    if (acc.craft == BackupCraft.weaving && plan is Map && plan['loomId'] is String) {
-      acc.loomPlanId = plan['loomId'] as String;
-    }
     final links = ProjectMaterials.idsIn(json);
     // A weaving draft's plan names records too (ADR 0019): they count as records it uses, so a
     // restore that adds one as a copy points the plan at the copy, as it does the links.
-    final planned = acc.craft == BackupCraft.weaving
+    final planned = craft == BackupCraft.weaving
         ? WeavePlan.idsIn(json)
         : (materials: const <String>{}, swatches: const <String>{});
-    acc.linkedMaterials = {...links.materials, ...planned.materials};
-    acc.linkedSwatches = {...links.swatches, ...planned.swatches};
     final version = json['schemaVersion'];
-    if (version is int && version > DraftMeta.currentSchemaVersion) {
-      return RestoreRefusal.newerVersion;
-    }
-    return null;
+    return (
+      name: meta.name,
+      digest: sidecarDigest(json, ignoreNotes: ignoreNotes),
+      copyDigest: sidecarDigest(json, name: copyNameFor(meta.name), ignoreNotes: ignoreNotes),
+      loomPlanId: craft == BackupCraft.weaving && plan is Map && plan['loomId'] is String
+          ? plan['loomId'] as String
+          : null,
+      materials: {...links.materials, ...planned.materials},
+      swatches: {...links.swatches, ...planned.swatches},
+      newer: version is int && version > DraftMeta.currentSchemaVersion,
+    );
   }
 
   Future<RestoreRefusal?> _checkNative(BackupCraft craft, String text,
@@ -2005,10 +2241,9 @@ class LibraryBackup {
     final linksCopy = _linksCopy(acc.linkedMaterials, acc.linkedSwatches, materialRelinks);
     final relinked = (relink == null && !linksCopy)
         ? null
-        : await _relinkedSidecar(raf, acc, relink, materialRelinks);
+        : await _relinkedSidecar(raf, acc, relink, materialRelinks, copyNameFor(name));
     if (await _sameAsLibrary(dir, acc.id, acc.files, acc.sidecarDigest!) ||
-        (relinked != null &&
-            await _sameAsLibrary(dir, acc.id, acc.files, sidecarDigest(relinked)))) {
+        (relinked != null && await _sameAsLibrary(dir, acc.id, acc.files, relinked.digest))) {
       return make(RestoreStatus.alreadyPresent);
     }
     // A copy: a deterministic id, so restoring the same backup again finds the copy it made.
@@ -2021,8 +2256,7 @@ class LibraryBackup {
       if (await _sameAsLibrary(dir, copyId, acc.files, acc.copySidecarDigest!,
               native: renamedNative) ||
           (relinked != null &&
-              await _sameAsLibrary(
-                  dir, copyId, acc.files, sidecarDigest(relinked, name: copyNameFor(name)),
+              await _sameAsLibrary(dir, copyId, acc.files, relinked.copyDigest,
                   native: renamedNative))) {
         return make(RestoreStatus.alreadyPresent);
       }
@@ -2036,19 +2270,48 @@ class LibraryBackup {
   /// The library name of a project restored as a copy.
   static String copyNameFor(String name) => '$name (restored)';
 
-  /// The project's sidecar as it is once pointed at the loom copy [relink] (id, name) and the
-  /// material and swatch copies of [materialRelinks], read again from the archive and checked
-  /// against its recorded digest.
-  Future<Map<String, dynamic>> _relinkedSidecar(RandomAccessFile raf, _ProjectAccumulator acc,
-      (String, String)? relink, _MaterialRelinks materialRelinks) async {
+  /// The [sidecarDigest]s of the project's sidecar once pointed at the loom copy [relink] (id,
+  /// name) and the material and swatch copies of [materialRelinks], as is and renamed [copyName]
+  /// for a copy. The sidecar is read again from the archive and checked against its recorded
+  /// digest, and decoded off the calling isolate when it is large ([inlineSidecarValues]).
+  Future<({String digest, String copyDigest})> _relinkedSidecar(RandomAccessFile raf,
+      _ProjectAccumulator acc, (String, String)? relink, _MaterialRelinks materialRelinks,
+      String copyName) async {
     final f = acc.files.firstWhere((f) => f.layout.role == BackupFileRole.sidecar);
     final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
     if (digest != f.sha256) {
       throw BackupException(BackupProblem.damaged, detail: '${f.layout.pathFor(acc.id)} changed');
     }
-    return _rewrittenSidecar(
-        jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>, relink, materialRelinks);
+    return _relinkedDigests(
+        bytes!, relink, materialRelinks, copyName, sidecarNotesIgnored(acc.craft));
   }
+
+  static Future<({String digest, String copyDigest})> _relinkedDigests(Uint8List bytes,
+      (String, String)? relink, _MaterialRelinks materialRelinks, String copyName,
+      bool ignoreNotes) async {
+    ({String digest, String copyDigest}) work() {
+      final json = _rewrittenSidecar(
+          jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>, relink, materialRelinks);
+      return (
+        digest: sidecarDigest(json, ignoreNotes: ignoreNotes),
+        copyDigest: sidecarDigest(json, name: copyName, ignoreNotes: ignoreNotes),
+      );
+    }
+
+    if (_decodesInline(bytes)) return work();
+    return Isolate.run(work, debugName: 'sidecar relink');
+  }
+
+  /// A backup sidecar with at most this many JSON values is decoded on the calling isolate, which
+  /// takes a few milliseconds at most (every sidecar Ply writes has fewer: about 7,200 at the
+  /// most); one with more, up to [BackupLimits.maxSidecarValues], is decoded on a background
+  /// isolate, so a backup crafted with hundreds of sidecars at the limit cannot hold up the UI
+  /// while it is checked or restored.
+  static const int inlineSidecarValues = 10000;
+
+  /// Whether a sidecar's [bytes] are decoded on the calling isolate ([inlineSidecarValues]).
+  static bool _decodesInline(List<int> bytes) =>
+      countJsonValues(bytes, stop: inlineSidecarValues) <= inlineSidecarValues;
 
   /// [json] (a sidecar) pointed at the loom copy [relink] and at the material and swatch copies of
   /// [materialRelinks]; every other key kept.
@@ -2067,13 +2330,21 @@ class LibraryBackup {
       swatchIds.any(materialRelinks.swatches.containsKey);
 
   /// A digest of a sidecar's content that ignores `lastOpened` (bumped by every open) and key order,
-  /// with the name replaced by [name] when given (to compare against a restored copy).
+  /// with the name replaced by [name] when given (to compare against a restored copy). With
+  /// [ignoreNotes] (a nalbinding sidecar, see [sidecarNotesIgnored]) it ignores `notes` too.
   @visibleForTesting
-  static String sidecarDigest(Map<String, dynamic> json, {String? name}) {
+  static String sidecarDigest(Map<String, dynamic> json, {String? name, bool ignoreNotes = false}) {
     final core = Map<String, dynamic>.of(json)..remove('lastOpened');
+    if (ignoreNotes) core.remove('notes');
     if (name != null) core['name'] = name;
     return sha256.convert(utf8.encode(jsonEncode(_canonical(core)))).toString();
   }
+
+  /// Whether a sidecar of [craft] is compared without its `notes`: in a nalbinding sidecar they are
+  /// only a copy of the project's notes (the `.plynal` holds them, and nothing reads the copy),
+  /// which earlier builds wrote on every save and this one leaves empty. A project is the same
+  /// whether its sidecar still has the old copy or not.
+  static bool sidecarNotesIgnored(BackupCraft craft) => craft == BackupCraft.nalbinding;
 
   /// [value] with every map's keys sorted, so equal JSON encodes equally.
   static Object? _canonical(Object? value) {
@@ -2100,10 +2371,16 @@ class LibraryBackup {
           return false;
         }
         if (f.layout.role == BackupFileRole.sidecar) {
-          if (await local.length() > limits.maxSidecarBytes) return false;
-          final mine = jsonDecode(await local.readAsString());
-          if (mine is! Map<String, dynamic>) return false;
-          if (LibraryBackup.sidecarDigest(mine) != sidecarDigest) return false;
+          // A nalbinding sidecar may still hold an earlier build's copy of the notes, which does
+          // not count: it is read up to the size of a document, as a backup reads it.
+          final ignoreNotes = sidecarNotesIgnored(f.layout.craft);
+          final length = await local.length();
+          if (length > (ignoreNotes ? limits.maxFileBytes : limits.maxSidecarBytes)) return false;
+          final bytes = await local.readAsBytes();
+          final mine = length <= limits.maxSidecarBytes && _decodesInline(bytes)
+              ? _localSidecarDigest(bytes, ignoreNotes)
+              : await _localSidecarDigestInBackground(bytes, ignoreNotes);
+          if (mine != sidecarDigest) return false;
           continue;
         }
         final want = f.layout.role == BackupFileRole.native && native != null
@@ -2118,6 +2395,17 @@ class LibraryBackup {
       return false; // unreadable: not provably the same, so keep both
     }
   }
+
+  /// [sidecarDigest] of a library sidecar's [bytes], or null when it is not a JSON object. Throws
+  /// when it is not JSON.
+  static String? _localSidecarDigest(Uint8List bytes, bool ignoreNotes) {
+    final json = jsonDecode(utf8.decode(bytes));
+    return json is Map<String, dynamic> ? sidecarDigest(json, ignoreNotes: ignoreNotes) : null;
+  }
+
+  /// [_localSidecarDigest] on a background isolate.
+  static Future<String?> _localSidecarDigestInBackground(Uint8List bytes, bool ignoreNotes) =>
+      Isolate.run(() => _localSidecarDigest(bytes, ignoreNotes), debugName: 'sidecar digest');
 
   /// The size and digest of a nalbinding project's `.plynal` as a restored copy named [name] has it
   /// (see [_withName]), read again from the archive and checked against its recorded digest.
@@ -2386,10 +2674,10 @@ class LibraryBackup {
         // sidecar names the copy, and the copy's name too when renamed.
         final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
         if (digest != f.sha256) throw StateError('${f.layout.pathFor(project.id)} changed');
-        final json = _rewrittenSidecar(jsonDecode(utf8.decode(bytes!)) as Map<String, dynamic>,
-            relink, materialRelinks ?? _noMaterialRelinks);
-        if (rename) json['name'] = project.targetName!;
-        await dest.writeAsBytes(utf8.encode(jsonEncode(json)), flush: true);
+        await dest.writeAsBytes(
+            await _stagedSidecar(bytes!, relink, materialRelinks ?? _noMaterialRelinks,
+                rename ? project.targetName! : null),
+            flush: true);
         continue;
       }
       if (rename &&
@@ -2400,7 +2688,7 @@ class LibraryBackup {
         if (digest != f.sha256) throw StateError('${f.layout.pathFor(project.id)} changed');
         final renamed = f.layout.role == BackupFileRole.native
             ? await _plynalWithName(bytes!, project.targetName!)
-            : _withName(bytes!, project.targetName!);
+            : await _sidecarWithName(bytes!, project.targetName!);
         await dest.writeAsBytes(renamed, flush: true);
         continue;
       }
@@ -2413,6 +2701,28 @@ class LibraryBackup {
         await out.close();
       }
     }
+  }
+
+  /// A backup sidecar's [bytes] pointed at the loom copy [relink] and the material and swatch
+  /// copies of [materialRelinks], and renamed [name] when given (a copy), every other key kept;
+  /// decoded off the calling isolate when large ([inlineSidecarValues]).
+  static Future<Uint8List> _stagedSidecar(Uint8List bytes, (String, String)? relink,
+      _MaterialRelinks materialRelinks, String? name) async {
+    Uint8List work() {
+      final json = _rewrittenSidecar(
+          jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>, relink, materialRelinks);
+      if (name != null) json['name'] = name;
+      return Uint8List.fromList(utf8.encode(jsonEncode(json)));
+    }
+
+    if (_decodesInline(bytes)) return work();
+    return Isolate.run(work, debugName: 'sidecar relink');
+  }
+
+  /// [_withName] of a backup sidecar, off the calling isolate when large ([inlineSidecarValues]).
+  static Future<Uint8List> _sidecarWithName(Uint8List bytes, String name) async {
+    if (_decodesInline(bytes)) return _withName(bytes, name);
+    return Isolate.run(() => _withName(bytes, name), debugName: 'sidecar rename');
   }
 
   /// Remove what a failed restore placed, newest first, and the craft folders it created (when
@@ -2512,6 +2822,19 @@ class LibraryBackup {
     return bytes!;
   }
 }
+
+/// What a restore learns from a project's sidecar (`LibraryBackup._backupSidecarFacts`): its name,
+/// its digests as is and renamed for a copy, the loom and the records it names, and whether its
+/// schema is newer than this build's.
+typedef _SidecarFacts = ({
+  String name,
+  String digest,
+  String copyDigest,
+  String? loomPlanId,
+  Set<String> materials,
+  Set<String> swatches,
+  bool newer,
+});
 
 /// Everything read for one project while checking an archive.
 class _ProjectAccumulator {

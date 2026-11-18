@@ -9,8 +9,9 @@ import 'log_buffer.dart';
 import 'log_scrubber.dart';
 import 'platform_log.dart';
 
-/// App version stamped into crash reports + the GitHub issue form. Keep in sync with pubspec on
-/// release (there is no package_info plugin — Ply avoids extra native deps).
+/// App version stamped into crash reports, the log, the GitHub issue form and backup manifests. It
+/// must equal the version in pubspec.yaml (without the build number): a host test fails when they
+/// differ, so bump both together. There is no package_info plugin; Ply avoids extra native deps.
 const String kPlyAppVersion = '0.1.7';
 
 /// Captures UNCAUGHT Dart/Flutter errors, writes a scrubbed crash report to disk (surviving a

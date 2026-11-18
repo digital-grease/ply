@@ -284,6 +284,24 @@ void main() {
       expect((await s.restore(again)).count, 0);
     });
 
+    test('a large sidecar, read off the calling isolate, is pointed and recognized alike',
+        () async {
+      final big = List.filled(LibraryBackup.inlineSidecarValues * 2, 0);
+      await put(source, 'drafts/d1.json',
+          sidecar('Twill', 'Weaving', extra: {'loomPlan': plan, 'futureKey': big}));
+      final bigArchive = await backUp(loomService(into: source), name: 'big.plybackup');
+      final s = loomService();
+      final restorePlan = await s.inspectBackup(bigArchive);
+      final c = restorePlan.looms!.items.single;
+      expect(c.drafts, 1);
+      expect((await s.restore(restorePlan)).draftsRelinked, 1);
+      expect(sidecarOf('drafts/d1.json')['loomPlan'], {...plan, 'loomId': c.target!.id,
+          'loomName': 'Gamma (restored)'});
+      expect(sidecarOf('drafts/d1.json')['futureKey'], big);
+      final again = await s.inspectBackup(bigArchive);
+      expect(again.projects.map((p) => p.status).toSet(), {RestoreStatus.alreadyPresent});
+    });
+
     test('stay as they were when the copy is not restored', () async {
       final s = loomService();
       final result =

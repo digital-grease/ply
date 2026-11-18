@@ -63,6 +63,12 @@ class DraftMeta {
   /// Free-form notes; empty string when absent (mirrors the Rust `String`, not `Option`).
   final String notes;
 
+  /// The most characters a user can enter as [notes] (the weaving save dialog checks it). Even as
+  /// JSON escapes (6 bytes a character at most) they stay far under the 1 MB a backup takes for a
+  /// sidecar. Notes already longer (written before the limit) are kept as they are: a sidecar is
+  /// never cut short on open or save.
+  static const int maxNotesChars = 10000;
+
   /// The loom this draft is built for (shed + drive preset). App-only; serde tolerates it as an
   /// unknown field. Defaults to [LoomType.jack] when absent (older sidecar).
   final LoomType loomType;
@@ -224,7 +230,10 @@ class DraftMeta {
       savedAt: savedAt,
       // Fall back to savedAt so sort order is still sensible if lastOpened is absent.
       lastOpened: read('lastOpened', date) ?? savedAt,
-      schemaVersion: read('schemaVersion', (raw) => raw is num ? raw.toInt() : null) ?? 1,
+      // A number too large for a double (1e400) decodes as infinity, which has no integer: kept
+      // as it is, like any value this build cannot read, rather than failing the whole sidecar.
+      schemaVersion:
+          read('schemaVersion', (raw) => raw is num && raw.isFinite ? raw.toInt() : null) ?? 1,
       extra: extra,
     );
   }

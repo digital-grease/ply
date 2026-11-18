@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:ply/src/data/json_count.dart';
 import 'package:ply/src/data/library_backup.dart';
 import 'package:ply/src/data/ustar.dart';
 import 'package:ply/src/models/app_settings.dart';
@@ -1289,7 +1290,7 @@ void main() {
       await put(docs, 'nalbinds/n1.plynal', richNal('Mitten'));
       await put(docs, 'nalbinds/n1.json', sidecar('Mitten', 'Nalbinding'));
       final archive = await backUp(service());
-      await put(docs, 'nalbinds/n1.json', sidecar('Mitten', 'Nalbinding', extra: {'notes': 'x'}));
+      await put(docs, 'nalbinds/n1.json', sidecar('Mitten', 'Nalbinding', extra: {'author': 'x'}));
       final before = await snapshot(docs);
 
       final plan = await service().inspectBackup(archive);
@@ -1351,6 +1352,389 @@ void main() {
     expect(LibraryBackup.sidecarDigest(a, name: 'B'),
         LibraryBackup.sidecarDigest({...b, 'name': 'B'}));
     expect(LibraryBackup.sidecarDigest(a), isNot(LibraryBackup.sidecarDigest({...a, 'x': 1})));
+    // A nalbinding sidecar's notes are only a copy of the project's: they never tell two apart.
+    expect(LibraryBackup.sidecarNotesIgnored(BackupCraft.nalbinding), isTrue);
+    for (final craft in [BackupCraft.weaving, BackupCraft.knitting, BackupCraft.tabletWeaving]) {
+      expect(LibraryBackup.sidecarNotesIgnored(craft), isFalse, reason: craft.name);
+    }
+    expect(LibraryBackup.sidecarDigest({...a, 'notes': 'x'}, ignoreNotes: true),
+        LibraryBackup.sidecarDigest({...b, 'notes': ''}, ignoreNotes: true));
+    expect(LibraryBackup.sidecarDigest({...a, 'notes': 'x'}),
+        isNot(LibraryBackup.sidecarDigest({...a, 'notes': ''})));
+  });
+
+  group('a nalbinding sidecar\'s copy of the notes', () {
+    // Earlier builds copied a nalbinding project's notes into its sidecar on every save. Nothing
+    // reads that copy (the .plynal holds the notes), and a backup refuses a sidecar over 1 MB.
+    final bigNotes = 'n' * (1024 * 1024 + 10);
+    List<int> oldSidecar(String notes) => sidecar('Mitten', 'Nalbinding',
+        extra: {'notes': notes, 'author': 'Ada', 'futureKey': {'kept': true}});
+    List<int> nalWithNotes(String notes) => utf8.encode(jsonEncode(
+        NalbindProject(name: 'Mitten', notation: 'UO/UOO', notes: notes).toJson()));
+
+    test('over 1 MB no longer blocks a backup: it is left out, every other key kept in place',
+        () async {
+      await put(docs, 'nalbinds/n1.plynal', nalWithNotes(bigNotes));
+      await put(docs, 'nalbinds/n1.json', oldSidecar(bigNotes));
+      await put(docs, 'drafts/d1.wif', wifBytes);
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving', extra: {'notes': 'kept'}));
+      final archive = await backUp(service());
+
+      final entries = {for (final (path, data) in await entriesOf(archive)) path: data};
+      final original = jsonDecode(utf8.decode(oldSidecar(bigNotes))) as Map<String, dynamic>;
+      final carried = jsonDecode(utf8.decode(entries['nalbinds/n1.json']!)) as Map<String, dynamic>;
+      expect(carried, {...original, 'notes': ''});
+      expect(carried.keys.toList(), original.keys.toList(), reason: 'key order is kept');
+      // Every other file, a weaving sidecar's notes included, is carried byte for byte.
+      expect(entries['nalbinds/n1.plynal'], nalWithNotes(bigNotes));
+      expect(entries['drafts/d1.json'],
+          await File(p.join(docs.path, 'drafts/d1.json')).readAsBytes());
+      expect(entries['drafts/d1.wif'], wifBytes);
+
+      // The project is still the one in the library: the copy of its notes does not count.
+      final again = await service().inspectBackup(archive);
+      expect(only(again, 'n1').status, RestoreStatus.alreadyPresent);
+
+      // Into an empty library it restores with the notes in its project file.
+      final elsewhere = await Directory.systemTemp.createTemp('backup_elsewhere');
+      addTearDown(() => elsewhere.delete(recursive: true));
+      final s = service(into: elsewhere);
+      final plan = await s.inspectBackup(archive);
+      expect(only(plan, 'n1').status, RestoreStatus.add);
+      await s.restore(plan);
+      expect(await File(p.join(elsewhere.path, 'nalbinds/n1.plynal')).readAsBytes(),
+          nalWithNotes(bigNotes));
+      expect(await File(p.join(elsewhere.path, 'nalbinds/n1.json')).readAsBytes(),
+          entries['nalbinds/n1.json']);
+    });
+
+    test('a short copy is left out too, and an export does the same', () async {
+      await put(docs, 'nalbinds/n1.plynal', nalWithNotes('thumb at round 6'));
+      await put(docs, 'nalbinds/n1.json', oldSidecar('thumb at round 6'));
+      for (final archive in [
+        await backUp(service()),
+        await exportOne(service(), BackupCraft.nalbinding, 'n1'),
+      ]) {
+        final entries = {for (final (path, data) in await entriesOf(archive)) path: data};
+        final carried =
+            jsonDecode(utf8.decode(entries['nalbinds/n1.json']!)) as Map<String, dynamic>;
+        expect(carried['notes'], '');
+        expect(carried['author'], 'Ada');
+        expect(only(await service().inspectBackup(archive), 'n1').status,
+            RestoreStatus.alreadyPresent);
+      }
+      // A sidecar with no copy (as this build writes it) is carried byte for byte.
+      await put(docs, 'nalbinds/n1.json', sidecar('Mitten', 'Nalbinding'));
+      final entries = {
+        for (final (path, data) in await entriesOf(await backUp(service()))) path: data,
+      };
+      expect(entries['nalbinds/n1.json'], sidecar('Mitten', 'Nalbinding'));
+    });
+
+    test('a sidecar that changes between planning and writing stops the backup, as any file does',
+        () async {
+      await put(docs, 'nalbinds/n1.plynal', nalWithNotes('thumb at round 6'));
+      await put(docs, 'nalbinds/n1.json', oldSidecar('thumb at round 6'));
+      final s = service();
+      final plan = await s.planBackup();
+      final planned = plan.files.singleWhere((f) => f.archivePath == 'nalbinds/n1.json');
+      expect(planned.bytes, isNotNull, reason: 'carried without the copy');
+      // Opened meanwhile (the same length, another date) ...
+      final opened = utf8.decode(oldSidecar('thumb at round 6')).replaceFirst('01-02', '01-03');
+      await put(docs, 'nalbinds/n1.json', utf8.encode(opened));
+      await expectLater(s.buildBackup(plan), throwsBackup(BackupProblem.libraryChanged));
+      // ... grown, or removed.
+      await put(docs, 'nalbinds/n1.json', oldSidecar('thumb at round 6, longer'));
+      await expectLater(s.buildBackup(plan), throwsBackup(BackupProblem.libraryChanged));
+      await File(p.join(docs.path, 'nalbinds/n1.json')).delete();
+      await expectLater(s.buildBackup(plan), throwsBackup(BackupProblem.libraryChanged));
+      // As planned again: the backup is made, with the planned bytes.
+      await put(docs, 'nalbinds/n1.json', oldSidecar('thumb at round 6'));
+      final bytes = await s.buildBackup(plan);
+      expect(bytes.length, plan.archiveSize);
+    });
+
+    test('a sidecar too large even without it is still refused, naming the project', () async {
+      await put(docs, 'nalbinds/n1.plynal', nalWithNotes(bigNotes));
+      await put(docs, 'nalbinds/n1.json', sidecar('Mitten', 'Nalbinding',
+          extra: {'notes': bigNotes, 'futureKey': bigNotes}));
+      await expectLater(
+          service().planBackup(),
+          throwsA(isA<BackupException>()
+              .having((e) => e.problem, 'problem', BackupProblem.fileTooLarge)
+              .having((e) => e.projectName, 'project', 'Mitten')
+              .having((e) => e.limit, 'limit', 1024 * 1024)));
+      // Past the size of a document, it is not read at all: the message takes the project's name
+      // from the head of the file, where Ply writes it, or the id when it is not there.
+      await expectLater(
+          service(limits: const BackupLimits(maxFileBytes: 1024 * 1024)).planBackup(),
+          throwsA(isA<BackupException>()
+              .having((e) => e.problem, 'problem', BackupProblem.fileTooLarge)
+              .having((e) => e.projectName, 'project', 'Mitten')));
+      await put(docs, 'nalbinds/n1.json',
+          utf8.encode(jsonEncode({'notes': bigNotes, 'name': 'Late name'})));
+      await expectLater(
+          service(limits: const BackupLimits(maxFileBytes: 1024 * 1024)).planBackup(),
+          throwsA(isA<BackupException>()
+              .having((e) => e.projectName, 'project', 'n1')));
+      // Any craft's sidecar over its limit is named the same way.
+      await File(p.join(docs.path, 'nalbinds/n1.json')).delete();
+      await put(docs, 'drafts/d1.wif', wifBytes);
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving', extra: {'notes': bigNotes}));
+      await expectLater(
+          service().planBackup(),
+          throwsA(isA<BackupException>()
+              .having((e) => e.problem, 'problem', BackupProblem.fileTooLarge)
+              .having((e) => e.projectName, 'project', 'Twill')
+              .having((e) => e.message, 'message',
+                  'A file in "Twill" is too large to back up (over 1 MB).')));
+    });
+  });
+
+  group('a sidecar a backup cannot read', () {
+    test('is left out only when it is not a sidecar, as the library leaves it out', () async {
+      await seedLibrary(docs);
+      await put(docs, 'drafts/d2.json', utf8.encode('not json'));
+      await put(docs, 'knits/k1.json', utf8.encode('[1, 2]'));
+      await put(docs, 'nalbinds/n1.json', [0xFF, 0xFE, 0x00]);
+      final plan = await service().planBackup();
+      expect(plan.files.map((f) => f.projectId).toSet(), {'d1'});
+      expect(plan.projectCounts[BackupCraft.knitting], 0);
+    });
+
+    test('stops the backup when it cannot be read, instead of leaving the project out', () async {
+      await seedLibrary(docs);
+      final f = File(p.join(docs.path, 'knits', 'k1.json'));
+      final chmod = Process.runSync('chmod', ['000', f.path]);
+      addTearDown(() => Process.runSync('chmod', ['644', f.path]));
+      try {
+        f.readAsBytesSync();
+        return; // this account reads any file (root), so the failure cannot be staged here
+      } on FileSystemException {
+        expect(chmod.exitCode, 0);
+      }
+      // A file that cannot be read, now or on a retry, is named (by id when its head cannot be
+      // read either); "the library changed" is kept for a file that changed while the backup was
+      // being made.
+      final unreadable = throwsA(isA<BackupException>()
+          .having((e) => e.problem, 'problem', BackupProblem.fileUnreadable)
+          .having((e) => e.projectName, 'project', 'k1')
+          .having((e) => e.message, 'message',
+              'A file in "k1" could not be read, so it cannot be backed up.'));
+      await expectLater(service().planBackup(), unreadable);
+      await expectLater(service().planProjectBackup(BackupCraft.knitting, 'k1'), unreadable);
+    });
+
+    test('that Ply could not have written is carried as it is, or named when too large', () async {
+      // No Ply build writes a number too large for a double (`1e400`, infinity once decoded) or
+      // nesting thousands of levels deep. The library still lists such a sidecar, so a backup
+      // carries it byte for byte (a restore then refuses that project alone, as too complex).
+      String odd(String name, String craft, String extra) => '{"name":"$name","craft":"$craft",'
+          '"notes":"old copy","savedAt":"2026-01-01T00:00:00.000Z","schemaVersion":1,$extra}';
+      final infinite = odd('Infinite', 'Nalbinding', '"later":1e400');
+      // Deep enough to overflow the stack when encoded again on any thread (a few thousand levels
+      // can be enough), well within the value limit.
+      final deep = odd('Deep', 'Nalbinding', '"later":${'[' * 100000}${']' * 100000}');
+      final version = odd('Version', 'Weaving', '"x":0').replaceFirst(
+          '"schemaVersion":1', '"schemaVersion":1e400');
+      await put(docs, 'nalbinds/n1.plynal', nalFile('Infinite'));
+      await put(docs, 'nalbinds/n1.json', utf8.encode(infinite));
+      await put(docs, 'nalbinds/n2.plynal', nalFile('Deep'));
+      await put(docs, 'nalbinds/n2.json', utf8.encode(deep));
+      await put(docs, 'drafts/d1.wif', wifBytes);
+      await put(docs, 'drafts/d1.json', utf8.encode(version));
+      await put(docs, 'drafts/d2.wif', wifBytes);
+      await put(docs, 'drafts/d2.json', sidecar('Plain', 'Weaving'));
+      final archive = await backUp(service());
+      final entries = {for (final (path, data) in await entriesOf(archive)) path: data};
+      expect(utf8.decode(entries['nalbinds/n1.json']!), infinite);
+      expect(utf8.decode(entries['nalbinds/n2.json']!), deep);
+      expect(utf8.decode(entries['drafts/d1.json']!), version);
+
+      // Restored elsewhere: each such project is refused alone, the rest restores.
+      final elsewhere = await Directory.systemTemp.createTemp('backup_elsewhere');
+      addTearDown(() => elsewhere.delete(recursive: true));
+      final plan = await service(into: elsewhere).inspectBackup(archive);
+      for (final id in ['n1', 'n2', 'd1']) {
+        expect(only(plan, id).refusal, RestoreRefusal.tooComplex, reason: id);
+      }
+      expect(only(plan, 'd2').status, RestoreStatus.add);
+
+      // Over the sidecar's limit, where the copy of the notes cannot be left out: refused by name.
+      await put(docs, 'nalbinds/n1.json', utf8.encode(infinite.replaceFirst(
+          '"notes":"old copy"', '"notes":"${'n' * (1024 * 1024)}"')));
+      await expectLater(
+          service().planBackup(),
+          throwsA(isA<BackupException>()
+              .having((e) => e.problem, 'problem', BackupProblem.fileTooLarge)
+              .having((e) => e.projectName, 'project', 'Infinite')));
+    });
+  });
+
+  group('a large sidecar is read off the calling isolate', () {
+    test('and checked, compared and renamed for a copy as a small one is', () async {
+      final big = List.filled(LibraryBackup.inlineSidecarValues * 2, 0);
+      await put(docs, 'knits/k1.plyknit', knitFile(name: 'Big'));
+      await put(docs, 'knits/k1.json', sidecar('Big', 'Knitting', extra: {'futureKey': big}));
+      final archive = await backUp(service());
+      final plan = await service().inspectBackup(archive);
+      expect(only(plan, 'k1').status, RestoreStatus.alreadyPresent);
+      expect(only(plan, 'k1').name, 'Big');
+
+      // A different project under the same id: restored as a copy, renamed, every key kept.
+      await put(docs, 'knits/k1.json', sidecar('Big', 'Knitting', extra: {'author': 'x'}));
+      final conflict = await service().inspectBackup(archive);
+      final copy = only(conflict, 'k1');
+      expect(copy.status, RestoreStatus.conflict);
+      await service().restore(conflict);
+      final restored = jsonDecode(
+              await File(p.join(docs.path, 'knits', '${copy.targetId}.json')).readAsString())
+          as Map<String, dynamic>;
+      expect(restored['name'], 'Big (restored)');
+      expect(restored['futureKey'], big);
+      // And the copy is recognized when the same backup is restored again.
+      expect(only(await service().inspectBackup(archive), 'k1').status,
+          RestoreStatus.alreadyPresent);
+    });
+  });
+
+  group('JSON values are counted before the manifest and sidecars are decoded', () {
+    /// The largest manifest Ply writes: every entry of the most a backup holds, with the longest
+    /// paths, sizes and names the layout has.
+    BackupManifest largestManifest() {
+      const limits = BackupLimits();
+      final id = 'a' * 64;
+      return BackupManifest(
+        createdAt: DateTime.utc(2026, 11, 18),
+        appVersion: '9' * 100,
+        contents: BackupContents.library,
+        files: [
+          for (var i = 0; i < limits.maxEntries - 1; i++)
+            BackupManifestFile(
+              path: 'nalbinds/$id.photos/${'$i'.padLeft(64, 'p')}.jpeg',
+              size: limits.maxFileBytes,
+              sha256: 'f' * 64,
+              craft: BackupCraft.nalbinding,
+              projectId: id,
+            ),
+        ],
+      );
+    }
+
+    test('the largest manifest Ply writes is well within the limit', () {
+      const limits = BackupLimits();
+      final bytes = largestManifest().encode();
+      expect(bytes.length, lessThanOrEqualTo(limits.maxManifestBytes));
+      final values = countJsonValues(bytes);
+      expect(values, 13 + 11 * (limits.maxEntries - 1));
+      expect(values * 2, lessThan(limits.maxManifestValues));
+      expect(BackupManifest.parse(bytes, limits).files, hasLength(limits.maxEntries - 1));
+    });
+
+    test('a manifest past its limit refuses the whole backup without being decoded', () async {
+      await expectRefused(await craft(goodDraft), BackupProblem.notABackup,
+          limits: const BackupLimits(maxManifestValues: 10));
+      // A real manifest padded, under an additive key a restore ignores, with over a million empty
+      // objects (about 330 MB once decoded), within the manifest's 4 MB.
+      final padded = utf8.encode(jsonEncode(manifestFor(goodDraft))
+          .replaceFirst('{', '{"padding":[${List.filled(1300000, '{}').join(',')}],'));
+      expect(padded.length, lessThan(4 * 1024 * 1024));
+      expect(
+          () => BackupManifest.parse(Uint8List.fromList(padded), const BackupLimits()),
+          throwsA(isA<BackupException>()
+              .having((e) => e.problem, 'problem', BackupProblem.notABackup)
+              .having((e) => e.detail, 'detail', contains('too many values'))));
+      await expectRefused(
+          await archiveFile([
+            (UstarHeader.file(backupManifestPath, padded.length), padded),
+            for (final (path, data) in goodDraft) entry(path, data),
+          ]),
+          BackupProblem.notABackup);
+      // Under the limit, the same padding is an additive key like any other.
+      final light = utf8.encode(jsonEncode(manifestFor(goodDraft))
+          .replaceFirst('{', '{"padding":[${List.filled(1000, '{}').join(',')}],'));
+      expect(BackupManifest.parse(Uint8List.fromList(light), const BackupLimits()).files,
+          hasLength(goodDraft.length));
+    });
+
+    test('a sidecar past its limit refuses its project alone, as too complex', () async {
+      // Within a sidecar's 1 MB, half a million numbers under a key Ply does not know.
+      final padded = sidecar('Padded', 'Knitting', extra: {'futureKey': List.filled(500000, 0)});
+      expect(padded.length, lessThan(1024 * 1024));
+      final files = [
+        ...goodDraft,
+        ('knits/k1.plyknit', knitFile(name: 'Padded')),
+        ('knits/k1.json', padded),
+        ('knits/k2.plyknit', knitFile(name: 'Fine')),
+        ('knits/k2.json', sidecar('Fine', 'Knitting', extra: {'futureKey': List.filled(100, 0)})),
+      ];
+      // The limit is the one named constant.
+      final lowered = await service(limits: const BackupLimits(maxSidecarValues: 100))
+          .inspectBackup(await craft(files));
+      expect(only(lowered, 'k2').refusal, RestoreRefusal.tooComplex);
+      expect(only(lowered, 'a').status, RestoreStatus.add);
+
+      final plan = await service().inspectBackup(await craft(files));
+      expect(only(plan, 'k1').refusal, RestoreRefusal.tooComplex);
+      expect(only(plan, 'k2').status, RestoreStatus.add);
+      expect(only(plan, 'a').status, RestoreStatus.add);
+      final result = await service().restore(plan);
+      expect(result.restored.map((r) => r.id), unorderedEquals(['a', 'k2']));
+    });
+
+    test('a sidecar nested too deep or with a number too large for a double refuses its project',
+        () async {
+      String crafted(String name, String extra) => '{"name":"$name","craft":"Knitting",'
+          '"notes":"","savedAt":"2026-01-01T00:00:00.000Z","schemaVersion":1,$extra}';
+      // About 8 KB, far within the value limit, decoded on this isolate; and the same nesting with
+      // enough values to be decoded on a background isolate: refused alike, before decoding.
+      final deep = crafted('Deep', '"later":${'[' * 3500}${']' * 3500}');
+      final deepAndLarge = crafted('Deep, large', '"pad":${jsonEncode(List.filled(20000, 0))},'
+          '"later":${'[' * 3500}${']' * 3500}');
+      final infinite = crafted('Infinite', '"later":[1, 2, -1e400]');
+      final wide = crafted('Wide', '"later":${'[' * 60}${']' * 60}');
+      final files = [
+        ...goodDraft,
+        for (final (id, text) in [('k1', deep), ('k2', deepAndLarge), ('k3', infinite),
+            ('k4', wide)]) ...[
+          ('knits/$id.plyknit', knitFile(name: id)),
+          ('knits/$id.json', utf8.encode(text)),
+        ],
+      ];
+      final plan = await service().inspectBackup(await craft(files));
+      for (final id in ['k1', 'k2', 'k3']) {
+        expect(only(plan, id).refusal, RestoreRefusal.tooComplex, reason: id);
+      }
+      expect(only(plan, 'k4').status, RestoreStatus.add, reason: '61 levels are within 64');
+      expect(only(plan, 'a').status, RestoreStatus.add);
+      // The depth limit is one named constant.
+      final lowered = await service(limits: const BackupLimits(maxSidecarDepth: 1))
+          .inspectBackup(await craft(files));
+      expect(only(lowered, 'k4').refusal, RestoreRefusal.tooComplex);
+      expect(only(lowered, 'a').status, RestoreStatus.add, reason: 'a flat sidecar is depth 1');
+      final result = await service().restore(plan);
+      expect(result.restored.map((r) => r.id), unorderedEquals(['a', 'k4']));
+    });
+
+    test('a backup never carries a sidecar a restore would refuse as too complex', () async {
+      await seedLibrary(docs);
+      await expectLater(
+          service(limits: const BackupLimits(maxSidecarValues: 5)).planBackup(),
+          throwsA(isA<BackupException>()
+              .having((e) => e.problem, 'problem', BackupProblem.fileTooComplex)
+              .having((e) => e.projectName, 'project', 'Twill')));
+      await expectLater(
+          service(limits: const BackupLimits(maxSidecarValues: 5))
+              .planProjectBackup(BackupCraft.knitting, 'k1'),
+          throwsA(isA<BackupException>()
+              .having((e) => e.problem, 'problem', BackupProblem.fileTooComplex)
+              .having((e) => e.projectName, 'project', 'Hat')));
+      expect(const BackupException(BackupProblem.fileTooComplex, projectName: 'Hat').message,
+          'A file in "Hat" is too complex to back up.');
+      // Nor a manifest it would refuse.
+      await expectLater(service(limits: const BackupLimits(maxManifestValues: 20)).planBackup(),
+          throwsBackup(BackupProblem.libraryTooManyFiles));
+    });
   });
 
   test('user-facing sentences', () {

@@ -165,7 +165,8 @@ class NalbindRepository {
   /// is thrown. A legacy (version 1) body needs no backup: version 2 only adds the version keys.
   ///
   /// The sidecar is MERGED into an existing one (keeping its savedAt, author and every key this build
-  /// does not know); only the name, craft, notes and lastOpened are set from this save.
+  /// does not know); only the name, craft and lastOpened are set from this save, and its `notes`
+  /// are left empty (see [touchOpened]).
   Future<String> saveProject(NalbindProject project, {String? id}) async {
     final projectId = id ?? _uuid.v4();
     return _exclusive(projectId, () => _save(project, projectId, existing: id != null));
@@ -192,13 +193,12 @@ class NalbindRepository {
         final meta = existing?.copyWith(
               name: name,
               craft: 'Nalbinding',
-              notes: project.notes,
+              notes: '',
               lastOpened: now,
             ) ??
             DraftMeta(
               name: name,
               craft: 'Nalbinding',
-              notes: project.notes,
               savedAt: now,
               lastOpened: now,
             );
@@ -307,13 +307,19 @@ class NalbindRepository {
   }
 
   /// Mark a project opened (bumps `lastOpened`, rewrites the sidecar).
+  ///
+  /// The rewrite also empties the sidecar's `notes`, as every save does. The project's notes live
+  /// in the `.plynal`; earlier builds also copied them into the sidecar on every save, where nothing
+  /// reads them, and a backup refuses a sidecar over 1 MB, so long notes blocked every backup. A
+  /// backup leaves an old copy out too (ADR 0007).
   Future<void> touchOpened(String id) => _exclusive(id, () => _touch(id));
 
   Future<void> _touch(String id) async {
     final dir = await _dir();
     await SidecarWrites.run(_jsonPath(dir, id), () async {
       final meta = await _readSidecar(dir, id);
-      await _atomicWrite(File(_jsonPath(dir, id)), jsonEncode(meta.copyWith(lastOpened: DateTime.now()).toJson()));
+      await _atomicWrite(File(_jsonPath(dir, id)),
+          jsonEncode(meta.copyWith(lastOpened: DateTime.now(), notes: '').toJson()));
     });
   }
 

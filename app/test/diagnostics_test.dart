@@ -189,11 +189,14 @@ void main() {
 
   test('kPlyAppVersion matches the version in pubspec.yaml', () {
     // Crash reports, logs and library backups record this constant, so it must not drift from the
-    // version the app is actually built as (pubspec `version: X.Y.Z+build`).
+    // version the app is actually built as (pubspec `version: X.Y.Z+build`, possibly quoted or
+    // followed by a comment).
     final line = File('pubspec.yaml')
         .readAsLinesSync()
         .firstWhere((l) => l.startsWith('version:'));
-    final version = line.substring('version:'.length).trim().split('+').first;
+    final value = line.substring('version:'.length).split('#').first.trim();
+    final version = value.replaceAll(RegExp(r'''^["']|["']$'''), '').split('+').first;
+    expect(version, matches(RegExp(r'^\d+\.\d+\.\d+$')), reason: 'pubspec version: $value');
     expect(kPlyAppVersion, version);
   });
 }

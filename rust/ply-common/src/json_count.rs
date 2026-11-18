@@ -17,6 +17,14 @@
 //! Dart's `jsonEncode` writes, is skipped like any other); a number or a literal is skipped as one
 //! run of characters, however long. The text is not checked: a malformed one gets a count too, and
 //! the reader that decodes it refuses it.
+//!
+//! **The same counter in Dart.** The app counts the JSON its backup restore decodes itself (the
+//! manifest and the sidecars) with a port of this function (`app/lib/src/data/json_count.dart`),
+//! whose tests run the cases below. Change the two together. The port also measures how deeply
+//! lists and objects nest and whether a number is out of a double's range, which only Dart needs
+//! (its `jsonEncode` recurses and refuses infinity, which `jsonDecode` makes of `1e400`); this
+//! counter does not, because serde_json refuses nesting past 128 levels where it builds a value
+//! (skipping an unread one without recursing) and refuses a number out of range.
 
 /// The number of JSON values in `text` (see the module docs).
 pub fn count_values(text: &str) -> u64 {

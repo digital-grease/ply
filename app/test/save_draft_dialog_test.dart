@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/widgets/save_draft_dialog.dart';
 
 // The shared save-metadata dialog (extracted from preview_screen so the editor can reuse it).
@@ -78,5 +79,26 @@ void main() {
     await t.tap(find.widgetWithText(FilledButton, 'Save'));
     await t.pumpAndSettle();
     expect(h.result()!.name, 'x', reason: 'now valid -> returns the typed name');
+  });
+
+  testWidgets('notes past the limit are refused with how long they are, never cut short',
+      (t) async {
+    final h = await openDialog(t, 'Seed');
+    final long = 'n' * (DraftMeta.maxNotesChars + 1);
+    await t.enterText(find.widgetWithText(TextField, 'Notes (optional)'), long);
+    await t.tap(find.widgetWithText(FilledButton, 'Save'));
+    await t.pumpAndSettle();
+    expect(find.text('Notes can be at most 10,000 characters (these have 10,001).'), findsOneWidget);
+    expect(h.result(), isNull, reason: 'still open, nothing returned');
+    final field = t.widget<TextField>(find.byType(TextField).last);
+    expect(field.controller!.text, long, reason: 'the notes are left as typed');
+
+    // Back within the limit, the error clears and Save returns them.
+    await t.enterText(find.byType(TextField).last, 'n' * DraftMeta.maxNotesChars);
+    await t.pumpAndSettle();
+    expect(find.textContaining('Notes can be at most'), findsNothing);
+    await t.tap(find.widgetWithText(FilledButton, 'Save'));
+    await t.pumpAndSettle();
+    expect(h.result()!.notes, 'n' * DraftMeta.maxNotesChars);
   });
 }

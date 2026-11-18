@@ -66,6 +66,33 @@ void main() {
     });
   });
 
+  test('notes past the save dialog\'s limit, written before it, open and save unchanged', () {
+    // A save of an existing draft sets other fields; the notes stay exactly as they were.
+    final long = 'Warp: ${'linen 40/2, ' * 2000}';
+    expect(long.length, greaterThan(DraftMeta.maxNotesChars));
+    final read = DraftMeta.fromJson(jsonDecode(jsonEncode({
+      'name': 'Old',
+      'craft': 'Weaving',
+      'notes': long,
+      'savedAt': '2026-01-01T00:00:00.000Z',
+    })) as Map<String, dynamic>);
+    expect(read.notes, long);
+    final saved = read.copyWith(lastOpened: DateTime.utc(2026, 11, 18), name: 'Renamed');
+    expect(saved.toJson()['notes'], long);
+    expect(DraftMeta.fromJson(jsonDecode(jsonEncode(saved.toJson())) as Map<String, dynamic>).notes,
+        long);
+  });
+
+  test('a schema version too large for a double reads as a value this build cannot read', () {
+    // `1e400` decodes as infinity, which has no integer: the sidecar still reads (the library
+    // lists it), with the raw value kept.
+    final meta = DraftMeta.fromJson(
+        jsonDecode('{"name":"Odd","schemaVersion":1e400}') as Map<String, dynamic>);
+    expect(meta.name, 'Odd');
+    expect(meta.schemaVersion, 1);
+    expect(meta.extra['schemaVersion'], double.infinity);
+  });
+
   group('DraftMeta defaults & tolerance', () {
     test('craft defaults to the serde representation "Weaving"', () {
       final m = DraftMeta(
