@@ -213,8 +213,10 @@ impl StitchLegend {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Gauge {
     /// Stitches per gauge window (4 in / 10 cm).
+    #[serde(deserialize_with = "crate::native::f32_read_as_f64")]
     pub sts: f32,
     /// Rows per gauge window (4 in / 10 cm).
+    #[serde(deserialize_with = "crate::native::f32_read_as_f64")]
     pub rows: f32,
     pub unit: Unit,
 }

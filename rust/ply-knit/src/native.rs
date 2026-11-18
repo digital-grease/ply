@@ -24,10 +24,14 @@
 //! document unread and builds nothing in proportion to the file, however large. [`read`] asks it
 //! first, so a newer, foreign or malformed envelope is refused before any of the file is decoded.
 //!
-//! **A guard for untrusted files.** The document is decoded into a JSON tree (for the migrations),
-//! and many small values make a tree far larger than its text. [`within_value_limit`] counts a
-//! file's values without decoding it; the backup restore refuses a pattern past [`MAX_VALUES`]
-//! before it reads it. Opening and saving do not ask.
+//! **Decoding.** A current-version file is decoded straight into the pattern's types: every key the
+//! types do not name is skipped unread, so a value costs at most what its typed field costs. An
+//! older file is decoded into a JSON tree for the migrations, and many small values make a tree far
+//! larger than its text.
+//!
+//! **A guard for untrusted files.** [`within_value_limit`] counts a file's values without decoding
+//! it; the backup restore refuses a pattern past [`MAX_VALUES`] before it reads it. Opening and
+//! saving do not ask.
 //!
 //! **Changing the format.** Any change to the document shape OR to the built-in stitch vocabulary
 //! (see [`StitchLegend::builtin`](crate::StitchLegend::builtin)) bumps [`KNIT_SCHEMA_VERSION`] and
@@ -56,8 +60,10 @@
 
 use ply_common::envelope::{envelope_version, EnvelopeError, EnvelopeRule, FORMAT_KEY};
 use ply_common::json_count::count_values;
-use serde::Serialize;
+use serde::de::{DeserializeSeed, Deserializer, IgnoredAny, IntoDeserializer, MapAccess, Visitor};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fmt;
 
 use crate::error::KnitError;
 use crate::pattern::KnitPattern;
@@ -76,13 +82,19 @@ pub const KNIT_SCHEMA_VERSION: u32 = 6;
 /// stitches by 400 rows (the editor's and the new pattern screen's limits) with every cell coloured
 /// and a repeat on every column, 1,000 custom stitches and 1,000 colours, 50 pieces, 1,000 sections
 /// and 10,000 steps (a text of any length is one value). It has 1.28 million values; this is over
-/// twice that. The guard bounds decode memory only roughly: a file at the limit decodes, at worst
-/// (objects of one member nested inside each other), to about 900 MiB of `serde_json::Value`
-/// (counted by a counting allocator, before the allocator's own overhead), and the largest real
-/// pattern to about 230 MiB. The migrations add a field to every section, short row and close step,
-/// so they first refuse one without the fields every writer gave it: an empty object, a few bytes in
-/// its list, would otherwise grow into a map node of hundreds. A long text is one value and decodes
-/// to about its length.
+/// twice that. The guard bounds decode memory only roughly (measured by a counting allocator, before
+/// the allocator's own overhead):
+/// - A current-version file is decoded into the pattern's types ([`read`]). At the limit it takes
+///   at most about 144 MiB, for millions of empty texts in one list or of the smallest steps (a
+///   value of any other shape costs less, and one in a key the types do not name costs nothing);
+///   the largest real pattern takes about 12 MiB.
+/// - An older file is decoded into a `serde_json::Value` for the migrations. At the limit it takes
+///   up to about 900 MiB (objects of one member nested inside each other); the largest real pattern
+///   about 180 MiB. The migrations add a field to every section, short row and close step, so they
+///   first refuse one without the fields every writer gave it: an empty object, a few bytes in its
+///   list, would otherwise grow into a map node of hundreds.
+///
+/// A long text is one value and decodes to about its length.
 pub const MAX_VALUES: u64 = 3_000_000;
 
 /// How a `.plyknit` states its version: the envelope's `format` and `schema_version`, or no `format`
@@ -126,14 +138,120 @@ pub fn write(pattern: &KnitPattern) -> Result<String, KnitError> {
 /// Parse a `.plyknit` file of any supported version, migrating an older one to the current schema in
 /// memory. A newer version, a foreign `format`, or a malformed envelope is a typed error, found by
 /// [`schema_version`] before the file is decoded.
+///
+/// A file at the current version is decoded straight into the pattern's types, with no generic
+/// tree: every key the types do not name (at the top level or inside the pattern) is skipped
+/// unread, and each value costs what its typed field costs (see [`MAX_VALUES`]). An older file is
+/// decoded into a `serde_json::Value` for the migrations, which work on JSON values by design.
 pub fn read(text: &str) -> Result<LoadedPattern, KnitError> {
     let source_version = schema_version(text)?;
+    if source_version == KNIT_SCHEMA_VERSION {
+        return Ok(LoadedPattern {
+            pattern: current_document(text)?,
+            source_version,
+        });
+    }
     let document = document_of(serde_json::from_str(text)?)?;
     let document = migrate(source_version, document)?;
     Ok(LoadedPattern {
         pattern: serde_json::from_value(document)?,
         source_version,
     })
+}
+
+/// The pattern of a current-version envelope (one [`schema_version`] accepted), decoded into its
+/// types without a generic tree. It reads every file the tree route reads, to the same pattern,
+/// with one exception no Ply writer can produce: a key repeated inside the pattern is refused (the
+/// typed decode reports a duplicate field), where the tree kept its last value. Numbers read alike
+/// because the pattern's two `f32` fields are parsed as the tree parsed them ([`f32_read_as_f64`]).
+/// A repeated `document` key counts at its last occurrence, as in the tree, but each occurrence must
+/// be a pattern. The route is more lenient where the tree was stricter for no reason: a skipped
+/// value is checked for its syntax only (a lone surrogate escape, nesting deeper than the tree's
+/// limit), and a struct variant may be written as a list, as a struct may.
+fn current_document(text: &str) -> Result<KnitPattern, KnitError> {
+    let mut de = serde_json::Deserializer::from_str(text);
+    let CurrentEnvelope(document) = CurrentEnvelope::deserialize(&mut de)?;
+    de.end()?;
+    document.ok_or_else(|| KnitError::Malformed("the envelope has no document".into()))
+}
+
+/// A current-version envelope: its `document` decoded as a [`KnitPattern`] (`None` when the key is
+/// absent), every other key skipped unread.
+struct CurrentEnvelope(Option<KnitPattern>);
+
+impl<'de> Deserialize<'de> for CurrentEnvelope {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_map(CurrentEnvelopeVisitor)
+    }
+}
+
+struct CurrentEnvelopeVisitor;
+
+impl<'de> Visitor<'de> for CurrentEnvelopeVisitor {
+    type Value = CurrentEnvelope;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a .plyknit envelope")
+    }
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<CurrentEnvelope, A::Error> {
+        let mut document = None;
+        while let Some(key) = map.next_key_seed(DocumentKey)? {
+            if key {
+                // A repeated key overwrites: the last occurrence counts, as in a decoded tree.
+                document = Some(map.next_value::<KnitPattern>()?);
+            } else {
+                map.next_value::<IgnoredAny>()?;
+            }
+        }
+        Ok(CurrentEnvelope(document))
+    }
+}
+
+/// Reads an envelope key as "is it `document`", without keeping it.
+struct DocumentKey;
+
+impl<'de> DeserializeSeed<'de> for DocumentKey {
+    type Value = bool;
+    fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<bool, D::Error> {
+        d.deserialize_str(self)
+    }
+}
+
+impl<'de> Visitor<'de> for DocumentKey {
+    type Value = bool;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("an object key")
+    }
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<bool, E> {
+        Ok(v == "document")
+    }
+}
+
+/// Reads an `f32` field of the pattern as a generic tree read it: the number at double precision,
+/// then narrowed by serde's own `f32` conversion. With serde_json's `float_roundtrip` (on in this
+/// workspace) a streaming read of an `f32` parses at single precision instead, which can round a
+/// number differently (`1.0000000596046448` to `1.0000001`, where the tree gave `1.0`) and refuses
+/// one past `f32::MAX` as out of range (`1e39`, where the tree gave infinity). Reading through `f64`
+/// gives the same value from text and from a tree, so a pattern reads the same at every version.
+pub(crate) fn f32_read_as_f64<'de, D: Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    d.deserialize_f64(F32AsTree)
+}
+
+struct F32AsTree;
+
+impl<'de> Visitor<'de> for F32AsTree {
+    type Value = f32;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("f32")
+    }
+    fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<f32, E> {
+        f32::deserialize(v.into_deserializer())
+    }
+    fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<f32, E> {
+        f32::deserialize(v.into_deserializer())
+    }
+    fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<f32, E> {
+        f32::deserialize(v.into_deserializer())
+    }
 }
 
 /// The schema version of a `.plyknit` file by the detection rule above, read from the text alone:
@@ -2015,5 +2133,223 @@ mod tests {
             read(&cases[3]),
             Err(KnitError::WrongFormat { .. })
         ));
+    }
+
+    /// How a current-version file was read before it was decoded into its types: a generic tree,
+    /// then the typed decode of its `document`. Kept to show the typed route reads every such file
+    /// to the same pattern.
+    fn through_a_tree(text: &str) -> Result<KnitPattern, KnitError> {
+        let document = document_of(serde_json::from_str(text)?)?;
+        Ok(serde_json::from_value(document)?)
+    }
+
+    /// Every `.plyknit` under `dir` (recursively).
+    fn plyknit_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{dir:?}: {e}")) {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                plyknit_files(&path, out);
+            } else if path.extension().is_some_and(|e| e == "plyknit") {
+                out.push(path);
+            }
+        }
+    }
+
+    /// Every fixture of the shared tree (charts, repeats, sections, pieces, every release and schema
+    /// version), as this build writes it, reads to the same pattern through its types as through a
+    /// generic tree; so do the fixtures already at the current version, as stored.
+    #[test]
+    fn a_current_file_reads_to_the_same_pattern_as_through_a_tree() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+        let mut files = Vec::new();
+        plyknit_files(&root.join("knitting"), &mut files);
+        plyknit_files(&root.join("migrations/plyknit"), &mut files);
+        assert!(files.len() >= 30, "{} fixtures", files.len());
+        let mut current = 0;
+        for path in &files {
+            let stored = std::fs::read_to_string(path).unwrap();
+            let loaded = read(&stored).unwrap_or_else(|e| panic!("{path:?}: {e}"));
+            if loaded.source_version == KNIT_SCHEMA_VERSION {
+                current += 1;
+                assert_eq!(loaded.pattern, through_a_tree(&stored).unwrap(), "{path:?}");
+            }
+            let written = write(&loaded.pattern).unwrap();
+            let typed = read(&written).unwrap();
+            assert_eq!(typed.source_version, KNIT_SCHEMA_VERSION);
+            assert_eq!(typed.pattern, loaded.pattern, "{path:?}");
+            assert_eq!(typed.pattern, through_a_tree(&written).unwrap(), "{path:?}");
+        }
+        assert!(current > 0, "some fixtures are at the current version");
+    }
+
+    /// The envelope and the document the way a hand or another tool might write them, all of which
+    /// the tree route read: keys in any order, keys this build does not know (skipped unread, at
+    /// every level), a struct written as a list, a unit variant as a one-key object, whole numbers
+    /// with a fraction for a gauge, an `Option` field left out. Each reads to the same pattern both
+    /// ways.
+    #[test]
+    fn odd_but_valid_current_files_read_as_they_did_through_a_tree() {
+        let p = ribbing();
+        let doc = serde_json::to_value(&p).unwrap();
+        let mut unknown = doc.clone();
+        unknown["future"] = json!({"nested": [1, {"deep": null}], "text": "x"});
+        unknown["chart"]["rows"][0]["cells"][0]["later"] = json!(true);
+        let mut as_lists = doc.clone();
+        as_lists["gauge"] = json!([24.0, 32.0, "Inches"]);
+        as_lists["chart"]["rows"][0] = json!([[[1, null], [2, null]], []]);
+        let mut odd = doc.clone();
+        odd["construction"] = json!({"Flat": null});
+        odd["gauge"]["sts"] = json!(24);
+        odd.as_object_mut().unwrap().remove("cast_on");
+        let cases = [
+            json!({"document": doc, "schema_version": 6, "format": "ply.knit"}).to_string(),
+            json!({"format": "ply.knit", "extra": [{}, []], "schema_version": 6, "document": unknown})
+                .to_string(),
+            json!({"format": "ply.knit", "schema_version": 6, "document": as_lists}).to_string(),
+            json!({"format": "ply.knit", "schema_version": 6, "document": odd}).to_string(),
+            // A repeated document: the last one counts.
+            format!(
+                r#"{{"format":"ply.knit","schema_version":6,"document":{},"document":{doc}}}"#,
+                serde_json::to_string(&KnitPattern {
+                    name: "first".into(),
+                    ..ribbing()
+                })
+                .unwrap()
+            ),
+        ];
+        for text in &cases {
+            let typed = read(text).unwrap_or_else(|e| panic!("{text}: {e}"));
+            assert_eq!(typed.pattern, p, "{text}");
+            assert_eq!(typed.pattern, through_a_tree(text).unwrap(), "{text}");
+        }
+    }
+
+    /// What the typed route refuses, it refuses with the tree route's kind of error: a missing or
+    /// unreadable document, a missing field, a field of the wrong type, text after the envelope.
+    #[test]
+    fn a_current_file_the_tree_refused_is_refused_alike() {
+        let doc = serde_json::to_string(&ribbing()).unwrap();
+        let envelope =
+            |d: &str| format!(r#"{{"format":"ply.knit","schema_version":6,"document":{d}}}"#);
+        let cases = [
+            r#"{"format":"ply.knit","schema_version":6}"#.to_string(),
+            envelope("null"),
+            envelope("{}"),
+            envelope("[1,2]"),
+            envelope(&doc.replace(r#""name":"1x1 rib""#, r#""name":7"#)),
+            envelope(&doc.replace(r#""cells":["#, r#""cells":[{"stitch":-1,"color":null},"#)),
+            format!(r#"{{"format":"ply.knit","schema_version":6,"document":{doc},"document":7}}"#),
+        ];
+        for text in &cases {
+            let typed = read(text);
+            let tree = through_a_tree(text);
+            match (&typed, &tree) {
+                (Err(KnitError::Malformed(_)), Err(KnitError::Malformed(_)))
+                | (Err(KnitError::Json(_)), Err(KnitError::Json(_))) => {}
+                _ => panic!("{text}: typed {typed:?}, tree {tree:?}"),
+            }
+        }
+    }
+
+    /// The gauge's two `f32` fields read the same both ways, and as a plain `f32` read from a tree
+    /// (how the tree route read them before they were read through `f64`): numbers with more
+    /// precision than an `f32`, past `f32::MAX` (infinity, as the tree gave, not a refusal), below
+    /// its smallest, and whole numbers of any size.
+    #[test]
+    fn gauge_numbers_read_the_same_both_ways() {
+        let doc = serde_json::to_string(&ribbing()).unwrap();
+        assert!(doc.contains(r#""sts":24.0"#));
+        for number in [
+            "1.0000000596046448",
+            "1e39",
+            "-1e39",
+            "3.4028236e38",
+            "3.4028235e38",
+            "1e-46",
+            "2.5e-45",
+            "0.1",
+            "24",
+            "-7",
+            "16777217",
+            "18446744073709551615",
+            "-9223372036854775808",
+        ] {
+            let tree_f32: f32 =
+                serde_json::from_value(serde_json::from_str::<Value>(number).unwrap()).unwrap();
+            let text = format!(
+                r#"{{"format":"ply.knit","schema_version":6,"document":{}}}"#,
+                doc.replacen(r#""sts":24.0"#, &format!(r#""sts":{number}"#), 1)
+            );
+            let typed = read(&text).unwrap_or_else(|e| panic!("{number}: {e}"));
+            let tree = through_a_tree(&text).unwrap();
+            assert_eq!(
+                typed.pattern.gauge.sts.to_bits(),
+                tree_f32.to_bits(),
+                "{number}"
+            );
+            assert_eq!(tree.gauge.sts.to_bits(), tree_f32.to_bits(), "{number}");
+            assert_eq!(typed.pattern, tree, "{number}");
+        }
+        assert_eq!(
+            read(&format!(
+                r#"{{"format":"ply.knit","schema_version":6,"document":{}}}"#,
+                doc.replacen(r#""sts":24.0"#, r#""sts":1.0000000596046448"#, 1)
+            ))
+            .unwrap()
+            .pattern
+            .gauge
+            .sts,
+            1.0
+        );
+        // A gauge that is not a number is refused both ways.
+        let text = format!(
+            r#"{{"format":"ply.knit","schema_version":6,"document":{}}}"#,
+            doc.replacen(r#""sts":24.0"#, r#""sts":"24""#, 1)
+        );
+        assert!(matches!(read(&text), Err(KnitError::Json(_))));
+        assert!(matches!(through_a_tree(&text), Err(KnitError::Json(_))));
+    }
+
+    /// Where the tree was stricter for no reason, the typed route reads the file: a value it skips
+    /// is checked for its syntax only (a lone surrogate escape, nesting past serde_json's depth
+    /// limit), and a struct variant may be a list, as a struct may.
+    #[test]
+    fn the_typed_route_reads_what_the_tree_refused_for_no_reason() {
+        let mut doc = serde_json::to_value(ribbing()).unwrap();
+        doc["sections"] = json!([{"id": "s", "name": "", "notes": "", "construction": null,
+            "piece": null, "steps": [{"id": "t", "action": {"RoundStart": []}}]}]);
+        let doc = doc.to_string();
+        let envelope = |extra: &str| {
+            format!(r#"{{"format":"ply.knit","schema_version":6,{extra}"document":{doc}}}"#)
+        };
+        let deep = format!(r#""later":{}{},"#, "[".repeat(200), "]".repeat(200));
+        for text in [
+            envelope(r#""later":"\ud83d","#),
+            envelope(&deep),
+            envelope(""),
+        ] {
+            assert!(
+                through_a_tree(&text).is_err(),
+                "the tree refused {text:.80}"
+            );
+            let loaded = read(&text).unwrap_or_else(|e| panic!("{text:.80}: {e}"));
+            assert_eq!(
+                loaded.pattern.sections[0].steps[0].action,
+                crate::sections::StepAction::RoundStart {}
+            );
+        }
+    }
+
+    /// The one file the typed route refuses that the tree read: a key repeated inside the pattern
+    /// (the tree kept its last value). No Ply writer repeats a key; serde writes each field once.
+    #[test]
+    fn a_key_repeated_inside_the_pattern_is_refused() {
+        let doc = serde_json::to_string(&ribbing()).unwrap();
+        let text = format!(
+            r#"{{"format":"ply.knit","schema_version":6,"document":{}}}"#,
+            doc.replacen(r#""name":"1x1 rib""#, r#""name":"x","name":"1x1 rib""#, 1)
+        );
+        assert_eq!(through_a_tree(&text).unwrap(), ribbing());
+        assert!(matches!(read(&text), Err(KnitError::Json(_))));
     }
 }

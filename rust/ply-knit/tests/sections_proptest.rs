@@ -11,8 +11,9 @@
 //!    however large the counts in the file (`i64` and `u32` extremes are generated);
 //! 3. every step that is not applied is an error at that step, and every bind-off or hold of more
 //!    stitches than are left in the row is one of them (nothing goes negative silently);
-//! 4. sections survive `.plyknit` save and load exactly, and a step kind this build does not know
-//!    makes the file unreadable instead of being dropped;
+//! 4. sections survive `.plyknit` save and load exactly (decoded into their types, to the same
+//!    pattern as through a generic tree), and a step kind this build does not know makes the file
+//!    unreadable instead of being dropped;
 //! 5. working in the round, parts worked flat, needle groups, pick-ups, shaping and closing keep the
 //!    same accounting: a pick-up adds exactly its stitches, a short row's decrease takes exactly
 //!    one, a shaping step reaches exactly its count by whole repeats, a close moves every stitch to
@@ -537,6 +538,11 @@ proptest! {
         let text = native::write(&p).unwrap();
         let back = native::read(&text).unwrap();
         prop_assert_eq!(&back.pattern, &p);
+        // A current file is decoded into its types without a generic tree, and reads to the same
+        // pattern as it does through one.
+        let mut tree: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let through_tree: KnitPattern = serde_json::from_value(tree["document"].take()).unwrap();
+        prop_assert_eq!(&back.pattern, &through_tree);
         prop_assert_eq!(native::write(&back.pattern).unwrap(), text);
     }
 

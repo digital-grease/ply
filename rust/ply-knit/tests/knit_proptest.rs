@@ -324,6 +324,10 @@ proptest! {
         prop_assert_eq!(&loaded.pattern, &p);
         // Saving what was loaded writes the same bytes (a re-save is stable).
         prop_assert_eq!(loaded.pattern.to_json().unwrap(), json);
+        // Decoded into its types without a generic tree, it reads to the same pattern as through one.
+        let mut tree = v;
+        let through_tree: KnitPattern = serde_json::from_value(tree["document"].take()).unwrap();
+        prop_assert_eq!(&loaded.pattern, &through_tree);
     }
 
     /// A LEGACY (bare, version 1) file of a pattern already on the full built-in vocabulary, as
