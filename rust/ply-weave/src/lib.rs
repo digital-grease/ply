@@ -17,6 +17,8 @@ pub mod loom;
 pub mod loom_file;
 pub mod plan;
 pub mod profile;
+// Working a draft pick by pick, and resuming a saved place (ADR 0023).
+pub mod progress;
 // Is a draft ready to make or share (ADR 0021)?
 pub mod readiness;
 pub mod shadow;

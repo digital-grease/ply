@@ -810,6 +810,10 @@ pub struct LedgerLine {
     /// The index in [`KnitPattern::pieces`] of the piece the line's section works (`None` for a
     /// pattern of one piece, or a section naming a piece the pattern does not have).
     pub piece: Option<usize>,
+    /// How many whole rows or rounds the line works, when it is a step that works several and the
+    /// ledger counted them (`Work 10 rows`, a shaping step over 32 rows); `None` for every other line
+    /// (a progress tracker counts rows inside such a step, ADR 0023).
+    pub rows: Option<u64>,
 }
 
 impl LedgerLine {
@@ -2493,6 +2497,7 @@ impl<'a> Walk<'a> {
             opaque,
             count,
             piece,
+            rows: None,
         });
         self.lines.len() - 1
     }
@@ -4516,7 +4521,8 @@ impl<'a> Walk<'a> {
         let (marks, gaps) = needle.whole_rows(r);
         let text = self.crossings(si, ti, None, body, &marks, &gaps, false, false);
         let count = self.snapshot();
-        self.push_line(si, ti, None, label, text, true, false, count);
+        let line = self.push_line(si, ti, None, label, text, true, false, count);
+        self.lines[line].rows = Some(r);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -4707,7 +4713,8 @@ impl<'a> Walk<'a> {
             needle.c = needle.n;
         }
         let count = self.snapshot();
-        self.push_line(si, ti, None, label, text, true, false, count);
+        let line = self.push_line(si, ti, None, label, text, true, false, count);
+        self.lines[line].rows = Some(rows);
     }
 
     fn pick_up(

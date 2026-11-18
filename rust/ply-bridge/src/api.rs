@@ -1117,6 +1117,51 @@ pub fn tablet_instructions(
     crate::tablet_dto::instructions(doc, max_lines)
 }
 
+// ---------------------------------------------------------------------------
+// M8-05 PROGRESS TRACKING (ADR 0023; DTOs in `progress_dto.rs`, flat enums only, so no freezed
+// rebuild). The app keeps the place, log and notes in its own file; these calls say what to do at a
+// unit and whether a saved place still means the same. Each returns one whole result.
+// ---------------------------------------------------------------------------
+
+pub use crate::progress_dto::{
+    KnitPlaceDto, KnitWorkDto, KnitWorkModeKind, KnitWorkUnitDto, WeavePlaceDto, WeaveWorkDto,
+    WeaveWorkPickDto, WorkResumeDto, WorkResumeKind,
+};
+
+/// Picks `first` to `last` (from 1, inclusive) of the `time`-th time through the draft (from 1) as
+/// the weaver works them: what to press or lift, the shafts up, the weft colour, the working notes
+/// (a shuttle's side and a repeated shed follow the time through) and each pick's fingerprint; at
+/// most 500 picks (and fewer for a draft with very many shafts, `first` always included), cut to the
+/// draft's end. `Err` when the draft cannot convert, `first` is not one of its picks or `time` is 0
+/// (a draft with no picks gives an empty window).
+pub fn weave_work_window(
+    draft: DraftDto,
+    first: u32,
+    last: u32,
+    time: u32,
+) -> Result<WeaveWorkDto, String> {
+    crate::progress_dto::weave_window(draft, first, last, time)
+}
+
+/// Where a weaver with a saved `place` resumes in `draft` as it is now, and the sentence to show.
+/// Never moves the place: a place past the end is shown at the last pick, for checking. `Err` only
+/// when the draft cannot convert.
+pub fn weave_resume(draft: DraftDto, place: WeavePlaceDto) -> Result<WorkResumeDto, String> {
+    crate::progress_dto::weave_resume(draft, place)
+}
+
+/// Every unit of knitting work in order (chart rows, or the sections' ledger lines with a row count
+/// for a step that works several rows), with the section headings once and the cast-on line.
+pub fn knit_work(pattern: KnitPatternDto) -> KnitWorkDto {
+    crate::progress_dto::knit_work(pattern)
+}
+
+/// Where a knitter with a saved `place` resumes in `pattern` as it is now (the unit and the row
+/// inside it), and the sentence to show. Never moves the place on its own.
+pub fn knit_resume(pattern: KnitPatternDto, place: KnitPlaceDto) -> WorkResumeDto {
+    crate::progress_dto::knit_resume(pattern, place)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

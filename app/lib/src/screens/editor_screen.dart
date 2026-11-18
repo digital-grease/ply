@@ -8,6 +8,7 @@ import '../models/draft_meta.dart';
 import '../models/loom_type.dart';
 import '../print/print_export.dart' show PdfExportText;
 import '../print/weave_print.dart';
+import '../rust/dto.dart' show DraftDto;
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../state/loom_providers.dart';
@@ -28,6 +29,7 @@ import '../widgets/validation_panel.dart';
 import '../widgets/woven_preview.dart';
 import 'layer_inspector_screen.dart';
 import 'weave_plan_screen.dart';
+import 'weave_tracker_screen.dart';
 
 /// The less-frequent AppBar actions tucked into the overflow (⋮) menu. The `toggle*` entries are
 /// switches (shed direction, and the gridline / long-float / texture view chrome) rather than
@@ -42,6 +44,7 @@ enum _OverflowAction {
   convert,
   viewLayers,
   bookView,
+  weavePickByPick,
   printPdf,
   toggleShed,
   toggleGridlines,
@@ -605,6 +608,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                         _openLayers();
                       case _OverflowAction.bookView:
                         showBookViewSheet(context);
+                      case _OverflowAction.weavePickByPick:
+                        _openTracker(dirty);
                       case _OverflowAction.printPdf:
                         printOrShareWeavePdf(context, ref,
                             name: widget.title, credit: widget.meta?.author);
@@ -694,6 +699,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                           leading: Icon(Icons.format_list_numbered),
                           title: Text(kBookViewTitle)),
                     ),
+                    // Weave the draft pick by pick, keeping your place (ADR 0023): a saved draft
+                    // only, since the place is kept with the saved project.
+                    const PopupMenuItem(
+                      value: _OverflowAction.weavePickByPick,
+                      child: ListTile(
+                          dense: true,
+                          leading: Icon(Icons.playlist_play),
+                          title: Text('$kWeaveTrackerTitle…')),
+                    ),
                     // A printable book draft of the draft as it is now, unsaved edits included. A
                     // separate action from saving or exporting the WIF file.
                     const PopupMenuItem(
@@ -737,6 +751,33 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       body: _buildBody(),
       ),
     );
+  }
+
+  /// Open the pick-by-pick tracker on the draft as it is on screen. Progress is kept with the saved
+  /// project, so an unsaved draft is asked to be saved first; the tracker never writes the draft.
+  void _openTracker(bool unsavedEdits) {
+    final id = widget.id;
+    if (id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Save the draft first to keep your place.')));
+      return;
+    }
+    final DraftDto dto;
+    try {
+      dto = ref.read(repositoryProvider).toDto(ref.read(draftEditorProvider).draft);
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not read the draft: $e')));
+      return;
+    }
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => WeaveTrackerScreen(
+        projectId: id,
+        draft: dto,
+        name: widget.title,
+        unsavedEdits: unsavedEdits,
+      ),
+    ));
   }
 
   /// Step the on-screen cell pitch up (+1) or down (-1) through the zoom levels (snapping an off-level

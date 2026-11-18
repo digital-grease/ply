@@ -18,6 +18,8 @@ pub mod loom_dto;
 pub mod materials_dto;
 pub mod nalbind_dto;
 pub mod nalbind_recipe_dto;
+// Working a pattern unit by unit and resuming a saved place (ADR 0023).
+pub mod progress_dto;
 // Ready to make or share (ADR 0021).
 pub mod readiness_dto;
 // Tablet weaving (M10-02, ADR 0018).

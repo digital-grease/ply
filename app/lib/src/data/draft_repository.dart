@@ -19,6 +19,7 @@ import '../models/shadow_weave_params.dart';
 import '../models/weft_work.dart' show withSoundShotGroups;
 import '../rust/api.dart';
 import '../rust/dto.dart';
+import 'progress_repository.dart' show ProgressRepository;
 import 'sidecar_writes.dart';
 
 /// The one place the app touches `dart:io` and the generated bridge symbols.
@@ -881,6 +882,9 @@ class DraftRepository {
     final json = owned.first;
     await SidecarWrites.run(json, () => remove([json, '$json.tmp', '$json.links.tmp']));
     await remove([for (final o in owned.skip(1)) ...[o, '$o.tmp']]);
+    // The progress record (ADR 0023), after the sidecar: a progress write checks the sidecar under
+    // its lock, so none can land after this.
+    await ProgressRepository.deleteFilesIn(dir.path, id);
   }
 
   // ---------------------------------------------------------------------------

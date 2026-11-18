@@ -26,10 +26,22 @@ import '../widgets/project_materials_sheet.dart';
 import '../widgets/rgb_color_picker.dart';
 import '../widgets/unsaved_changes_guard.dart';
 import 'knit_sections_screen.dart';
+import 'knit_tracker_screen.dart';
 import 'knit_written_screen.dart';
 
 /// The knit editor's overflow-menu actions.
-enum _EditorMenu { zoomIn, zoomOut, written, sections, pdf, legend, planning, materials, settings }
+enum _EditorMenu {
+  zoomIn,
+  zoomOut,
+  written,
+  sections,
+  knitRowByRow,
+  pdf,
+  legend,
+  planning,
+  materials,
+  settings
+}
 
 /// The knitting chart editor (M5): paint a chart of stitch symbols, resize the grid, undo/redo, see
 /// live stitch-count validation, and save to the on-device knit library. The knit analog of the
@@ -192,6 +204,25 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
     }
   }
 
+  /// Open the row-by-row tracker on the pattern as it is on screen. Progress is kept with the saved
+  /// pattern, so an unsaved pattern is asked to be saved first; the tracker never writes the pattern.
+  void _openTracker() {
+    final id = _id;
+    if (id == null) {
+      _snack('Save the pattern first to keep your place.');
+      return;
+    }
+    final editor = ref.read(knitEditorProvider);
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => KnitTrackerScreen(
+        projectId: id,
+        pattern: editor.pattern,
+        name: _name,
+        unsavedEdits: editor.isDirty,
+      ),
+    ));
+  }
+
   /// Fill the current selection with the active stitch + color (one undo entry), then clear it. A cable
   /// brush spans columns and can't fill a region, so it is blocked with a hint instead of a silent
   /// no-op.
@@ -334,6 +365,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                 _EditorMenu.sections => Navigator.of(context).push(
                     MaterialPageRoute<void>(builder: (_) => const KnitSectionsScreen()),
                   ),
+                _EditorMenu.knitRowByRow => _openTracker(),
                 _EditorMenu.pdf => printOrShareKnitPdf(context, ref, name: _name),
                 _EditorMenu.legend => showKnitLegendSheet(context),
                 _EditorMenu.planning => showKnitPlanningSheet(context),
@@ -375,6 +407,17 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
                   child: const ListTile(
                     leading: Icon(Icons.view_agenda_outlined),
                     title: Text('Sections'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                // Knit the pattern row by row, keeping your place (ADR 0023). Not while loading or
+                // after a failed open.
+                PopupMenuItem(
+                  value: _EditorMenu.knitRowByRow,
+                  enabled: !_loading && _error == null,
+                  child: const ListTile(
+                    leading: Icon(Icons.playlist_play),
+                    title: Text('$kKnitTrackerTitle…'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),

@@ -13,6 +13,7 @@ import '../models/knit_entry.dart';
 import '../models/native_format.dart';
 import '../rust/api.dart';
 import '../rust/knit_dto.dart';
+import 'progress_repository.dart' show ProgressRepository;
 import 'sidecar_writes.dart';
 
 /// The one place the knitting app touches the generated bridge symbols for `ply-knit` — the analog of
@@ -363,6 +364,9 @@ class KnitRepository {
       for (final f in files.skip(1)) ...[f, '$f.tmp'],
       ...backups
     ]);
+    // The progress record (ADR 0023), after the sidecar: a progress write checks the sidecar under
+    // its lock, so none can land after this.
+    await ProgressRepository.deleteFilesIn(dir.path, id);
   }
 
   /// Whether this repository instance (one per app run) has already swept orphaned backups.

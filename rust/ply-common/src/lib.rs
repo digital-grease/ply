@@ -15,6 +15,8 @@ pub mod envelope;
 pub mod json_count;
 pub mod materials;
 pub mod materials_file;
+// Where a crafter is in a project, and whether a saved place still means the same (ADR 0023).
+pub mod progress;
 pub mod provenance;
 pub mod quantity;
 // The severity vocabulary every craft shares and the "ready to make or share" report (ADR 0021).
