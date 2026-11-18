@@ -231,8 +231,8 @@ const List<FaqSection> kFaq = [
       "Yes, open Settings from the gear icon in the home screen's top bar. You can pick System, Light, or Dark mode, turn on Material You to pull colors from your device wallpaper, or choose an accent color. Changes apply instantly and survive a relaunch, and the app respects your system text size and works with screen readers.",
     ),
     FaqEntry(
-      "Where is the glossary, and why can't I do machine knitting export or nalbinding recipes?",
-      "The glossary lives right here in Help: tap the Glossary entry at the top of this screen (Help is the question-mark icon in the home screen's top bar). It is a searchable reference covering weaving, knitting, nalbinding, and tablet weaving terms. Knitout export for machine knitters is planned but not built yet, so for now knitting is charts plus written instructions only. Nalbinding has the stitch reference, the notation playground, and simple saved projects; the recipe model (worked pieces with shaping steps) is still planned.",
+      "Where is the glossary, and why can't I do machine knitting export?",
+      "The glossary lives right here in Help: tap the Glossary entry at the top of this screen (Help is the question-mark icon in the home screen's top bar). It is a searchable reference covering weaving, knitting, nalbinding, and tablet weaving terms. Knitout export for machine knitters is planned but not built yet, so for now knitting is charts plus written instructions only. Nalbinding has the stitch reference, the notation playground, and saved projects, and a project can hold a recipe (the piece as steps in working order, with its shaping) that you can follow one step at a time.",
     ),
   ]),
 ];
