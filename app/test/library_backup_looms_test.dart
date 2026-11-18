@@ -28,6 +28,7 @@ LibraryBackup loomService({Directory? into, Future<void> Function(AppSettings)? 
       documentsDir: () async => into ?? docs,
       currentKnitSchemaVersion: () async => knitVersion,
       appVersion: '9.9.9-test',
+      checks: testChecks,
       clock: () => DateTime.utc(2026, 11, 15, 10, 30),
       looms: loomHooks(DartCodecLoomRepository(into ?? docs)),
       applySettings: applySettings,

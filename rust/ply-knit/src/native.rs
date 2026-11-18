@@ -19,6 +19,16 @@
 //! [`KnitError::NewerVersion`] before its document is looked at. An older file is migrated IN MEMORY
 //! through the `MIGRATIONS` chain, one version at a time; the caller decides whether to save it.
 //!
+//! **The version is read from the text alone.** [`schema_version`] applies the detection rule with
+//! the shared envelope probe ([`ply_common::envelope`]): one pass over the text that skips the
+//! document unread and builds nothing in proportion to the file, however large. [`read`] asks it
+//! first, so a newer, foreign or malformed envelope is refused before any of the file is decoded.
+//!
+//! **A guard for untrusted files.** The document is decoded into a JSON tree (for the migrations),
+//! and many small values make a tree far larger than its text. [`within_value_limit`] counts a
+//! file's values without decoding it; the backup restore refuses a pattern past [`MAX_VALUES`]
+//! before it reads it. Opening and saving do not ask.
+//!
 //! **Changing the format.** Any change to the document shape OR to the built-in stitch vocabulary
 //! (see [`StitchLegend::builtin`](crate::StitchLegend::builtin)) bumps [`KNIT_SCHEMA_VERSION`] and
 //! appends one migration that knows exactly what changed. Migrations work on JSON values, not on the
@@ -44,6 +54,8 @@
 //!   (`Join`). The built-in vocabulary is unchanged from version 2. A version-5 file that names
 //!   `Join` was not written by any version-5 writer and is refused.
 
+use ply_common::envelope::{envelope_version, EnvelopeError, EnvelopeRule, FORMAT_KEY};
+use ply_common::json_count::count_values;
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -55,6 +67,31 @@ pub const KNIT_FORMAT: &str = "ply.knit";
 
 /// The `.plyknit` schema version this build writes, and the newest it can read.
 pub const KNIT_SCHEMA_VERSION: u32 = 6;
+
+/// The most JSON values (objects, lists, strings, numbers, `true`, `false`, `null` and object
+/// keys, as [`ply_common::json_count::count_values`] counts them) a pattern from a backup may
+/// have: past it, the restore refuses the pattern as too complex to check, without decoding it.
+///
+/// Sized from the largest pattern the app can make, from the format's limits: a chart of 200
+/// stitches by 400 rows (the editor's and the new pattern screen's limits) with every cell coloured
+/// and a repeat on every column, 1,000 custom stitches and 1,000 colours, 50 pieces, 1,000 sections
+/// and 10,000 steps (a text of any length is one value). It has 1.28 million values; this is over
+/// twice that. The guard bounds decode memory only roughly: a file at the limit decodes, at worst
+/// (objects of one member nested inside each other), to about 900 MiB of `serde_json::Value`
+/// (counted by a counting allocator, before the allocator's own overhead), and the largest real
+/// pattern to about 230 MiB. The migrations add a field to every section, short row and close step,
+/// so they first refuse one without the fields every writer gave it: an empty object, a few bytes in
+/// its list, would otherwise grow into a map node of hundreds. A long text is one value and decodes
+/// to about its length.
+pub const MAX_VALUES: u64 = 3_000_000;
+
+/// How a `.plyknit` states its version: the envelope's `format` and `schema_version`, or no `format`
+/// key at all for a legacy version-1 file.
+const KNIT_ENVELOPE: EnvelopeRule = EnvelopeRule {
+    format: KNIT_FORMAT,
+    version_key: "schema_version",
+    legacy_without_format: true,
+};
 
 /// A pattern read from a `.plyknit` file, with the schema version the file was written at.
 #[derive(Debug, Clone, PartialEq)]
@@ -87,9 +124,11 @@ pub fn write(pattern: &KnitPattern) -> Result<String, KnitError> {
 }
 
 /// Parse a `.plyknit` file of any supported version, migrating an older one to the current schema in
-/// memory. A newer version, a foreign `format`, or a malformed envelope is a typed error.
+/// memory. A newer version, a foreign `format`, or a malformed envelope is a typed error, found by
+/// [`schema_version`] before the file is decoded.
 pub fn read(text: &str) -> Result<LoadedPattern, KnitError> {
-    let (source_version, document) = split(serde_json::from_str(text)?)?;
+    let source_version = schema_version(text)?;
+    let document = document_of(serde_json::from_str(text)?)?;
     let document = migrate(source_version, document)?;
     Ok(LoadedPattern {
         pattern: serde_json::from_value(document)?,
@@ -97,43 +136,50 @@ pub fn read(text: &str) -> Result<LoadedPattern, KnitError> {
     })
 }
 
-/// The schema version of a `.plyknit` file by the detection rule above, without decoding or
-/// migrating its document. Errors exactly as [`read`] would for the envelope itself.
+/// The schema version of a `.plyknit` file by the detection rule above, read from the text alone:
+/// nothing else in the file is decoded or built, however large it is. A version newer than this
+/// build reads is [`KnitError::NewerVersion`] (with the version found). Errors exactly as [`read`]
+/// does for the envelope itself.
 pub fn schema_version(text: &str) -> Result<u32, KnitError> {
-    split(serde_json::from_str(text)?).map(|(version, _)| version)
-}
-
-/// Apply the detection rule: the file's schema version and its document value.
-fn split(value: Value) -> Result<(u32, Value), KnitError> {
-    let Value::Object(mut obj) = value else {
-        return Err(KnitError::Malformed(
-            "a .plyknit file must be a JSON object".into(),
-        ));
-    };
-    let Some(format) = obj.get("format") else {
-        return Ok((1, Value::Object(obj))); // legacy: the bare pattern object
-    };
-    if format.as_str() != Some(KNIT_FORMAT) {
-        return Err(KnitError::WrongFormat {
-            found: format.to_string(),
-        });
-    }
-    let version = obj
-        .get("schema_version")
-        .and_then(Value::as_u64)
-        .filter(|&v| v >= 1)
-        .ok_or_else(|| KnitError::Malformed("schema_version must be a positive integer".into()))?;
+    let version = envelope_version(text, &KNIT_ENVELOPE).map_err(|e| match e {
+        EnvelopeError::Json(e) => KnitError::Json(e),
+        EnvelopeError::NotAnObject => {
+            KnitError::Malformed("a .plyknit file must be a JSON object".into())
+        }
+        EnvelopeError::WrongFormat { found } => KnitError::WrongFormat { found },
+        EnvelopeError::BadVersion => {
+            KnitError::Malformed("schema_version must be a positive integer".into())
+        }
+    })?;
     if version > u64::from(KNIT_SCHEMA_VERSION) {
         return Err(KnitError::NewerVersion {
             found: version,
             supported: KNIT_SCHEMA_VERSION,
         });
     }
-    let document = obj
-        .remove("document")
-        .ok_or_else(|| KnitError::Malformed("the envelope has no document".into()))?;
-    // `version` is at most KNIT_SCHEMA_VERSION here, so it fits a u32.
-    Ok((version as u32, document))
+    // At most KNIT_SCHEMA_VERSION here, so it fits a u32.
+    Ok(version as u32)
+}
+
+/// Whether `text` has at most [`MAX_VALUES`] JSON values, counted in one pass without decoding it
+/// or allocating anything. The backup restore asks before it reads a pattern; nothing else does.
+pub fn within_value_limit(text: &str) -> bool {
+    count_values(text) <= MAX_VALUES
+}
+
+/// The pattern in a parsed file whose envelope [`schema_version`] accepted: an envelope's `document`,
+/// or the whole object of a legacy file (one without a `format` key).
+fn document_of(value: Value) -> Result<Value, KnitError> {
+    let Value::Object(mut obj) = value else {
+        return Err(KnitError::Malformed(
+            "a .plyknit file must be a JSON object".into(),
+        ));
+    };
+    if !obj.contains_key(FORMAT_KEY) {
+        return Ok(Value::Object(obj)); // legacy: the bare pattern object
+    }
+    obj.remove("document")
+        .ok_or_else(|| KnitError::Malformed("the envelope has no document".into()))
 }
 
 /// One migration: a document at version `n` in, the same document at version `n + 1` out.
@@ -147,7 +193,7 @@ const MIGRATIONS: [Migration; KNIT_SCHEMA_VERSION as usize - 1] =
 
 /// Run every migration from `from` up to the current version, in order.
 fn migrate(from: u32, mut document: Value) -> Result<Value, KnitError> {
-    // `split` guarantees 1 <= from <= KNIT_SCHEMA_VERSION.
+    // `schema_version` guarantees 1 <= from <= KNIT_SCHEMA_VERSION.
     for step in &MIGRATIONS[(from as usize).saturating_sub(1)..] {
         document = step(document)?;
     }
@@ -321,6 +367,27 @@ fn v3_to_v4(mut doc: Value) -> Result<Value, KnitError> {
     Ok(doc)
 }
 
+/// The fields every writer gave a section, a short row and a close step, which the typed decode
+/// requires (the fields a migration adds aside).
+const SECTION_FIELDS: [&str; 4] = ["id", "name", "notes", "steps"];
+const SHORT_ROW_FIELDS: [&str; 4] = ["stitch", "to", "method", "resolve_turns"];
+const CLOSE_FIELDS: [&str; 1] = ["method"];
+
+/// Refuse (`Malformed`) an object a migration is about to add a field to when it lacks one of the
+/// `fields` every writer gave it. The typed decode would refuse it anyway; refusing it first keeps a
+/// hostile file of empty objects (`[{}, {}, ...]`) from being grown into a map each: an empty object
+/// costs a few bytes in its list, and one with a field its own map node of hundreds.
+fn require_fields(
+    obj: &serde_json::Map<String, Value>,
+    what: &str,
+    fields: &[&str],
+) -> Result<(), KnitError> {
+    match fields.iter().find(|f| !obj.contains_key(**f)) {
+        Some(missing) => Err(KnitError::Malformed(format!("{what} has no {missing}"))),
+        None => Ok(()),
+    }
+}
+
 /// The section step kinds a version-4 document can have: the vocabulary of schema version 4,
 /// FROZEN. Version 5 added kinds; a version-4 file naming one was written by no version-4 writer.
 const V4_STEP_KINDS: [&str; 8] = [
@@ -344,7 +411,8 @@ const V4_TURNS: [&str; 2] = ["Last", "Count"];
 /// the migration states neither: every version-4 step keeps exactly its meaning. A stray
 /// `construction` or `decrease` key meant nothing at version 4 and is replaced by `null`. A step
 /// kind or short-row turn that version 4 did not have is refused (`Malformed`) rather than read with
-/// its version-5 meaning: no version-4 writer produced one. Anything else malformed is left for the
+/// its version-5 meaning: no version-4 writer produced one. So is a section or short row without the
+/// fields every writer gave it (see [`require_fields`]). Anything else malformed is left for the
 /// typed decode to report. Everything else in the document is untouched.
 fn v4_to_v5(mut doc: Value) -> Result<Value, KnitError> {
     let Some(sections) = doc.get_mut("sections").and_then(Value::as_array_mut) else {
@@ -354,6 +422,7 @@ fn v4_to_v5(mut doc: Value) -> Result<Value, KnitError> {
         let Some(obj) = section.as_object_mut() else {
             continue;
         };
+        require_fields(obj, "a section", &SECTION_FIELDS)?;
         obj.insert("construction".into(), Value::Null);
         let Some(steps) = obj.get_mut("steps").and_then(Value::as_array_mut) else {
             continue;
@@ -380,6 +449,7 @@ fn v4_to_v5(mut doc: Value) -> Result<Value, KnitError> {
             let Some(fields) = body.as_object_mut() else {
                 continue;
             };
+            require_fields(fields, "a short row", &SHORT_ROW_FIELDS)?;
             let turn = fields
                 .get("to")
                 .and_then(Value::as_object)
@@ -424,10 +494,11 @@ const V5_STEP_KINDS: [&str; 16] = [
 /// A version-5 pattern was one piece, every section working it, which is exactly what no pieces and
 /// every section's piece not stated mean, and a version-5 close always closed the stitches on the
 /// needle: every version-5 step keeps its meaning. A stray `pieces`, `piece` or `holds` key meant
-/// nothing at version 5 and is replaced. A step kind that version 5 did not
-/// have (`Join`) is refused (`Malformed`) rather than read with its version-6 meaning: no version-5
-/// writer produced one. Anything else malformed is left for the typed decode to report. Everything
-/// else in the document is untouched.
+/// nothing at version 5 and is replaced. A step kind that version 5 did not have (`Join`) is refused
+/// (`Malformed`) rather than read with its version-6 meaning: no version-5 writer produced one. So
+/// is a section or close step without the fields every writer gave it (see [`require_fields`]).
+/// Anything else malformed is left for the typed decode to report. Everything else in the document
+/// is untouched.
 fn v5_to_v6(mut doc: Value) -> Result<Value, KnitError> {
     let Some(obj) = doc.as_object_mut() else {
         return Ok(doc);
@@ -440,6 +511,7 @@ fn v5_to_v6(mut doc: Value) -> Result<Value, KnitError> {
         let Some(obj) = section.as_object_mut() else {
             continue;
         };
+        require_fields(obj, "a section", &SECTION_FIELDS)?;
         obj.insert("piece".into(), Value::Null);
         let Some(steps) = obj.get_mut("steps").and_then(Value::as_array_mut) else {
             continue;
@@ -463,6 +535,7 @@ fn v5_to_v6(mut doc: Value) -> Result<Value, KnitError> {
             // A version-5 close always closed the stitches on the needle.
             if kind == "Close" {
                 if let Some(fields) = body.as_object_mut() {
+                    require_fields(fields, "a close step", &CLOSE_FIELDS)?;
                     fields.insert("holds".into(), Value::Array(Vec::new()));
                 }
             }
@@ -1847,5 +1920,100 @@ mod tests {
         let loaded = read(&text).unwrap();
         assert_eq!(loaded.source_version, 1);
         assert_eq!(loaded.pattern.legend, StitchLegend::builtin());
+    }
+
+    /// The version comes from the envelope alone, by the rule `read` applies: legacy (no `format`)
+    /// is 1, an envelope states its own, a newer one is a typed error carrying what was found, and
+    /// anything that is not a `.plyknit` envelope says why.
+    #[test]
+    fn the_version_is_read_from_the_envelope_by_the_detection_rule() {
+        let p = ribbing();
+        assert_eq!(schema_version(&legacy_json(&p)).unwrap(), 1);
+        assert_eq!(schema_version(&write(&p).unwrap()).unwrap(), 6);
+        assert_eq!(
+            schema_version(r#"{"format":"ply.knit","schema_version":6,"document":"anything"}"#)
+                .unwrap(),
+            6
+        );
+        let newer = r#"{"format":"ply.knit","schema_version":18446744073709551615,"document":{}}"#;
+        assert!(matches!(
+            schema_version(newer),
+            Err(KnitError::NewerVersion {
+                found: u64::MAX,
+                supported: 6
+            })
+        ));
+        assert!(matches!(
+            schema_version(r#"{"format":"ply.nalbind","schemaVersion":3,"name":"x"}"#),
+            Err(KnitError::WrongFormat { found }) if found == "\"ply.nalbind\""
+        ));
+        assert!(matches!(
+            schema_version(r#"{"format":null,"schema_version":6,"document":{}}"#),
+            Err(KnitError::WrongFormat { found }) if found == "null"
+        ));
+        assert!(matches!(
+            schema_version("not json"),
+            Err(KnitError::Json(_))
+        ));
+        assert!(matches!(
+            schema_version(r#"{"format":"ply.knit","schema_version":6,"document":{}} {}"#),
+            Err(KnitError::Json(_))
+        ));
+        for bad in [
+            r#"[1, 2, 3]"#,
+            r#""ply.knit""#,
+            r#"{"format":"ply.knit","document":{}}"#,
+            r#"{"format":"ply.knit","schema_version":0,"document":{}}"#,
+            r#"{"format":"ply.knit","schema_version":-1,"document":{}}"#,
+            r#"{"format":"ply.knit","schema_version":6.5,"document":{}}"#,
+            r#"{"format":"ply.knit","schema_version":"6","document":{}}"#,
+            r#"{"format":"ply.knit","schema_version":[6],"document":{}}"#,
+        ] {
+            assert!(
+                matches!(schema_version(bad), Err(KnitError::Malformed(_))),
+                "{bad} should be malformed"
+            );
+        }
+    }
+
+    /// The probe and the reader agree on every envelope, the odd ones included: keys after the
+    /// document, a repeated key (its last value counts in both), a document of the wrong shape.
+    #[test]
+    fn the_probe_and_the_reader_agree_on_the_envelope() {
+        let p = ribbing();
+        let doc = serde_json::to_string(&p).unwrap();
+        let cases = [
+            format!(r#"{{"document":{doc},"schema_version":6,"format":"ply.knit"}}"#),
+            format!(
+                r#"{{"format":"ply.knit","schema_version":9,"schema_version":6,"document":{doc}}}"#
+            ),
+            format!(
+                r#"{{"format":"ply.knit","schema_version":6,"schema_version":9,"document":{doc}}}"#
+            ),
+            format!(
+                r#"{{"format":"ply.knit","format":"ply.tablet","schema_version":6,"document":{doc}}}"#
+            ),
+            format!(r#"{{"format":"ply.knit","schema_version":6,"document":{doc},"document":7}}"#),
+            r#"{"format":"ply.knit","schema_version":2}"#.to_string(),
+        ];
+        for text in &cases {
+            let probed = schema_version(text);
+            match (read(text), probed) {
+                (Ok(loaded), Ok(v)) => assert_eq!(loaded.source_version, v, "{text}"),
+                // A sound envelope around a document the reader refuses: the probe is not a decode.
+                (Err(KnitError::Json(_) | KnitError::Malformed(_)), Ok(_)) => {}
+                (Err(a), Err(b)) => assert_eq!(format!("{a:?}"), format!("{b:?}"), "{text}"),
+                (r, v) => panic!("{text}: read {r:?}, probe {v:?}"),
+            }
+        }
+        assert_eq!(read(&cases[0]).unwrap().pattern, p);
+        assert!(matches!(
+            read(&cases[2]),
+            Err(KnitError::NewerVersion { found: 9, .. })
+        ));
+        assert!(matches!(
+            read(&cases[3]),
+            Err(KnitError::WrongFormat { .. })
+        ));
     }
 }

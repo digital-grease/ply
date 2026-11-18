@@ -105,6 +105,14 @@ void main() {
       expect(plyknitSchemaVersion(envelope('2')), isNull);
       expect(plyknitSchemaVersion(envelope(2.5)), isNull);
     });
+
+    test('reads small texts only (the app asks the engine for the version of a real file)', () {
+      final small = jsonEncode({'format': kPlyknitFormat, 'schema_version': 6, 'document': ''});
+      expect(plyknitSchemaVersion(small), 6);
+      final large = jsonEncode(
+          {'format': kPlyknitFormat, 'schema_version': 6, 'document': 'x' * kPlyknitProbeMaxBytes});
+      expect(plyknitSchemaVersion(large), isNull);
+    });
   });
 
   group('NativeFormatException', () {

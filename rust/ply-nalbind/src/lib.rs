@@ -10,6 +10,8 @@
 pub mod diagram;
 pub mod dictionary;
 pub mod error;
+// The version a `.plynal` file states, read without decoding the project (the app owns the file).
+pub mod native;
 pub mod notation;
 pub mod recipe;
 // Is a project ready to make or share (ADR 0021)?

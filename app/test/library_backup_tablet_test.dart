@@ -117,7 +117,7 @@ Future<Map<String, dynamic>> manifestOf(File archive) async =>
 LibraryBackup materialService({Directory? into}) => LibraryBackup(
       documentsDir: () async => into ?? docs,
       currentKnitSchemaVersion: () async => knitVersion,
-      checks: const NativeFileChecks(tabletVersion: testTabletVersion),
+      checks: testChecks,
       appVersion: '9.9.9-test',
       clock: () => DateTime.utc(2026, 11, 12, 10, 30),
       materials: materialHooks(DartCodecMaterialsRepository(into ?? docs)),
@@ -564,7 +564,7 @@ void main() {
       LibraryBackup writing(int? version) => LibraryBackup(
             documentsDir: () async => docs,
             currentKnitSchemaVersion: () async => knitVersion,
-            checks: const NativeFileChecks(tabletVersion: testTabletVersion),
+            checks: testChecks,
             currentTabletSchemaVersion: version == null
                 ? null
                 : () async {

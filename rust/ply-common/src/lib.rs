@@ -5,10 +5,14 @@
 //!
 //! Besides the small shared types below it holds what every craft shares (roadmap M8-01, ADR 0016):
 //! unit-aware quantities ([`quantity`]), where a number came from ([`provenance`]), the materials and
-//! swatch records ([`materials`]) and their file, `materials.json` ([`materials_file`]).
+//! swatch records ([`materials`]) and their file, `materials.json` ([`materials_file`]). The
+//! version keys of Ply's own document files are read by one rule, without decoding the document
+//! ([`envelope`]), and the values a file holds are counted without decoding it ([`json_count`]).
 
 use serde::{Deserialize, Serialize};
 
+pub mod envelope;
+pub mod json_count;
 pub mod materials;
 pub mod materials_file;
 pub mod provenance;

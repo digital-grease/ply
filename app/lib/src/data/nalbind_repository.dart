@@ -85,6 +85,19 @@ class NalbindRepository {
   Future<RecipeReportDto> checkRecipe(NalbindRecipe recipe, {required String projectNotation}) =>
       checkNalbindRecipe(recipe: recipeToDto(recipe), projectNotation: projectNotation);
 
+  /// The schema version a `.plynal` file's text says it has, read by the engine from its `format`
+  /// and `schemaVersion` keys alone (1 for a legacy file; nothing else in the file is decoded,
+  /// however large); null when it is not a `.plynal`. A newer version than
+  /// [NalbindProject.currentSchemaVersion] is returned as found. Never decode a file in Dart only to
+  /// learn this.
+  Future<int?> documentVersion(String text) => nalbindDocumentVersion(text: text);
+
+  /// Whether a `.plynal` text has at most the engine's limit of JSON values, counted without
+  /// decoding it (`ply_nalbind::native::MAX_VALUES`). The backup restore asks before it decodes a
+  /// project, since a few megabytes of tiny values decode to hundreds of megabytes; opening and
+  /// saving never ask.
+  Future<bool> withinValueLimit(String text) => nalbindWithinValueLimit(text: text);
+
   // ---------------------------------------------------------------------------
   // Persistence: <documents>/nalbinds/<id>.{plynal,json} (mirrors KnitRepository, no thumb/native).
   // ---------------------------------------------------------------------------
@@ -197,11 +210,12 @@ class NalbindRepository {
     }
   }
 
-  /// Throw (writing nothing) if [body] exists but this build cannot read it.
+  /// Throw (writing nothing) if [body] exists but this build cannot read it. The file is read on a
+  /// background isolate.
   Future<void> _refuseUnreadable(File body) async {
     if (!await body.exists()) return;
     try {
-      NalbindProject.decode(await body.readAsString());
+      await checkPlynalInBackground(await body.readAsString());
     } on NativeFormatException catch (e) {
       throw NativeFormatException(e.problem,
           document: NativeDocument.nalbindProject, whileSaving: true, detail: e.detail);
@@ -242,8 +256,9 @@ class NalbindRepository {
     return entries;
   }
 
-  /// Read a saved project's `.plynal` body (any supported version; read-only). A file this build must
-  /// not open (saved by a newer Ply, another format, unreadable) throws a [NativeFormatException].
+  /// Read a saved project's `.plynal` body (any supported version; read-only), decoded on a
+  /// background isolate. A file this build must not open (saved by a newer Ply, another format,
+  /// unreadable) throws a [NativeFormatException].
   Future<NalbindProject> readProject(String id) async {
     final dir = await _dir();
     final String text;
@@ -252,7 +267,7 @@ class NalbindRepository {
     } on FileSystemException catch (e) {
       throw Exception('Could not open the project: ${e.message}');
     }
-    return NalbindProject.decode(text);
+    return decodePlynalInBackground(text);
   }
 
   /// Tick recipe segment [segmentId] of saved project [id] done (or not) in the follow view, writing
@@ -271,7 +286,7 @@ class NalbindRepository {
     final body = File(_projectPath(dir, id));
     final NalbindProject saved;
     try {
-      saved = NalbindProject.decode(await body.readAsString());
+      saved = await decodePlynalInBackground(await body.readAsString());
     } on NativeFormatException catch (e) {
       throw NativeFormatException(e.problem,
           document: NativeDocument.nalbindProject, whileSaving: true, detail: e.detail);

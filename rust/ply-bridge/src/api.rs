@@ -492,22 +492,15 @@ pub use crate::knit_dto::{
 /// Ply, a foreign format, or an unreadable file is an `Err(KnitFormatFailure)`, which Dart receives
 /// as a thrown `KnitFormatFailure`.
 pub fn parse_knit(json: String) -> Result<KnitPatternDto, KnitFormatFailure> {
-    let pattern = ply_knit::KnitPattern::from_json(&json).map_err(KnitFormatFailure::from)?;
-    // Sizes from a file are untrusted: sections past the engine's limits (counts, text lengths,
-    // a stitch change no ledger could apply) are refused instead of loaded, so every value that
-    // opens also fits the DTOs exactly.
-    ply_knit::sections::check_limits(&pattern).map_err(|why| KnitFormatFailure {
-        kind: KnitFormatFailureKind::Unreadable,
-        message: match why {
-            ply_knit::sections::LimitError::TooLarge(why) => {
-                format!("the pattern's sections are too large to open: {why}")
-            }
-            ply_knit::sections::LimitError::BadPieceId(why) => {
-                format!("the pattern's pieces cannot be opened: {why}")
-            }
-        },
-    })?;
+    let pattern = crate::knit_dto::read_checked(&json)?;
     Ok(KnitPatternDto::from(&pattern))
+}
+
+/// Check that a native `.plyknit` file opens, exactly as [`parse_knit`] would, without sending the
+/// pattern back (a backup restore checks a file it then copies byte for byte). The same
+/// `Err(KnitFormatFailure)` as [`parse_knit`].
+pub fn knit_check(json: String) -> Result<(), KnitFormatFailure> {
+    crate::knit_dto::read_checked(&json).map(|_| ())
 }
 
 /// Serialize the editor's `KnitPatternDto` as a current-version native `.plyknit` envelope. `Err` if
@@ -526,6 +519,28 @@ pub fn write_knit(dto: KnitPatternDto) -> Result<String, String> {
         ),
     })?;
     pattern.to_json().map_err(|e| e.to_string())
+}
+
+/// The `.plyknit` schema version this build writes (and the newest it reads).
+pub fn knit_schema_version() -> u32 {
+    ply_knit::KNIT_SCHEMA_VERSION
+}
+
+/// The schema version a `.plyknit` file says it has, from its envelope alone: nothing else in the
+/// file is decoded, however large it is. 1 for a legacy (unversioned) file; `None` when it is not a
+/// `.plyknit` at all; a newer version is returned as found, for the caller to refuse. The app's
+/// save guard and backup restore check read versions through this, never by decoding the file in
+/// Dart.
+pub fn knit_document_version(text: String) -> Option<u32> {
+    crate::knit_dto::document_version(&text)
+}
+
+/// Whether a `.plyknit` text has at most `ply_knit::native::MAX_VALUES` JSON values, counted in one
+/// pass without decoding it. The backup restore asks before it checks a pattern (a few megabytes of
+/// tiny values decode to hundreds of megabytes) and refuses one past it as too complex to check;
+/// opening and saving never ask.
+pub fn knit_within_value_limit(text: String) -> bool {
+    ply_knit::native::within_value_limit(&text)
 }
 
 /// Render a knitting chart `KnitPatternDto` to an RGBA preview (symbols + colorwork + cable spans).
@@ -663,7 +678,8 @@ pub fn validate_nalbind(dto: NalbindStitchDto) -> Vec<NalbindIssueDto> {
 }
 
 // M8-04 NALBINDING RECIPES (ADR 0017; DTOs in `nalbind_recipe_dto.rs`, flat enums only, so no
-// freezed rebuild). The app owns the `.plynal` document; the engine owns the recipe checks.
+// freezed rebuild). The app owns the `.plynal` document; the engine owns the recipe checks and
+// reads the version a file states without decoding it.
 
 pub use crate::nalbind_recipe_dto::{
     RecipeChainJoinKind, RecipeCountKind, RecipeDecreaseKind, RecipeDto, RecipeExtentDto,
@@ -679,6 +695,22 @@ pub use crate::nalbind_recipe_dto::{
 /// code, in one call. Never fails; a recipe past the engine's limits is one `too-large` issue.
 pub fn check_nalbind_recipe(recipe: RecipeDto, project_notation: String) -> RecipeReportDto {
     crate::nalbind_recipe_dto::check(recipe, &project_notation)
+}
+
+/// The schema version a `.plynal` project file says it has, from its `format` and `schemaVersion`
+/// keys alone: nothing else in the file is decoded, however large it is. 1 for a legacy
+/// (unversioned) file; `None` when it is not a `.plynal` at all; any other version is returned as
+/// found, for the app to compare with the newest it opens. The backup restore check reads a
+/// project's version through this before it decodes the project.
+pub fn nalbind_document_version(text: String) -> Option<u32> {
+    crate::nalbind_recipe_dto::document_version(&text)
+}
+
+/// Whether a `.plynal` text has at most `ply_nalbind::native::MAX_VALUES` JSON values, counted in
+/// one pass without decoding it. The backup restore asks before it decodes a project in Dart and
+/// refuses one past it as too complex to check; opening and saving never ask.
+pub fn nalbind_within_value_limit(text: String) -> bool {
+    ply_nalbind::native::within_value_limit(&text)
 }
 
 // ---------------------------------------------------------------------------

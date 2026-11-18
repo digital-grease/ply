@@ -13,8 +13,9 @@ import 'package:ply/src/rust/knit_dto.dart';
 // whole <id>.{plyknit,json,png} triplet plus any interrupted-save .tmp leftovers and format-upgrade
 // backups, and tolerates missing files. Saving over an existing file keeps a one-time backup before a
 // format upgrade, refuses to replace a newer or unreadable file, and merges into the existing
-// sidecar. The engine serializer is stood in for by a canned current-version envelope (the real one
-// is covered by the Rust tests); legacy files are the real released bytes from `fixtures/`.
+// sidecar. The engine serializer is stood in for by a canned current-version envelope, and its
+// envelope-only version reader by the Dart probe on these small files (the real ones are covered by
+// the Rust tests); legacy files are the real released bytes from `fixtures/`.
 
 /// What the engine writes for any pattern here: a current-version (6) envelope.
 final String _current = jsonEncode({
@@ -34,6 +35,18 @@ class DiskOnlyKnitRepo extends KnitRepository {
 
   @override
   Future<KnitPatternDto> parse(String json) async => _pattern;
+
+  @override
+  Future<int> schemaVersion() async => 6;
+
+  /// The engine's envelope reader, stood in for on these small files.
+  int versionReads = 0;
+  int? Function(String text)? versionOverride;
+  @override
+  Future<int?> documentVersion(String text) async {
+    versionReads++;
+    return (versionOverride ?? plyknitSchemaVersion)(text);
+  }
 
   /// No native lib on the host: the thumbnail is best-effort and skipped.
   @override
@@ -302,6 +315,28 @@ void main() {
         expect(namesIn(dir), ['k1.json', 'k1.plyknit'], reason: 'no backup, no temp file');
       });
     }
+
+    test('the file on disk is classified by the engine\'s envelope reader, never decoded here',
+        () async {
+      // Over the Dart probe's limit: only the engine's reader can say what version it is.
+      final large = jsonEncode({
+        'format': 'ply.knit',
+        'schema_version': 7,
+        'document': {'notes': 'x' * kPlyknitProbeMaxBytes},
+      });
+      expect(plyknitSchemaVersion(large), isNull);
+      f('k1.plyknit').writeAsStringSync(large);
+      f('k1.json').writeAsStringSync(sidecar);
+      repo.versionOverride = (_) => 7;
+      await expectLater(
+        repo.saveKnit(pattern: _pattern, meta: meta('Mine'), id: 'k1'),
+        throwsA(isA<NativeFormatException>()
+            .having((e) => e.problem, 'problem', NativeFormatProblem.newerVersion)
+            .having((e) => e.whileSaving, 'whileSaving', isTrue)),
+      );
+      expect(repo.versionReads, 1);
+      expect(f('k1.plyknit').readAsStringSync(), large, reason: 'bytes untouched');
+    });
 
     test('delete removes the pattern\'s backups and leaves other patterns\' alone', () async {
       layDown('k1');

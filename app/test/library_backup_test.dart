@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -460,10 +461,259 @@ void main() {
           wif: (_) async => throw const FormatException('no WEAVING'),
           knit: (_) async => throw const NativeFormatException(NativeFormatProblem.newerVersion,
               document: NativeDocument.knitPattern),
+          knitVersion: testKnitVersion,
+          knitGuard: testValueGuard,
         ),
       ).inspectBackup(await craft(files));
       expect(only(plan, 'a').refusal, RestoreRefusal.unreadable);
       expect(only(plan, 'k').refusal, RestoreRefusal.newerVersion);
+    });
+
+    test('the version comes from the engine\'s readers, and a newer or unreadable pattern or '
+        'project is refused before anything decodes it', () async {
+      // Every verdict here differs from what decoding the file in Dart would give: a file the
+      // stand-in readers call newer or current is not JSON at all, and one they refuse is a sound
+      // file whose keys say otherwise. So no Dart decode, before the reader or instead of it, can
+      // pass this.
+      String notJson(String id) => 'not JSON, only the engine reads $id';
+      String knitText(int version, String name) => jsonEncode({
+            'format': kPlyknitFormat,
+            'schema_version': version,
+            'document': {'name': name},
+          });
+      String nalText(int version, String name) => jsonEncode({
+            'format': NalbindProject.formatId,
+            'schemaVersion': version,
+            'name': name,
+          });
+      final texts = {
+        'knew': notJson('knew'),
+        'kok': notJson('kok'),
+        'kbad': knitText(knitVersion + 1, 'kbad'), // the reader says it is not a pattern
+        'kthrow': knitText(knitVersion, 'kthrow'), // the reader fails
+        'nnew': notJson('nnew'),
+        'nok': notJson('nok'),
+        'nbad': nalText(NalbindProject.currentSchemaVersion + 1, 'nbad'),
+        'nthrow': nalText(NalbindProject.currentSchemaVersion, 'nthrow'),
+      };
+      final files = [
+        for (final MapEntry(key: id, value: text) in texts.entries) ...[
+          (
+            id.startsWith('k') ? 'knits/$id.plyknit' : 'nalbinds/$id.plynal',
+            utf8.encode(text),
+          ),
+          (
+            id.startsWith('k') ? 'knits/$id.json' : 'nalbinds/$id.json',
+            sidecar(id, id.startsWith('k') ? 'Knitting' : 'Nalbinding'),
+          ),
+        ],
+      ];
+      String idOf(String text) => texts.entries.firstWhere((e) => e.value == text).key;
+      // The engine's readers, stood in for: each says what the file's keys say, without decoding.
+      Future<int?> Function(String) reader(List<String> asked, int? Function(String id) says) =>
+          (text) async {
+            final id = idOf(text);
+            asked.add(id);
+            if (id.endsWith('throw')) throw StateError('the engine failed');
+            return says(id);
+          };
+      final knitAsked = <String>[], nalAsked = <String>[];
+      final knitRead = <String>[], nalRead = <String>[];
+      final plan = await service(
+        checks: NativeFileChecks(
+          knitVersion: reader(knitAsked, (id) => switch (id) {
+                'knew' => knitVersion + 1,
+                'kok' => knitVersion,
+                _ => null,
+              }),
+          knit: (text) async => knitRead.add(idOf(text)),
+          knitGuard: testValueGuard,
+          nalbindGuard: testValueGuard,
+          nalbindVersion: reader(nalAsked, (id) => switch (id) {
+                'nnew' => NalbindProject.currentSchemaVersion + 1,
+                'nok' => NalbindProject.currentSchemaVersion,
+                _ => null,
+              }),
+          nalbind: (text) async => nalRead.add(idOf(text)),
+        ),
+      ).inspectBackup(await craft(files));
+      expect(knitAsked, unorderedEquals(['knew', 'kok', 'kbad', 'kthrow']));
+      expect(nalAsked, unorderedEquals(['nnew', 'nok', 'nbad', 'nthrow']));
+      // Only a file whose version this build reads is read in full.
+      expect(knitRead, ['kok']);
+      expect(nalRead, ['nok']);
+      for (final id in ['knew', 'nnew']) {
+        expect(only(plan, id).refusal, RestoreRefusal.newerVersion, reason: id);
+      }
+      for (final id in ['kbad', 'kthrow', 'nbad', 'nthrow']) {
+        expect(only(plan, id).refusal, RestoreRefusal.unreadable, reason: id);
+      }
+      for (final id in ['kok', 'nok']) {
+        expect(only(plan, id).status, RestoreStatus.add, reason: id);
+      }
+
+      // Without the engine's readers nothing can be checked: refused as unreadable (fails closed).
+      final none = await service(checks: const NativeFileChecks())
+          .inspectBackup(await craft([...goodDraft, ...files]));
+      expect(only(none, 'a').status, RestoreStatus.add);
+      for (final id in texts.keys) {
+        expect(only(none, id).refusal, RestoreRefusal.unreadable, reason: id);
+      }
+    });
+
+    test('a pattern or project with too many values is refused as too complex, alone', () async {
+      String knit(String name, {int version = knitVersion}) => jsonEncode(
+          {'format': kPlyknitFormat, 'schema_version': version, 'document': {'name': name}});
+      String nal(String name, {int version = NalbindProject.currentSchemaVersion}) => jsonEncode(
+          {'format': NalbindProject.formatId, 'schemaVersion': version, 'name': name});
+      final files = [
+        ...goodDraft,
+        ('knits/kbig.plyknit', utf8.encode(knit('MANY VALUES'))),
+        ('knits/kbig.json', sidecar('Many values', 'Knitting')),
+        ('knits/knew.plyknit', utf8.encode(knit('MANY VALUES', version: knitVersion + 1))),
+        ('knits/knew.json', sidecar('Newer', 'Knitting')),
+        ('knits/kok.plyknit', utf8.encode(knit('Fine'))),
+        ('knits/kok.json', sidecar('Fine', 'Knitting')),
+        ('nalbinds/nbig.plynal', utf8.encode(nal('MANY VALUES'))),
+        ('nalbinds/nbig.json', sidecar('Many values', 'Nalbinding')),
+        ('nalbinds/nok.plynal', utf8.encode(nal('Fine'))),
+        ('nalbinds/nok.json', sidecar('Fine', 'Nalbinding')),
+      ];
+      // The engine's value counts, stood in for: past the limit for the files marked so.
+      final counted = <String>[], read = <String>[];
+      Future<bool> guard(String text) async {
+        counted.add(text);
+        return !text.contains('MANY VALUES');
+      }
+
+      final checks = NativeFileChecks(
+        knitVersion: testKnitVersion,
+        knitGuard: guard,
+        knit: (text) async => read.add(text),
+        nalbindVersion: testNalbindVersion,
+        nalbindGuard: guard,
+        nalbind: (text) async => read.add(text),
+      );
+      final plan = await service(checks: checks).inspectBackup(await craft(files));
+      expect(only(plan, 'kbig').refusal, RestoreRefusal.tooComplex);
+      expect(only(plan, 'nbig').refusal, RestoreRefusal.tooComplex);
+      expect(RestoreRefusal.tooComplex.message, contains('too complex for Ply to check'));
+      // A newer file is refused by its version before anything counts it.
+      expect(only(plan, 'knew').refusal, RestoreRefusal.newerVersion);
+      expect(counted, hasLength(4));
+      // A file past the limit is never read; the rest of the backup restores.
+      expect(read.where((t) => t.contains('MANY VALUES')), isEmpty);
+      for (final id in ['a', 'kok', 'nok']) {
+        expect(only(plan, id).status, RestoreStatus.add, reason: id);
+      }
+      final result = await service(checks: checks).restore(plan);
+      expect(result.restored.map((r) => r.id), unorderedEquals(['a', 'kok', 'nok']));
+
+      // Without the guards a pattern or project cannot be checked: refused as unreadable, like a
+      // missing version probe, and its file is never read.
+      read.clear();
+      final unguarded = await service(
+        checks: NativeFileChecks(
+          knitVersion: testKnitVersion,
+          knit: (text) async => read.add(text),
+          nalbindVersion: testNalbindVersion,
+          nalbind: (text) async => read.add(text),
+        ),
+      ).inspectBackup(await craft(files));
+      for (final id in ['kok', 'nok', 'kbig', 'nbig']) {
+        expect(only(unguarded, id).refusal, RestoreRefusal.unreadable, reason: id);
+      }
+      expect(only(unguarded, 'knew').refusal, RestoreRefusal.newerVersion);
+      expect(read, isEmpty);
+    });
+
+    test('a nalbinding project is read in full the way the project screen opens it', () async {
+      String nal(Map<String, Object?> fields) => jsonEncode({
+            'format': NalbindProject.formatId,
+            'schemaVersion': NalbindProject.currentSchemaVersion,
+            ...fields,
+          });
+      final files = [
+        ('nalbinds/ok.plynal', nalFile('Fine')),
+        ('nalbinds/ok.json', sidecar('Fine', 'Nalbinding')),
+        ('nalbinds/legacy.plynal', utf8.encode('{"name":"Old","notation":"UO/UOO"}')),
+        ('nalbinds/legacy.json', sidecar('Old', 'Nalbinding')),
+        // The version is fine; a field is not (the project screen could not open it).
+        ('nalbinds/name.plynal', utf8.encode(nal({'name': 7}))),
+        ('nalbinds/name.json', sidecar('A number for a name', 'Nalbinding')),
+        ('nalbinds/recipe.plynal', utf8.encode(nal({'name': 'r', 'recipe': 'not a recipe'}))),
+        ('nalbinds/recipe.json', sidecar('A recipe this build cannot read', 'Nalbinding')),
+      ];
+      final plan = await service().inspectBackup(await craft(files));
+      expect(only(plan, 'ok').status, RestoreStatus.add);
+      expect(only(plan, 'legacy').status, RestoreStatus.add);
+      expect(only(plan, 'name').refusal, RestoreRefusal.unreadable);
+      expect(only(plan, 'recipe').refusal, RestoreRefusal.unreadable);
+    });
+
+    test('the default nalbinding read says why a project does not open, and does not decode on '
+        'the caller\'s event loop', () async {
+      expect(const NativeFileChecks().nalbind, checkPlynalInBackground);
+      await checkPlynalInBackground(utf8.decode(nalFile('Fine')));
+      Matcher refused(NativeFormatProblem problem) => throwsA(isA<NativeFormatException>()
+          .having((e) => e.problem, 'problem', problem)
+          .having((e) => e.document, 'document', NativeDocument.nalbindProject));
+      await expectLater(
+          checkPlynalInBackground('{"format":"ply.nalbind","schemaVersion":99,"name":"x"}'),
+          refused(NativeFormatProblem.newerVersion));
+      await expectLater(
+          checkPlynalInBackground('{"format":"ply.knit","schema_version":6,"document":{}}'),
+          refused(NativeFormatProblem.wrongFormat));
+      await expectLater(checkPlynalInBackground('{nope'), refused(NativeFormatProblem.unreadable));
+      await expectLater(checkPlynalInBackground('[]'), refused(NativeFormatProblem.unreadable));
+
+      // A large project: the caller's timers keep firing while it is decoded, so the decode does
+      // not run synchronously on the caller's event loop (one there would finish before any timer
+      // could fire).
+      final large = jsonEncode({
+        'format': NalbindProject.formatId,
+        'schemaVersion': NalbindProject.currentSchemaVersion,
+        'name': 'Large',
+        'unknown': List.filled(300000, {'a': [1, 2, 3]}),
+      });
+      var ticks = 0;
+      final timer = Timer.periodic(Duration.zero, (_) => ticks++);
+      try {
+        await checkPlynalInBackground(large);
+      } finally {
+        timer.cancel();
+      }
+      expect(ticks, greaterThan(0));
+    });
+
+    test('an upgrade backup is checked by the engine\'s reader against the version in its name',
+        () async {
+      final asked = <String>[];
+      Future<int?> knitReader(String text) async {
+        asked.add(text);
+        return testKnitVersion(text);
+      }
+
+      final files = [
+        ('knits/ok.plyknit', knitFile()),
+        ('knits/ok.plyknit.v1.bak', legacyKnit),
+        ('knits/ok.json', sidecar('Upgraded once', 'Knitting')),
+        ('knits/odd.plyknit', knitFile()),
+        ('knits/odd.plyknit.v1.bak', knitFile(version: 2)), // says 2, named 1
+        ('knits/odd.json', sidecar('Odd backup', 'Knitting')),
+        ('knits/newer.plyknit', knitFile()),
+        ('knits/newer.plyknit.v${knitVersion + 1}.bak', knitFile(version: knitVersion + 1)),
+        ('knits/newer.json', sidecar('Newer backup', 'Knitting')),
+      ];
+      final plan =
+          await service(checks: NativeFileChecks(knitVersion: knitReader, knitGuard: testValueGuard))
+              .inspectBackup(await craft(files));
+      expect(only(plan, 'ok').status, RestoreStatus.add);
+      expect(only(plan, 'odd').refusal, RestoreRefusal.unreadable);
+      expect(only(plan, 'newer').refusal, RestoreRefusal.newerVersion);
+      expect(asked, contains(utf8.decode(legacyKnit)));
+      // A backup named for a newer version is refused by its name, before its content is read.
+      expect(asked.where((t) => t == utf8.decode(knitFile(version: knitVersion + 1))), isEmpty);
     });
   });
 

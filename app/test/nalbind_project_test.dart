@@ -6,6 +6,7 @@ import 'package:ply/src/data/nalbind_repository.dart';
 import 'package:ply/src/data/photo_store.dart';
 import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/models/nalbind_project.dart';
+import 'package:ply/src/models/nalbind_recipe.dart';
 import 'package:ply/src/models/native_format.dart';
 
 // The nalbind PROJECT model + persistence: JSON round-trip, and the on-device <id>.{plynal,json}
@@ -111,6 +112,58 @@ void main() {
       expect(() => NalbindProject.decode('[]'), refused(NativeFormatProblem.unreadable));
       expect(() => NalbindProject.decode('{nope'), refused(NativeFormatProblem.unreadable));
       expect(() => NalbindProject.decode('{"name": 7}'), refused(NativeFormatProblem.unreadable));
+    });
+  });
+
+  group('large projects', () {
+    /// The largest project the app makes: every recipe count at its limit, every field filled, the
+    /// recipe's checked text (and as much again in the project notes) written with quotes and line
+    /// breaks, which the file escapes.
+    NalbindProject largest() {
+      String t(int n) => ('Ab"\n' * (n ~/ 4 + 1)).substring(0, n);
+      const per = kMaxRecipeTotalText ~/ kMaxRecipeSegments ~/ 3;
+      Measurement measure() =>
+          Measurement(label: t(200), value: 123456.789, unit: LengthUnit.values.last);
+      final segments = [
+        for (var i = 1; i <= kMaxRecipeSegments; i++)
+          RecipeSegment(
+            id: 'segment-$i',
+            kind: SegmentKind.increase,
+            title: t(per),
+            notes: t(per),
+            caution: t(per),
+            stitch: SegmentStitch(
+                notation: t(kMaxRecipeNotation), name: t(200), reading: StitchReading.lenient),
+            perRound: kMaxRecipeCount,
+            increaseMethod: IncreaseMethod.values.last,
+            extent: Extent.until(measure()),
+            target: measure(),
+          ),
+      ];
+      return NalbindProject(
+        name: t(200),
+        notation: t(kMaxRecipeNotation),
+        stitchName: t(200),
+        notes: t(kMaxRecipeTotalText),
+        recipe: NalbindRecipe(
+          fit: [for (var i = 0; i < kMaxRecipeFit; i++) measure()],
+          segments: segments,
+          done: {for (final s in segments) s.id},
+          lastSegmentNumber: 999999999,
+        ),
+      );
+    }
+
+    test('the largest project the app makes, with notes of millions of characters, is kept',
+        () async {
+      // Earlier builds wrote whatever was typed or pasted; a long project must still open and save.
+      final project = largest().copyWith(notes: 'a' * (5 * 1024 * 1024));
+      final dir = await Directory.systemTemp.createTemp('ply_nalbind_size');
+      addTearDown(() => dir.delete(recursive: true));
+      final repo = NalbindRepository()..dirOverride = dir;
+      final id = await repo.saveProject(project);
+      expect(await repo.readProject(id), project);
+      await checkPlynalInBackground(jsonEncode(project.toJson()));
     });
   });
 

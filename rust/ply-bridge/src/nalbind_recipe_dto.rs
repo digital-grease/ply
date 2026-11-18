@@ -544,9 +544,44 @@ pub(crate) fn check(dto: RecipeDto, project_notation: &str) -> RecipeReportDto {
     recipe::check(&Recipe::from(dto), project_notation).into()
 }
 
+/// The schema version a `.plynal` file says it has, read from its two version keys alone (nothing
+/// else in the file is built, however large it is): 1 for a legacy file, `None` when it is not a
+/// `.plynal` at all; any other version as found (at most `u32::MAX`). Which versions this build
+/// opens is the app's (`NalbindProject.currentSchemaVersion`).
+pub(crate) fn document_version(text: &str) -> Option<u32> {
+    ply_nalbind::native::schema_version(text)
+        .ok()
+        .map(|v| u32::try_from(v).unwrap_or(u32::MAX))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_version_of_a_project_file_comes_from_its_keys() {
+        let mut text = String::from(r#"{"format":"ply.nalbind","schemaVersion":3,"notes":["#);
+        while text.len() < 20 * 1024 * 1024 {
+            text.push_str("{},");
+        }
+        text.push_str("{}]}");
+        assert_eq!(document_version(&text), Some(3));
+        let newer = text.replacen("\"schemaVersion\":3", "\"schemaVersion\":4", 1);
+        assert_eq!(document_version(&newer), Some(4));
+        let huge = text.replacen("\"schemaVersion\":3", "\"schemaVersion\":9000000000", 1);
+        assert_eq!(document_version(&huge), Some(u32::MAX));
+        drop((text, newer, huge));
+        assert_eq!(document_version(r#"{"name":"Mitten","notes":""}"#), Some(1));
+        for not_nalbind in [
+            "{nope",
+            "[]",
+            r#"{"format":"ply.knit","schema_version":6,"document":{}}"#,
+            r#"{"format":"ply.nalbind","schemaVersion":0}"#,
+            r#"{"format":"ply.nalbind","schemaVersion":"3"}"#,
+        ] {
+            assert_eq!(document_version(not_nalbind), None, "{not_nalbind}");
+        }
+    }
 
     fn segment(id: &str, kind: RecipeKindDto) -> RecipeSegmentDto {
         RecipeSegmentDto {

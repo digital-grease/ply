@@ -60,8 +60,33 @@ class KnitRepository {
     }
   }
 
+  /// Check that a native `.plyknit` file opens, exactly as [parse] would, without the pattern being
+  /// sent back (a backup restore checks a file it then copies byte for byte). Throws the same
+  /// [NativeFormatException] as [parse].
+  Future<void> check(String json) async {
+    try {
+      await knitCheck(json: json);
+    } on KnitFormatFailure catch (f) {
+      throw nativeFormatExceptionFromKnit(f);
+    }
+  }
+
   /// Serialize an editor [KnitPatternDto] as a current-version native `.plyknit` envelope.
   Future<String> write(KnitPatternDto pattern) => writeKnit(dto: pattern);
+
+  /// The `.plyknit` schema version this build writes (and the newest it reads).
+  Future<int> schemaVersion() => knitSchemaVersion();
+
+  /// The schema version a `.plyknit` file's text says it has, read by the engine from the envelope
+  /// alone (1 for a legacy file; nothing else in the file is decoded, however large); null when it
+  /// is not a `.plyknit`. A newer version is returned as found. Never decode a file in Dart to learn
+  /// this.
+  Future<int?> documentVersion(String text) => knitDocumentVersion(text: text);
+
+  /// Whether a `.plyknit` text has at most the engine's limit of JSON values, counted without
+  /// decoding it (`ply_knit::native::MAX_VALUES`). The backup restore asks before it checks a
+  /// pattern; opening and saving never ask.
+  Future<bool> withinValueLimit(String text) => knitWithinValueLimit(text: text);
 
   /// A blank starter pattern to begin editing (builtin stitch legend, a worsted seed gauge, a
   /// one-color palette, an empty chart the editor grows).
@@ -172,7 +197,7 @@ class KnitRepository {
     try {
       final json = await write(pattern); // engine re-serialize (rejects a non-finite gauge)
       final target = File(_patternPath(dir, knitId));
-      await _guardExisting(target, json);
+      await _guardExisting(target);
       await _atomicWriteString(target, json);
       await _writeThumb(dir, knitId, pattern);
       // One write at a time to the sidecar (the materials sheet may be writing its links).
@@ -184,14 +209,15 @@ class KnitRepository {
     }
   }
 
-  /// Before [json] replaces [target]: refuse if the file on disk is newer than, or unreadable to, this
-  /// build; keep a one-time backup if it is older (a format upgrade). A missing target needs nothing.
-  Future<void> _guardExisting(File target, String json) async {
+  /// Before what the engine just wrote (at [schemaVersion]) replaces [target]: refuse if the file on
+  /// disk is newer than, or unreadable to, this build; keep a one-time backup if it is older (a
+  /// format upgrade). A missing target needs nothing. The file's version is read by the engine from
+  /// its envelope alone.
+  Future<void> _guardExisting(File target) async {
     if (!await target.exists()) return;
     final original = await target.readAsBytes();
-    final onDisk = plyknitSchemaVersion(utf8.decode(original, allowMalformed: true));
-    final writing = plyknitSchemaVersion(json);
-    if (writing == null) throw StateError('the engine wrote an unrecognized .plyknit');
+    final onDisk = await documentVersion(utf8.decode(original, allowMalformed: true));
+    final writing = await schemaVersion();
     if (onDisk == null || onDisk > writing) {
       throw NativeFormatException(
         onDisk == null ? NativeFormatProblem.unreadable : NativeFormatProblem.newerVersion,

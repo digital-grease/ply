@@ -19,18 +19,28 @@
 // count, entry size and path length; only regular files at paths of the layout above (no absolute
 // paths, `..`, backslashes, duplicates, links or devices); every entry listed in the manifest with
 // its size and SHA-256, and every SHA-256 verified; no newer backup schema; and each project's files
-// checked with the existing format probes (a project newer than this build is refused, with the
-// reason), as are the app settings (offered only when they parse as the settings model). Only then
-// is a preview built, and nothing in the library is written until the user confirms it. The commit
-// stages every file inside the documents directory, then moves each project into place with its
-// sidecar LAST (the library lists sidecars), applies the app settings only if the user ticked them,
-// and on any failure removes what it placed, so the library is left exactly as it was. Existing
-// projects are never overwritten: one with the same id and different content is restored as a copy
-// under a new id, and the copy's name is the only thing rewritten (in its sidecar, and for
-// nalbinding also in its `.plynal`, which carries the name the project screen shows).
+// checked (a project newer than this build is refused, with the reason), as are the app settings
+// (offered only when they parse as the settings model). The version a pattern, project or band (or
+// a pattern's upgrade backup) states is read by the engine from the file's version keys alone, never
+// by decoding the file here, so a newer file is refused before any of it is decoded. A pattern or
+// nalbinding project whose version this build reads then has its JSON values counted by the engine,
+// also without decoding it, and one with more values than any the app can make is refused as too
+// complex to check: a guard against files crafted to blow up in memory when decoded, which bounds
+// that memory only roughly (to about 900 MiB for a pattern, 65 MiB for a project, measured). Then
+// the file is read in full: by the engine, or for a nalbinding project (whose document is the app's)
+// by the Dart reader on a background isolate. A preview is built only once every check has passed,
+// and nothing in the library is written until the user confirms it. The commit stages every file
+// inside the documents directory, then moves each project into place with its sidecar LAST (the
+// library lists sidecars), applies the app settings only if the user ticked them, and on any failure
+// removes what it placed, so the library is left exactly as it was. Existing projects are never
+// overwritten: one with the same id and different content is restored as a copy under a new id, and
+// the copy's name is the only thing rewritten (in its sidecar, and for nalbinding also in its
+// `.plynal`, which carries the name the project screen shows; that rewrite also runs on a background
+// isolate).
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
@@ -757,7 +767,8 @@ enum RestoreStatus {
 enum RestoreRefusal {
   newerVersion('Made by a newer version of Ply. Update the app to restore it.'),
   unreadable('A file in this project could not be read.'),
-  incomplete('Part of this project is missing from the backup.');
+  incomplete('Part of this project is missing from the backup.'),
+  tooComplex('A file in this project is too complex for Ply to check, so it was not restored.');
 
   const RestoreRefusal(this.message);
 
@@ -977,24 +988,68 @@ class RestoreResult {
   int get count => restored.length;
 }
 
-/// Engine checks of a native file, beyond the version probes (production passes the engine parsers;
-/// host tests have no native library). Each throws when the engine cannot read the text.
+/// The checks of a project's native file: the version probes, then a full read (production passes
+/// the engine's probes and parsers; host tests have no native library and pass stand-ins). Each
+/// check throws when it cannot read the text.
+///
+/// A version probe reads the schema version a file states from its version keys alone, in the
+/// engine (nothing else in the file is decoded, however large it is), and returns null when the file
+/// is not of its kind. It is never a decode of the whole file in Dart: a backup entry can be tens of
+/// megabytes. Without its probe (or, for a pattern or project, its value guard), a pattern, project
+/// or band cannot be checked and is refused as unreadable (fails closed).
 class NativeFileChecks {
-  const NativeFileChecks({this.wif, this.knit, this.tablet, this.tabletVersion});
+  const NativeFileChecks({
+    this.wif,
+    this.knit,
+    this.knitVersion,
+    this.knitGuard,
+    this.nalbind = checkPlynalInBackground,
+    this.nalbindVersion,
+    this.nalbindGuard,
+    this.tablet,
+    this.tabletVersion,
+  });
 
   final Future<void> Function(String text)? wif;
 
   /// Throws a [NativeFormatException] (or anything else) when the engine cannot read the pattern.
   final Future<void> Function(String text)? knit;
 
+  /// The schema version a `.plyknit` states (1 for a legacy file; a newer one as found), read by
+  /// the engine from the envelope alone (`KnitRepository.documentVersion`). Also checks a
+  /// `.plyknit.v<n>.bak` upgrade backup.
+  final Future<int?> Function(String text)? knitVersion;
+
+  /// Whether a `.plyknit` has few enough JSON values to check safely, counted by the engine without
+  /// decoding it (`KnitRepository.withinValueLimit`). A pattern past it is refused as too complex
+  /// ([RestoreRefusal.tooComplex]) before [knit] reads it. Without it, a pattern cannot be checked
+  /// and is refused as unreadable (fails closed, like the version probes).
+  final Future<bool> Function(String text)? knitGuard;
+
+  /// Throws a [NativeFormatException] (or anything else) when the nalbinding project (a `.plynal`)
+  /// cannot be read the way the project screen opens it. The document is the app's, so it is decoded
+  /// in Dart, on a background isolate ([checkPlynalInBackground]). It runs only after
+  /// [nalbindVersion] has accepted the file's version and [nalbindGuard] its number of values.
+  final Future<void> Function(String text) nalbind;
+
+  /// Whether a `.plynal` has few enough JSON values to decode safely, counted by the engine on this
+  /// isolate without decoding it (`NalbindRepository.withinValueLimit`). A project past it is
+  /// refused as too complex ([RestoreRefusal.tooComplex]) before [nalbind] decodes it. Without it, a
+  /// project cannot be checked and is refused as unreadable (fails closed, like the version
+  /// probes).
+  final Future<bool> Function(String text)? nalbindGuard;
+
+
+  /// The schema version a `.plynal` states (1 for a legacy file; a newer one as found), read by the
+  /// engine from its `format` and `schemaVersion` keys alone (`NalbindRepository.documentVersion`).
+  final Future<int?> Function(String text)? nalbindVersion;
+
   /// Throws a [NativeFormatException] (or anything else) when the engine cannot read the tablet
   /// weaving band (a `.plytab`; ADR 0018).
   final Future<void> Function(String text)? tablet;
 
   /// The schema version a `.plytab`'s envelope states, read by the engine from the envelope alone
-  /// (null when it is not a `.plytab` envelope). Never a decode of the whole file in Dart: a backup
-  /// entry can be tens of megabytes. Without it, a band cannot be checked and is refused as
-  /// unreadable (fails closed).
+  /// (null when it is not a `.plytab` envelope).
   final Future<int?> Function(String text)? tabletVersion;
 }
 
@@ -1782,13 +1837,14 @@ class LibraryBackup {
       BackupFileRole.sidecar => _checkSidecar(acc, text),
       BackupFileRole.native => await _checkNative(acc.craft, text, knitVersion, tabletVersion),
       BackupFileRole.upgradeBackup =>
-        _checkUpgradeBackup(layout.version!, text, await knitVersion()),
+        await _checkUpgradeBackup(layout.version!, text, knitVersion),
       BackupFileRole.photo => null,
     };
     if (layout.role == BackupFileRole.native) acc.hasNative = true;
     if (layout.role == BackupFileRole.sidecar) acc.hasSidecar = true;
     if (verdict == RestoreRefusal.newerVersion) acc.newer = true;
     if (verdict == RestoreRefusal.unreadable) acc.unreadable = true;
+    if (verdict == RestoreRefusal.tooComplex) acc.tooComplex = true;
   }
 
   RestoreRefusal? _checkSidecar(_ProjectAccumulator acc, String text) {
@@ -1837,60 +1893,75 @@ class LibraryBackup {
           return RestoreRefusal.unreadable;
         }
         return null;
+      // Knitting, nalbinding and tablet weaving alike (ADR 0002, ADR 0018): the version the file
+      // states decides first, read by the engine from its version keys alone (never by decoding
+      // the file here), so a newer file is refused before any of it is decoded; then the full read.
       case BackupCraft.knitting:
-        final version = plyknitSchemaVersion(text);
-        if (version == null) return RestoreRefusal.unreadable;
-        if (version > await knitVersion()) return RestoreRefusal.newerVersion;
-        try {
-          await checks.knit?.call(text);
-        } on NativeFormatException catch (e) {
-          return e.problem == NativeFormatProblem.newerVersion
-              ? RestoreRefusal.newerVersion
-              : RestoreRefusal.unreadable;
-        } catch (_) {
-          return RestoreRefusal.unreadable;
-        }
-        return null;
+        return _checkVersioned(
+            text, checks.knitVersion, knitVersion, checks.knitGuard, checks.knit);
       case BackupCraft.nalbinding:
-        try {
-          NalbindProject.decode(text);
-        } on NativeFormatException catch (e) {
-          return e.problem == NativeFormatProblem.newerVersion
-              ? RestoreRefusal.newerVersion
-              : RestoreRefusal.unreadable;
-        }
-        return null;
+        // The `.plynal` document is the app's, so its full read is a Dart decode, on a background
+        // isolate (see [NativeFileChecks.nalbind]); the engine counts its values first, here.
+        return _checkVersioned(text, checks.nalbindVersion,
+            () async => NalbindProject.currentSchemaVersion, checks.nalbindGuard, checks.nalbind);
       case BackupCraft.tabletWeaving:
-        // ADR 0018: the envelope's version decides first (a newer band is refused before its
-        // document is read; there is no legacy form), then the engine's own parser. The version is
-        // read by the engine from the envelope alone, never by decoding the file here.
-        final probe = checks.tabletVersion;
-        if (probe == null) return RestoreRefusal.unreadable;
-        final int? version;
-        try {
-          version = await probe(text);
-        } catch (_) {
-          return RestoreRefusal.unreadable;
-        }
-        if (version == null) return RestoreRefusal.unreadable;
-        if (version > await tabletVersion()) return RestoreRefusal.newerVersion;
-        try {
-          await checks.tablet?.call(text);
-        } on NativeFormatException catch (e) {
-          return e.problem == NativeFormatProblem.newerVersion
-              ? RestoreRefusal.newerVersion
-              : RestoreRefusal.unreadable;
-        } catch (_) {
-          return RestoreRefusal.unreadable;
-        }
-        return null;
+        // The engine reads a band into its own types, never a generic tree: no values to count.
+        return _checkVersioned(
+            text, checks.tabletVersion, tabletVersion, _nothingToCount, checks.tablet);
     }
   }
 
-  /// An upgrade backup holds the original file at the version its name records.
-  RestoreRefusal? _checkUpgradeBackup(int version, String text, int knitVersion) {
-    if (version > knitVersion) return RestoreRefusal.newerVersion;
-    return plyknitSchemaVersion(text) == version ? null : RestoreRefusal.unreadable;
+  static Future<bool> _nothingToCount(String text) async => true;
+
+  /// A versioned native file: [probe] reads the version [text] states (null: not this kind of file),
+  /// which must not be newer than [current]; then [guard] must find few enough values in it to read
+  /// it safely (refused as too complex otherwise); then [read] must accept the whole file. Without a
+  /// probe or a guard the file cannot be checked, so it is refused as unreadable (fails closed).
+  Future<RestoreRefusal?> _checkVersioned(
+      String text,
+      Future<int?> Function(String text)? probe,
+      Future<int> Function() current,
+      Future<bool> Function(String text)? guard,
+      Future<void> Function(String text)? read) async {
+    if (probe == null) return RestoreRefusal.unreadable;
+    final int? version;
+    try {
+      version = await probe(text);
+    } catch (_) {
+      return RestoreRefusal.unreadable;
+    }
+    if (version == null) return RestoreRefusal.unreadable;
+    if (version > await current()) return RestoreRefusal.newerVersion;
+    if (guard == null) return RestoreRefusal.unreadable;
+    try {
+      if (!await guard(text)) return RestoreRefusal.tooComplex;
+    } catch (_) {
+      return RestoreRefusal.unreadable;
+    }
+    try {
+      await read?.call(text);
+    } on NativeFormatException catch (e) {
+      return e.problem == NativeFormatProblem.newerVersion
+          ? RestoreRefusal.newerVersion
+          : RestoreRefusal.unreadable;
+    } catch (_) {
+      return RestoreRefusal.unreadable;
+    }
+    return null;
+  }
+
+  /// An upgrade backup holds the original file at the version its name records: that version must
+  /// not be newer than this build, and the engine's envelope reader must find it in the file.
+  Future<RestoreRefusal?> _checkUpgradeBackup(
+      int version, String text, Future<int> Function() knitVersion) async {
+    if (version > await knitVersion()) return RestoreRefusal.newerVersion;
+    final probe = checks.knitVersion;
+    if (probe == null) return RestoreRefusal.unreadable;
+    try {
+      return await probe(text) == version ? null : RestoreRefusal.unreadable;
+    } catch (_) {
+      return RestoreRefusal.unreadable;
+    }
   }
 
   /// Decide what a restore does with one checked project: refuse it, add it, skip it as already
@@ -1901,11 +1972,13 @@ class LibraryBackup {
       _MaterialRelinks materialRelinks) async {
     final RestoreRefusal? refusal = acc.newer
         ? RestoreRefusal.newerVersion
-        : acc.unreadable
-            ? RestoreRefusal.unreadable
-            : (!acc.hasNative || !acc.hasSidecar)
-                ? RestoreRefusal.incomplete
-                : null;
+        : acc.tooComplex
+            ? RestoreRefusal.tooComplex
+            : acc.unreadable
+                ? RestoreRefusal.unreadable
+                : (!acc.hasNative || !acc.hasSidecar)
+                    ? RestoreRefusal.incomplete
+                    : null;
     final name = acc.name ?? 'Untitled';
     RestoreProject make(RestoreStatus status, {String? targetId, String? targetName}) =>
         RestoreProject._(
@@ -2055,9 +2128,14 @@ class LibraryBackup {
     if (digest != f.sha256) {
       throw BackupException(BackupProblem.damaged, detail: '${f.layout.pathFor(acc.id)} changed');
     }
-    final renamed = _withName(bytes!, name);
+    final renamed = await _plynalWithName(bytes!, name);
     return (size: renamed.length, sha256: _hexSha256(renamed));
   }
+
+  /// [_withName] of a `.plynal` (up to the per-file limit, unlike a sidecar), on a background
+  /// isolate so the decode never holds up the UI.
+  static Future<Uint8List> _plynalWithName(Uint8List json, String name) =>
+      Isolate.run(() => _withName(json, name), debugName: 'plynal rename');
 
   /// [json] (the bytes of a JSON object: a sidecar or a `.plynal`) with its `name` set to [name].
   /// Every other key, known or not, keeps its value and its place (the format and version keys of a
@@ -2320,7 +2398,10 @@ class LibraryBackup {
                   project.craft == BackupCraft.nalbinding))) {
         final (digest, bytes) = await _hashSlice(raf, f.dataOffset, f.size, keep: true);
         if (digest != f.sha256) throw StateError('${f.layout.pathFor(project.id)} changed');
-        await dest.writeAsBytes(_withName(bytes!, project.targetName!), flush: true);
+        final renamed = f.layout.role == BackupFileRole.native
+            ? await _plynalWithName(bytes!, project.targetName!)
+            : _withName(bytes!, project.targetName!);
+        await dest.writeAsBytes(renamed, flush: true);
         continue;
       }
       final out = await dest.open(mode: FileMode.writeOnly);
@@ -2443,6 +2524,7 @@ class _ProjectAccumulator {
   bool hasSidecar = false;
   bool newer = false;
   bool unreadable = false;
+  bool tooComplex = false;
   String? name;
 
   /// [LibraryBackup.sidecarDigest] of the sidecar, as is and renamed for a copy.

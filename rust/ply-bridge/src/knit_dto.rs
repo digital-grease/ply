@@ -574,6 +574,40 @@ impl From<KnitError> for KnitFormatFailure {
     }
 }
 
+/// Read a `.plyknit` file as the editor opens it: the engine reader, then the section limits. Sizes
+/// from a file are untrusted: sections past the engine's limits (counts, text lengths, a stitch
+/// change no ledger could apply) are refused instead of loaded, so every value that opens also fits
+/// the DTOs exactly.
+pub(crate) fn read_checked(text: &str) -> Result<KnitPattern, KnitFormatFailure> {
+    let pattern = KnitPattern::from_json(text).map_err(KnitFormatFailure::from)?;
+    ply_knit::sections::check_limits(&pattern).map_err(|why| KnitFormatFailure {
+        kind: KnitFormatFailureKind::Unreadable,
+        message: match why {
+            ply_knit::sections::LimitError::TooLarge(why) => {
+                format!("the pattern's sections are too large to open: {why}")
+            }
+            ply_knit::sections::LimitError::BadPieceId(why) => {
+                format!("the pattern's pieces cannot be opened: {why}")
+            }
+        },
+    })?;
+    Ok(pattern)
+}
+
+/// The schema version a `.plyknit` file says it has, read from its envelope alone (nothing else in
+/// the file is built, however large it is): 1 for a legacy file, `None` when it is not a `.plyknit`
+/// at all; a newer version than this build reads is returned as found (at most `u32::MAX`), for the
+/// caller to refuse.
+pub(crate) fn document_version(text: &str) -> Option<u32> {
+    match ply_knit::native::schema_version(text) {
+        Ok(v) => Some(v),
+        Err(KnitError::NewerVersion { found, .. }) => {
+            Some(u32::try_from(found).unwrap_or(u32::MAX))
+        }
+        Err(_) => None,
+    }
+}
+
 // --- conversions (engine <-> DTO, the only place the base conversions live) ------------------------
 
 impl From<Construction> for ConstructionKind {
@@ -1460,6 +1494,49 @@ impl From<&KnitIssue> for KnitIssueDto {
 mod tests {
     use super::*;
     use ply_knit::pattern::builtin;
+
+    fn fixture(rel: &str) -> String {
+        let path = format!("{}/../../fixtures/{rel}", env!("CARGO_MANIFEST_DIR"));
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
+    #[test]
+    fn the_version_of_a_large_hostile_file_comes_from_its_envelope() {
+        // 20 MB of document the probe skips unread.
+        let mut text = String::from(r#"{"format": "ply.knit", "schema_version": 6, "document": ["#);
+        while text.len() < 20 * 1024 * 1024 {
+            text.push_str("{},");
+        }
+        text.push_str("{}]}");
+        assert_eq!(document_version(&text), Some(6));
+        let newer = text.replacen("\"schema_version\": 6", "\"schema_version\": 7", 1);
+        assert_eq!(document_version(&newer), Some(7));
+        let huge = text.replacen("\"schema_version\": 6", "\"schema_version\": 9000000000", 1);
+        assert_eq!(document_version(&huge), Some(u32::MAX));
+        drop((text, newer, huge));
+        assert_eq!(
+            document_version(&fixture("migrations/plyknit/v0.1.5/sampler.plyknit")),
+            Some(1)
+        );
+        let current = ply_knit::native::write(&ply_knit::KnitPattern::from(
+            crate::api::knit_blank_pattern(),
+        ))
+        .unwrap();
+        assert_eq!(
+            document_version(&current),
+            Some(crate::api::knit_schema_version())
+        );
+        for not_knit in [
+            "not json",
+            "[1, 2]",
+            r#"{"format":"ply.nalbind","schemaVersion":3,"name":"x"}"#,
+            r#"{"format":"ply.tablet","schema_version":1,"document":{}}"#,
+            r#"{"format":"ply.knit","schema_version":0,"document":{}}"#,
+            r#"{"format":"ply.knit","schema_version":"6","document":{}}"#,
+        ] {
+            assert_eq!(document_version(not_knit), None, "{not_knit}");
+        }
+    }
 
     /// A non-trivial pattern (cm gauge, colorwork, a custom cable, a repeat span, every enum variant)
     /// must survive engine -> DTO -> engine unchanged, so no field is dropped at the boundary.

@@ -23,6 +23,38 @@ const int knitVersion = 2;
 /// fixture files are small, so reading them whole here is fine; the app never does this.
 Future<int?> testTabletVersion(String text) async => plytabSchemaVersion(text);
 
+/// Stands in for the engine's envelope-only `.plyknit` version reader, as [testTabletVersion] does.
+Future<int?> testKnitVersion(String text) async => plyknitSchemaVersion(text);
+
+/// Stands in for the engine's `.plynal` version reader, as [testTabletVersion] does: the rule of
+/// `NalbindProject.schemaVersionOf` (no `format` key is legacy version 1), a newer version as found.
+Future<int?> testNalbindVersion(String text) async {
+  final Object? json;
+  try {
+    json = jsonDecode(text);
+  } on FormatException {
+    return null;
+  }
+  if (json is! Map<String, dynamic>) return null;
+  if (!json.containsKey('format')) return 1;
+  if (json['format'] != NalbindProject.formatId) return null;
+  final version = json['schemaVersion'];
+  return version is int && version >= 1 ? version : null;
+}
+
+/// Stands in for the engine's value guard in host tests: the files here are small.
+Future<bool> testValueGuard(String text) async => true;
+
+/// The checks a host-test backup service runs: the stand-in version readers and value guards, no
+/// engine parsers.
+const NativeFileChecks testChecks = NativeFileChecks(
+  knitVersion: testKnitVersion,
+  knitGuard: testValueGuard,
+  nalbindVersion: testNalbindVersion,
+  nalbindGuard: testValueGuard,
+  tabletVersion: testTabletVersion,
+);
+
 late Directory docs;
 late Directory work;
 
@@ -31,7 +63,7 @@ late Directory work;
 LibraryBackup service({
   Directory? into,
   BackupLimits limits = const BackupLimits(),
-  NativeFileChecks checks = const NativeFileChecks(tabletVersion: testTabletVersion),
+  NativeFileChecks checks = testChecks,
   Future<void> Function(String target)? beforePlace,
   List<(BackupCraft, String)>? thumbnails,
   AppSettings? settings,

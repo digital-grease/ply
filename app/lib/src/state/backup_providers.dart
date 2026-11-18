@@ -10,11 +10,11 @@ import '../data/knit_repository.dart';
 import '../data/library_backup.dart';
 import '../data/materials_repository.dart' show MaterialLibrary;
 import '../diagnostics/crash_reporter.dart' show kPlyAppVersion;
-import '../models/native_format.dart';
 import 'editor_providers.dart';
 import 'knit_editor_providers.dart';
 import 'loom_providers.dart';
 import 'material_providers.dart';
+import 'nalbind_providers.dart' show nalbindRepositoryProvider;
 import 'tablet_editor_providers.dart' show tabletRepositoryProvider;
 import 'theme_providers.dart';
 
@@ -23,34 +23,38 @@ final backupFileAccessProvider =
     Provider<BackupFileAccess>((_) => const PickerBackupFileAccess());
 
 /// The library backup service, wired to the app documents directory and the engine: the current
-/// `.plyknit` version comes from what the engine writes (so a knit format bump needs no change
-/// here), WIF and knit files are also parsed by the engine before a restore, and restored projects
-/// get their thumbnails rebuilt. A full backup offers the app settings in effect; restored settings
-/// go through the settings notifier (saved first, then applied). A full backup carries My looms
+/// `.plyknit` version is the one the engine writes (so a knit format bump needs no change here),
+/// WIF and knit files are also parsed by the engine before a restore, and restored projects get
+/// their thumbnails rebuilt. A full backup offers the app settings in effect; restored settings go
+/// through the settings notifier (saved first, then applied). A full backup carries My looms
 /// (`looms.json`, read by the engine), and a restore adds a backup's looms in one write that a later
 /// failure undoes (ADR 0014), and the materials and swatches likewise (`materials.json` with the
-/// swatches' photos; ADR 0016). Tablet weaving bands are checked like knitting patterns: against
-/// the `.plytab` version the engine writes, then by the engine's parser (ADR 0018). Tests override
-/// it with a service over a temp directory.
+/// swatches' photos; ADR 0016). Knitting patterns, nalbinding projects and tablet weaving bands are
+/// checked alike: the version each file states, read by the engine from its version keys alone,
+/// against the newest this build reads; for a pattern or project, the engine's count of its JSON
+/// values (a guard against files crafted to blow up when decoded); then the full read (the engine's
+/// parser, which sends nothing back for a pattern; for a nalbinding project, the app's own reader
+/// on a background isolate). Tests override it with a service over a temp directory.
 final libraryBackupProvider = Provider<LibraryBackup>((ref) {
   final drafts = ref.watch(repositoryProvider);
   final knits = ref.watch(knitRepositoryProvider);
+  final nalbinds = ref.watch(nalbindRepositoryProvider);
   final tablets = ref.watch(tabletRepositoryProvider);
   final looms = ref.watch(loomRepositoryProvider);
   final materials = ref.watch(materialsRepositoryProvider);
   return LibraryBackup(
     documentsDir: getApplicationDocumentsDirectory,
-    currentKnitSchemaVersion: () async {
-      final version = plyknitSchemaVersion(await knits.write(await knits.blank()));
-      if (version == null) throw StateError('the engine wrote an unrecognized .plyknit');
-      return version;
-    },
+    currentKnitSchemaVersion: knits.schemaVersion,
     currentTabletSchemaVersion: tablets.schemaVersion,
     appVersion: kPlyAppVersion,
     limits: BackupLimits.forThisDevice(),
     checks: NativeFileChecks(
       wif: (text) async => drafts.parseDoc(text),
-      knit: (text) async => knits.parse(text),
+      knit: knits.check,
+      knitVersion: knits.documentVersion,
+      knitGuard: knits.withinValueLimit,
+      nalbindVersion: nalbinds.documentVersion,
+      nalbindGuard: nalbinds.withinValueLimit,
       tablet: (text) async => tablets.parse(text),
       tabletVersion: tablets.documentVersion,
     ),

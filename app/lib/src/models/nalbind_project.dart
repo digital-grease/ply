@@ -20,8 +20,13 @@
 // fields dropped, never overwritten); so is a version 3 recipe this build cannot read (an unknown
 // segment kind, say). `format` and `schemaVersion` are reserved: no document field may use those
 // names.
+//
+// DECODING. The project screen opens, the save guard checks and a follow-view tick rereads a file
+// by decoding it on a background isolate ([decodePlynalInBackground], [checkPlynalInBackground]), so
+// a large file never holds up the UI.
 
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'nalbind_recipe.dart';
 import 'native_format.dart';
@@ -161,6 +166,41 @@ class NalbindProject {
 
   @override
   int get hashCode => Object.hash(name, notation, stitchName, notes, recipe);
+}
+
+/// [NalbindProject.decode] on a background isolate, so a large file never holds up the UI. Throws
+/// the same [NativeFormatException].
+Future<NalbindProject> decodePlynalInBackground(String text) async {
+  final (project, problem, detail) =
+      await Isolate.run(() => _decodeOrProblem(text), debugName: 'plynal decode');
+  if (problem != null) {
+    throw NativeFormatException(problem, document: NativeDocument.nalbindProject, detail: detail);
+  }
+  return project!;
+}
+
+/// Read a `.plynal` text the way the project screen opens it ([NalbindProject.decode]), on a
+/// background isolate, keeping only the verdict. Throws a [NativeFormatException] when it cannot be
+/// opened: newer, another format, unreadable.
+Future<void> checkPlynalInBackground(String text) async {
+  final (_, problem, detail) =
+      await Isolate.run(() => _decodeOrProblem(text, keep: false), debugName: 'plynal check');
+  if (problem != null) {
+    throw NativeFormatException(problem, document: NativeDocument.nalbindProject, detail: detail);
+  }
+}
+
+/// Runs on the background isolate: the project (when [keep]) or why it does not open. Only this
+/// record comes back.
+(NalbindProject?, NativeFormatProblem?, String?) _decodeOrProblem(String text, {bool keep = true}) {
+  try {
+    final project = NalbindProject.decode(text);
+    return (keep ? project : null, null, null);
+  } on NativeFormatException catch (e) {
+    return (null, e.problem, e.detail);
+  } catch (e) {
+    return (null, NativeFormatProblem.unreadable, '$e');
+  }
 }
 
 /// An in-memory pairing of a saved project's sidecar metadata with its on-disk path — the nalbind

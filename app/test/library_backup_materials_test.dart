@@ -29,6 +29,7 @@ LibraryBackup materialService({
       documentsDir: () async => into ?? docs,
       currentKnitSchemaVersion: () async => knitVersion,
       appVersion: '9.9.9-test',
+      checks: testChecks,
       clock: () => DateTime.utc(2026, 11, 16, 10, 30),
       materials: materialHooks(DartCodecMaterialsRepository(into ?? docs), fits: fits),
       currentSettings: settings == null ? null : () async => settings,

@@ -1,8 +1,10 @@
-// Version negotiation for Ply's own document formats (`.plyknit`, `.plynal`). Pure data: no FFI and
-// no file I/O. The engine (`ply-knit`, `native.rs`) owns the `.plyknit` reader and its migrations; the
-// app owns the `.plynal` reader (see `NalbindProject`). This file holds what both crafts share: the
-// user-facing error for a file this build must not open or overwrite, and the `.plyknit` version probe
-// the knit repository uses to decide whether a save is a format upgrade.
+// Version negotiation for Ply's own document formats (`.plyknit`, `.plynal`, `.plytab`). Pure data: no
+// FFI and no file I/O. The engine (`ply-knit`, `native.rs`) owns the `.plyknit` reader and its
+// migrations; the app owns the `.plynal` reader (see `NalbindProject`). This file holds what the
+// crafts share: the user-facing error for a file this build must not open or overwrite, and small
+// Dart version probes for host tests. The app itself reads the version of a file from disk or a
+// backup through the engine, from the file's version keys alone (`KnitRepository.documentVersion`,
+// `NalbindRepository.documentVersion`, `TabletRepository.documentVersion`), never by decoding it.
 
 import 'dart:convert';
 
@@ -75,12 +77,20 @@ class NativeFormatException implements Exception {
   String toString() => message;
 }
 
-/// The schema version of a `.plyknit` file's text, by the same deterministic rule the engine applies
+/// The longest text [plyknitSchemaVersion] decodes.
+const int kPlyknitProbeMaxBytes = 1024 * 1024;
+
+/// The schema version of a SMALL `.plyknit` text, by the same deterministic rule the engine applies
 /// (`ply_knit::native`): a JSON object WITHOUT a `format` key is legacy version 1; an object whose
 /// `format` is `ply.knit` carries its version in `schema_version` (a positive integer). Returns null
-/// for anything else (not JSON, not an object, a foreign format, a bad version). It never decodes the
-/// pattern itself.
+/// for anything else (not JSON, not an object, a foreign format, a bad version).
+///
+/// It DECODES THE WHOLE TEXT, so it reads at most [kPlyknitProbeMaxBytes] and is null past that. The
+/// app never uses it on a file from disk or a backup: those go through the engine's envelope-only
+/// reader (`KnitRepository.documentVersion`), which builds nothing in proportion to the file. Host
+/// tests, which have no engine, use it on small fixtures.
 int? plyknitSchemaVersion(String text) {
+  if (text.length > kPlyknitProbeMaxBytes) return null;
   final Object? decoded;
   try {
     decoded = jsonDecode(text);
