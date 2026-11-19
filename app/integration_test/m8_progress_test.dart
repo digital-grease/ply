@@ -107,10 +107,30 @@ Future<void> tapKey(WidgetTester tester, String key) async {
   await settle(tester);
 }
 
+/// Pump frames until [finder] finds something, for at most [seconds]. A screen's actions appear only
+/// once its pattern has loaded, which takes longer on the first test after a cold start.
+Future<void> pumpUntil(WidgetTester tester, Finder finder, {int seconds = 30}) async {
+  for (var i = 0; i < seconds * 20 && finder.evaluate().isEmpty; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  if (finder.evaluate().isEmpty) {
+    final shown = find
+        .byType(Text)
+        .evaluate()
+        .map((e) => (e.widget as Text).data)
+        .whereType<String>()
+        .take(30)
+        .join(' | ');
+    fail('$finder still missing after $seconds s; on screen: $shown');
+  }
+}
+
 /// Choose [entry] in the screen's overflow menu ([tooltip] names its button).
 Future<void> fromMenu(WidgetTester tester, String tooltip, String entry) async {
+  await pumpUntil(tester, find.byTooltip(tooltip));
   await tester.tap(find.byTooltip(tooltip));
   await settle(tester);
+  await pumpUntil(tester, find.text(entry));
   await tester.tap(find.text(entry));
   await settle(tester, frames: 40);
 }
@@ -120,10 +140,15 @@ void main() {
 
   setUpAll(() async {
     await RustLib.init();
+    // A tap that would land on another widget fails where it happens instead of later.
+    WidgetController.hitTestWarningShouldBeFatal = true;
   });
+  tearDownAll(() => WidgetController.hitTestWarningShouldBeFatal = false);
 
   testWidgets('the weaving editor asks to save an unsaved draft first', (tester) async {
-    await openFresh(tester, const EditorScreen(wifText: kTwillWif, title: 'Not saved'));
+    // The app provides the draft repository at its root; a test that opens the editor must too.
+    await openFresh(tester, const EditorScreen(wifText: kTwillWif, title: 'Not saved'),
+        overrides: [repositoryProvider.overrideWithValue(DraftRepository())]);
     await fromMenu(tester, 'More actions', '$kWeaveTrackerTitle…');
     expect(find.text('Save the draft first to keep your place.'), findsOneWidget);
     expect(find.byType(WeaveTrackerScreen), findsNothing);
@@ -192,9 +217,13 @@ void main() {
     await openFresh(
         tester, EditorScreen(wifText: kTwillWif, title: 'progress twill', id: id, meta: meta),
         overrides: overrides);
+    await pumpUntil(tester, find.byTooltip('More actions'));
     await tester.tap(find.byTooltip('More actions'));
     await settle(tester);
-    await tester.tap(find.text('Sinking shed'));
+    // Tap the menu item itself: its label alone is not what receives the tap.
+    await tester.tap(find.ancestor(
+        of: find.text('Sinking shed'),
+        matching: find.byWidgetPredicate((w) => w is CheckedPopupMenuItem)));
     await settle(tester);
     await fromMenu(tester, 'More actions', '$kWeaveTrackerTitle…');
     expect(find.textContaining('unsaved changes to this draft'), findsOneWidget);
