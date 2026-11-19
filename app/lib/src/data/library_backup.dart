@@ -78,6 +78,7 @@ import '../models/progress.dart'
         kProgressSchemaVersion;
 import '../models/weave_plan.dart' show WeavePlan;
 import 'app_settings_repository.dart';
+import 'draft_notes_file.dart';
 import 'json_count.dart';
 import 'loom_repository.dart' show LoomFileException, LoomFileProblem;
 import 'materials_repository.dart'
@@ -351,6 +352,10 @@ enum BackupProblem {
   libraryTooManyFiles,
   fileTooLarge,
 
+  /// A weaving sidecar over its limit because of the draft's notes, saved by a build before the
+  /// notes limit (ADR 0007): the message says to shorten them, and where.
+  notesTooLong,
+
   /// A sidecar with more JSON values than a restore checks ([BackupLimits.maxSidecarValues]).
   fileTooComplex,
 
@@ -381,8 +386,8 @@ class BackupException implements Exception {
   /// Diagnostic only, never the main message.
   final String? detail;
 
-  /// The project a [BackupProblem.fileTooLarge], [BackupProblem.fileTooComplex] or
-  /// [BackupProblem.fileUnreadable] is about.
+  /// The project a [BackupProblem.fileTooLarge], [BackupProblem.notesTooLong],
+  /// [BackupProblem.fileTooComplex] or [BackupProblem.fileUnreadable] is about.
   final String? projectName;
 
   /// The limit (bytes, or files) that was exceeded.
@@ -396,6 +401,10 @@ class BackupException implements Exception {
           'Your library has too many files for one backup (over ${limit ?? 0}).',
         BackupProblem.fileTooLarge =>
           'A file in "${projectName ?? ''}" is too large to back up (over ${formatBytes(limit ?? 0)}).',
+        BackupProblem.notesTooLong =>
+          'The notes of "${projectName ?? ''}" are too long to back up. Shorten them to '
+              '${_thousands(DraftMeta.maxNotesChars)} characters or fewer: on the Weaving tab, '
+              "open the draft's menu and choose Notes.",
         BackupProblem.fileTooComplex =>
           'A file in "${projectName ?? ''}" is too complex to back up.',
         BackupProblem.fileUnreadable =>
@@ -430,6 +439,10 @@ String formatBytes(int bytes) {
   final mb = bytes / _mib;
   return mb == mb.roundToDouble() ? '${mb.round()} MB' : '${mb.toStringAsFixed(1)} MB';
 }
+
+/// [n] with a comma between thousands, for the UI: 10,000.
+String _thousands(int n) =>
+    n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
 
 /// One file entry of a manifest.
 class BackupManifestFile {
@@ -840,8 +853,7 @@ class BackupPlan {
 
   /// [name] as a file name every platform accepts: path separators, reserved and control characters
   /// become '-', runs of white space one space, no leading or trailing dots or spaces, at most 60
-  /// characters; "project" when nothing is left.
-  @visibleForTesting
+  /// characters; "project" when nothing is left. Also names the text file of a draft's notes.
   static String safeFileStem(String name) {
     var s = name
         .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F\x7F]'), '-')
@@ -1506,9 +1518,10 @@ class LibraryBackup {
   /// when it is carried rewritten, the size and SHA-256 of the file on disk ([source]). Null when
   /// the file is not a sidecar (not UTF-8, not JSON, not an object): the library does not list it
   /// either. Throws [BackupProblem.fileTooLarge] or [BackupProblem.fileTooComplex] for one a
-  /// restore would refuse, and [BackupProblem.fileUnreadable] (naming the project) when the device
-  /// cannot read it. Anything else (no memory, an isolate that cannot start) is thrown as it is:
-  /// the backup fails rather than leave the project out.
+  /// restore would refuse ([BackupProblem.notesTooLong] for a weaving sidecar too large because of
+  /// its notes, see [_notesTooLong]), and [BackupProblem.fileUnreadable] (naming the project) when
+  /// the device cannot read it. Anything else (no memory, an isolate that cannot start) is thrown as
+  /// it is: the backup fails rather than leave the project out.
   ///
   /// It is carried byte for byte, except a nalbinding sidecar holding a copy of the project's notes
   /// (see [sidecarNotesIgnored]): earlier builds wrote that copy on every save, so notes of about a
@@ -1521,7 +1534,12 @@ class LibraryBackup {
     final readLimit = dropNotes ? limits.maxFileBytes : limits.maxSidecarBytes;
     final Uint8List bytes;
     try {
-      if (await sidecar.length() > readLimit) {
+      final length = await sidecar.length();
+      if (length > readLimit) {
+        if (craft == BackupCraft.weaving) {
+          final notes = await _notesTooLong(sidecar, length);
+          if (notes != null) throw notes;
+        }
         throw BackupException(BackupProblem.fileTooLarge,
             projectName: await _nameAtHead(sidecar) ?? id, limit: limits.maxSidecarBytes);
       }
@@ -1549,6 +1567,59 @@ class LibraryBackup {
           ? null
           : (size: bytes.length, sha256: await _hashBytes(bytes)),
     );
+  }
+
+  /// For a weaving sidecar of [length] bytes, over the sidecar limit: [BackupProblem.notesTooLong],
+  /// naming the draft, when its notes are what make it too large, so the message can say what to
+  /// do. Only the weaving save dialog puts the crafter's text in a sidecar's `notes`, and builds
+  /// before its limit (ADR 0007) took any length. Null when something else makes it too large, and
+  /// whenever the notes editor could not change the notes (the shared rules of
+  /// `draft_notes_file.dart`: over 64 MB, past a sidecar's value or nesting limits, a newer sidecar
+  /// schema, notes that are not text), so the message never sends the weaver where they cannot act;
+  /// the message then names the file as before. The file is read and decoded on a background
+  /// isolate; one the device cannot read is thrown as a [FileSystemException].
+  Future<BackupException?> _notesTooLong(File sidecar, int length) async {
+    if (length > limits.maxFileBytes || length > maxNotesSidecarBytes) return null;
+    final max = limits.maxSidecarBytes;
+    final read = await _draftNameIfNotesTooLongInBackground(sidecar.path, max);
+    if (read.unreadable) throw FileSystemException('could not be read', sidecar.path);
+    return read.name == null
+        ? null
+        : BackupException(BackupProblem.notesTooLong, projectName: read.name, limit: max);
+  }
+
+  /// [_draftNameIfNotesTooLong] for the sidecar at [path], read and decoded on a background isolate
+  /// ([unreadable] when the device cannot read it).
+  static Future<({String? name, bool unreadable})> _draftNameIfNotesTooLongInBackground(
+          String path, int max) =>
+      Isolate.run(() async {
+        final Uint8List bytes;
+        try {
+          bytes = await File(path).readAsBytes();
+        } on FileSystemException {
+          return (name: null, unreadable: true);
+        }
+        return (name: _draftNameIfNotesTooLong(bytes, max), unreadable: false);
+      }, debugName: 'sidecar notes');
+
+  /// The draft's name in the sidecar [bytes] when its notes are what make it larger than [max]
+  /// bytes: they are over the notes editor's limit, counted as the editor counts them (without
+  /// spaces and line breaks at either end), and written again as the editor writes it, with them
+  /// shortened to that limit or fewer, the sidecar would fit (at most 6 bytes a character, a JSON
+  /// escape, so the message's "shorten them" is enough). Null otherwise, and whenever the notes
+  /// editor would refuse the notes ([decodeNotesSidecar]).
+  static String? _draftNameIfNotesTooLong(Uint8List bytes, int max) {
+    final read = decodeNotesSidecar(bytes);
+    if (read.problem != null) return null;
+    if (read.notes.trim().length <= DraftMeta.maxNotesChars) return null;
+    final json = read.json!..['notes'] = '';
+    try {
+      final withoutNotes = utf8.encode(jsonEncode(json)).length;
+      if (withoutNotes + 6 * DraftMeta.maxNotesChars > max) return null;
+    } on JsonUnsupportedObjectError {
+      return null;
+    }
+    return DraftMeta.fromJson(json).name;
   }
 
   /// The project name at the head of a sidecar too large to read, for the message that refuses it:

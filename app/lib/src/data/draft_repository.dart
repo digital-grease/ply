@@ -19,6 +19,7 @@ import '../models/shadow_weave_params.dart';
 import '../models/weft_work.dart' show withSoundShotGroups;
 import '../rust/api.dart';
 import '../rust/dto.dart';
+import 'draft_notes_file.dart';
 import 'progress_repository.dart' show ProgressRepository;
 import 'sidecar_writes.dart';
 
@@ -648,6 +649,15 @@ class DraftRepository {
 
   /// Save a draft as the `<id>.{wif,json,png}` triplet and return its id.
   ///
+  /// [meta] is written as the sidecar, except two keys written apart from a save: whenever a
+  /// sidecar for [id] is already on disk, its `notes` and its `materials` links are kept as they are
+  /// there, whatever [meta] holds (an editor's meta is the one it opened the draft with). Only a
+  /// first save writes [meta]'s notes; to change a saved draft's notes, use [setNotes]. A sidecar
+  /// that is there but cannot be read (a device error) refuses the save with a [DraftSaveRefused],
+  /// before anything is written, rather than write [meta]'s older notes and links over it; a file
+  /// there that reads but is not a sidecar (not UTF-8 or JSON, or not an object) is replaced by
+  /// [meta] as before (the library does not list it).
+  ///
   /// Writes are atomic (tmp -> rename) and ordered: `.wif` first, sidecar last, so
   /// `list()` never observes a `.json` without its `.wif`. The thumbnail is
   /// best-effort — a failure there never fails the save.
@@ -661,17 +671,21 @@ class DraftRepository {
   }) async {
     final dir = await _draftsDir();
     final draftId = id ?? _uuid.v4();
+    // 0. A sidecar there that cannot be read refuses the save before anything is written (it is
+    // read again under the lock below, which refuses the same way should it fail only then).
+    if (id != null) await _keysOnDisk(dir, draftId);
     try {
       // 1. Source of truth first.
       await _atomicWriteString(File(_wifPath(dir, draftId)), wifText);
       // 2. Best-effort thumbnail (non-fatal).
       await _writeThumbnail(dir, draftId, wifText);
-      // 3. Sidecar last — its presence signals "this draft is complete". The draft's links to the
-      // library's materials and swatches are written by the materials sheet as they change (ADR
-      // 0016), so a save carries them forward from the sidecar on disk rather than from the meta
-      // the editor opened with.
+      // 3. Sidecar last: its presence signals "this draft is complete". Two of its keys are written
+      // apart from a save, as they change: the draft's links to the library's materials and
+      // swatches (the materials sheet, ADR 0016) and its notes ([setNotes], ADR 0007). A save
+      // carries both forward from the sidecar on disk rather than from the meta the editor opened
+      // with, so it never undoes either.
       await SidecarWrites.run(_jsonPath(dir, draftId),
-          () async => _writeSidecar(dir, draftId, await _withLinksOnDisk(dir, draftId, meta)));
+          () async => _writeSidecar(dir, draftId, await _withKeysOnDisk(dir, draftId, meta)));
       return draftId;
     } on FileSystemException catch (e) {
       throw Exception('Could not save the draft: ${e.message}');
@@ -855,6 +869,53 @@ class DraftRepository {
     });
   }
 
+  /// The notes saved with draft [id], as its sidecar on disk holds them now (empty when it has
+  /// none), read under the sidecar lock (ADR 0016) so a write already under way lands first. A
+  /// sidecar over 1 MB is read and decoded on a background isolate; one over 64 MB, past the
+  /// backup's limits for a sidecar, or holding a number too large for a double is refused (see
+  /// [readNotesFile]). Throws a [DraftNotesException] when they could not be changed here (see
+  /// [setNotes]), so the weaver is told before typing anything.
+  Future<String> readNotes(String id) async => (await readNotesWithDigest(id)).notes;
+
+  /// [readNotes], with a fingerprint of the notes ([notesDigest], worked out where the sidecar is
+  /// read) to pass to [setNotes] as `expectedDigest`.
+  Future<({String notes, String digest})> readNotesWithDigest(String id) async {
+    final dir = await _draftsDir();
+    final path = _jsonPath(dir, id);
+    final read = await SidecarWrites.run(path, () => readNotesFile(path));
+    if (read.problem case final problem?) throw DraftNotesException(problem.message);
+    return (notes: read.notes!, digest: read.digest!);
+  }
+
+  /// Replace the notes saved with draft [id] by [notes] (ADR 0007, amendment of 2026-11-18, item 7).
+  ///
+  /// An edit of the sidecar's `notes` alone, under the sidecar lock (ADR 0016): every other key
+  /// keeps its value and its place, unknown keys included, and the file is replaced atomically as a
+  /// save replaces it (read and rewritten on a background isolate past 1 MB). The `.wif` and the
+  /// thumbnail are not touched, and neither are `lastOpened` and `savedAt`, so changing the notes
+  /// never marks the draft edited and runs no check. A save takes the notes from the sidecar on disk
+  /// (see [save]), so an editor that opened the draft before this never undoes it, and this never
+  /// undoes a save.
+  ///
+  /// With [expectedDigest] (the [notesDigest] of the notes as the weaver opened them, from
+  /// [readNotesWithDigest]), refuses when the notes on disk are no longer those, so a second notes
+  /// editor on the same draft never overwrites the first one's change. Refuses, writing nothing: notes over [DraftMeta.maxNotesChars] (an [ArgumentError]; the
+  /// notes editor never asks for that), and with a [DraftNotesException] everything [readNotes]
+  /// refuses.
+  Future<void> setNotes(String id, String notes, {String? expectedDigest}) async {
+    if (notes.length > DraftMeta.maxNotesChars) {
+      throw ArgumentError.value(
+          notes.length, 'notes', 'more than ${DraftMeta.maxNotesChars} characters');
+    }
+    final dir = await _draftsDir();
+    final path = _jsonPath(dir, id);
+    await SidecarWrites.run(path, () async {
+      final edit = await rewriteNotesFile(path, notes, expectedDigest: expectedDigest);
+      if (edit.problem case final problem?) throw DraftNotesException(problem.message);
+      await _atomicWriteString(File(path), edit.rewritten!);
+    });
+  }
+
   /// Delete a draft's whole triplet. Tolerates already-missing files.
   ///
   /// Sidecar first: removing the `.json` drops the draft from the filesystem index
@@ -902,21 +963,48 @@ class DraftRepository {
     await _atomicWriteString(File(_jsonPath(dir, id)), jsonEncode(meta.toJson()));
   }
 
-  /// [meta] with the `materials` links the sidecar on disk holds now (or without any, when it holds
-  /// none). A missing or unreadable sidecar leaves [meta] as it is.
-  Future<DraftMeta> _withLinksOnDisk(Directory dir, String id, DraftMeta meta) async {
-    final file = File(_jsonPath(dir, id));
-    if (!await file.exists()) return meta;
+  /// The sidecar keys written apart from a save, which a save takes from the sidecar on disk (see
+  /// [save]): the links to the library's materials and swatches, and the notes.
+  static const List<String> _keysKeptOnDisk = [ProjectMaterials.key, 'notes'];
+
+  /// [meta] with each of [_keysKeptOnDisk] as the sidecar on disk holds it now (or without it, when
+  /// the sidecar holds none: no links, no notes). No sidecar yet (a first save), or a file that is
+  /// not a sidecar, leaves [meta] as it is; a sidecar that cannot be read refuses ([_keysOnDisk]).
+  Future<DraftMeta> _withKeysOnDisk(Directory dir, String id, DraftMeta meta) async {
+    final disk = await _keysOnDisk(dir, id);
+    if (disk == null) return meta;
     try {
-      final disk = jsonDecode(await file.readAsString());
-      if (disk is! Map<String, dynamic>) return meta;
-      final json = meta.toJson()..remove(ProjectMaterials.key);
-      if (disk.containsKey(ProjectMaterials.key)) {
-        json[ProjectMaterials.key] = disk[ProjectMaterials.key];
+      final json = meta.toJson();
+      for (final key in _keysKeptOnDisk) {
+        json.remove(key);
+        if (disk.containsKey(key)) json[key] = disk[key];
       }
       return DraftMeta.fromJson(json);
     } catch (_) {
       return meta;
+    }
+  }
+
+  /// The sidecar of draft [id] as a JSON object, or null when there is none or the file is not a
+  /// sidecar (not UTF-8 or JSON, or not an object). Throws a [DraftSaveRefused] when it is there but
+  /// the device cannot read it, so a save never writes older notes and links over it.
+  Future<Map<String, dynamic>?> _keysOnDisk(Directory dir, String id) async {
+    final file = File(_jsonPath(dir, id));
+    final Uint8List bytes;
+    try {
+      if (!await file.exists()) return null;
+      bytes = await file.readAsBytes();
+    } on FileSystemException catch (e) {
+      throw DraftSaveRefused(
+          "This draft's details could not be read, so it was not saved (its notes and links are "
+          'kept as they are). Try again.',
+          detail: '$e');
+    }
+    try {
+      final disk = jsonDecode(utf8.decode(bytes));
+      return disk is Map<String, dynamic> ? disk : null;
+    } on FormatException {
+      return null;
     }
   }
 
@@ -1219,6 +1307,28 @@ String regionPreviewErrorMessage(Object error) {
 class StructureApplyRefused implements Exception {
   const StructureApplyRefused(this.message);
   final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Why [DraftRepository.readNotes] or [DraftRepository.setNotes] could not read or change a draft's
+/// notes. [message] is the plain sentence shown to the user.
+class DraftNotesException implements Exception {
+  const DraftNotesException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Why [DraftRepository.save] refused to save a draft: its sidecar is there but could not be read,
+/// so writing would put older notes and links over it. [message] is the plain sentence shown to the
+/// user; [detail] is for logs.
+class DraftSaveRefused implements Exception {
+  const DraftSaveRefused(this.message, {this.detail});
+  final String message;
+  final String? detail;
 
   @override
   String toString() => message;

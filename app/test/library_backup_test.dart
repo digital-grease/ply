@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/data/json_count.dart';
 import 'package:ply/src/data/library_backup.dart';
 import 'package:ply/src/data/ustar.dart';
@@ -1477,10 +1478,11 @@ void main() {
           service(limits: const BackupLimits(maxFileBytes: 1024 * 1024)).planBackup(),
           throwsA(isA<BackupException>()
               .having((e) => e.projectName, 'project', 'n1')));
-      // Any craft's sidecar over its limit is named the same way.
+      // Any craft's sidecar over its limit is named the same way (a weaving draft's long notes have
+      // their own message: see the group below).
       await File(p.join(docs.path, 'nalbinds/n1.json')).delete();
       await put(docs, 'drafts/d1.wif', wifBytes);
-      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving', extra: {'notes': bigNotes}));
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving', extra: {'futureKey': bigNotes}));
       await expectLater(
           service().planBackup(),
           throwsA(isA<BackupException>()
@@ -1488,6 +1490,148 @@ void main() {
               .having((e) => e.projectName, 'project', 'Twill')
               .having((e) => e.message, 'message',
                   'A file in "Twill" is too large to back up (over 1 MB).')));
+    });
+  });
+
+  group("a weaving draft's notes too long to back up", () {
+    // Builds before the save dialog's limit took notes of any length, and a weaving sidecar carries
+    // them as they are (ADR 0007). Over 1 MB they stop a backup, which then says to shorten them,
+    // and where; the notes editor can shorten them.
+    final bigNotes = 'n' * (1024 * 1024 + 10);
+    const message = 'The notes of "Twill" are too long to back up. Shorten them to 10,000 '
+        "characters or fewer: on the Weaving tab, open the draft's menu and choose Notes.";
+    final notesTooLong = throwsA(isA<BackupException>()
+        .having((e) => e.problem, 'problem', BackupProblem.notesTooLong)
+        .having((e) => e.projectName, 'project', 'Twill')
+        .having((e) => e.limit, 'limit', 1024 * 1024)
+        .having((e) => e.message, 'message', message));
+    Matcher tooLarge(String name) => throwsA(isA<BackupException>()
+        .having((e) => e.problem, 'problem', BackupProblem.fileTooLarge)
+        .having((e) => e.projectName, 'project', name)
+        .having((e) => e.message, 'message',
+            'A file in "$name" is too large to back up (over 1 MB).'));
+
+    test('stop a backup and an export with a message that says what to do', () async {
+      await put(docs, 'drafts/d1.wif', wifBytes);
+      await put(docs, 'drafts/d1.json',
+          sidecar('Twill', 'Weaving', extra: {'notes': bigNotes, 'author': 'Ada'}));
+      await put(docs, 'drafts/d2.wif', wifBytes);
+      await put(docs, 'drafts/d2.json', sidecar('Plain', 'Weaving'));
+      await expectLater(service().planBackup(), notesTooLong);
+      await expectLater(service().planProjectBackup(BackupCraft.weaving, 'd1'), notesTooLong);
+      // The other draft still exports.
+      final entries = {
+        for (final (path, data)
+            in await entriesOf(await exportOne(service(), BackupCraft.weaving, 'd2')))
+          path: data,
+      };
+      expect(entries['drafts/d2.json'], sidecar('Plain', 'Weaving'));
+    });
+
+    test('once shortened in the notes editor, the draft backs up with every other key', () async {
+      final original = {
+        'name': 'Twill',
+        'craft': 'Weaving',
+        'author': 'Ada',
+        'notes': bigNotes,
+        'loomType': 'Jack',
+        'savedAt': '2026-01-01T00:00:00.000Z',
+        'lastOpened': '2026-01-02T00:00:00.000Z',
+        'schemaVersion': 1,
+        'futureKey': {'kept': true},
+        'materials': {
+          'yarns': [],
+          'swatches': [
+            {'swatchId': 'sw-1', 'swatchName': 'Sample'}
+          ],
+        },
+      };
+      await put(docs, 'drafts/d1.wif', wifBytes);
+      await put(docs, 'drafts/d1.json', utf8.encode(jsonEncode(original)));
+      await expectLater(service().planBackup(), notesTooLong);
+
+      final repo = DraftRepository(draftsDirOverride: Directory(p.join(docs.path, 'drafts')));
+      expect(await repo.readNotes('d1'), bigNotes, reason: 'they open in full');
+      await expectLater(repo.setNotes('d1', bigNotes), throwsArgumentError,
+          reason: 'never saved back over the limit');
+      await repo.setNotes('d1', 'Sett 24 ends per inch.');
+
+      final entries = {
+        for (final (path, data) in await entriesOf(await backUp(service()))) path: data,
+      };
+      final carried = jsonDecode(utf8.decode(entries['drafts/d1.json']!)) as Map<String, dynamic>;
+      expect(carried, {...original, 'notes': 'Sett 24 ends per inch.'});
+      expect(carried.keys.toList(), original.keys.toList(), reason: 'key order is kept');
+      expect(entries['drafts/d1.wif'], wifBytes);
+    });
+
+    test('one the device cannot read stops the backup, naming the project', () async {
+      await put(docs, 'drafts/d1.wif', wifBytes);
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving', extra: {'notes': bigNotes}));
+      final f = File(p.join(docs.path, 'drafts', 'd1.json'));
+      final chmod = Process.runSync('chmod', ['000', f.path]);
+      addTearDown(() => Process.runSync('chmod', ['644', f.path]));
+      try {
+        f.readAsBytesSync();
+        return; // this account reads any file (root), so the failure cannot be staged here
+      } on FileSystemException {
+        expect(chmod.exitCode, 0);
+      }
+      // Read for the notes message on a background isolate, which cannot read it: the same
+      // refusal as any sidecar the device cannot read (named by id: its head cannot be read).
+      final unreadable = throwsA(isA<BackupException>()
+          .having((e) => e.problem, 'problem', BackupProblem.fileUnreadable)
+          .having((e) => e.projectName, 'project', 'd1'));
+      await expectLater(service().planBackup(), unreadable);
+      await expectLater(service().planProjectBackup(BackupCraft.weaving, 'd1'), unreadable);
+    });
+
+    test('a weaving file too large for another reason keeps the message it had', () async {
+      await put(docs, 'drafts/d1.wif', wifBytes);
+      // Too large without the notes too.
+      await put(docs, 'drafts/d1.json',
+          sidecar('Twill', 'Weaving', extra: {'notes': bigNotes, 'futureKey': bigNotes}));
+      await expectLater(service().planBackup(), tooLarge('Twill'));
+      // So close to the limit without them that notes of 10,000 characters might not fit.
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving',
+          extra: {'notes': bigNotes, 'futureKey': 'f' * (1024 * 1024 - 30000)}));
+      await expectLater(service().planBackup(), tooLarge('Twill'));
+      // Notes within the editor's limit, or not text, are not the reason.
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving',
+          extra: {'notes': 'n' * 10000, 'futureKey': bigNotes}));
+      await expectLater(service().planBackup(), tooLarge('Twill'));
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving', extra: {
+        'notes': [bigNotes]
+      }));
+      await expectLater(service().planBackup(), tooLarge('Twill'));
+      // Notes over the limit only by the spaces at either end: the notes editor counts them as
+      // within it, so the backup does not send the weaver there either.
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving',
+          extra: {'notes': '${'n' * 9000}${' ' * (1024 * 1024)}'}));
+      await expectLater(service().planBackup(), tooLarge('Twill'));
+      // Notes the notes editor would refuse to change: a newer sidecar schema, or a sidecar holding
+      // a number too large for a double.
+      await put(docs, 'drafts/d1.json',
+          sidecar('Twill', 'Weaving', extra: {'notes': bigNotes, 'schemaVersion': 2}));
+      await expectLater(service().planBackup(), tooLarge('Twill'));
+      await put(
+          docs,
+          'drafts/d1.json',
+          utf8.encode(utf8
+              .decode(sidecar('Twill', 'Weaving', extra: {'notes': bigNotes}))
+              .replaceFirst('"schemaVersion":1', '"schemaVersion":1,"later":1e400')));
+      await expectLater(service().planBackup(), tooLarge('Twill'));
+      // Past the size of a document it is not read: named from the head of the file, as before.
+      await put(docs, 'drafts/d1.json', sidecar('Twill', 'Weaving', extra: {'notes': bigNotes}));
+      await expectLater(
+          service(limits: const BackupLimits(maxFileBytes: 1024 * 1024)).planBackup(),
+          tooLarge('Twill'));
+      // Only a weaving draft's notes are the crafter's own text in a sidecar: another craft's
+      // sidecar too large keeps the message it had, whatever its notes.
+      await File(p.join(docs.path, 'drafts/d1.json')).delete();
+      await put(docs, 'knits/k1.plyknit', knitFile(name: 'Hat'));
+      await put(docs, 'knits/k1.json', sidecar('Hat', 'Knitting', extra: {'notes': bigNotes}));
+      await expectLater(service().planBackup(), tooLarge('Hat'));
     });
   });
 
@@ -1744,6 +1888,11 @@ void main() {
     expect(formatBytes(128 * 1024 * 1024), '128 MB');
     expect(const BackupException(BackupProblem.backupTooLarge, limit: 512 * 1024 * 1024).message,
         'This backup is too large to restore (over 512 MB).');
+    expect(
+        const BackupException(BackupProblem.notesTooLong, projectName: 'Towel', limit: 1024 * 1024)
+            .message,
+        'The notes of "Towel" are too long to back up. Shorten them to 10,000 characters or '
+        "fewer: on the Weaving tab, open the draft's menu and choose Notes.");
   });
 }
 

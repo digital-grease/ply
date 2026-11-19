@@ -10,9 +10,11 @@ import '../data/draft_repository.dart';
 import '../data/library_backup.dart' show BackupCraft;
 import '../models/draft_meta.dart';
 import '../models/loom_type.dart';
+import '../state/backup_providers.dart' show backupFileAccessProvider;
 import '../state/editor_providers.dart' show draftLibraryWritesProvider;
 import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
+import '../widgets/draft_notes_dialog.dart';
 import '../widgets/loom_type_picker.dart';
 import '../widgets/project_export.dart';
 import '../widgets/thumb_unavailable.dart';
@@ -33,7 +35,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
   ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-enum _TileAction { open, rename, export, delete }
+enum _TileAction { open, rename, notes, export, delete }
 
 /// Why an imported file that is not UTF-8 text cannot be read.
 const String kImportNotUtf8 = 'Ply could not read that file: a WIF file is text, and this one is '
@@ -49,6 +51,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   /// Drafts whose thumbnail could not be rebuilt (the draft could not be read or drawn): their tile
   /// says so instead of showing the ordinary empty placeholder (ADR 0021, no silent blank image).
   final Set<String> _failedThumbs = {};
+
+  /// Drafts whose notes are being read or shown (see [_handle]).
+  final Set<String> _notesOpen = {};
 
   @override
   void initState() {
@@ -287,6 +292,21 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         await _open(entry);
       case _TileAction.rename:
         await _rename(entry);
+      case _TileAction.notes:
+        // The action sheet was an async gap; and Notes chosen again while a draft's notes are
+        // still being read opens no second notes editor.
+        if (!mounted || !_notesOpen.add(entry.id)) return;
+        // The notes from the draft's first save (ADR 0007), read from and written to its sidecar
+        // alone. Nothing in the grid shows them, so the library is not listed again.
+        try {
+          final files = ref.read(backupFileAccessProvider);
+          await editDraftNotes(context, widget.repository,
+              id: entry.id,
+              draftName: entry.meta.name,
+              saveFile: (name, bytes) => files.save(name, bytes, dialogTitle: 'Save notes'));
+        } finally {
+          _notesOpen.remove(entry.id);
+        }
       case _TileAction.export:
         if (!mounted) return; // the action sheet was an async gap
         await exportProject(context, ref,
@@ -312,6 +332,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               leading: const Icon(Icons.drive_file_rename_outline),
               title: const Text('Rename'),
               onTap: () => Navigator.pop(ctx, _TileAction.rename),
+            ),
+            ListTile(
+              leading: const Icon(Icons.notes),
+              title: const Text(kDraftNotesTitle),
+              onTap: () => Navigator.pop(ctx, _TileAction.notes),
             ),
             ListTile(
               leading: const Icon(Icons.save_alt),
@@ -504,6 +529,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       PopupMenuItem(
                         value: _TileAction.rename,
                         child: Text('Rename'),
+                      ),
+                      PopupMenuItem(
+                        value: _TileAction.notes,
+                        child: Text(kDraftNotesTitle),
                       ),
                       PopupMenuItem(
                         value: _TileAction.export,

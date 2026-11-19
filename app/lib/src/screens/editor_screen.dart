@@ -9,6 +9,7 @@ import '../models/loom_type.dart';
 import '../print/print_export.dart' show PdfExportText;
 import '../print/weave_print.dart';
 import '../rust/dto.dart' show DraftDto;
+import '../state/backup_providers.dart' show backupFileAccessProvider;
 import '../state/draft_editor_notifier.dart';
 import '../state/editor_providers.dart';
 import '../state/loom_providers.dart';
@@ -17,6 +18,7 @@ import '../state/weave_plan_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/book_view_sheet.dart';
 import '../widgets/dimensions_bar.dart';
+import '../widgets/draft_notes_dialog.dart';
 import '../widgets/draft_layout.dart';
 import '../widgets/integrated_draft_view.dart';
 import '../widgets/loom_check_panel.dart';
@@ -41,6 +43,7 @@ enum _OverflowAction {
   loomPlan,
   weavePlan,
   materials,
+  notes,
   convert,
   viewLayers,
   bookView,
@@ -125,6 +128,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   /// still `mounted` during the exit transition — would pop a SECOND time.
   bool _exiting = false;
 
+  /// True while the notes are being read, shown or written, so choosing Notes again (while large
+  /// notes are still being read) opens no second notes editor, and Save waits: a save landing while
+  /// the notes dialog is up would pop that dialog instead of the editor. Twin of [_saving].
+  bool _notesOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -192,7 +200,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     // serialize it) would otherwise fire two saves and two pops, minting a duplicate library
     // entry and over-popping the route. The flag is set synchronously BEFORE the first await,
     // so the second tap's handler returns immediately; the button is also disabled while saving.
-    if (_saving) return;
+    if (_saving || _notesOpen) return;
     setState(() => _saving = true);
     try {
       final repo = ref.read(repositoryProvider);
@@ -578,7 +586,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Save',
-                  onPressed: _saving ? null : _save,
+                  onPressed: _saving || _notesOpen ? null : _save,
                   icon: const Icon(Icons.save_outlined),
                 ),
                 // Overflow: the less-frequent actions (zoom, convert) move here so the bar stays
@@ -602,6 +610,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       case _OverflowAction.materials:
                         showProjectMaterials(context,
                             craft: BackupCraft.weaving, id: widget.id);
+                      case _OverflowAction.notes:
+                        _editNotes();
                       case _OverflowAction.convert:
                         _convertToLiftplan();
                       case _OverflowAction.viewLayers:
@@ -671,6 +681,18 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                             dense: true,
                             leading: Icon(Icons.inventory_2_outlined),
                             title: Text('$kProjectMaterialsTitle…')),
+                      ),
+                    // The notes from the draft's first save (ADR 0007): a saved draft only, since
+                    // the first save asks for them. Changing them writes the notes alone, so the
+                    // draft is not marked edited. Not while a save is under way.
+                    if (widget.id != null)
+                      PopupMenuItem(
+                        value: _OverflowAction.notes,
+                        enabled: !_saving,
+                        child: const ListTile(
+                            dense: true,
+                            leading: Icon(Icons.notes),
+                            title: Text('$kDraftNotesTitle…')),
                       ),
                     PopupMenuItem(
                       value: _OverflowAction.convert,
@@ -751,6 +773,30 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       body: _buildBody(),
       ),
     );
+  }
+
+  /// Show the saved draft's notes to read and change (ADR 0007). They are read from the sidecar on
+  /// disk and written there alone, never through the editor's state: the draft is not marked edited,
+  /// and a later Save keeps them (a save takes the notes on disk, not those of [EditorScreen.meta]).
+  Future<void> _editNotes() async {
+    final id = widget.id;
+    if (id == null || _saving || _notesOpen) return;
+    setState(() => _notesOpen = true);
+    try {
+      final files = ref.read(backupFileAccessProvider);
+      await editDraftNotes(context, ref.read(repositoryProvider),
+          id: id,
+          draftName: widget.title,
+          saveFile: (name, bytes) => files.save(name, bytes, dialogTitle: 'Save notes'),
+          // Read again once the notes are in: no dialog over an editor that is saving or leaving.
+          stillWanted: () => mounted && !_saving && !_exiting);
+    } finally {
+      if (mounted) {
+        setState(() => _notesOpen = false);
+      } else {
+        _notesOpen = false;
+      }
+    }
   }
 
   /// Open the pick-by-pick tracker on the draft as it is on screen. Progress is kept with the saved

@@ -192,7 +192,7 @@ class FakeFiles implements BackupFileAccess {
   int discards = 0;
 
   @override
-  Future<bool> save(String fileName, Uint8List bytes) async {
+  Future<bool> save(String fileName, Uint8List bytes, {String dialogTitle = 'Save backup'}) async {
     if (saveError != null) throw saveError!;
     saved.add((fileName, bytes));
     return saveResult;

@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/draft_meta.dart';
+import 'draft_notes_dialog.dart' show notesLength, notesOverLimit, notesTooLongText;
 
 /// The result of [showSaveDraftDialog]: a required [name] plus optional [author]/[notes].
 class SaveDraftInput {
@@ -25,10 +26,6 @@ Future<SaveDraftInput?> showSaveDraftDialog(
     builder: (_) => _SaveDraftDialog(initialName: initialName),
   );
 }
-
-/// [n] with a comma between thousands: 10,000.
-String _thousands(int n) =>
-    n.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
 
 class _SaveDraftDialog extends StatefulWidget {
   const _SaveDraftDialog({required this.initialName});
@@ -57,11 +54,9 @@ class _SaveDraftDialogState extends State<_SaveDraftDialog> {
     super.dispose();
   }
 
-  static bool _overLimit(String notes) => notes.trim().length > DraftMeta.maxNotesChars;
-
   void _submit() {
     final name = _name.text.trim();
-    final notesTooLong = _overLimit(_notes.text);
+    final notesTooLong = notesOverLimit(_notes.text);
     if (name.isEmpty || notesTooLong) {
       setState(() {
         _nameEmpty = name.isEmpty;
@@ -110,14 +105,11 @@ class _SaveDraftDialogState extends State<_SaveDraftDialog> {
               maxLines: 3,
               decoration: InputDecoration(
                 labelText: 'Notes (optional)',
-                errorText: _notesTooLong
-                    ? 'Notes can be at most ${_thousands(DraftMeta.maxNotesChars)} characters '
-                        '(these have ${_thousands(_notes.text.trim().length)}).'
-                    : null,
+                errorText: _notesTooLong ? notesTooLongText(notesLength(_notes.text)) : null,
                 errorMaxLines: 3,
               ),
               onChanged: (text) {
-                if (_notesTooLong) setState(() => _notesTooLong = _overLimit(text));
+                if (_notesTooLong) setState(() => _notesTooLong = notesOverLimit(text));
               },
             ),
           ],

@@ -6,10 +6,12 @@ import 'package:file_picker/file_picker.dart';
 import 'library_backup.dart';
 
 /// How a backup leaves the app and comes back: the system save dialog and file picker, fully
-/// offline. Screens use this through `backupFileAccessProvider`, so tests can replace it.
+/// offline. Screens use this through `backupFileAccessProvider`, so tests can replace it. The notes
+/// editor saves a draft's full notes as a text file the same way.
 abstract class BackupFileAccess {
   /// Let the user save [bytes] as [fileName] where they choose. False when they cancelled.
-  Future<bool> save(String fileName, Uint8List bytes);
+  /// [dialogTitle] titles the desktop save dialog (a phone's system dialog has its own title).
+  Future<bool> save(String fileName, Uint8List bytes, {String dialogTitle = 'Save backup'});
 
   /// Let the user pick a backup file. Null when they cancelled.
   Future<File?> pick();
@@ -31,12 +33,12 @@ class PickerBackupFileAccess implements BackupFileAccess {
   static bool get _mobile => Platform.isAndroid || Platform.isIOS;
 
   @override
-  Future<bool> save(String fileName, Uint8List bytes) async {
+  Future<bool> save(String fileName, Uint8List bytes, {String dialogTitle = 'Save backup'}) async {
     if (_mobile) {
       final saved = await FilePicker.platform.saveFile(fileName: fileName, bytes: bytes);
       return saved != null;
     }
-    final path = await FilePicker.platform.saveFile(dialogTitle: 'Save backup', fileName: fileName);
+    final path = await FilePicker.platform.saveFile(dialogTitle: dialogTitle, fileName: fileName);
     if (path == null) return false;
     await File(path).writeAsBytes(bytes, flush: true);
     return true;
