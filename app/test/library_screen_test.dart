@@ -214,4 +214,44 @@ void main() {
     expect(find.text('Late scarf'), findsOneWidget, reason: 'listed once the write lands');
     expect(find.text('Pattern a'), findsOneWidget);
   });
+
+  testWidgets('rename: a name saved before the limit opens as it is and must be shortened',
+      (tester) async {
+    final long = 'L' * 300;
+    final repo = _RenamingRepo([
+      DraftEntry(
+        id: 'a',
+        wifPath: '/tmp/a.wif',
+        meta: DraftMeta(name: long, savedAt: DateTime.utc(2020), lastOpened: DateTime.utc(2020)),
+      ),
+    ]);
+    await pumpLibrary(tester, repo);
+    await tester.tap(find.byTooltip('Pattern actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rename pattern'), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, long);
+    const said = 'Names can be at most 200 characters (this one has 300).';
+    expect(find.text(said), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+    await tester.pumpAndSettle();
+    expect(repo.renamed, isEmpty, reason: 'nothing written while it is too long');
+    expect(find.text(said), findsOneWidget, reason: 'the dialog stays open');
+
+    await tester.enterText(find.byType(TextField), 'Towel');
+    await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+    await tester.pumpAndSettle();
+    expect(repo.renamed, {'a': 'Towel'});
+  });
+}
+
+/// A library that records each rename.
+class _RenamingRepo extends FakeLibraryRepo {
+  _RenamingRepo(super.entries);
+
+  final Map<String, String> renamed = {};
+
+  @override
+  Future<void> rename(String id, String newName) async => renamed[id] = newName;
 }

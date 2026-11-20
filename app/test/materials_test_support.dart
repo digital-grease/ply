@@ -9,6 +9,8 @@ import 'package:ply/src/models/draft_doc.dart';
 import 'package:ply/src/models/material_record.dart';
 import 'package:ply/src/models/project_materials.dart';
 
+import 'loom_test_support.dart' show statedVersion;
+
 // Shared helpers for the materials and swatch tests (ADR 0016). Host tests have no native library,
 // so the engine's `materials.json` reader, its reports and its estimates are replaced by stand-ins:
 // an in-memory repository for the screens, and a small Dart codec (the same envelope, detection rule
@@ -131,11 +133,26 @@ SwatchRecord swatchFromMap(Map m) => SwatchRecord(
     );
 
 /// A materials repository over a real directory with a Dart stand-in for the engine's codec.
+///
+/// Like the engine, it reports a newer version itself (the repository has no probe of its own), and
+/// a file over the size limit is too large unless its envelope states a newer version.
 class DartCodecMaterialsRepository extends MaterialsRepository {
   DartCodecMaterialsRepository(Directory dir) : super(dirOverride: dir);
 
+  /// How many times the stand-in engine was asked to read a file.
+  int decodes = 0;
+
   @override
   Future<MaterialLibrary> decode(String text) async {
+    decodes++;
+    final size = utf8.encode(text).length;
+    if (size > MaterialsRepository.maxFileBytes) {
+      if (size <= MaterialsRepository.maxProbedFileBytes &&
+          (statedVersion(text, kMaterialsFormat) ?? 0) > kMaterialsSchemaVersion) {
+        throw const MaterialsFileException(MaterialsFileProblem.newerVersion);
+      }
+      throw const MaterialsFileException(MaterialsFileProblem.tooLarge);
+    }
     final Object? json;
     try {
       json = jsonDecode(text);

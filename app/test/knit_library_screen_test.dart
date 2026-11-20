@@ -102,4 +102,25 @@ void main() {
 
     expect(repo.renamed, {'a': 'Cowl'});
   });
+
+  testWidgets('a name past the limit is refused until it is shortened', (tester) async {
+    final repo = FakeKnitLibraryRepo([_entry('a', 'Scarf')]);
+    await pumpLibrary(tester, repo);
+
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'C' * 201);
+    await tester.pumpAndSettle();
+    expect(find.text('Names can be at most 200 characters (this one has 201).'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+    await tester.pumpAndSettle();
+    expect(repo.renamed, isEmpty, reason: 'the dialog stays open');
+
+    await tester.enterText(find.byType(TextField), 'C' * 200);
+    await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+    await tester.pumpAndSettle();
+    expect(repo.renamed, {'a': 'C' * 200});
+  });
 }

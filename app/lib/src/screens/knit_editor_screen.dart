@@ -161,6 +161,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
         confirmLabel: 'Save',
         initial: name,
         fieldLabel: 'Pattern name',
+        validator: projectNameProblem,
       );
       if (entered == null) return false; // cancelled or left blank
       name = entered;

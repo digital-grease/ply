@@ -13,6 +13,7 @@ import '../models/native_format.dart';
 import '../rust/api.dart';
 import '../rust/nalbind_dto.dart';
 import '../rust/nalbind_recipe_dto.dart';
+import 'sidecar_read.dart' show readListedSidecars;
 import 'sidecar_writes.dart';
 
 /// One reading of a Hansen-notation string: the parse with its diagnostics, the loop diagram of its
@@ -226,7 +227,9 @@ class NalbindRepository {
   }
 
   /// List every complete saved project, newest-opened first. Skips a sidecar whose `.plynal` is gone
-  /// and a malformed sidecar (one bad file never breaks the whole list).
+  /// and a malformed sidecar (one bad file never breaks the whole list). The sidecars are read with
+  /// the restore's bounds ([readListedSidecars]: one past them is not decoded, so it lists whenever
+  /// it starts as a JSON object); nothing on disk is changed.
   ///
   /// The FIRST listing of the app run also runs [sweepOrphanedPhotos] once (best-effort, never fails
   /// the list), so photos stranded by deletes made before [deleteProject] removed them get cleaned
@@ -240,18 +243,24 @@ class NalbindRepository {
       } catch (_) {/* best-effort: a failed sweep never breaks the list; next run retries */}
     }
     if (!await dir.exists()) return const [];
-    final entries = <NalbindProjectEntry>[];
+    final found = <({String id, File sidecar})>[];
     await for (final ent in dir.list()) {
       if (ent is! File || p.extension(ent.path) != '.json') continue;
       final id = p.basenameWithoutExtension(ent.path);
       try {
         if (!await File(_projectPath(dir, id)).exists()) continue;
-        final meta = DraftMeta.fromJson(jsonDecode(await ent.readAsString()) as Map<String, dynamic>);
-        entries.add(NalbindProjectEntry(id: id, name: meta.name, lastOpened: meta.lastOpened));
+        found.add((id: id, sidecar: ent));
       } catch (_) {
         continue;
       }
     }
+    final metas =
+        await readListedSidecars([for (final f in found) f.sidecar], craft: 'Nalbinding');
+    final entries = <NalbindProjectEntry>[
+      for (var i = 0; i < found.length; i++)
+        if (metas[i] case final meta?)
+          NalbindProjectEntry(id: found[i].id, name: meta.name, lastOpened: meta.lastOpened),
+    ];
     entries.sort((a, b) => b.lastOpened.compareTo(a.lastOpened));
     return entries;
   }

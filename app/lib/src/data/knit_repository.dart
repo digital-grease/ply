@@ -14,6 +14,7 @@ import '../models/native_format.dart';
 import '../rust/api.dart';
 import '../rust/knit_dto.dart';
 import 'progress_repository.dart' show ProgressRepository;
+import 'sidecar_read.dart' show readListedSidecars;
 import 'sidecar_writes.dart';
 
 /// The one place the knitting app touches the generated bridge symbols for `ply-knit` — the analog of
@@ -248,7 +249,9 @@ class KnitRepository {
   }
 
   /// List every complete saved pattern, newest-opened first. Skips a sidecar whose `.plyknit` is
-  /// gone and a malformed sidecar (one bad file never breaks the whole list).
+  /// gone and a malformed sidecar (one bad file never breaks the whole list). The sidecars are read
+  /// with the restore's bounds ([readListedSidecars]: one past them is not decoded, so it lists
+  /// whenever it starts as a JSON object); nothing on disk is changed.
   Future<List<KnitEntry>> listKnits() async {
     final dir = await _knitsDir();
     if (!await dir.exists()) return const [];
@@ -258,20 +261,29 @@ class KnitRepository {
         await sweepOrphanedBackups();
       } catch (_) {/* best-effort: a failed sweep never breaks the list; next run retries */}
     }
-    final entries = <KnitEntry>[];
+    final found = <({String id, File sidecar, File pattern})>[];
     await for (final ent in dir.list()) {
       if (ent is! File || p.extension(ent.path) != '.json') continue;
       final id = p.basenameWithoutExtension(ent.path);
       try {
         final patternFile = File(_patternPath(dir, id));
         if (!await patternFile.exists()) continue;
-        final meta =
-            DraftMeta.fromJson(jsonDecode(await ent.readAsString()) as Map<String, dynamic>);
-        final pngFile = File(_pngPath(dir, id));
+        found.add((id: id, sidecar: ent, pattern: patternFile));
+      } catch (_) {
+        continue;
+      }
+    }
+    final metas = await readListedSidecars([for (final f in found) f.sidecar], craft: 'Knitting');
+    final entries = <KnitEntry>[];
+    for (var i = 0; i < found.length; i++) {
+      final meta = metas[i];
+      if (meta == null) continue;
+      try {
+        final pngFile = File(_pngPath(dir, found[i].id));
         entries.add(KnitEntry(
-          id: id,
+          id: found[i].id,
           meta: meta,
-          patternPath: patternFile.path,
+          patternPath: found[i].pattern.path,
           thumbPath: await pngFile.exists() ? pngFile.path : null,
         ));
       } catch (_) {

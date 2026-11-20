@@ -16,6 +16,7 @@ import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/draft_notes_dialog.dart';
 import '../widgets/loom_type_picker.dart';
+import '../widgets/name_input_dialog.dart' show projectNameProblem, promptForName;
 import '../widgets/project_export.dart';
 import '../widgets/thumb_unavailable.dart';
 import 'editor_screen.dart';
@@ -217,36 +218,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Future<void> _rename(DraftEntry entry) async {
-    final controller = TextEditingController(text: entry.meta.name);
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename pattern'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name'),
-          onSubmitted: (_) {
-            final v = controller.text.trim();
-            if (v.isNotEmpty) Navigator.pop(ctx, v);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final v = controller.text.trim();
-              if (v.isNotEmpty) Navigator.pop(ctx, v);
-            },
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
+    // The shared name dialog (which owns its text controller), with the name's length limit: a
+    // name saved before the limit opens as it is and must be shortened to rename it.
+    final newName = await promptForName(context,
+        title: 'Rename pattern',
+        confirmLabel: 'Rename',
+        initial: entry.meta.name,
+        validator: projectNameProblem);
+    if (!mounted) return;
     if (newName == null || newName == entry.meta.name) return;
     try {
       await widget.repository.rename(entry.id, newName);

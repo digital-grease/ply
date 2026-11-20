@@ -13,6 +13,7 @@ import '../models/native_format.dart';
 import '../models/tablet_band.dart';
 import '../rust/api.dart';
 import '../rust/tablet_dto.dart';
+import 'sidecar_read.dart' show readListedSidecars;
 import 'sidecar_writes.dart';
 
 /// The sidecar `craft` of a tablet weaving band: the serde name of `ply_common::CraftKind`'s arm.
@@ -252,7 +253,9 @@ class TabletRepository {
   }
 
   /// Every saved band, newest-opened first. A sidecar without its `.plytab`, or one that cannot be
-  /// read, is skipped (one bad file never breaks the list).
+  /// read, is skipped (one bad file never breaks the list). The sidecars are read with the
+  /// restore's bounds ([readListedSidecars]: one past them is not decoded, so it lists whenever it
+  /// starts as a JSON object); nothing on disk is changed.
   Future<List<TabletEntry>> listBands() async {
     final dir = await _dir();
     if (!await dir.exists()) return const [];
@@ -262,20 +265,30 @@ class TabletRepository {
         await sweepOrphanedBackups();
       } catch (_) {/* best-effort; the next run retries */}
     }
-    final entries = <TabletEntry>[];
+    final found = <({String id, File sidecar, File band})>[];
     await for (final ent in dir.list()) {
       if (ent is! File || p.extension(ent.path) != '.json') continue;
       final id = p.basenameWithoutExtension(ent.path);
       try {
         final band = File(_bandPath(dir, id));
         if (!await band.exists()) continue;
-        final meta =
-            DraftMeta.fromJson(jsonDecode(await ent.readAsString()) as Map<String, dynamic>);
-        final png = File(_pngPath(dir, id));
+        found.add((id: id, sidecar: ent, band: band));
+      } catch (_) {
+        continue;
+      }
+    }
+    final metas =
+        await readListedSidecars([for (final f in found) f.sidecar], craft: kTabletCraft);
+    final entries = <TabletEntry>[];
+    for (var i = 0; i < found.length; i++) {
+      final meta = metas[i];
+      if (meta == null) continue;
+      try {
+        final png = File(_pngPath(dir, found[i].id));
         entries.add(TabletEntry(
-          id: id,
+          id: found[i].id,
           meta: meta,
-          bandPath: band.path,
+          bandPath: found[i].band.path,
           thumbPath: await png.exists() ? png.path : null,
         ));
       } catch (_) {

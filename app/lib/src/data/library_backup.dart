@@ -83,6 +83,7 @@ import 'json_count.dart';
 import 'loom_repository.dart' show LoomFileException, LoomFileProblem;
 import 'materials_repository.dart'
     show MaterialLibrary, MaterialsFileException, MaterialsFileProblem;
+import 'sidecar_read.dart';
 import 'ustar.dart';
 
 part 'library_backup_materials.dart';
@@ -250,8 +251,8 @@ class BackupLimits {
     this.maxManifestBytes = 4 * _mib,
     this.maxManifestValues = 250000,
     this.maxSidecarBytes = _mib,
-    this.maxSidecarValues = 200000,
-    this.maxSidecarDepth = 64,
+    this.maxSidecarValues = kMaxSidecarValues,
+    this.maxSidecarDepth = kMaxSidecarDepth,
     this.maxFileBytes = 64 * _mib,
     this.maxSettingsBytes = 64 * 1024,
     this.maxLoomsBytes = _mib,
@@ -1624,20 +1625,8 @@ class LibraryBackup {
 
   /// The project name at the head of a sidecar too large to read, for the message that refuses it:
   /// Ply writes `name` first, so the first 4 KB hold it. Null when they do not.
-  static Future<String?> _nameAtHead(File sidecar) async {
-    try {
-      final head = BytesBuilder(copy: false);
-      await for (final chunk in sidecar.openRead(0, 4096)) {
-        head.add(chunk);
-      }
-      final text = utf8.decode(head.takeBytes(), allowMalformed: true);
-      final m = RegExp(r'"name"\s*:\s*("(?:[^"\\]|\\.)*")').firstMatch(text);
-      final name = m == null ? null : jsonDecode(m.group(1)!);
-      return name is String && name.trim().isNotEmpty ? name : null;
-    } catch (_) {
-      return null; // only the message is at stake: it names the id instead
-    }
-  }
+  /// The library listing names such a sidecar the same way (`sidecar_read.dart`).
+  static Future<String?> _nameAtHead(File sidecar) => sidecarNameInFile(sidecar);
 
   /// [_prepareSidecar] on a background isolate.
   static Future<({String name, Uint8List? rewritten})?> _prepareSidecarInBackground(
@@ -2244,14 +2233,11 @@ class LibraryBackup {
   /// more than [inlineSidecarValues] values is decoded on a background isolate.
   Future<RestoreRefusal?> _checkSidecar(
       _ProjectAccumulator acc, Uint8List bytes, String text) async {
-    final shape = measureJson(bytes, stop: limits.maxSidecarValues);
-    if (shape.values > limits.maxSidecarValues ||
-        shape.depth > limits.maxSidecarDepth ||
-        shape.nonFinite) {
-      return RestoreRefusal.tooComplex;
-    }
-    final read =
-        await _readBackupSidecar(text, acc.craft, inline: shape.values <= inlineSidecarValues);
+    // The bounds a library listing reads a sidecar with too (`sidecar_read.dart`).
+    final fit =
+        sidecarFit(bytes, maxValues: limits.maxSidecarValues, maxDepth: limits.maxSidecarDepth);
+    if (fit == SidecarFit.tooComplex) return RestoreRefusal.tooComplex;
+    final read = await _readBackupSidecar(text, acc.craft, inline: fit == SidecarFit.inline);
     if (read == null) return RestoreRefusal.unreadable;
     acc.name = read.name;
     acc.sidecarDigest = read.digest;
@@ -2557,7 +2543,7 @@ class LibraryBackup {
   /// most); one with more, up to [BackupLimits.maxSidecarValues], is decoded on a background
   /// isolate, so a backup crafted with hundreds of sidecars at the limit cannot hold up the UI
   /// while it is checked or restored.
-  static const int inlineSidecarValues = 10000;
+  static const int inlineSidecarValues = kInlineSidecarValues;
 
   /// Whether a sidecar's [bytes] are decoded on the calling isolate ([inlineSidecarValues]).
   static bool _decodesInline(List<int> bytes) =>

@@ -6,6 +6,7 @@
 //
 //   flutter test integration_test/m8_loom_profiles_test.dart -d emulator-5554
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -116,7 +117,7 @@ void main() {
     final loom = saved.looms.single;
     expect(loom.shafts, 4);
     expect(loom.reeds, isEmpty, reason: 'nothing entered, nothing invented');
-    expect(loomsFileVersion(await file.readAsString()), kLoomsSchemaVersion);
+    expect((jsonDecode(await file.readAsString()) as Map)['schema_version'], kLoomsSchemaVersion);
 
     // 2. Save a structurally valid eight-shaft draft planned for that loom (the sidecar records the
     //    loom's id and name; the WIF is saved verbatim).

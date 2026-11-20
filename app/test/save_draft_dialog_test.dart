@@ -101,4 +101,35 @@ void main() {
     await t.pumpAndSettle();
     expect(h.result()!.notes, 'n' * DraftMeta.maxNotesChars);
   });
+
+  testWidgets('a name or author past the limit is refused with how long it is, never cut short',
+      (t) async {
+    final h = await openDialog(t, 'Seed');
+    final longName = 'N' * (DraftMeta.maxNameChars + 1);
+    final longAuthor = 'A' * 1234;
+    await t.enterText(find.widgetWithText(TextField, 'Name'), longName);
+    await t.enterText(find.widgetWithText(TextField, 'Author (optional)'), longAuthor);
+    await t.tap(find.widgetWithText(FilledButton, 'Save'));
+    await t.pumpAndSettle();
+    expect(find.text('Names can be at most 200 characters (this one has 201).'), findsOneWidget);
+    expect(find.text('The author can be at most 200 characters (this has 1,234).'), findsOneWidget);
+    expect(h.result(), isNull, reason: 'still open, nothing returned');
+    final fields = t.widgetList<TextField>(find.byType(TextField)).toList();
+    expect(fields[0].controller!.text, longName, reason: 'the name is left as typed');
+    expect(fields[1].controller!.text, longAuthor, reason: 'the author is left as typed');
+
+    // The count follows the typing, and the message goes once the text is within the limit.
+    await t.enterText(find.byType(TextField).first, 'N' * 250);
+    await t.pumpAndSettle();
+    expect(find.text('Names can be at most 200 characters (this one has 250).'), findsOneWidget);
+    await t.enterText(find.byType(TextField).first, '  ${'N' * DraftMeta.maxNameChars}  ');
+    await t.enterText(find.byType(TextField).at(1), 'A' * DraftMeta.maxAuthorChars);
+    await t.pumpAndSettle();
+    expect(find.textContaining('can be at most'), findsNothing,
+        reason: 'counted as saved, without the spaces at either end');
+    await t.tap(find.widgetWithText(FilledButton, 'Save'));
+    await t.pumpAndSettle();
+    expect(h.result()!.name, 'N' * DraftMeta.maxNameChars);
+    expect(h.result()!.author, 'A' * DraftMeta.maxAuthorChars);
+  });
 }

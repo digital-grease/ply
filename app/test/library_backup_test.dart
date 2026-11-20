@@ -1478,6 +1478,26 @@ void main() {
           service(limits: const BackupLimits(maxFileBytes: 1024 * 1024)).planBackup(),
           throwsA(isA<BackupException>()
               .having((e) => e.projectName, 'project', 'n1')));
+      // Only the sidecar's own (top-level) name counts, never one inside a value such as a loom
+      // plan's.
+      await put(docs, 'nalbinds/n1.json', utf8.encode(jsonEncode({
+        'loomPlan': {'name': 'Loom A'},
+        'name': 'Real name',
+        'notes': bigNotes,
+      })));
+      await expectLater(
+          service(limits: const BackupLimits(maxFileBytes: 1024 * 1024)).planBackup(),
+          throwsA(isA<BackupException>()
+              .having((e) => e.projectName, 'project', 'Real name')));
+      await put(docs, 'nalbinds/n1.json', utf8.encode(jsonEncode({
+        'loomPlan': {'name': 'Loom A'},
+        'notes': bigNotes,
+        'name': 'Late name',
+      })));
+      await expectLater(
+          service(limits: const BackupLimits(maxFileBytes: 1024 * 1024)).planBackup(),
+          throwsA(isA<BackupException>()
+              .having((e) => e.projectName, 'project', 'n1')));
       // Any craft's sidecar over its limit is named the same way (a weaving draft's long notes have
       // their own message: see the group below).
       await File(p.join(docs.path, 'nalbinds/n1.json')).delete();

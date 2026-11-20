@@ -21,20 +21,6 @@ const String kMaterialsFormat = 'ply.materials';
 /// `MATERIALS_SCHEMA_VERSION`).
 const int kMaterialsSchemaVersion = 1;
 
-/// The schema version of a `materials.json` text by the engine's detection rule (ADR 0016): one
-/// JSON object whose `format` is `ply.materials` and whose `schema_version` is a positive integer.
-/// Null for anything else. Lets the app tell a newer file from a damaged one without the engine.
-int? materialsFileVersion(String text) {
-  try {
-    final json = jsonDecode(text);
-    if (json is! Map<String, dynamic> || json['format'] != kMaterialsFormat) return null;
-    final v = json['schema_version'];
-    return v is int && v >= 1 ? v : null;
-  } on FormatException {
-    return null;
-  }
-}
-
 /// The documents subfolder swatch photos live in: `<documents>/swatches/<swatch id>.photos/`.
 const String kSwatchPhotoDir = 'swatches';
 
@@ -170,40 +156,40 @@ class MaterialsRepository {
     }
   }
 
-  /// The records in [bytes]: checked as UTF-8, within the size limit, by the version probe, then
-  /// read by the engine. Throws a [MaterialsFileException].
+  /// The records in [bytes]: checked as UTF-8, then read by the engine ([decode]), as the loom
+  /// repository reads `looms.json`. Nothing here decodes the JSON (ADR 0007, amendment of
+  /// 2026-11-18, later): the engine says itself when a newer Ply wrote the file, from the envelope
+  /// alone. A file over [maxFileBytes] is too large, unless the engine finds it was written by a
+  /// newer Ply (it looks only at the envelope of such a file, up to [maxProbedFileBytes]). Throws
+  /// a [MaterialsFileException].
   Future<MaterialLibrary> decodeBytes(List<int> bytes) async {
-    if (bytes.length > maxFileBytes) {
-      if (bytes.length <= maxProbedFileBytes) {
-        int? version;
-        try {
-          version = materialsFileVersion(utf8.decode(bytes));
-        } on FormatException {
-          version = null;
-        }
-        if (version != null && version > kMaterialsSchemaVersion) {
-          throw MaterialsFileException(MaterialsFileProblem.newerVersion,
-              detail: 'schema_version $version');
-        }
-      }
-      throw MaterialsFileException(MaterialsFileProblem.tooLarge, detail: '${bytes.length} bytes');
-    }
+    final overLimit = bytes.length > maxFileBytes;
+    final tooLarge =
+        MaterialsFileException(MaterialsFileProblem.tooLarge, detail: '${bytes.length} bytes');
+    if (bytes.length > maxProbedFileBytes) throw tooLarge;
     final String text;
     try {
       text = utf8.decode(bytes);
     } on FormatException catch (e) {
-      throw MaterialsFileException(MaterialsFileProblem.unreadable, detail: '$e');
+      throw overLimit
+          ? tooLarge
+          : MaterialsFileException(MaterialsFileProblem.unreadable, detail: '$e');
     }
-    final version = materialsFileVersion(text);
-    if (version != null && version > kMaterialsSchemaVersion) {
-      throw MaterialsFileException(MaterialsFileProblem.newerVersion,
-          detail: 'schema_version $version');
+    if (!overLimit) return decode(text);
+    try {
+      await decode(text);
+    } on MaterialsFileException catch (e) {
+      if (e.problem == MaterialsFileProblem.newerVersion) rethrow;
+    } catch (_) {
+      // Only a newer version changes what a file over the limit is.
     }
-    return decode(text);
+    throw tooLarge;
   }
 
-  /// Read `materials.json` text with the engine. Throws a [MaterialsFileException]. Host tests
-  /// override this (and [encode]); the engine is the format's owner.
+  /// Read `materials.json` text with the engine. Throws a [MaterialsFileException]: newer (from the
+  /// envelope alone, before the records are read), too large (over [maxFileBytes] and not newer, or
+  /// too many records) or unreadable. Host tests override this (and [encode]) with a Dart stand-in
+  /// that reports a newer version and the size the same way; the engine is the format's owner.
   Future<MaterialLibrary> decode(String text) async {
     try {
       return libraryFromDto(await api.parseMaterials(text: text));

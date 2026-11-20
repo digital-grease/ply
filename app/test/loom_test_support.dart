@@ -108,12 +108,26 @@ class FakeLoomRepository extends LoomRepository {
 }
 
 /// A loom repository over a real directory with a Dart stand-in for the engine's codec: the same
-/// envelope and detection rule, and the fields the file tests need.
+/// envelope and detection rule, and the fields the file tests need. Like the engine, it reports a
+/// newer version itself (the repository has no probe of its own), and a file over the size limit is
+/// too large unless its envelope states a newer version.
 class DartCodecLoomRepository extends LoomRepository {
   DartCodecLoomRepository(Directory dir) : super(dirOverride: dir);
 
+  /// How many times the stand-in engine was asked to read a file.
+  int decodes = 0;
+
   @override
   Future<List<LoomProfile>> decode(String text) async {
+    decodes++;
+    final size = utf8.encode(text).length;
+    if (size > LoomRepository.maxFileBytes) {
+      if (size <= LoomRepository.maxProbedFileBytes &&
+          (statedVersion(text, kLoomsFormat) ?? 0) > kLoomsSchemaVersion) {
+        throw const LoomFileException(LoomFileProblem.newerVersion);
+      }
+      throw const LoomFileException(LoomFileProblem.tooLarge);
+    }
     final Object? json;
     try {
       json = jsonDecode(text);
@@ -158,6 +172,20 @@ class DartCodecLoomRepository extends LoomRepository {
             },
         ],
       });
+}
+
+/// The schema version a file's envelope states by the engine's detection rule (one JSON object
+/// whose `format` is [format] and whose `schema_version` is a positive integer), or null: what the
+/// stand-in codecs check before anything else, as the engine does.
+int? statedVersion(String text, String format) {
+  try {
+    final json = jsonDecode(text);
+    if (json is! Map || json['format'] != format) return null;
+    final v = json['schema_version'];
+    return v is int && v >= 1 ? v : null;
+  } on FormatException {
+    return null;
+  }
 }
 
 /// `looms.json` text the stand-in codec reads, holding [looms].

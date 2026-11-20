@@ -129,6 +129,7 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
       title: 'Rename pattern',
       confirmLabel: 'Rename',
       initial: entry.meta.name,
+      validator: projectNameProblem,
     );
     if (newName == null || newName == entry.meta.name) return;
     if (!mounted) return; // the rename dialog is an async gap

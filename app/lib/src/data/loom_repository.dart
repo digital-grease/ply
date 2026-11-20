@@ -23,22 +23,6 @@ const String kLoomsFormat = 'ply.looms';
 /// `ply_weave::loom_file::LOOMS_SCHEMA_VERSION`).
 const int kLoomsSchemaVersion = 1;
 
-/// The schema version of a `looms.json` text by the engine's detection rule (ADR 0014): one JSON
-/// object whose `format` is `ply.looms` and whose `schema_version` is a positive integer. Null for
-/// anything else. It never reads the looms, so the app can tell a newer file from a damaged one
-/// without the engine (host tests have no native library); both suites run it over the tracked
-/// fixture.
-int? loomsFileVersion(String text) {
-  try {
-    final json = jsonDecode(text);
-    if (json is! Map<String, dynamic> || json['format'] != kLoomsFormat) return null;
-    final v = json['schema_version'];
-    return v is int && v >= 1 ? v : null;
-  } on FormatException {
-    return null;
-  }
-}
-
 /// What stopped Ply from reading, or from replacing, `looms.json`.
 enum LoomFileProblem { newerVersion, unreadable, tooLarge }
 
@@ -161,39 +145,37 @@ class LoomRepository {
     }
   }
 
-  /// The looms in [bytes]: checked as UTF-8, within the size limit, by the version probe, then read by
-  /// the engine. Throws a [LoomFileException].
+  /// The looms in [bytes]: checked as UTF-8, then read by the engine ([decode]). Nothing here decodes
+  /// the JSON (ADR 0007, amendment of 2026-11-18, later): the engine reads the envelope without
+  /// building a tree and says itself when a newer Ply wrote the file, so a newer file is reported
+  /// as newer before its looms are looked at. A file over [maxFileBytes] is too large, unless the engine
+  /// finds it was written by a newer Ply (it looks only at the envelope of such a file, up to
+  /// [maxProbedFileBytes]; a newer Ply may write a larger file). Throws a [LoomFileException].
   Future<List<LoomProfile>> decodeBytes(List<int> bytes) async {
-    if (bytes.length > maxFileBytes) {
-      // A newer Ply may write a larger file: look at its version first, so it is reported as newer.
-      if (bytes.length <= maxProbedFileBytes) {
-        int? version;
-        try {
-          version = loomsFileVersion(utf8.decode(bytes));
-        } on FormatException {
-          version = null;
-        }
-        if (version != null && version > kLoomsSchemaVersion) {
-          throw LoomFileException(LoomFileProblem.newerVersion, detail: 'schema_version $version');
-        }
-      }
-      throw LoomFileException(LoomFileProblem.tooLarge, detail: '${bytes.length} bytes');
-    }
+    final overLimit = bytes.length > maxFileBytes;
+    final tooLarge = LoomFileException(LoomFileProblem.tooLarge, detail: '${bytes.length} bytes');
+    if (bytes.length > maxProbedFileBytes) throw tooLarge;
     final String text;
     try {
       text = utf8.decode(bytes);
     } on FormatException catch (e) {
-      throw LoomFileException(LoomFileProblem.unreadable, detail: '$e');
+      throw overLimit ? tooLarge : LoomFileException(LoomFileProblem.unreadable, detail: '$e');
     }
-    final version = loomsFileVersion(text);
-    if (version != null && version > kLoomsSchemaVersion) {
-      throw LoomFileException(LoomFileProblem.newerVersion, detail: 'schema_version $version');
+    if (!overLimit) return decode(text);
+    try {
+      await decode(text);
+    } on LoomFileException catch (e) {
+      if (e.problem == LoomFileProblem.newerVersion) rethrow;
+    } catch (_) {
+      // Only a newer version changes what a file over the limit is.
     }
-    return decode(text);
+    throw tooLarge;
   }
 
-  /// Read `looms.json` text with the engine. Throws a [LoomFileException]. Host tests override this
-  /// (and [encode]); the engine is the format's owner.
+  /// Read `looms.json` text with the engine. Throws a [LoomFileException]: newer (from the envelope
+  /// alone, before the looms are read), too large (over [maxFileBytes] and not newer, or too many
+  /// looms) or unreadable. Host tests override this (and [encode]) with a Dart stand-in that reports
+  /// a newer version and the size the same way; the engine is the format's owner.
   Future<List<LoomProfile>> decode(String text) async {
     try {
       final lib = await parseLooms(text: text);

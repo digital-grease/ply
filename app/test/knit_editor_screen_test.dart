@@ -601,6 +601,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Name this pattern'), findsOneWidget,
           reason: 'the normal save flow names it');
+      // A name past the limit is refused, the dialog staying open (ADR 0007).
+      await tester.enterText(find.widgetWithText(TextField, 'Pattern name'), 'h' * 201);
+      await tester.pumpAndSettle();
+      expect(find.text('Names can be at most 200 characters (this one has 201).'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+      await tester.pumpAndSettle();
+      expect(repo.saveCount, 0);
       await tester.enterText(find.widgetWithText(TextField, 'Pattern name'), 'Cabled hat');
       await tester.tap(find.widgetWithText(FilledButton, 'Save'));
       await tester.pumpAndSettle();

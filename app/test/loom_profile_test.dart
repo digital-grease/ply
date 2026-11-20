@@ -206,20 +206,33 @@ void main() {
     });
   });
 
-  group('the looms.json version probe', () {
-    test('reads the tracked fixture as schema version 1, as the engine does', () {
+  group('the looms.json envelope', () {
+    test('the tracked fixture states the format and version this build reads, as the engine does',
+        () {
       final text = File('../fixtures/weaving/looms/looms.json').readAsStringSync();
-      expect(loomsFileVersion(text), 1);
-      expect(loomsFileVersion(text), kLoomsSchemaVersion);
+      expect(statedVersion(text, kLoomsFormat), 1);
+      expect(statedVersion(text, kLoomsFormat), kLoomsSchemaVersion);
     });
 
-    test('anything that is not a looms envelope has no version', () {
-      expect(loomsFileVersion('{"format":"ply.looms","schema_version":2,"looms":"later"}'), 2);
-      expect(loomsFileVersion('{"format":"ply.knit","schema_version":1}'), isNull);
-      expect(loomsFileVersion('{"format":"ply.looms","schema_version":0}'), isNull);
-      expect(loomsFileVersion('{"format":"ply.looms","schema_version":"1"}'), isNull);
-      expect(loomsFileVersion('[]'), isNull);
-      expect(loomsFileVersion('not json'), isNull);
+    test("the stand-ins' rule: anything that is not an envelope of the format has no version", () {
+      // Many tests rely on it (the stand-in codecs check it first, as the engine does).
+      expect(
+          statedVersion('{"format":"ply.looms","schema_version":2,"looms":"later"}', kLoomsFormat),
+          2);
+      expect(statedVersion('{"format":"ply.knit","schema_version":1}', kLoomsFormat), isNull,
+          reason: 'another format');
+      expect(statedVersion('{"schema_version":1}', kLoomsFormat), isNull, reason: 'no format');
+      expect(statedVersion('{"format":"ply.looms","schema_version":0}', kLoomsFormat), isNull);
+      expect(statedVersion('{"format":"ply.looms","schema_version":-1}', kLoomsFormat), isNull);
+      expect(statedVersion('{"format":"ply.looms","schema_version":"1"}', kLoomsFormat), isNull);
+      expect(statedVersion('{"format":"ply.looms","schema_version":1.5}', kLoomsFormat), isNull);
+      expect(statedVersion('{"format":"ply.looms"}', kLoomsFormat), isNull, reason: 'no version');
+      expect(statedVersion('[{"format":"ply.looms","schema_version":1}]', kLoomsFormat), isNull,
+          reason: 'a list');
+      expect(statedVersion('[]', kLoomsFormat), isNull);
+      expect(statedVersion('not json', kLoomsFormat), isNull);
+      expect(statedVersion('', kLoomsFormat), isNull);
+      expect(statedVersion('{"format":"ply.materials","schema_version":3}', 'ply.materials'), 3);
     });
   });
 }

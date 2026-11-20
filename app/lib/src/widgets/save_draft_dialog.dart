@@ -1,11 +1,16 @@
 // The shared "Save pattern" metadata dialog: collects a required name + optional author/notes before
 // a draft is first persisted to the library. Used by BOTH the import preview (saving an imported WIF)
 // and the editor's first save of a from-scratch draft (meta == null). Returns null on Cancel.
+//
+// Every field has a length limit (ADR 0007): the name and author [DraftMeta.maxNameChars] and
+// [DraftMeta.maxAuthorChars], the notes [DraftMeta.maxNotesChars]. Past one, Save stays in the
+// dialog and says how long the text is; nothing is ever cut short.
 
 import 'package:flutter/material.dart';
 
 import '../models/draft_meta.dart';
 import 'draft_notes_dialog.dart' show notesLength, notesOverLimit, notesTooLongText;
+import 'name_input_dialog.dart' show authorProblem, projectNameProblem;
 
 /// The result of [showSaveDraftDialog]: a required [name] plus optional [author]/[notes].
 class SaveDraftInput {
@@ -43,6 +48,12 @@ class _SaveDraftDialogState extends State<_SaveDraftDialog> {
   final TextEditingController _notes = TextEditingController();
   bool _nameEmpty = false;
 
+  /// Set when Save finds the name over [DraftMeta.maxNameChars]; it is never cut short.
+  bool _nameTooLong = false;
+
+  /// Set when Save finds the author over [DraftMeta.maxAuthorChars]; it is never cut short.
+  bool _authorTooLong = false;
+
   /// Set when Save finds the notes over [DraftMeta.maxNotesChars]; they are never cut short.
   bool _notesTooLong = false;
 
@@ -56,15 +67,19 @@ class _SaveDraftDialogState extends State<_SaveDraftDialog> {
 
   void _submit() {
     final name = _name.text.trim();
+    final author = _author.text.trim();
+    final nameTooLong = projectNameProblem(name) != null;
+    final authorTooLong = authorProblem(author) != null;
     final notesTooLong = notesOverLimit(_notes.text);
-    if (name.isEmpty || notesTooLong) {
+    if (name.isEmpty || nameTooLong || authorTooLong || notesTooLong) {
       setState(() {
         _nameEmpty = name.isEmpty;
+        _nameTooLong = nameTooLong;
+        _authorTooLong = authorTooLong;
         _notesTooLong = notesTooLong;
       });
       return;
     }
-    final author = _author.text.trim();
     Navigator.pop(
       context,
       SaveDraftInput(
@@ -89,16 +104,33 @@ class _SaveDraftDialogState extends State<_SaveDraftDialog> {
               textInputAction: TextInputAction.next,
               decoration: InputDecoration(
                 labelText: 'Name',
-                errorText: _nameEmpty ? 'A name is required' : null,
+                errorText: _nameEmpty
+                    ? 'A name is required'
+                    : _nameTooLong
+                        ? projectNameProblem(_name.text.trim())
+                        : null,
+                errorMaxLines: 3,
               ),
-              onChanged: (_) {
+              onChanged: (text) {
                 if (_nameEmpty) setState(() => _nameEmpty = false);
+                if (_nameTooLong) {
+                  setState(() => _nameTooLong = projectNameProblem(text.trim()) != null);
+                }
               },
             ),
             TextField(
               controller: _author,
               textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(labelText: 'Author (optional)'),
+              decoration: InputDecoration(
+                labelText: 'Author (optional)',
+                errorText: _authorTooLong ? authorProblem(_author.text.trim()) : null,
+                errorMaxLines: 3,
+              ),
+              onChanged: (text) {
+                if (_authorTooLong) {
+                  setState(() => _authorTooLong = authorProblem(text.trim()) != null);
+                }
+              },
             ),
             TextField(
               controller: _notes,

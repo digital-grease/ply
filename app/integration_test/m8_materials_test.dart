@@ -150,7 +150,8 @@ void main() {
     expect(swatch.after.across!.value.over, const Length(4, LengthUnit.inch));
     expect(swatch.after.across!.source, ValueSource.measured);
     expect(swatch.before.length, isNull, reason: 'nothing entered, nothing invented');
-    expect(materialsFileVersion(await file.readAsString()), kMaterialsSchemaVersion);
+    expect((jsonDecode(await file.readAsString()) as Map)['schema_version'],
+        kMaterialsSchemaVersion);
     expect(await file.readAsString(), isNot(contains('per_10cm')),
         reason: 'derived figures are never stored');
     final photos = await materials.photoDir(swatch.id);

@@ -6,10 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/materials_repository.dart';
 import 'package:ply/src/models/material_record.dart';
 
+import 'loom_test_support.dart' show statedVersion;
 import 'materials_test_support.dart';
 
-// The tracked materials fixture (fixtures/materials, ADR 0016) as the app sees it: the version probe
-// reads it as schema version 1, the Dart model reads every field of every record (its engine-shape
+// The tracked materials fixture (fixtures/materials, ADR 0016) as the app sees it: its envelope
+// states schema version 1, the Dart model reads every field of every record (its engine-shape
 // map gives back the very JSON), and the DTO mapping loses nothing.
 
 final Map<String, dynamic> fixture =
@@ -17,12 +18,9 @@ final Map<String, dynamic> fixture =
         as Map<String, dynamic>;
 
 void main() {
-  test('the version probe reads the fixture as schema version 1', () {
+  test('the fixture states the format and version this build reads', () {
     final text = File('../fixtures/materials/materials.json').readAsStringSync();
-    expect(materialsFileVersion(text), kMaterialsSchemaVersion);
-    expect(materialsFileVersion('{"format":"ply.looms","schema_version":1}'), isNull);
-    expect(materialsFileVersion('{"format":"ply.materials","schema_version":2}'), 2);
-    expect(materialsFileVersion('not json'), isNull);
+    expect(statedVersion(text, kMaterialsFormat), kMaterialsSchemaVersion);
   });
 
   test('the Dart model reads every field of every record', () {

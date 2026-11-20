@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -104,6 +105,80 @@ void main() {
     expect((await repo.load()).status, LoomFileStatus.newer);
   });
 
+  group('the engine alone reads the file', () {
+    // decodeBytes decodes no JSON of its own (ADR 0007, amendment of 2026-11-18, later): a crafted
+    // file of a megabyte once cost about 80 MiB in Dart before the engine saw it. The engine's
+    // verdict, newer version included, is the only one.
+    late _ScriptedLoomRepository scripted;
+    Future<List<LoomProfile>> Function(String text) answer = (_) async => const [];
+    setUp(() => scripted = _ScriptedLoomRepository(dir, (text) => answer(text)));
+    Matcher refused(LoomFileProblem problem) =>
+        throwsA(isA<LoomFileException>().having((e) => e.problem, 'problem', problem));
+
+    test('within the limit, the text goes to the engine once, as it is', () async {
+      final newer = loomsText([borrowedLoom], version: 2);
+      answer = (_) async => [borrowedLoom];
+      expect((await scripted.decodeBytes(utf8.encode(newer))).single.id, borrowedLoom.id,
+          reason: 'the version a text states is the engine\'s to read, not the app\'s');
+      expect(scripted.asked, [newer]);
+
+      answer = (_) async => throw const LoomFileException(LoomFileProblem.newerVersion);
+      await expectLater(
+          scripted.decodeBytes(utf8.encode('{}')), refused(LoomFileProblem.newerVersion));
+      answer = (_) async => throw const LoomFileException(LoomFileProblem.unreadable);
+      await expectLater(
+          scripted.decodeBytes(utf8.encode(newer)), refused(LoomFileProblem.unreadable));
+      answer = (_) async => throw const LoomFileException(LoomFileProblem.tooLarge);
+      await expectLater(
+          scripted.decodeBytes(utf8.encode(newer)), refused(LoomFileProblem.tooLarge));
+      expect(scripted.asked, hasLength(4));
+    });
+
+    test('a file that is not UTF-8 is unreadable, or too large past the limit, unasked', () async {
+      await expectLater(scripted.decodeBytes([0xff, 0xfe]), refused(LoomFileProblem.unreadable));
+      final big = List.filled(LoomRepository.maxFileBytes + 1, 0x20)..[0] = 0xff;
+      await expectLater(scripted.decodeBytes(big), refused(LoomFileProblem.tooLarge));
+      expect(scripted.asked, isEmpty);
+    });
+
+    test('over the limit, only the engine\'s newer version changes "too large"', () async {
+      final big = utf8.encode(' ' * (LoomRepository.maxFileBytes + 1));
+      answer = (_) async => throw const LoomFileException(LoomFileProblem.newerVersion);
+      await expectLater(scripted.decodeBytes(big), refused(LoomFileProblem.newerVersion));
+      for (final other in <Future<List<LoomProfile>> Function(String)>[
+        (_) async => [borrowedLoom],
+        (_) async => throw const LoomFileException(LoomFileProblem.unreadable),
+        (_) async => throw const LoomFileException(LoomFileProblem.tooLarge),
+        (_) async => throw StateError('the engine failed'),
+      ]) {
+        answer = other;
+        await expectLater(scripted.decodeBytes(big), refused(LoomFileProblem.tooLarge));
+      }
+      expect(scripted.asked, hasLength(5));
+      expect(scripted.asked.first.length, big.length, reason: 'the whole text, for its envelope');
+    });
+
+    test('past the largest file whose version is looked at, the engine is not asked', () async {
+      final huge = Uint8List(LoomRepository.maxProbedFileBytes + 1);
+      answer = (_) async => throw const LoomFileException(LoomFileProblem.newerVersion);
+      await expectLater(scripted.decodeBytes(huge), refused(LoomFileProblem.tooLarge));
+      expect(scripted.asked, isEmpty);
+    });
+
+    test('the stand-in engine reports a newer or too large file as the engine does', () async {
+      final newer = utf8.encode(loomsText([borrowedLoom], version: 2));
+      await expectLater(repo.decodeBytes(newer), refused(LoomFileProblem.newerVersion));
+      final pad = 'x' * (LoomRepository.maxFileBytes + 10);
+      final big = '{"format":"ply.looms","schema_version":1,"looms":[],"pad":"$pad"}';
+      await expectLater(repo.decodeBytes(utf8.encode(big)), refused(LoomFileProblem.tooLarge));
+      await expectLater(repo.decode(big), refused(LoomFileProblem.tooLarge));
+      await expectLater(
+          repo.decode(big.replaceFirst('"schema_version":1', '"schema_version":2')),
+          refused(LoomFileProblem.newerVersion));
+      expect(repo.decodes, 4);
+    });
+  });
+
   test('saving refuses to replace a file that became unreadable', () async {
     await looms().writeAsString('garbage');
     await expectLater(repo.saveAll([borrowedLoom]),
@@ -126,4 +201,19 @@ void main() {
     await undo();
     expect(await looms().readAsBytes(), before);
   });
+}
+
+/// The loom repository with the engine's reader scripted by the test, recording every text it is
+/// asked to read.
+class _ScriptedLoomRepository extends LoomRepository {
+  _ScriptedLoomRepository(Directory dir, this.answer) : super(dirOverride: dir);
+
+  final Future<List<LoomProfile>> Function(String text) answer;
+  final List<String> asked = [];
+
+  @override
+  Future<List<LoomProfile>> decode(String text) {
+    asked.add(text);
+    return answer(text);
+  }
 }

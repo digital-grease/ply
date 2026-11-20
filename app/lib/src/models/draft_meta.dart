@@ -69,6 +69,16 @@ class DraftMeta {
   /// never cut short on open or save.
   static const int maxNotesChars = 10000;
 
+  /// The most characters a user can enter as a project's [name] (the weaving save dialog and every
+  /// dialog that names or renames a weaving draft or a knitting pattern check it), and as [author]
+  /// ([maxAuthorChars]). Counted as saved, without spaces at either end. Names and authors already
+  /// longer (written before the limit) are kept as they are: they list, open and back up as before,
+  /// and renaming one asks for a shorter name.
+  static const int maxNameChars = 200;
+
+  /// The most characters a user can enter as [author] (see [maxNameChars]).
+  static const int maxAuthorChars = 200;
+
   /// The loom this draft is built for (shed + drive preset). App-only; serde tolerates it as an
   /// unknown field. Defaults to [LoomType.jack] when absent (older sidecar).
   final LoomType loomType;

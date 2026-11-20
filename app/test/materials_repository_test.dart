@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -68,6 +69,57 @@ void main() {
       expect(file().existsSync(), isTrue);
       file().writeAsStringSync(big.replaceFirst('"schema_version":1', '"schema_version":3'));
       expect((await DartCodecMaterialsRepository(dir).load()).status, MaterialsFileStatus.newer);
+    });
+
+    test('the engine alone reads the file, newer version included', () async {
+      // decodeBytes decodes no JSON of its own (ADR 0007, amendment of 2026-11-18, later): a
+      // crafted file of two megabytes once cost about 100 MiB in Dart before the engine saw it.
+      late Future<MaterialLibrary> Function() answer;
+      final repo = _ScriptedMaterialsRepository(dir, () => answer());
+      Matcher refused(MaterialsFileProblem problem) =>
+          throwsA(isA<MaterialsFileException>().having((e) => e.problem, 'problem', problem));
+      final stated2 = jsonEncode({'format': kMaterialsFormat, 'schema_version': 2});
+
+      // Within the limit: the engine's verdict stands, whatever version the text states.
+      answer = () async => const MaterialLibrary(materials: [wool]);
+      expect((await repo.decodeBytes(utf8.encode(stated2))).materials, [wool]);
+      answer = () async => throw const MaterialsFileException(MaterialsFileProblem.unreadable);
+      await expectLater(
+          repo.decodeBytes(utf8.encode(stated2)), refused(MaterialsFileProblem.unreadable));
+      answer = () async => throw const MaterialsFileException(MaterialsFileProblem.newerVersion);
+      await expectLater(
+          repo.decodeBytes(utf8.encode('{}')), refused(MaterialsFileProblem.newerVersion));
+      expect(repo.asked, [stated2, stated2, '{}']);
+
+      // Over the limit: too large unless the engine finds a newer version.
+      final big = utf8.encode(' ' * (MaterialsRepository.maxFileBytes + 1));
+      await expectLater(repo.decodeBytes(big), refused(MaterialsFileProblem.newerVersion));
+      for (final other in <Future<MaterialLibrary> Function()>[
+        () async => MaterialLibrary.empty,
+        () async => throw const MaterialsFileException(MaterialsFileProblem.unreadable),
+        () async => throw const MaterialsFileException(MaterialsFileProblem.tooLarge),
+        () async => throw StateError('the engine failed'),
+      ]) {
+        answer = other;
+        await expectLater(repo.decodeBytes(big), refused(MaterialsFileProblem.tooLarge));
+      }
+
+      expect(repo.asked, hasLength(8), reason: 'the whole text, for its envelope, each time');
+
+      // Not UTF-8, or past the largest file whose version is looked at: the engine is not asked.
+      repo.asked.clear();
+      await expectLater(repo.decodeBytes([0xff]), refused(MaterialsFileProblem.unreadable));
+      await expectLater(repo.decodeBytes(List.filled(MaterialsRepository.maxFileBytes + 1, 0xff)),
+          refused(MaterialsFileProblem.tooLarge));
+      await expectLater(repo.decodeBytes(Uint8List(MaterialsRepository.maxProbedFileBytes + 1)),
+          refused(MaterialsFileProblem.tooLarge));
+      expect(repo.asked, isEmpty);
+
+      // The stand-in engine the other tests use reports a newer version the same way.
+      final codec = DartCodecMaterialsRepository(dir);
+      await expectLater(
+          codec.decodeBytes(utf8.encode(stated2)), refused(MaterialsFileProblem.newerVersion));
+      expect(codec.decodes, 1);
     });
 
     test('adding records (a restore) can be undone exactly', () async {
@@ -220,4 +272,19 @@ void main() {
       expect(const MaterialRecord(id: 'x').displayName, 'Unnamed material');
     });
   });
+}
+
+/// The materials repository with the engine's reader scripted by the test, recording every text it
+/// is asked to read.
+class _ScriptedMaterialsRepository extends MaterialsRepository {
+  _ScriptedMaterialsRepository(Directory dir, this.answer) : super(dirOverride: dir);
+
+  final Future<MaterialLibrary> Function() answer;
+  final List<String> asked = [];
+
+  @override
+  Future<MaterialLibrary> decode(String text) {
+    asked.add(text);
+    return answer();
+  }
 }

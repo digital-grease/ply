@@ -21,6 +21,7 @@ import '../rust/api.dart';
 import '../rust/dto.dart';
 import 'draft_notes_file.dart';
 import 'progress_repository.dart' show ProgressRepository;
+import 'sidecar_read.dart' show readListedSidecars;
 import 'sidecar_writes.dart';
 
 /// The one place the app touches `dart:io` and the generated bridge symbols.
@@ -801,29 +802,41 @@ class DraftRepository {
 
   /// List every complete draft, newest-opened first. Scans `*.json` sidecars and
   /// pairs each with its sibling `.wif` (skipping any sidecar whose `.wif` is gone)
-  /// and optional `.png`. Malformed sidecars are skipped, not fatal.
+  /// and optional `.png`. The sidecars are read with the restore's bounds ([readListedSidecars]): a
+  /// malformed one within them is skipped, not fatal; a large one is decoded on a background
+  /// isolate and lists with what the Library shows; one past them is not decoded and lists, by the
+  /// name at its head, whenever it starts as a JSON object (JSON or not). Nothing on disk is
+  /// changed.
   Future<List<DraftEntry>> list() async {
     final dir = await _draftsDir();
     if (!await dir.exists()) return const [];
-    final entries = <DraftEntry>[];
+    final found = <({String id, File sidecar, File wif})>[];
     await for (final ent in dir.list()) {
       if (ent is! File || p.extension(ent.path) != '.json') continue;
       final id = p.basenameWithoutExtension(ent.path);
       try {
         final wifFile = File(_wifPath(dir, id));
         if (!await wifFile.exists()) continue; // sidecar without its .wif: skip
-        final meta = DraftMeta.fromJson(
-          jsonDecode(await ent.readAsString()) as Map<String, dynamic>,
-        );
-        final pngFile = File(_pngPath(dir, id));
+        found.add((id: id, sidecar: ent, wif: wifFile));
+      } catch (_) {
+        continue; // one bad sidecar must not break the whole Library
+      }
+    }
+    final metas = await readListedSidecars([for (final f in found) f.sidecar], craft: 'Weaving');
+    final entries = <DraftEntry>[];
+    for (var i = 0; i < found.length; i++) {
+      final meta = metas[i];
+      if (meta == null) continue; // not a sidecar, or unreadable: skipped, as before
+      try {
+        final pngFile = File(_pngPath(dir, found[i].id));
         entries.add(DraftEntry(
-          id: id,
+          id: found[i].id,
           meta: meta,
-          wifPath: wifFile.path,
+          wifPath: found[i].wif.path,
           thumbPath: await pngFile.exists() ? pngFile.path : null,
         ));
       } catch (_) {
-        continue; // one bad sidecar must not break the whole Library
+        continue;
       }
     }
     entries.sort((a, b) => b.meta.lastOpened.compareTo(a.meta.lastOpened));
