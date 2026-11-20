@@ -31,6 +31,8 @@ class NalbindRecipeScreen extends ConsumerStatefulWidget {
     required this.projectStitchName,
     required this.onChanged,
     required this.onTick,
+    this.projectId,
+    this.unsavedEdits,
     this.onSave,
     super.key,
   });
@@ -44,6 +46,13 @@ class NalbindRecipeScreen extends ConsumerStatefulWidget {
 
   /// Tick a step done (or not); resolves to a message to show, or null.
   final Future<String?> Function(String segmentId, bool done) onTick;
+
+  /// The saved project's id, which the follow view keeps the maker's place under (ADR 0023); `null`
+  /// for a project not saved yet. Asked when the follow view opens (a Save here gives the id).
+  final String? Function()? projectId;
+
+  /// Whether the project holds changes not yet saved (the place then follows the recipe on screen).
+  final bool Function()? unsavedEdits;
 
   /// The project's save; resolves true when written.
   final Future<bool> Function()? onSave;
@@ -218,6 +227,8 @@ class _NalbindRecipeScreenState extends ConsumerState<NalbindRecipeScreen> {
         recipe: _recipe,
         projectNotation: widget.projectNotation,
         projectStitchName: widget.projectStitchName,
+        projectId: widget.projectId?.call(),
+        unsavedEdits: widget.unsavedEdits?.call() ?? false,
         onTick: (id, done) async {
           final message = await widget.onTick(id, done);
           if (mounted) setState(() => _recipe = _recipe.withDone(id, done));
@@ -245,7 +256,7 @@ class _NalbindRecipeScreenState extends ConsumerState<NalbindRecipeScreen> {
         actions: [
           IconButton(
             key: const ValueKey('recipe-follow'),
-            tooltip: 'Follow the recipe',
+            tooltip: kNalbindTrackerTitle,
             icon: const Icon(Icons.playlist_play),
             onPressed: segments.isEmpty ? null : _follow,
           ),

@@ -13,6 +13,8 @@ pub mod error;
 // The version a `.plynal` file states, read without decoding the project (the app owns the file).
 pub mod native;
 pub mod notation;
+// Working a recipe step by step and resuming a saved place (roadmap M8-05, ADR 0023).
+pub mod progress;
 pub mod recipe;
 // Is a project ready to make or share (ADR 0021)?
 pub mod readiness;

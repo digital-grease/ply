@@ -496,7 +496,7 @@ fn face_in(f: TabletFaceKind) -> Face {
     }
 }
 
-fn note_kind_out(k: NoteKind) -> TabletNoteKind {
+pub(crate) fn note_kind_out(k: NoteKind) -> TabletNoteKind {
     match k {
         NoteKind::Brocade => TabletNoteKind::Brocade,
         NoteKind::Other => TabletNoteKind::Other,
@@ -837,7 +837,11 @@ fn face_thread_out(band: &TabletBand, card: usize, f: FaceThread) -> TabletFaceT
     }
 }
 
-fn card_pick_out(band: &TabletBand, card: usize, cp: &tab::CardPick) -> TabletCardPickDto {
+pub(crate) fn card_pick_out(
+    band: &TabletBand,
+    card: usize,
+    cp: &tab::CardPick,
+) -> TabletCardPickDto {
     TabletCardPickDto {
         turn: turn_out(cp.turn),
         released: cp.released,
@@ -852,6 +856,15 @@ fn card_pick_out(band: &TabletBand, card: usize, cp: &tab::CardPick) -> TabletCa
         woven: cp.twist.woven,
         top_run: cp.top_run,
         back_run: cp.back_run,
+    }
+}
+
+pub(crate) fn card_state_out(c: &tab::CardState) -> TabletCardStateDto {
+    TabletCardStateDto {
+        position: c.position.map(|p| p.arrangement().into()),
+        threading: c.threading.map(threading_out),
+        twist: c.twist.twist,
+        woven: c.twist.woven,
     }
 }
 
@@ -874,12 +887,12 @@ fn failure(kind: TabletRunFailureKind, message: impl Into<String>) -> TabletRunF
     }
 }
 
-fn run_failure(e: tab::TabletError) -> TabletRunFailure {
+pub(crate) fn run_failure(e: tab::TabletError) -> TabletRunFailure {
     let kind = match &e {
         tab::TabletError::Invalid(_) => TabletRunFailureKind::HasErrors,
-        tab::TabletError::InvalidWindow { .. } | tab::TabletError::PickOutOfRange { .. } => {
-            TabletRunFailureKind::InvalidWindow
-        }
+        tab::TabletError::InvalidWindow { .. }
+        | tab::TabletError::PickOutOfRange { .. }
+        | tab::TabletError::InvalidTime => TabletRunFailureKind::InvalidWindow,
         tab::TabletError::WindowTooLarge { .. } | tab::TabletError::AllocFailed { .. } => {
             TabletRunFailureKind::TooLarge
         }
@@ -887,7 +900,7 @@ fn run_failure(e: tab::TabletError) -> TabletRunFailure {
     failure(kind, e.to_string())
 }
 
-fn document(dto: TabletDocumentDto) -> Result<TabletDocument, TabletRunFailure> {
+pub(crate) fn document(dto: TabletDocumentDto) -> Result<TabletDocument, TabletRunFailure> {
     TabletDocument::try_from(dto).map_err(|m| failure(TabletRunFailureKind::InvalidDocument, m))
 }
 
@@ -1048,16 +1061,7 @@ pub(crate) fn state_after(
         .map_err(run_failure)?;
     Ok(TabletBandStateDto {
         pick: s.pick,
-        cards: s
-            .cards
-            .iter()
-            .map(|c| TabletCardStateDto {
-                position: c.position.map(|p| p.arrangement().into()),
-                threading: c.threading.map(threading_out),
-                twist: c.twist.twist,
-                woven: c.twist.woven,
-            })
-            .collect(),
+        cards: s.cards.iter().map(card_state_out).collect(),
         review_pending: tab::PRACTITIONER_REVIEW_PENDING,
     })
 }

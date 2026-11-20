@@ -5,35 +5,58 @@ import '../data/library_backup.dart' show BackupCraft;
 import '../data/nalbind_repository.dart';
 import '../rust/nalbind_dto.dart';
 import '../state/nalbind_providers.dart';
+import '../widgets/library_place.dart';
 import '../widgets/nalbind_diagram_view.dart';
 import '../widgets/notation_feedback.dart';
 import '../widgets/project_export.dart';
+import 'nalbind_follow_screen.dart' show kNalbindTrackerTitle;
 import 'nalbind_project_screen.dart';
-
-/// Open the nalbind project editor ([id] null = new); refresh the saved-projects list on return.
-Future<void> _openNalbindProject(BuildContext context, WidgetRef ref, String? id) async {
-  await Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => NalbindProjectScreen(openId: id)),
-  );
-  ref.invalidate(nalbindProjectsProvider);
-}
 
 /// The Nalbinding tab: a stitch REFERENCE (M6 v1). A notation playground at the top (type a Hansen
 /// string → live loop diagram + validation), then the curated builtin dictionary, each stitch showing
 /// its notation, the `a+b` thumb-loop alias, alternate names, the generated structural diagram, and a
 /// one-line description, plus the "My projects" list of saved pieces (open, export, delete) and the
 /// New project button. See `docs/NALBIND_DESIGN.md`.
-class NalbindReferenceScreen extends ConsumerWidget {
+class NalbindReferenceScreen extends ConsumerStatefulWidget {
   const NalbindReferenceScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NalbindReferenceScreen> createState() => _NalbindReferenceScreenState();
+}
+
+/// Opens a project (or a new one) the way every tap here does.
+typedef _OpenProject = Future<void> Function(String? id, {bool track});
+
+class _NalbindReferenceScreenState extends ConsumerState<NalbindReferenceScreen> {
+  /// True from a tap that opens a project (or a new one) until it closes: a second tap opens no
+  /// second one (nor a second tracker on its record).
+  bool _opening = false;
+
+  /// Open the nalbind project editor ([id] null = new); with [track], straight on into Nalbind step
+  /// by step from there, as the project's menu opens it (back from it is the project). Refresh the
+  /// saved-projects list, and with it each project's place, on return.
+  Future<void> _open(String? id, {bool track = false}) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+            builder: (_) => NalbindProjectScreen(openId: id, openTracker: track)),
+      );
+    } finally {
+      _opening = false;
+    }
+    if (mounted) ref.invalidate(nalbindProjectsProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final builtins = ref.watch(nalbindBuiltinsProvider);
     // No AppBar: this is the Nalbinding TAB inside HomeScreen, which owns the shared chrome.
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'newNalbind',
-        onPressed: () => _openNalbindProject(context, ref, null),
+        onPressed: () => _open(null),
         icon: const Icon(Icons.add),
         label: const Text('New project'),
       ),
@@ -48,7 +71,7 @@ class NalbindReferenceScreen extends ConsumerWidget {
         data: (entries) => ListView(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 88), // bottom pad clears the FAB
           children: [
-            const _ProjectsSection(),
+            _ProjectsSection(onOpen: _open),
             const _NotationPrimer(),
             const SizedBox(height: 8),
             const _NotationPlayground(),
@@ -69,11 +92,15 @@ class NalbindReferenceScreen extends ConsumerWidget {
 /// the FAB invites creation before then). Tap to open; the overflow menu exports (a `.plybackup` of
 /// the project and its photos) and deletes.
 class _ProjectsSection extends ConsumerWidget {
-  const _ProjectsSection();
+  const _ProjectsSection({required this.onOpen});
+
+  final _OpenProject onOpen;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final projects = ref.watch(nalbindProjectsProvider);
+    // Each project's saved place (ADR 0023); the list shows at once and the places follow.
+    final places = ref.watch(nalbindPlacesProvider).valueOrNull ?? const {};
     return projects.maybeWhen(
       data: (list) {
         if (list.isEmpty) return const SizedBox.shrink();
@@ -89,10 +116,21 @@ class _ProjectsSection extends ConsumerWidget {
                 child: ListTile(
                   leading: const Icon(Icons.gesture),
                   title: Text(proj.name),
-                  onTap: () => _openNalbindProject(context, ref, proj.id),
+                  subtitle: switch (places[proj.id]) {
+                    final place? => LibraryPlaceLine(
+                        key: ValueKey('library-place-${proj.id}'),
+                        place: place,
+                        trackerTitle: kNalbindTrackerTitle,
+                        padding: const EdgeInsets.only(top: 4, bottom: 4),
+                        onOpen: () => onOpen(proj.id, track: true),
+                      ),
+                    null => null,
+                  },
+                  onTap: () => onOpen(proj.id),
                   trailing: PopupMenuButton<String>(
                     tooltip: 'Project actions',
                     onSelected: (v) {
+                      if (v == 'track') onOpen(proj.id, track: true);
                       if (v == 'export') {
                         exportProject(context, ref,
                             craft: BackupCraft.nalbinding, id: proj.id, name: proj.name);
@@ -100,6 +138,8 @@ class _ProjectsSection extends ConsumerWidget {
                       if (v == 'delete') _confirmDelete(context, ref, proj.id, proj.name);
                     },
                     itemBuilder: (_) => const [
+                      // Straight into the follow view at the saved place (ADR 0023).
+                      PopupMenuItem(value: 'track', child: Text(kNalbindTrackerTitle)),
                       PopupMenuItem(value: 'export', child: Text('Export')),
                       PopupMenuItem(value: 'delete', child: Text('Delete')),
                     ],

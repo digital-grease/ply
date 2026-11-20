@@ -11,10 +11,14 @@
 //!
 //! A pick's IDENTITY is everything the weaver is told to do at it: the treadles pressed, the shafts
 //! up, the weft (its palette index and colour), the role, the shuttle and the side it starts from,
-//! the strands and the shot group. A place's fingerprint is the hash of every pick's identity up to
-//! and including it ([`prefix`]), so inserting or removing a whole shed repeat before the place (two
-//! picks of plain weave in a stripe) changes it. See [`ply_common::progress`] for how a saved place
-//! is compared with the draft as it is now.
+//! the strands and the shot group. A place's fingerprint on the first time through is the hash of
+//! every pick's identity up to and including it ([`prefix`]), so inserting or removing a whole shed
+//! repeat before the place (two picks of plain weave in a stripe) changes it. On a later time
+//! through the whole draft has been woven before the place (and decides what the weaver is told: a
+//! shuttle's side follows its passes in one time through, and pick 1 follows the draft's last pick),
+//! so the fingerprint is of every pick of the draft and then the picks up to the place
+//! ([`prefix_at`]): any edit to the draft is caught. See [`ply_common::progress`] for how a saved
+//! place is compared with the draft as it is now.
 
 use crate::draft::{Draft, Drive, PickRole, ShedType, Side};
 use ply_common::progress::{reconcile, Basis, Fingerprint, Resume, ResumeStatus};
@@ -52,7 +56,8 @@ pub struct PickWork {
     /// The working notes in words, in a fixed order: role, shuttle and side, strands, shot group,
     /// same shed as the pick before.
     pub notes: Vec<String>,
-    /// The prefix fingerprint at this pick (see the module docs). The same on every time through.
+    /// The prefix fingerprint at this pick on the window's time through (see the module docs): one
+    /// for the first time through, another for every later time.
     pub prefix: u64,
 }
 
@@ -214,6 +219,12 @@ fn feed(
     for &s in raised {
         fp.number(u64::from(s));
     }
+    feed_extras(fp, draft, facts, pick);
+}
+
+/// Feed what the weaver is told at the 0-based `pick` beyond its shed: the weft (its palette index
+/// and colour), the role, the shuttle and the side it starts from, the strands and the shot group.
+fn feed_extras(fp: &mut Fingerprint, draft: &Draft, facts: &Facts, pick: usize) {
     match draft.colors.weft.get(pick) {
         Some(&i) => {
             fp.number(1 + i as u64);
@@ -243,11 +254,81 @@ fn feed(
     fp.number(of as u64);
 }
 
-/// The prefix fingerprint at the 0-based `pick`: every pick's identity from the first up to and
-/// including it. `pick` past the end hashes the picks there are.
-pub fn prefix(draft: &Draft, pick: usize) -> u64 {
-    let facts = Facts::new(draft);
+/// The whole draft, for a place on a later time through: everything that decides what the weaver is
+/// told at any pick, in the draft's own terms (the shed, the shafts, the tie-up once and each pick's
+/// treadles, or each lift plan row; then each pick's weft, role, shuttle and side, strands and shot),
+/// so it costs the size of the draft, never every pick's shafts up again. The shafts up follow from
+/// these, so any change to what the weaver is told changes it.
+fn feed_whole_draft(fp: &mut Fingerprint, draft: &Draft, facts: &Facts) {
+    fp.text("the whole draft");
+    fp.number(u64::from(draft.shafts));
+    fp.number(match draft.shed {
+        ShedType::Rising => 0,
+        ShedType::Sinking => 1,
+    });
+    let sorted = |ids: &mut Vec<u64>| {
+        ids.sort_unstable();
+        ids.dedup();
+    };
+    match &draft.drive {
+        Drive::Treadled { tieup, .. } => {
+            fp.number(1);
+            fp.number(tieup.0.len() as u64);
+            for shafts in &tieup.0 {
+                let mut ids: Vec<u64> = shafts.iter().map(|s| u64::from(s.0)).collect();
+                sorted(&mut ids);
+                fp.number(ids.len() as u64);
+                for i in ids {
+                    fp.number(i);
+                }
+            }
+        }
+        Drive::Liftplan(_) => fp.number(2),
+    }
+    for p in 0..draft.picks() {
+        let mut ids: Vec<u64> = match &draft.drive {
+            Drive::Treadled { treadling, .. } => treadling
+                .0
+                .get(p)
+                .map(|row| row.iter().map(|t| u64::from(t.0)).collect())
+                .unwrap_or_default(),
+            Drive::Liftplan(lp) => {
+                lp.0.get(p)
+                    .map(|row| row.iter().map(|s| u64::from(s.0)).collect())
+                    .unwrap_or_default()
+            }
+        };
+        sorted(&mut ids);
+        fp.number(ids.len() as u64);
+        for i in ids {
+            fp.number(i);
+        }
+        feed_extras(fp, draft, facts, p);
+    }
+}
+
+/// The fingerprint before pick 1 of the `time`-th time through (from 1): nothing on the first
+/// time, and from the second time on the whole draft ([`feed_whole_draft`]).
+fn time_start(draft: &Draft, facts: &Facts, time: usize) -> Fingerprint {
     let mut fp = Fingerprint::new();
+    if time > 1 {
+        feed_whole_draft(&mut fp, draft, facts);
+        fp.text("then again");
+    }
+    fp
+}
+
+/// The prefix fingerprint at the 0-based `pick` on the first time through: every pick's identity
+/// from the first up to and including it. `pick` past the end hashes the picks there are.
+pub fn prefix(draft: &Draft, pick: usize) -> u64 {
+    prefix_at(draft, pick, 1)
+}
+
+/// The prefix fingerprint at the 0-based `pick` on the `time`-th time through (from 1; 0 reads as
+/// 1): from the second time on, every pick of the draft comes first (see the module docs).
+pub fn prefix_at(draft: &Draft, pick: usize, time: usize) -> u64 {
+    let facts = Facts::new(draft);
+    let mut fp = time_start(draft, &facts, time);
     for p in 0..pick.saturating_add(1).min(draft.picks()) {
         feed(
             &mut fp,
@@ -394,9 +475,10 @@ fn notes(draft: &Draft, facts: &Facts, pick: usize, time: usize) -> Vec<String> 
 /// Picks `first..=last` (numbered from 1) of the `time`-th time through the draft (from 1), as the
 /// weaver works them: at most [`MAX_WINDOW`] of them (`last` is cut to the draft's end and to the
 /// window's size), stopping after the pick that passes [`MAX_WINDOW_NUMBERS`] listed numbers, so
-/// `first` itself is always returned. The time through changes only the words that depend on it (a
-/// shuttle's side, whether pick 1 repeats the shed of the last pick); fingerprints are the same on
-/// every time. A draft with no picks gives an empty window for any `first` of 1. Never panics.
+/// `first` itself is always returned. The time through changes the words that depend on it (a
+/// shuttle's side, whether pick 1 repeats the shed of the last pick) and the fingerprints (from the
+/// second time on, the whole draft is before every pick: [`prefix_at`]). A draft with no picks gives
+/// an empty window for a `first` of 1. Never panics.
 pub fn window(
     draft: &Draft,
     first: usize,
@@ -404,7 +486,7 @@ pub fn window(
     time: usize,
 ) -> Result<Vec<PickWork>, WindowError> {
     let picks = draft.picks();
-    if picks == 0 && first <= 1 {
+    if picks == 0 && first == 1 && time >= 1 {
         return Ok(Vec::new());
     }
     if first == 0 || first > picks || last < first || time == 0 {
@@ -412,7 +494,7 @@ pub fn window(
     }
     let last = last.min(picks).min(first + MAX_WINDOW - 1);
     let facts = Facts::new(draft);
-    let mut fp = Fingerprint::new();
+    let mut fp = time_start(draft, &facts, time);
     let mut out = Vec::with_capacity(last - first + 1);
     let mut listed = 0usize;
     for p in 0..last {
@@ -451,24 +533,42 @@ pub struct PickResume {
     pub message: Option<String>,
 }
 
-/// Compare a saved place (`pick`, numbered from 1, with its `basis`) with the draft as it is now.
-/// A pick of 0 reads as pick 1. Never moves the place: see [`ply_common::progress::reconcile`].
-pub fn resume(draft: &Draft, pick: usize, basis: Option<Basis>) -> PickResume {
+/// Compare a saved place (`pick` of the `time`-th time through, both numbered from 1, with its
+/// `basis`) with the draft as it is now. A pick or time of 0 reads as 1. On a later time through the
+/// whole draft is before the place, so any change to it shows the place for checking. Never moves
+/// the place: see [`ply_common::progress::reconcile`].
+pub fn resume(draft: &Draft, pick: usize, time: usize, basis: Option<Basis>) -> PickResume {
     let picks = draft.picks();
     let saved = pick.max(1) - 1;
+    let time = time.max(1);
     let r = reconcile(
         saved as u64,
         basis,
         picks as u64,
-        |u| prefix(draft, u as usize),
+        |u| prefix_at(draft, u as usize, time),
         || None,
     );
     let shown = r.unit as usize + 1;
+    // A place on a later time through saved by a build that kept only the picks up to it (the first
+    // time's fingerprint): nothing says the draft changed, but nothing says the rest of it did not.
+    let earlier_build = time > 1
+        && r.status == ResumeStatus::Changed
+        && saved < picks
+        && basis.is_some_and(|b| b.prefix == prefix_at(draft, saved, 1));
     let message = match r.status {
         ResumeStatus::Same => None,
         ResumeStatus::LengthChanged { was } => Some(format!(
             "The draft has changed after your place: it now has {picks} picks (it had {was}). Your \
              place is unchanged."
+        )),
+        ResumeStatus::Changed if earlier_build => Some(format!(
+            "Your place on time {time} through was saved by an earlier version of Ply, which kept \
+             too little about the draft to tell whether it has changed. Check that pick {shown} is \
+             where you are."
+        )),
+        ResumeStatus::Changed if time > 1 => Some(format!(
+            "The draft has changed since you saved your place, and on time {time} through all of \
+             it was woven before your place. Check that pick {shown} is where you are."
         )),
         ResumeStatus::Changed => Some(format!(
             "The draft has changed at or before pick {shown} since you saved your place. Check \
@@ -678,7 +778,7 @@ mod tests {
             units: 4,
             prefix: prefix(&d, 2),
         };
-        let r = resume(&d, 3, Some(basis));
+        let r = resume(&d, 3, 1, Some(basis));
         assert_eq!(r.resume.status, ResumeStatus::Same);
         assert_eq!((r.pick, r.message), (3, None));
     }
@@ -694,7 +794,7 @@ mod tests {
         if let Drive::Treadled { treadling, .. } = &mut edited.drive {
             treadling.0.insert(0, vec![TreadleId(4)]);
         }
-        let r = resume(&edited, 3, Some(basis));
+        let r = resume(&edited, 3, 1, Some(basis));
         assert_eq!(r.resume.status, ResumeStatus::Changed);
         assert_eq!(r.pick, 3, "never moved");
         assert_eq!(
@@ -715,7 +815,7 @@ mod tests {
         if let Drive::Treadled { treadling, .. } = &mut longer.drive {
             treadling.0.push(vec![TreadleId(1)]);
         }
-        let r = resume(&longer, 2, Some(basis));
+        let r = resume(&longer, 2, 1, Some(basis));
         assert_eq!(r.resume.status, ResumeStatus::LengthChanged { was: 4 });
         assert_eq!(r.pick, 2);
         assert!(r.message.unwrap().contains("it now has 5 picks (it had 4)"));
@@ -732,7 +832,7 @@ mod tests {
         if let Drive::Treadled { treadling, .. } = &mut shorter.drive {
             treadling.0.truncate(2);
         }
-        let r = resume(&shorter, 4, Some(basis));
+        let r = resume(&shorter, 4, 1, Some(basis));
         assert_eq!(r.resume.status, ResumeStatus::Clamped { was: 3 });
         assert_eq!(r.pick, 2);
         assert_eq!(
@@ -829,7 +929,7 @@ mod tests {
         let mut edited = structure::plain_weave(8, 102);
         edited.colors = stripes(102, Some(10)).colors;
         assert_eq!(edited.picks(), 102);
-        let r = resume(&edited, 50, Some(basis));
+        let r = resume(&edited, 50, 1, Some(basis));
         assert_eq!(r.resume.status, ResumeStatus::Changed);
         assert_eq!(r.pick, 50, "never moved");
         assert!(r.message.unwrap().contains("changed at or before pick 50"));
@@ -922,11 +1022,99 @@ mod tests {
         assert!(w[0].action.contains(" more"), "the list is cut in words");
     }
 
+    /// The review probe: on time 2 the whole draft was woven before the place, so an edit after
+    /// the place on the first time through (here the shuttle passes that set the side) is caught.
+    #[test]
+    fn on_a_later_time_any_edit_to_the_draft_is_before_the_place() {
+        let mut d = structure::plain_weave(4, 4);
+        d.weft_work.shuttles = vec![Some(ShuttleId(1)); 4];
+        d.weft_work.shuttle_starts.insert(ShuttleId(1), Side::Left);
+        let basis = |d: &Draft, time: usize| Basis {
+            units: d.picks() as u64,
+            prefix: prefix_at(d, 1, time),
+        };
+        assert_eq!(
+            resume(&d, 2, 2, Some(basis(&d, 2))).resume.status,
+            ResumeStatus::Same
+        );
+        // Pick 4 moved to another shuttle: shuttle 1 now passes 3 times a time through, so on time
+        // 2 it starts from the right.
+        let mut edited = d.clone();
+        edited.weft_work.shuttles[3] = Some(ShuttleId(2));
+        assert_ne!(
+            window(&d, 2, 2, 2).unwrap()[0].notes,
+            window(&edited, 2, 2, 2).unwrap()[0].notes
+        );
+        let r = resume(&edited, 2, 2, Some(basis(&d, 2)));
+        assert_eq!(r.resume.status, ResumeStatus::Changed);
+        assert_eq!(r.pick, 2, "never moved");
+        assert_eq!(
+            r.message.unwrap(),
+            "The draft has changed since you saved your place, and on time 2 through all of it \
+             was woven before your place. Check that pick 2 is where you are."
+        );
+        assert_eq!(
+            resume(&edited, 2, 1, Some(basis(&d, 1))).resume.status,
+            ResumeStatus::Same,
+            "after the place on the first time through"
+        );
+        // A pick added at the end: a length change on time 1, a change on time 2.
+        let mut longer = d.clone();
+        if let Drive::Treadled { treadling, .. } = &mut longer.drive {
+            treadling.0.push(vec![TreadleId(1)]);
+        }
+        assert!(matches!(
+            resume(&longer, 2, 1, Some(basis(&d, 1))).resume.status,
+            ResumeStatus::LengthChanged { .. }
+        ));
+        assert_eq!(
+            resume(&longer, 2, 2, Some(basis(&d, 2))).resume.status,
+            ResumeStatus::Changed
+        );
+        // A place on time 2 saved with the first time's fingerprint (by the build before this rule)
+        // is shown for checking with its own words, which claim no change.
+        let r = resume(&d, 2, 2, Some(basis(&d, 1)));
+        assert_eq!(r.resume.status, ResumeStatus::Changed);
+        assert_eq!(
+            r.message.unwrap(),
+            "Your place on time 2 through was saved by an earlier version of Ply, which kept too \
+             little about the draft to tell whether it has changed. Check that pick 2 is where you \
+             are."
+        );
+        // The whole draft costs its size: a far time is fingerprinted from the draft's own terms.
+        let mut sinking = d.clone();
+        sinking.shed = ShedType::Sinking;
+        assert_ne!(prefix_at(&d, 1, 2), prefix_at(&sinking, 1, 2), "the shed");
+        let mut tied = d.clone();
+        if let Drive::Treadled { tieup, .. } = &mut tied.drive {
+            tieup.0[0].push(ShaftId(3));
+        }
+        assert_ne!(prefix_at(&d, 1, 2), prefix_at(&tied, 1, 2), "the tie-up");
+        let mut lift = d.clone();
+        lift.drive = Drive::Liftplan(d.to_liftplan());
+        assert_ne!(
+            prefix_at(&d, 1, 2),
+            prefix_at(&lift, 1, 2),
+            "a lift plan is not treadling"
+        );
+        // The window's fingerprints follow the time through: one set from time 2 on.
+        let at = |t: usize| -> Vec<u64> {
+            window(&d, 1, 4, t)
+                .unwrap()
+                .iter()
+                .map(|p| p.prefix)
+                .collect()
+        };
+        assert_ne!(at(1), at(2));
+        assert_eq!(at(2), at(9));
+        assert_eq!(at(2)[1], prefix_at(&d, 1, 2));
+    }
+
     #[test]
     fn an_empty_draft_has_nothing_to_weave() {
         let mut d = twill();
         d.drive = Drive::Liftplan(Liftplan(vec![]));
-        let r = resume(&d, 7, None);
+        let r = resume(&d, 7, 1, None);
         assert_eq!(r.resume.status, ResumeStatus::Empty);
         assert_eq!(r.pick, 1);
         assert_eq!(r.message.unwrap(), "This draft has no picks to weave.");

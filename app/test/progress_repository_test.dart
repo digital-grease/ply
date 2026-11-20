@@ -6,8 +6,11 @@ import 'package:path/path.dart' as p;
 import 'package:ply/src/data/draft_repository.dart';
 import 'package:ply/src/data/knit_repository.dart';
 import 'package:ply/src/data/library_backup.dart' show BackupCraft;
+import 'package:ply/src/data/nalbind_repository.dart';
 import 'package:ply/src/data/progress_repository.dart';
+import 'package:ply/src/data/tablet_repository.dart';
 import 'package:ply/src/models/progress.dart';
+import 'package:ply/src/state/progress_controller.dart';
 
 // A project's progress record on disk (ADR 0023): `<craft folder>/<id>.plyprogress`, written
 // atomically, read back, never written over a newer or unreadable record, never written for a project
@@ -187,6 +190,30 @@ void main() {
         repo.load(BackupCraft.weaving, '../escape'), throwsA(isA<ProgressFileException>()));
   });
 
+  test('a read waits for the writes queued before it, so a reopened tracker sees the last place',
+      () async {
+    // A tracker closed with a write in flight, and opened again at once: the read must not see the
+    // older record (it would then write an older place over the newer one).
+    await repo.save(BackupCraft.weaving, id, woven(2));
+    final writing = repo.save(BackupCraft.weaving, id, woven(7));
+    final read = await repo.load(BackupCraft.weaving, id);
+    expect(read.progress!.place, const PickPlace(8));
+    await writing;
+    // Through a tracking session: a move not waited for, then a read.
+    final c = ProgressController(
+      repository: repo,
+      craft: BackupCraft.weaving,
+      id: id,
+      progress: read.progress!,
+      place: const PickPlace(8),
+      clock: () => t0,
+    );
+    final moving = c.moveTo(const PickPlace(9),
+        const PlaceBasis(units: 96, prefix: '0000000000000009'), LogKind.worked);
+    expect((await repo.load(BackupCraft.weaving, id)).progress!.place, const PickPlace(9));
+    await moving;
+  });
+
   test('another craft\'s record is unreadable here', () async {
     final knit =
         const Progress(craft: ProgressCraft.knitting).withNote(const KnitPlace(0), 'x', now: t0);
@@ -211,6 +238,67 @@ void main() {
     await DraftRepository(draftsDirOverride: Directory(p.join(docs.path, 'drafts'))).delete(id);
     for (final n in ['$id.plyprogress', '$id.plyprogress.tmp', '$id.plyprogress.corrupt']) {
       expect(inDrafts(n).existsSync(), isFalse, reason: n);
+    }
+  });
+
+  test('every craft folder keeps its own records', () async {
+    for (final craft in BackupCraft.values) {
+      expect(ProgressRepository.craftOf(craft)!.key, craft.manifestName, reason: craft.label);
+    }
+    for (final (craft, progress) in [
+      (BackupCraft.tabletWeaving, const Progress(craft: ProgressCraft.tabletWeaving)),
+      (BackupCraft.nalbinding, const Progress(craft: ProgressCraft.nalbinding)),
+    ]) {
+      final dir = Directory(p.join(docs.path, craft.directory))..createSync();
+      File(p.join(dir.path, '$id.json')).writeAsStringSync(sidecarText);
+      final note = progress.withNote(
+          craft == BackupCraft.nalbinding
+              ? const NalbindPlace(1, stepId: 'segment-2')
+              : const PickPlace(3, repeat: 2),
+          'Second ball',
+          now: t0);
+      await repo.save(craft, id, note);
+      expect(File(p.join(dir.path, '$id.plyprogress')).existsSync(), isTrue);
+      final back = await repo.load(craft, id);
+      expect(back.status, ProgressStatus.ok);
+      expect(back.progress!.notes.single.text, 'Second ball');
+      // Another craft's folder does not read it.
+      File(p.join(docs.path, 'drafts', '$id.plyprogress'))
+          .writeAsStringSync(note.encodeFitted().text);
+      expect((await repo.load(BackupCraft.weaving, id)).status, ProgressStatus.unreadable);
+      File(p.join(docs.path, 'drafts', '$id.plyprogress')).deleteSync();
+    }
+  });
+
+  test('deleting a tablet weaving band deletes its progress', () async {
+    final tablets = Directory(p.join(docs.path, 'tablets'))..createSync();
+    File(p.join(tablets.path, '$id.json')).writeAsStringSync(sidecarText);
+    File(p.join(tablets.path, '$id.plytab')).writeAsStringSync('{}');
+    await repo.save(
+        BackupCraft.tabletWeaving,
+        id,
+        const Progress(craft: ProgressCraft.tabletWeaving)
+            .withNote(const PickPlace(1), 'x', now: t0));
+    File(p.join(tablets.path, '$id.plyprogress.corrupt.2')).writeAsStringSync('x');
+    await (TabletRepository()..dirOverride = tablets).deleteBand(id);
+    for (final n in ['$id.plyprogress', '$id.plyprogress.corrupt.2', '$id.json', '$id.plytab']) {
+      expect(File(p.join(tablets.path, n)).existsSync(), isFalse, reason: n);
+    }
+  });
+
+  test('deleting a nalbinding project deletes its progress', () async {
+    final nalbinds = Directory(p.join(docs.path, 'nalbinds'))..createSync();
+    File(p.join(nalbinds.path, '$id.json')).writeAsStringSync(sidecarText);
+    File(p.join(nalbinds.path, '$id.plynal')).writeAsStringSync('{}');
+    await repo.save(
+        BackupCraft.nalbinding,
+        id,
+        const Progress(craft: ProgressCraft.nalbinding)
+            .withNote(const NalbindPlace(0), 'x', now: t0));
+    File(p.join(nalbinds.path, '$id.plyprogress.tmp')).writeAsStringSync('x');
+    await (NalbindRepository()..dirOverride = nalbinds).deleteProject(id);
+    for (final n in ['$id.plyprogress', '$id.plyprogress.tmp', '$id.json', '$id.plynal']) {
+      expect(File(p.join(nalbinds.path, n)).existsSync(), isFalse, reason: n);
     }
   });
 

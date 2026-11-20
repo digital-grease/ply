@@ -53,6 +53,7 @@ KnitWorkUnitDto line(int i,
       every: every,
       opaque: false,
       prefix: fakePrefix(i + 1),
+      laterPrefix: fakePrefix(i + 1),
     );
 
 KnitWorkDto sections({bool inserted = false}) {
@@ -107,6 +108,7 @@ KnitWorkDto chart() => KnitWorkDto(
             otherLabel: 'Row ${r + 1} (${r.isEven ? 'WS' : 'RS'})',
             otherText: r.isEven ? 'p4' : 'k4',
             prefix: fakePrefix(r + 1),
+            laterPrefix: fakeLaterPrefix(r + 1),
           ),
       ],
       stopped: false,
@@ -192,6 +194,13 @@ void main() {
     expect(find.textContaining('Before you start'), findsNothing,
         reason: 'only before row 1, once');
     expect((await stored(tester)).place, const KnitPlace(0, repeat: 2));
+    // On time 2 the whole chart is before the place: it is kept with that time's fingerprint, and
+    // a new session resumes there with nothing to check.
+    expect((await stored(tester)).basis!.prefix, fakeLaterPrefix(1));
+    await tester.pumpWidget(const SizedBox());
+    await pumpTracker(tester, tracker(), trackerOverrides(docs, FakeWork(knit: chart())));
+    expect(place('Row 1 (WS)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tracker-banner')), findsNothing);
     // Time 3: as drawn again, with no note.
     for (var i = 0; i < 3; i++) {
       await next(tester);

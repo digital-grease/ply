@@ -2256,9 +2256,10 @@ class LibraryBackup {
   /// - then it is read with the tracker's own reader (`Progress.decode`; on a background isolate
   ///   past [inlineSidecarValues] values), and carried when it reads or is newer (the tracker
   ///   neither reads nor replaces a newer one), left out otherwise: unreadable, or stating one
-  ///   version in its first bytes and decoding to another (a repeated key). A record of a craft
-  ///   this build does not track yet is carried when its envelope names that craft and one version
-  ///   (only a later build reads it).
+  ///   version in its first bytes and decoding to another (a repeated key). Every craft folder is
+  ///   tracked now (weaving, knitting, nalbinding and tablet weaving); a record of a craft this build
+  ///   does not track (a later craft's folder) would be carried when its envelope names that craft
+  ///   and one version (only a later build reads it).
   /// It is copied byte for byte either way.
   Future<bool> _progressCarried(BackupCraft craft, Uint8List bytes) async {
     final shape = measureJson(bytes, stop: limits.maxProgressValues);

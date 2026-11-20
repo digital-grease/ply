@@ -67,6 +67,7 @@ class EditorScreen extends ConsumerStatefulWidget {
     this.id,
     this.meta,
     this.initialLoomType,
+    this.openTracker = false,
     super.key,
   }) : assert((wifText == null) != (initialDoc == null),
             'provide exactly one of wifText (import/open) or initialDoc (new draft)');
@@ -93,6 +94,10 @@ class EditorScreen extends ConsumerStatefulWidget {
   /// The loom type chosen for a from-scratch draft (the new-draft flow). Ignored when editing a saved
   /// draft (its loom type comes from [meta]); defaults to [LoomType.jack] when null.
   final LoomType? initialLoomType;
+
+  /// Open Weave pick by pick as soon as the draft is on screen, as its menu entry does (a library
+  /// tile's way to continue at the saved place, ADR 0023). Back from the tracker is this editor.
+  final bool openTracker;
 
   @override
   ConsumerState<EditorScreen> createState() => _EditorScreenState();
@@ -186,6 +191,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       ref.read(openProjectProvider.notifier).state =
           (craft: BackupCraft.weaving, id: widget.id);
       setState(() => _loading = false);
+      // Nothing is edited yet, so the tracker is told there are no unsaved changes.
+      if (widget.openTracker) _openTracker(false);
     } catch (e) {
       if (!mounted) return;
       setState(() {

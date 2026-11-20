@@ -15,12 +15,14 @@ import '../state/editor_providers.dart' show draftLibraryWritesProvider;
 import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
 import '../widgets/draft_notes_dialog.dart';
+import '../widgets/library_place.dart';
 import '../widgets/loom_type_picker.dart';
 import '../widgets/name_input_dialog.dart' show projectNameProblem, promptForName;
 import '../widgets/project_export.dart';
 import '../widgets/thumb_unavailable.dart';
 import 'editor_screen.dart';
 import 'preview_screen.dart';
+import 'weave_tracker_screen.dart' show kWeaveTrackerTitle;
 
 /// Home screen: a grid of saved drafts with preview thumbnails, plus an import FAB.
 ///
@@ -36,15 +38,18 @@ class LibraryScreen extends ConsumerStatefulWidget {
   ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-enum _TileAction { open, rename, notes, export, delete }
+enum _TileAction { open, track, rename, notes, export, delete }
 
 /// Why an imported file that is not UTF-8 text cannot be read.
 const String kImportNotUtf8 = 'Ply could not read that file: a WIF file is text, and this one is '
     'not UTF-8 text (older weaving programs may save in another text encoding). Nothing was '
     'imported.';
 
-class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+class _LibraryScreenState extends ConsumerState<LibraryScreen> with LibraryPlaces<LibraryScreen> {
   late Future<List<DraftEntry>> _entriesFuture;
+
+  @override
+  BackupCraft get placesCraft => BackupCraft.weaving;
 
   /// Drafts listed without a thumbnail whose thumbnail has since been rebuilt.
   final Set<String> _rebuiltThumbs = {};
@@ -56,17 +61,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   /// Drafts whose notes are being read or shown (see [_handle]).
   final Set<String> _notesOpen = {};
 
+  /// True from a tap that opens a draft until its editor closes: a second tap while the draft is
+  /// still being read opens no second editor (nor a second tracker on the same record).
+  bool _opening = false;
+
   @override
   void initState() {
     super.initState();
     _entriesFuture = _load();
   }
 
-  /// List the library, then rebuild the missing thumbnails in the background (the list does not
-  /// wait for them).
+  /// List the library, then rebuild the missing thumbnails and read each draft's saved place in
+  /// the background (the list waits for neither).
   Future<List<DraftEntry>> _load() {
     final future = widget.repository.list();
     future.then(_rebuildMissingThumbnails, onError: (Object _) {});
+    future.then((entries) => readPlaces([for (final e in entries) e.id]), onError: (Object _) {});
     return future;
   }
 
@@ -189,7 +199,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     }
   }
 
-  Future<void> _open(DraftEntry entry) async {
+  /// Open a saved draft in the editor; with [track], straight on into Weave pick by pick from there,
+  /// as the editor's menu opens it (back from the tracker is the editor). The grid, and each tile's
+  /// place, are read again on return.
+  Future<void> _open(DraftEntry entry, {bool track = false}) async {
+    if (_opening) return;
+    _opening = true;
+    final bool opened;
+    try {
+      opened = await _openDraft(entry, track: track);
+    } finally {
+      // Released as the editor closes, before the listing: a tap during it opens a draft.
+      _opening = false;
+    }
+    if (opened) await _refresh();
+  }
+
+  /// Read [entry]'s draft and push its editor; resolves once the editor has closed (false when the
+  /// draft could not be read, so no editor opened).
+  Future<bool> _openDraft(DraftEntry entry, {required bool track}) async {
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     // Open a saved draft STRAIGHT into the editor (the working view), not the read-only preview —
@@ -202,7 +230,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       wifText = await widget.repository.readWif(entry.id);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not open draft: $e')));
-      return;
+      return false;
     }
     await navigator.push<bool>(
       MaterialPageRoute(
@@ -211,10 +239,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           title: opened.meta.name,
           id: entry.id,
           meta: opened.meta,
+          openTracker: track,
         ),
       ),
     );
-    await _refresh();
+    return true;
   }
 
   Future<void> _rename(DraftEntry entry) async {
@@ -269,6 +298,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     switch (action) {
       case _TileAction.open:
         await _open(entry);
+      case _TileAction.track:
+        await _open(entry, track: true);
       case _TileAction.rename:
         await _rename(entry);
       case _TileAction.notes:
@@ -306,6 +337,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               leading: const Icon(Icons.open_in_new),
               title: const Text('Open'),
               onTap: () => Navigator.pop(ctx, _TileAction.open),
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_play),
+              title: const Text(kWeaveTrackerTitle),
+              onTap: () => Navigator.pop(ctx, _TileAction.track),
             ),
             ListTile(
               leading: const Icon(Icons.drive_file_rename_outline),
@@ -505,6 +541,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     padding: EdgeInsets.zero,
                     onSelected: (a) => _handle(a, entry),
                     itemBuilder: (_) => const [
+                      // Straight into the tracker at the saved place (ADR 0023).
+                      PopupMenuItem(
+                        value: _TileAction.track,
+                        child: Text(kWeaveTrackerTitle),
+                      ),
                       PopupMenuItem(
                         value: _TileAction.rename,
                         child: Text('Rename'),
@@ -531,6 +572,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ],
               ),
             ),
+            // The saved place (ADR 0023), when the draft has one: a way straight into the tracker.
+            if (placeOf(entry.id) case final place?)
+              LibraryPlaceLine(
+                key: ValueKey('library-place-${entry.id}'),
+                place: place,
+                trackerTitle: kWeaveTrackerTitle,
+                onOpen: () => _open(entry, track: true),
+              ),
           ],
         ),
       ),

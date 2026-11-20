@@ -22,7 +22,8 @@ import 'backup_test_support.dart';
 // the new id; a project whose only difference is its place is already in the library, which keeps
 // its own; a newer record is carried as it is; and a record the restore cannot vouch for (unreadable,
 // too large, too many values, too deep, a number too large for a double, another craft's) is left
-// out while its project restores, never refusing the project or the backup.
+// out while its project restores, never refusing the project or the backup. Every craft's records
+// are read this way: weaving, knitting, nalbinding and tablet weaving.
 
 final t0 = DateTime.utc(2026, 11, 18, 10);
 
@@ -43,6 +44,30 @@ List<int> knittingRecord(int unit) => utf8.encode(const Progress(craft: Progress
         now: t0)
     .encodeFitted()
     .text);
+
+List<int> tabletRecord(int pick, {int repeat = 1}) => utf8.encode(Progress(
+      craft: ProgressCraft.tabletWeaving,
+      place: PickPlace(pick, repeat: repeat),
+      basis: PlaceBasis(units: 24, prefix: pick.toRadixString(16).padLeft(16, '0')),
+      started: t0,
+      updated: t0,
+    ).withNote(PickPlace(pick, repeat: repeat), 'Released the twist', now: t0).encodeFitted().text);
+
+List<int> nalbindRecord(int unit, String step) =>
+    utf8.encode(const Progress(craft: ProgressCraft.nalbinding)
+        .moved(
+            from: const NalbindPlace(0, stepId: 'segment-1'),
+            to: NalbindPlace(unit, stepId: step),
+            basis: const PlaceBasis(units: 4, prefix: '0123456789abcdef'),
+            kind: LogKind.worked,
+            now: t0)
+        .encodeFitted()
+        .text);
+
+/// A tablet weaving band from the fixtures.
+List<int> bandBytes() =>
+    File(p.join('..', 'fixtures', 'tablet', 'documents', 'band-1-threaded-in.plytab'))
+        .readAsBytesSync();
 
 Map<String, Object?> manifestFor(List<(String, List<int>)> files) => {
       'format': 'ply.backup',
@@ -298,9 +323,8 @@ void main() {
       expect(RestoreProject.progressLeftOutText, 'Your place in it could not be restored.');
     });
 
-    test('a record of a craft this build does not track yet is kept for a later build', () async {
-      final nal = utf8.encode('{"format":"ply.progress","schemaVersion":1,"craft":"nalbinding",'
-          '"place":{"step":"segment-3"}}');
+    test('a nalbinding record is read with the tracker\'s own reader', () async {
+      final nal = nalbindRecord(2, 'segment-3');
       final plan = await service().inspectBackup(await craft([
         ('nalbinds/n.plynal', nalFile('Mitten')),
         ('nalbinds/n.plyprogress', nal),
@@ -309,13 +333,85 @@ void main() {
       expect(only(plan, 'n').carriesProgress, isTrue);
       await service().restore(plan);
       expect(inDocs(docs, 'nalbinds/n.plyprogress').readAsBytesSync(), nal);
-      final wrong = utf8.encode('{"format":"ply.progress","schemaVersion":1,"craft":"weaving"}');
-      final plan2 = await service().inspectBackup(await craft([
-        ('nalbinds/m.plynal', nalFile('Hat')),
-        ('nalbinds/m.plyprogress', wrong),
-        ('nalbinds/m.json', sidecar('Hat', 'Nalbinding')),
+      final read = await ProgressRepository(docsOverride: docs).load(BackupCraft.nalbinding, 'n');
+      expect(read.progress!.place, const NalbindPlace(2, stepId: 'segment-3'));
+      // Left out: another craft's record, and a bare envelope (what a build that did not track
+      // nalbinding yet kept for a later one: no Ply ever wrote it, and it is no record this build
+      // reads). Neither refuses the project.
+      for (final (id, record) in [
+        ('m', utf8.encode('{"format":"ply.progress","schemaVersion":1,"craft":"weaving"}')),
+        (
+          'o',
+          utf8.encode('{"format":"ply.progress","schemaVersion":1,"craft":"nalbinding",'
+              '"place":{"step":"segment-3"}}')
+        ),
+        ('q', weavingRecord(4)),
+      ]) {
+        final plan2 = await service().inspectBackup(await craft([
+          ('nalbinds/$id.plynal', nalFile('Hat')),
+          ('nalbinds/$id.plyprogress', record),
+          ('nalbinds/$id.json', sidecar('Hat', 'Nalbinding')),
+        ]));
+        expect(only(plan2, id).progressLeftOut, isTrue, reason: id);
+        expect(only(plan2, id).status, RestoreStatus.add, reason: id);
+      }
+      // A newer one is carried as it is.
+      final newer = utf8.encode('{"format":"ply.progress","schemaVersion":4,"craft":"nalbinding"}');
+      final plan3 = await service().inspectBackup(await craft([
+        ('nalbinds/r.plynal', nalFile('Sock')),
+        ('nalbinds/r.plyprogress', newer),
+        ('nalbinds/r.json', sidecar('Sock', 'Nalbinding')),
       ]));
-      expect(only(plan2, 'm').progressLeftOut, isTrue);
+      expect(only(plan3, 'r').carriesProgress, isTrue);
+    });
+
+    test('tablet weaving and nalbinding records go with their projects, both ways', () async {
+      await seedLibrary(docs);
+      await put(docs, 'tablets/t1.plytab', bandBytes());
+      await put(docs, 'tablets/t1.json', sidecar('Band', 'TabletWeaving'));
+      await put(docs, 'tablets/t1.plyprogress', tabletRecord(9, repeat: 3));
+      await put(docs, 'nalbinds/n1.plyprogress', nalbindRecord(1, 'segment-2'));
+      final entries = await entriesOf(await backUp(service()));
+      final paths = [for (final (path, _) in entries) path];
+      expect(paths.indexOf('tablets/t1.plyprogress'), lessThan(paths.indexOf('tablets/t1.json')));
+      expect(paths.indexOf('nalbinds/n1.plyprogress'), lessThan(paths.indexOf('nalbinds/n1.json')));
+      final manifest = jsonDecode(utf8.decode(entries.first.$2)) as Map<String, dynamic>;
+      final listed = (manifest['files'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((f) => f['path'] == 'tablets/t1.plyprogress');
+      expect((listed['craft'], listed['project']), ('tablet_weaving', 't1'));
+      final single = [
+        for (final (path, _)
+            in await entriesOf(await exportOne(service(), BackupCraft.tabletWeaving, 't1')))
+          path
+      ];
+      expect(single, contains('tablets/t1.plyprogress'));
+
+      final archive = await backUp(service());
+      final fresh = await Directory.systemTemp.createTemp('backup_fresh');
+      addTearDown(() => fresh.delete(recursive: true));
+      final s = service(into: fresh);
+      final plan = await s.inspectBackup(archive);
+      expect(only(plan, 't1').carriesProgress, isTrue);
+      expect(only(plan, 'n1').carriesProgress, isTrue);
+      await s.restore(plan);
+      expect(inDocs(fresh, 'tablets/t1.plyprogress').readAsBytesSync(), tabletRecord(9, repeat: 3));
+      expect(inDocs(fresh, 'nalbinds/n1.plyprogress').readAsBytesSync(),
+          nalbindRecord(1, 'segment-2'));
+      final read =
+          await ProgressRepository(docsOverride: fresh).load(BackupCraft.tabletWeaving, 't1');
+      expect(read.progress!.place, const PickPlace(9, repeat: 3));
+
+      // Back in the library they came from, a band and a project that differ only in their place
+      // are already there, and keep their own.
+      await put(docs, 'tablets/t1.plyprogress', tabletRecord(10, repeat: 3));
+      await put(docs, 'nalbinds/n1.plyprogress', nalbindRecord(3, 'segment-4'));
+      final before = await snapshot(docs);
+      final again = await service().inspectBackup(archive);
+      expect(only(again, 't1').status, RestoreStatus.alreadyPresent);
+      expect(only(again, 'n1').status, RestoreStatus.alreadyPresent);
+      await service().restore(again);
+      expect(await snapshot(docs), before);
     });
 
     test('lower limits leave a record out the same way', () async {
@@ -399,23 +495,23 @@ void main() {
       expect(only(plan, 'a').carriesProgress, isTrue);
     });
 
-    test('a tablet weaving record is kept for a later build when it names tablet weaving',
-        () async {
-      final band =
-          File(p.join('..', 'fixtures', 'tablet', 'documents', 'band-1-threaded-in.plytab'))
-              .readAsBytesSync();
-      List<(String, List<int>)> withRecord(String craftName) => [
-            ('tablets/t.plytab', band),
-            (
-              'tablets/t.plyprogress',
-              utf8.encode('{"format":"ply.progress","schemaVersion":1,"craft":"$craftName"}')
-            ),
+    test('a tablet weaving record is read with the tracker\'s own reader', () async {
+      List<(String, List<int>)> withRecord(List<int> record) => [
+            ('tablets/t.plytab', bandBytes()),
+            ('tablets/t.plyprogress', record),
             ('tablets/t.json', sidecar('Band', 'TabletWeaving')),
           ];
-      final plan = await service().inspectBackup(await craft(withRecord('tablet_weaving')));
+      final plan = await service().inspectBackup(await craft(withRecord(tabletRecord(5))));
       expect(only(plan, 't').carriesProgress, isTrue);
-      final other = await service().inspectBackup(await craft(withRecord('weaving')));
-      expect(only(other, 't').progressLeftOut, isTrue);
+      for (final record in [
+        weavingRecord(5),
+        utf8.encode('{"format":"ply.progress","schemaVersion":1,"craft":"tablet_weaving"}'),
+        utf8.encode(utf8.decode(tabletRecord(5)).replaceFirst('"pick":5', '"pick":0')),
+      ]) {
+        final other = await service().inspectBackup(await craft(withRecord(record)));
+        expect(only(other, 't').progressLeftOut, isTrue);
+        expect(only(other, 't').status, RestoreStatus.add);
+      }
     });
 
     testWidgets('the preview says when a project\'s place could not be restored', (t) async {

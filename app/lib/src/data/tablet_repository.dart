@@ -13,6 +13,7 @@ import '../models/native_format.dart';
 import '../models/tablet_band.dart';
 import '../rust/api.dart';
 import '../rust/tablet_dto.dart';
+import 'progress_repository.dart';
 import 'sidecar_read.dart' show readListedSidecars;
 import 'sidecar_writes.dart';
 
@@ -338,8 +339,8 @@ class TabletRepository {
     });
   }
 
-  /// Delete a band's files (sidecar first), any `.tmp` an interrupted save left, and every
-  /// format-upgrade backup. Tolerates missing files.
+  /// Delete a band's files (sidecar first), any `.tmp` an interrupted save left, every
+  /// format-upgrade backup, and its progress record (ADR 0023). Tolerates missing files.
   Future<void> deleteBand(String id) async {
     final dir = await _dir();
     final files = [_jsonPath(dir, id), _bandPath(dir, id), _pngPath(dir, id)];
@@ -372,6 +373,9 @@ class TabletRepository {
       for (final f in files.skip(1)) ...[f, '$f.tmp'],
       ...backups,
     ]);
+    // The progress record (ADR 0023), after the sidecar: a progress write checks the sidecar under
+    // its lock, so none can land after this.
+    await ProgressRepository.deleteFilesIn(dir.path, id);
   }
 
   bool _swept = false;

@@ -75,6 +75,14 @@ pub struct WorkUnit {
     pub other_side: Option<(String, String)>,
     /// The prefix fingerprint at this unit (see the module docs).
     pub prefix: u64,
+    /// The prefix fingerprint at this unit on a later time through the chart (from the second time
+    /// on the whole chart is before every row); the same as `prefix` for a sections line, which is
+    /// worked once.
+    pub later_prefix: u64,
+    /// The fingerprint the first tracker build saved at this unit on any time through (it counted a
+    /// chart row's other-side words on the first time too): a place saved with it is recognized
+    /// rather than taken for a change.
+    pub earlier_prefix: u64,
 }
 
 /// A pattern's work, in order.
@@ -121,8 +129,10 @@ fn opt(fp: &mut Fingerprint, s: Option<&str>) {
     }
 }
 
-/// Feed a unit's identity (everything the knitter is told at it) into `fp`.
-fn feed(fp: &mut Fingerprint, plan: &WorkPlan, u: &WorkUnit) {
+/// Feed a unit's identity (everything the knitter is told at it) into `fp`. `other_side`: the time
+/// through shows a chart row's other-side words (a later time; the first never does, so its
+/// fingerprint leaves them out, as if there were none).
+fn feed(fp: &mut Fingerprint, plan: &WorkPlan, u: &WorkUnit, other_side: bool) {
     match u.kind {
         UnitKind::ChartRow { row } => {
             fp.text("chart");
@@ -149,12 +159,12 @@ fn feed(fp: &mut Fingerprint, plan: &WorkPlan, u: &WorkUnit) {
     fp.number(u.every.map_or(0, |e| 1 + u64::from(e)));
     fp.number(u64::from(u.opaque));
     match &u.other_side {
-        Some((label, text)) => {
+        Some((label, text)) if other_side => {
             fp.number(1);
             fp.text(label);
             fp.text(text);
         }
-        None => fp.number(0),
+        _ => fp.number(0),
     }
 }
 
@@ -166,16 +176,38 @@ pub fn work_plan(pattern: &KnitPattern) -> WorkPlan {
         sections_plan(pattern)
     };
     // The opening lines are told before the first unit.
-    let mut fp = Fingerprint::new();
-    opt(&mut fp, plan.cast_on.as_deref());
-    opt(&mut fp, plan.pieces.as_deref());
+    let mut opening = Fingerprint::new();
+    opt(&mut opening, plan.cast_on.as_deref());
+    opt(&mut opening, plan.pieces.as_deref());
+    let mut fp = opening;
     let mut prefixes = Vec::with_capacity(plan.units.len());
     for u in &plan.units {
-        feed(&mut fp, &plan, u);
+        feed(&mut fp, &plan, u, false);
         prefixes.push(fp.value());
     }
-    for (u, p) in plan.units.iter_mut().zip(prefixes) {
+    // The other side's words fed for every row, as the first tracker build did on every time
+    // through; then, from the second time on, the whole chart (whose number of rows decides the side
+    // each row is worked from) is before every row.
+    let mut fp = opening;
+    let mut earlier = Vec::with_capacity(plan.units.len());
+    for u in &plan.units {
+        feed(&mut fp, &plan, u, true);
+        earlier.push(fp.value());
+    }
+    let mut later = Vec::with_capacity(plan.units.len());
+    if plan.mode == WorkMode::Chart {
+        fp.text("then again");
+        for u in &plan.units {
+            feed(&mut fp, &plan, u, true);
+            later.push(fp.value());
+        }
+    } else {
+        later.clone_from(&prefixes);
+    }
+    for (((u, p), e), l) in plan.units.iter_mut().zip(prefixes).zip(earlier).zip(later) {
         u.prefix = p;
+        u.earlier_prefix = e;
+        u.later_prefix = l;
     }
     plan
 }
@@ -218,6 +250,8 @@ fn chart_plan(pattern: &KnitPattern) -> WorkPlan {
                 opaque: false,
                 other_side,
                 prefix: 0,
+                later_prefix: 0,
+                earlier_prefix: 0,
             }
         })
         .collect();
@@ -271,6 +305,8 @@ fn sections_plan(pattern: &KnitPattern) -> WorkPlan {
                 opaque: l.opaque,
                 other_side: None,
                 prefix: 0,
+                later_prefix: 0,
+                earlier_prefix: 0,
             }
         })
         .collect();
@@ -310,6 +346,8 @@ pub struct SavedPlace {
     pub step_id: Option<String>,
     /// The chart row of a chart-rows line, from 1.
     pub chart_row: Option<u64>,
+    /// The time through the chart, from 1 (0 reads as 1); a sections place is always on the first.
+    pub repeat: u64,
 }
 
 /// Where a knitter resumes: how their place compares, the unit (from 0) and the row inside it (from
@@ -342,14 +380,46 @@ pub fn resume(plan: &WorkPlan, saved: &SavedPlace) -> KnitResume {
             })
             .map(|i| i as u64)
     };
+    let chart = plan.mode == WorkMode::Chart;
+    let time = saved.repeat.max(1);
+    let later = chart && time > 1;
+    let earlier = |b: &Basis| {
+        plan.units
+            .get(saved.unit as usize)
+            .is_some_and(|u| u.earlier_prefix == b.prefix && u.earlier_prefix != u.prefix)
+    };
+    // A first-time place the first tracker build saved (it counted words the first time does not
+    // show, so its fingerprint covers more): the same work when it matches, so it is taken as this
+    // build's own.
+    let basis = match saved.basis {
+        Some(b) if !later && earlier(&b) => Some(Basis {
+            prefix: plan.units[saved.unit as usize].prefix,
+            ..b
+        }),
+        other => other,
+    };
+    // A later-time place it saved covered only the rows up to it: shown for checking, in its own
+    // words.
+    let earlier_build = later
+        && saved.basis.as_ref().is_some_and(|b| {
+            plan.units
+                .get(saved.unit as usize)
+                .is_some_and(|u| u.earlier_prefix == b.prefix)
+        });
     let mut r = reconcile(
         saved.unit,
-        saved.basis,
+        basis,
         n,
-        |u| plan.units[u as usize].prefix,
+        |u| {
+            let unit = &plan.units[u as usize];
+            if later {
+                unit.later_prefix
+            } else {
+                unit.prefix
+            }
+        },
         find,
     );
-    let chart = plan.mode == WorkMode::Chart;
     let (one, many) = match (chart, plan.round) {
         (true, true) => ("round", "rounds"),
         (true, false) => ("row", "rows"),
@@ -389,6 +459,15 @@ pub fn resume(plan: &WorkPlan, saved: &SavedPlace) -> KnitResume {
         ResumeStatus::LengthChanged { .. } => {
             Some("The pattern has changed after your place. Your place is unchanged.".to_string())
         }
+        ResumeStatus::Changed if earlier_build => Some(format!(
+            "Your place on time {time} through was saved by an earlier version of Ply, which kept \
+             too little about the chart to tell whether it has changed. Check that {one} {shown} \
+             is where you are."
+        )),
+        ResumeStatus::Changed if later => Some(format!(
+            "The chart has changed since you saved your place, and on time {time} through all of \
+             it was knitted before your place. Check that {one} {shown} is where you are."
+        )),
         ResumeStatus::Changed if chart => Some(format!(
             "The chart has changed at or before {one} {shown} since you saved your place. Check \
              that {one} {shown} is where you are."
@@ -668,7 +747,110 @@ mod tests {
                 UnitKind::Line { chart_row, .. } => chart_row.map(|r| r as u64 + 1),
                 UnitKind::ChartRow { .. } => None,
             },
+            repeat: 1,
         }
+    }
+
+    /// The first time through a flat chart reads every row as drawn, so its fingerprint leaves the
+    /// other side's words out: a row added at the end of a chart of 3 is only a length change for a
+    /// first-time place. A place the first tracker build saved (its fingerprint counted those words)
+    /// is recognized on the first time, and shown for checking in its own words on a later one.
+    #[test]
+    fn the_first_time_counts_only_what_it_shows() {
+        let plan = work_plan(&chart(3, 4));
+        let longer = work_plan(&chart(4, 4));
+        let at = |prefix: u64, time: u64| SavedPlace {
+            repeat: time,
+            basis: Some(Basis { units: 3, prefix }),
+            ..saved(&plan, 0, 1)
+        };
+        assert!(matches!(
+            resume(&longer, &at(plan.units[0].prefix, 1)).resume.status,
+            ResumeStatus::LengthChanged { was: 3 }
+        ));
+        assert_ne!(plan.units[0].earlier_prefix, plan.units[0].prefix);
+        assert_eq!(
+            resume(&plan, &at(plan.units[0].earlier_prefix, 1))
+                .resume
+                .status,
+            ResumeStatus::Same,
+            "an earlier build's first-time place of the same chart"
+        );
+        let r = resume(&plan, &at(plan.units[0].earlier_prefix, 2));
+        assert_eq!(r.resume.status, ResumeStatus::Changed);
+        assert_eq!(
+            r.message.unwrap(),
+            "Your place on time 2 through was saved by an earlier version of Ply, which kept too \
+             little about the chart to tell whether it has changed. Check that row 1 is where you \
+             are."
+        );
+        // A chart in the round has no other side: nothing to tell apart.
+        let mut round = chart(3, 4);
+        round.construction = Construction::InTheRound;
+        let r = work_plan(&round);
+        assert_eq!(r.units[0].earlier_prefix, r.units[0].prefix);
+    }
+
+    /// The review probe: a flat chart of 3 rows is read from the other side every second time
+    /// through, so on time 2 the whole chart is before the place. A row added at the end makes the
+    /// count even (every time on the same side) and is caught there; a row added at the end of a
+    /// chart worked in the round is only a length change on time 1, a change on time 2.
+    #[test]
+    fn on_a_later_time_any_edit_to_the_chart_is_before_the_place() {
+        let plan = work_plan(&chart(3, 4));
+        let at = |time: u64| SavedPlace {
+            repeat: time,
+            basis: Some(Basis {
+                units: 3,
+                prefix: if time > 1 {
+                    plan.units[0].later_prefix
+                } else {
+                    plan.units[0].prefix
+                },
+            }),
+            ..saved(&plan, 0, 1)
+        };
+        assert_eq!(resume(&plan, &at(2)).resume.status, ResumeStatus::Same);
+        assert_ne!(plan.units[0].prefix, plan.units[0].later_prefix);
+        let longer = work_plan(&chart(4, 4));
+        assert!(
+            plan.flipped(2) && !longer.flipped(2),
+            "the side of row 1 on time 2 changed"
+        );
+        let r = resume(&longer, &at(2));
+        assert_eq!(r.resume.status, ResumeStatus::Changed);
+        assert_eq!(r.resume.unit, 0, "never moved");
+        assert_eq!(
+            r.message.unwrap(),
+            "The chart has changed since you saved your place, and on time 2 through all of it \
+             was knitted before your place. Check that row 1 is where you are."
+        );
+        let round = |rows: usize| {
+            let mut p = chart(rows, 4);
+            p.construction = Construction::InTheRound;
+            work_plan(&p)
+        };
+        let (short, long) = (round(3), round(4));
+        let place = |time: u64| SavedPlace {
+            repeat: time,
+            basis: Some(Basis {
+                units: 3,
+                prefix: if time > 1 {
+                    short.units[0].later_prefix
+                } else {
+                    short.units[0].prefix
+                },
+            }),
+            ..saved(&short, 0, 1)
+        };
+        assert!(matches!(
+            resume(&long, &place(1)).resume.status,
+            ResumeStatus::LengthChanged { .. }
+        ));
+        assert_eq!(
+            resume(&long, &place(2)).resume.status,
+            ResumeStatus::Changed
+        );
     }
 
     #[test]

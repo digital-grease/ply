@@ -19,10 +19,12 @@ class ProgressController extends ChangeNotifier {
     PlaceBasis? basis,
     this.pendingCheck = false,
     DateTime Function()? clock,
+    bool fromRecord = true,
   })  : _progress = progress,
         _place = place,
         _basis = basis,
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now,
+        _guard = ProgressSaveGuard(expectNoRecord: !fromRecord);
 
   final ProgressRepository repository;
   final BackupCraft craft;
@@ -32,6 +34,15 @@ class ProgressController extends ChangeNotifier {
   Progress _progress;
   WorkPlace _place;
   PlaceBasis? _basis;
+
+  /// Whether the session began from a record read from the device ([ProgressController.new]'s
+  /// `fromRecord`; false when none was found): until this session writes one, a record that appears
+  /// is never written over (ADR 0023, amendment of 2026-11-19).
+  final ProgressSaveGuard _guard;
+
+  /// A save met a record this session never read (see [ProgressSaveGuard]): nothing was written, and
+  /// the tracker reads the record again and shows it.
+  bool foundAgain = false;
 
   /// The place on screen was shown for checking (the pattern changed under it) and the crafter has not
   /// said it is right yet. Nothing about it is stored until they act.
@@ -71,12 +82,13 @@ class ProgressController extends ChangeNotifier {
     _progress = next;
     _notify();
     try {
-      final written = await repository.save(craft, id, next);
+      final written = await repository.save(craft, id, next, guard: _guard);
       // A later change may have replaced the record meanwhile; keep the newest.
       if (identical(_progress, next)) _progress = written;
       saveError = null;
     } on ProgressFileException catch (e) {
       saveError = e.message;
+      if (e.problem == ProgressProblem.foundAgain) foundAgain = true;
     } catch (e) {
       saveError = 'Your place could not be saved: $e';
     }
@@ -92,7 +104,9 @@ class ProgressController extends ChangeNotifier {
     pendingCheck = false;
     final stored = _progress.place;
     final now = _clock();
-    if (stored != null && !stored.sameSpot(_place)) {
+    // Not the same place when either its number or the step it names differs (a nalbinding place
+    // whose step is gone is shown at the same number on another step): that move is logged.
+    if (stored != null && !(stored.sameSpot(_place) && stored.samePlace(_place))) {
       await _write(
           _progress.moved(from: stored, to: _place, basis: basis, kind: LogKind.fix, now: now));
     } else {
@@ -148,6 +162,8 @@ class ProgressController extends ChangeNotifier {
   /// Remove the project's progress (place, log and notes) and start over at [start].
   Future<void> clear({required WorkPlace start, PlaceBasis? basis}) async {
     await repository.delete(craft, id);
+    // No record now: one that appears before this session writes is not its own.
+    _guard.expectNoRecord = true;
     _progress = Progress(craft: _progress.craft);
     _place = start;
     _basis = basis;

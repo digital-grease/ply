@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6092ae168913a8b1321ee6815c638f79f56a7cbdd2fb9062b150e460f4ad8ba7 # shrinks to band = TabletBand { palette: [Color { r: 0, g: 0, b: 0 }, Color { r: 255, g: 255, b: 255 }, Color { r: 200, g: 0, b: 0 }], weft: None, cards: [Tablet { id: CardId("c0"), threads: HoleThreads { a: None, b: None, c: None, d: None }, threading: S, start: Arrangement { near_top: A, far_top: D, far_bottom: C, near_bottom: B } }], packs: [], turning: TurnSequence { segments: [Segment { repeat: 1, picks: [PickSpec { turns: "F", release_twist: [], flip: [], unsupported: {}, note: None, weft: None }, PickSpec { turns: "F", release_twist: [], flip: [], unsupported: {}, note: None, weft: None }, PickSpec { turns: "F", release_twist: [], flip: [], unsupported: {}, note: None, weft: None }] }] }, settings: BandSettings { twist_warning_quarters: 32, float_warning_picks: 3 } }

@@ -67,6 +67,43 @@ void main() {
     expect(c.place, const PickPlace(10), reason: 'undo returns to the stored place');
   });
 
+  test('accepting a place whose step is gone logs the move to the step now shown', () async {
+    // Stored at step 2 "Sides" (segment-2), which was deleted: the step shown for checking at the
+    // same number is another one ("Brim edge", segment-3).
+    final nal = await projectFolder(BackupCraft.nalbinding, id);
+    addTearDown(() => nal.delete(recursive: true));
+    final r = ProgressRepository(docsOverride: nal);
+    const stored = NalbindPlace(1, stepId: 'segment-2');
+    final c = ProgressController(
+      repository: r,
+      craft: BackupCraft.nalbinding,
+      id: id,
+      progress: Progress(craft: ProgressCraft.nalbinding, place: stored, basis: basis(1)),
+      place: const NalbindPlace(1, stepId: 'segment-3'),
+      basis: basis(2),
+      pendingCheck: true,
+      clock: clock,
+    );
+    await c.accept();
+    final p = (await r.load(BackupCraft.nalbinding, id)).progress!;
+    expect(p.place, const NalbindPlace(1, stepId: 'segment-3'));
+    expect(p.log.single.kind, LogKind.fix);
+    expect(p.log.single.from, stored);
+    // The same step at the same number is only rebased, not logged.
+    final same = ProgressController(
+      repository: r,
+      craft: BackupCraft.nalbinding,
+      id: id,
+      progress: p,
+      place: const NalbindPlace(1, stepId: 'segment-3'),
+      basis: basis(3),
+      pendingCheck: true,
+      clock: clock,
+    );
+    await same.accept();
+    expect((await r.load(BackupCraft.nalbinding, id)).progress!.log, hasLength(1));
+  });
+
   test('a note limit is refused before anything is written', () async {
     final c = ProgressController(
       repository: repo,

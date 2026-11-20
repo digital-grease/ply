@@ -56,6 +56,7 @@ class TabletBandView extends ConsumerWidget {
           children: [
             TabletReviewNote(pending: pending, dense: true),
             const _Controls(),
+            _SavedPlace(total: total),
             _Stepper(total: total),
             SizedBox(height: chart, child: const _Chart()),
             SizedBox(height: strip, child: const _CardStrip()),
@@ -150,6 +151,48 @@ class _Controls extends ConsumerWidget {
           Text(kTabletChartOrientation, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
+    );
+  }
+}
+
+/// The place "Weave pick by pick" saved for this band (ADR 0023), with a way to step to it. The
+/// stepper shows the band as written: on a later time through the cards may stand otherwise (the
+/// tracker shows them as they are then).
+class _SavedPlace extends ConsumerWidget {
+  const _SavedPlace({required this.total});
+  final int total;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final place = ref.watch(tabletSavedPlaceProvider);
+    if (place == null) return const SizedBox.shrink();
+    final pick = ref.watch(tabletPickProvider);
+    final at = place.pick.clamp(1, total);
+    final text = [
+      'Your place: pick ${place.pick}',
+      if (place.repeat > 1) ', time ${place.repeat} through the band',
+      '.',
+      if (place.pick > total)
+        ' The band now has $total ${total == 1 ? 'pick' : 'picks'}: Show goes to pick $at, and '
+            'Weave pick by pick asks you to check your place.',
+      if (place.repeat > 1) ' The stepper shows the first time through.',
+    ].join();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 4, 0),
+      child: Row(children: [
+        Icon(Icons.bookmark_outline, size: 18, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text,
+              key: const ValueKey('tablet-saved-place'),
+              style: Theme.of(context).textTheme.bodySmall),
+        ),
+        TextButton(
+          key: const ValueKey('tablet-show-place'),
+          onPressed: pick == at ? null : () => ref.read(tabletPickProvider.notifier).state = at,
+          child: const Text('Show'),
+        ),
+      ]),
     );
   }
 }

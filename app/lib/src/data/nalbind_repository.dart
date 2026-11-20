@@ -13,6 +13,7 @@ import '../models/native_format.dart';
 import '../rust/api.dart';
 import '../rust/nalbind_dto.dart';
 import '../rust/nalbind_recipe_dto.dart';
+import 'progress_repository.dart';
 import 'sidecar_read.dart' show readListedSidecars;
 import 'sidecar_writes.dart';
 
@@ -333,8 +334,8 @@ class NalbindRepository {
   }
 
   /// Delete EVERYTHING a project owns: the sidecar FIRST (so [listProjects] drops it atomically), then
-  /// the `.plynal` body, any `.tmp` a save interrupted mid-write left behind, and finally the
-  /// `<id>.photos/` folder with every photo in it. The confirm dialog promises the project is
+  /// the `.plynal` body, any `.tmp` a save interrupted mid-write left behind, its progress record
+  /// (ADR 0023), and finally the `<id>.photos/` folder with every photo in it. The confirm dialog promises the project is
   /// "permanently removed", so no user content may survive it. Tolerant of already-missing files.
   Future<void> deleteProject(String id) => _exclusive(id, () => _delete(id));
 
@@ -357,6 +358,9 @@ class NalbindRepository {
     // it the temp files of a save and of a links write (ADR 0016) that an interruption left.
     await SidecarWrites.run(json, () => remove([json, '$json.tmp', '$json.links.tmp']));
     await remove([body, '$body.tmp']);
+    // The progress record (ADR 0023), after the sidecar: a progress write checks the sidecar under
+    // its lock, so none can land after this.
+    await ProgressRepository.deleteFilesIn(dir.path, id);
     // Last, so the project has already left the listing. If this fails, the folder is an orphan
     // (neither file exists any more) and the next run's [sweepOrphanedPhotos] removes it.
     await _deletePhotosDir(Directory(_photosPath(dir, id)));

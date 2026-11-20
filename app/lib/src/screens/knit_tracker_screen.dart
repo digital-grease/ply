@@ -101,6 +101,16 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
   bool _loading = true;
   String? _problem;
   bool _canStartAgain = false;
+
+  /// The device could not read the record just now: offer to read it again. Start again is offered
+  /// only once reading it again has failed too ([_triedAgain]), and then moves the file aside
+  /// unread ([_asideUnread]).
+  bool _canTryAgain = false;
+  bool _triedAgain = false;
+  bool _asideUnread = false;
+
+  /// Reading the record again because a save met one this session never read.
+  bool _reloading = false;
   ProgressController? _c;
   KnitWorkDto? _work;
   String? _message;
@@ -140,8 +150,12 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
         chartRow: u.section != null ? u.chartRow : null);
   }
 
-  PlaceBasis? _basisOf(int unit) =>
-      unit < _units.length ? PlaceBasis(units: _units.length, prefix: _units[unit].prefix) : null;
+  /// What [unit] of the [repeat]-th time through is worked against: from the second time through a
+  /// chart on, the whole chart is before every row, so it has its own fingerprint.
+  PlaceBasis? _basisOf(int unit, int repeat) => unit < _units.length
+      ? PlaceBasis(
+          units: _units.length, prefix: repeat > 1 ? _units[unit].laterPrefix : _units[unit].prefix)
+      : null;
 
   /// Where the stored place in [progress] is shown in the pattern as it is now (the engine's resume,
   /// as on opening): the place shown, the sentence, whether the knitter must check it, and a step to
@@ -164,6 +178,7 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
             row: stored.row,
             units: progress.basis?.units ?? 0,
             prefix: progress.basis?.prefix ?? '',
+            repeat: stored.repeat,
             sectionId: stored.sectionId,
             stepId: stored.stepId,
             chartRow: stored.chartRow,
@@ -184,6 +199,7 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
       _loading = true;
       _problem = null;
       _canStartAgain = false;
+      _canTryAgain = false;
     });
     final repo = ref.read(progressRepositoryProvider);
     final work = ref.read(workRepositoryProvider);
@@ -195,10 +211,16 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
         case ProgressStatus.unreadable:
           _problem = const ProgressFileException(ProgressProblem.unreadable).message;
           _canStartAgain = true;
+        case ProgressStatus.failed:
+          _problem = const ProgressFileException(ProgressProblem.ioFailed).message;
+          _canTryAgain = true;
+          _canStartAgain = _triedAgain;
         case ProgressStatus.none:
         case ProgressStatus.ok:
           break;
       }
+      _asideUnread = load.status == ProgressStatus.failed;
+      if (load.status != ProgressStatus.failed) _triedAgain = false;
       if (_problem != null) {
         if (mounted) setState(() => _loading = false);
         return;
@@ -217,9 +239,10 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
         id: widget.projectId,
         progress: progress,
         place: res.shown,
-        basis: empty ? null : _basisOf(res.shown.unit),
+        basis: empty ? null : _basisOf(res.shown.unit, res.shown.repeat),
         pendingCheck: needsLook && !empty,
         clock: ref.read(progressClockProvider),
+        fromRecord: load.status == ProgressStatus.ok,
       );
       c.addListener(_changed);
       if (!mounted) {
@@ -244,14 +267,31 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (_c?.foundAgain ?? false) {
+      // A save met a record this session never read: nothing was written; show that record.
+      if (_reloading) return;
+      _reloading = true;
+      _snack(const ProgressFileException(ProgressProblem.foundAgain).message);
+      Future<void>.microtask(_load).whenComplete(() => _reloading = false);
+      return;
+    }
+    setState(() {});
+  }
+
+  /// Read the record again after the device could not read it.
+  Future<void> _tryAgain() async {
+    _triedAgain = true;
+    await _load();
   }
 
   Future<void> _startAgain() async {
     try {
-      await ref.read(progressRepositoryProvider).setAside(BackupCraft.knitting, widget.projectId);
-    } on ProgressFileException catch (e) {
-      _snack(e.message);
+      await ref
+          .read(progressRepositoryProvider)
+          .setAside(BackupCraft.knitting, widget.projectId, evenIfNotRead: _asideUnread);
+    } catch (e) {
+      _snack(startAgainFailedText(e));
       return;
     }
     if (!mounted) return;
@@ -263,7 +303,7 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
     if (c == null || _busy) return;
     setState(() => _busy = true);
     try {
-      final basis = _basisOf(to.unit);
+      final basis = _basisOf(to.unit, to.repeat);
       if (basis == null) {
         // Never store a place the engine did not work out.
         _snack('That place is not in the pattern, so your place was not moved.');
@@ -320,7 +360,10 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
         // changed under is shown for checking, never as if nothing happened.
         final res = await _resolve(c.progress);
         if (!mounted) return;
-        c.settle(shown: res.shown, basis: _basisOf(res.shown.unit), check: res.needsLook);
+        c.settle(
+            shown: res.shown,
+            basis: _basisOf(res.shown.unit, res.shown.repeat),
+            check: res.needsLook);
         _message = res.message;
         _needsLook = res.needsLook;
         _suggested = res.suggested;
@@ -423,7 +466,7 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
     if (c == null || !await confirmClearProgress(context)) return;
     try {
       await c.clear(
-          start: _units.isEmpty ? const KnitPlace(0) : _place(0, 1, 1), basis: _basisOf(0));
+          start: _units.isEmpty ? const KnitPlace(0) : _place(0, 1, 1), basis: _basisOf(0, 1));
       if (!mounted) return;
       setState(() {
         _message = null;
@@ -494,7 +537,9 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_problem != null) {
       return TrackerRecordProblem(
-          message: _problem!, onStartAgain: _canStartAgain ? _startAgain : null);
+          message: _problem!,
+          onStartAgain: _canStartAgain ? _startAgain : null,
+          onTryAgain: _canTryAgain ? _tryAgain : null);
     }
     final c = _c!;
     final work = _work!;

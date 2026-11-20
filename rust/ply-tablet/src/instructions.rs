@@ -23,7 +23,7 @@ use crate::card::{ThreadingDirection, Turn};
 use crate::diagnostic::{card_list_text, excerpt, MAX_LOCATION_CARDS};
 use crate::error::TabletError;
 use crate::simulate::{CardPick, Fold, Observer, PickContext};
-use crate::validate::{check, Checked};
+use crate::validate::{check, Checked, StepRefs};
 
 /// What a line is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,16 +71,30 @@ pub fn working_instructions(
     max_lines: usize,
 ) -> Result<Instructions, TabletError> {
     let checked = check(band, limits)?;
-    // Each pack's cards as indices, once; a pack that names a card twice (or none) is never used to
-    // write a pick, since its cards would be named twice.
+    let packs = usable_packs(band);
+    let mut obs = Writer {
+        c: &checked,
+        packs,
+        max: max_lines,
+        out: Instructions::default(),
+        seg_first: 0,
+        before: band.cards.iter().map(|c| Some(c.threading)).collect(),
+    };
+    let mut fold = Fold::new(&checked);
+    fold.advance(checked.total_picks, &mut obs);
+    Ok(obs.out)
+}
+
+/// Each pack's cards as indices, once; a pack that names a card twice (or none) is never used to
+/// write a pick (`None`), since its cards would be named twice.
+pub(crate) fn usable_packs(band: &TabletBand) -> Vec<Option<Vec<usize>>> {
     let index: std::collections::HashMap<&str, usize> = band
         .cards
         .iter()
         .enumerate()
         .map(|(i, c)| (c.id.as_str(), i))
         .collect();
-    let packs = band
-        .packs
+    band.packs
         .iter()
         .map(|p| {
             let mut idx = Vec::with_capacity(p.cards.len());
@@ -94,18 +108,7 @@ pub fn working_instructions(
             }
             (!idx.is_empty()).then_some(idx)
         })
-        .collect();
-    let mut obs = Writer {
-        c: &checked,
-        packs,
-        max: max_lines,
-        out: Instructions::default(),
-        seg_first: 0,
-        before: band.cards.iter().map(|c| Some(c.threading)).collect(),
-    };
-    let mut fold = Fold::new(&checked);
-    fold.advance(checked.total_picks, &mut obs);
-    Ok(obs.out)
+        .collect()
 }
 
 struct Writer<'c, 'a> {
@@ -148,7 +151,8 @@ impl Observer for Writer<'_, '_> {
                     kind: InstructionKind::Pick,
                     label: picks_label(first, last),
                     text: {
-                        let mut t = pick_text(band, &self.packs, ctx, &self.before, m > 1);
+                        let ids = word_ids(ctx.refs, band.cards.len());
+                        let mut t = pick_text(band, &self.packs, ctx, &self.before, &ids, m > 1);
                         if m > 1 {
                             t.push_str(&format!(" Worked {m} times."));
                         }
@@ -162,7 +166,14 @@ impl Observer for Writer<'_, '_> {
                 push(&mut self.out, self.max, || InstructionLine {
                     kind: InstructionKind::Pick,
                     label: format!("Pick {}", ctx.pick),
-                    text: pick_text(band, &self.packs, ctx, &self.before, false),
+                    text: pick_text(
+                        band,
+                        &self.packs,
+                        ctx,
+                        &self.before,
+                        &word_ids(ctx.refs, band.cards.len()),
+                        false,
+                    ),
                     segment,
                     first_pick: ctx.pick,
                     last_pick: ctx.pick,
@@ -181,7 +192,14 @@ impl Observer for Writer<'_, '_> {
                 push(&mut self.out, self.max, || InstructionLine {
                     kind: InstructionKind::Step,
                     label: format!("Step {}", ctx.step + 1),
-                    text: pick_text(band, &self.packs, ctx, &self.before, true),
+                    text: pick_text(
+                        band,
+                        &self.packs,
+                        ctx,
+                        &self.before,
+                        &word_ids(ctx.refs, band.cards.len()),
+                        true,
+                    ),
                     segment,
                     first_pick: ctx.pick,
                     last_pick: ctx.pick,
@@ -217,12 +235,35 @@ fn picks_label(first: u32, last: u32) -> String {
     }
 }
 
-/// The events before a pick, then its turns, then any note and weft.
-fn pick_text(
+/// Each card's words for a `?` turn as a small number (0 for a card with none), equal for equal
+/// words, so a pick's cards are grouped by comparing numbers: each word is hashed once, never
+/// compared card by card.
+pub(crate) fn word_ids(refs: Option<&StepRefs<'_>>, cards: usize) -> Vec<u32> {
+    let mut ids = vec![0u32; cards];
+    let Some(refs) = refs else {
+        return ids;
+    };
+    let mut seen: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+    for &(card, words) in &refs.words {
+        let next = u32::try_from(seen.len() + 1).unwrap_or(u32::MAX);
+        let id = *seen.entry(words).or_insert(next);
+        if let Some(slot) = ids.get_mut(card) {
+            *slot = id;
+        }
+    }
+    ids
+}
+
+/// The events before a pick, then its turns, then any note and weft. `before` is each card's
+/// threading before the pick (a flip's new threading is said from it); `ids` are the pick's
+/// [`word_ids`]; `repeated` words the events for a written pick worked several times ("Before it,
+/// each time").
+pub(crate) fn pick_text(
     band: &TabletBand,
     packs: &[Option<Vec<usize>>],
     ctx: &PickContext<'_>,
     before: &[Option<ThreadingDirection>],
+    ids: &[u32],
     repeated: bool,
 ) -> String {
     let mut out = String::new();
@@ -271,7 +312,7 @@ fn pick_text(
             out.push_str(". ");
         }
     }
-    out.push_str(&turns_text(band, packs, ctx));
+    out.push_str(&turns_text(band, packs, ctx, ids));
     if let Some(note) = &ctx.spec.note {
         let kind = match note.kind {
             crate::band::NoteKind::Brocade => "a brocade weft",
@@ -289,7 +330,7 @@ fn pick_text(
 }
 
 /// "card 4", "cards 1 to 8" for 0-based card indices in ascending order (at most 32 numbers kept).
-fn cards_text(indices: &[usize]) -> String {
+pub(crate) fn cards_text(indices: &[usize]) -> String {
     let mut sorted: Vec<u32> = indices
         .iter()
         .map(|&i| u32::try_from(i + 1).unwrap_or(u32::MAX))
@@ -306,8 +347,14 @@ struct Group {
     text: String,
 }
 
-/// The turns of a pick, by pack where a whole pack does one thing, else by card ranges.
-fn turns_text(band: &TabletBand, packs: &[Option<Vec<usize>>], ctx: &PickContext<'_>) -> String {
+/// The turns of a pick, by pack where a whole pack does one thing, else by card ranges. `ids` are
+/// the pick's [`word_ids`]: cards are grouped by them, in time linear in the cards.
+fn turns_text(
+    band: &TabletBand,
+    packs: &[Option<Vec<usize>>],
+    ctx: &PickContext<'_>,
+    ids: &[u32],
+) -> String {
     let letters = ctx.spec.turns.as_bytes();
     let n = band.cards.len();
     let turn = |i: usize| {
@@ -316,11 +363,12 @@ fn turns_text(band: &TabletBand, packs: &[Option<Vec<usize>>], ctx: &PickContext
             .and_then(|&b| Turn::from_letter(char::from(b)))
     };
     let words = |i: usize| ctx.refs.map_or("", |r| r.words_for(i));
+    let id = |i: usize| ids.get(i).copied().unwrap_or(0);
     if n == 0 {
         return "No cards.".to_string();
     }
     let first = turn(0);
-    let same_words = (0..n).all(|i| words(i) == words(0));
+    let same_words = (0..n).all(|i| id(i) == id(0));
     if (0..n).all(|i| turn(i) == first) && (first != Some(Turn::Unsupported) || same_words) {
         return match first {
             Some(Turn::Forward) => "Every card forward.".to_string(),
@@ -352,8 +400,8 @@ fn turns_text(band: &TabletBand, packs: &[Option<Vec<usize>>], ctx: &PickContext
             continue; // a card in two packs is written with the first
         }
         let t = turn(idx[0]);
-        let w = words(idx[0]);
-        if !idx.iter().all(|&i| turn(i) == t && words(i) == w) {
+        let w = id(idx[0]);
+        if !idx.iter().all(|&i| turn(i) == t && id(i) == w) {
             continue;
         }
         for &i in idx {
@@ -371,15 +419,20 @@ fn turns_text(band: &TabletBand, packs: &[Option<Vec<usize>>], ctx: &PickContext
         });
     }
     // Then the other cards, grouped by what they do, in card order.
-    let mut rest: Vec<(Option<Turn>, &str, Vec<usize>)> = Vec::new();
+    let mut rest: Vec<(Option<Turn>, Vec<usize>)> = Vec::new();
+    let mut group: std::collections::HashMap<(Option<Turn>, u32), usize> =
+        std::collections::HashMap::new();
     for i in (0..n).filter(|&i| !described[i]) {
-        let (t, w) = (turn(i), words(i));
-        match rest.iter_mut().find(|(rt, rw, _)| *rt == t && *rw == w) {
-            Some((_, _, list)) => list.push(i),
-            None => rest.push((t, w, vec![i])),
+        let t = turn(i);
+        match group.entry((t, id(i))) {
+            std::collections::hash_map::Entry::Occupied(g) => rest[*g.get()].1.push(i),
+            std::collections::hash_map::Entry::Vacant(g) => {
+                g.insert(rest.len());
+                rest.push((t, vec![i]));
+            }
         }
     }
-    for (t, _, list) in &rest {
+    for (t, list) in &rest {
         let single = list.len() == 1;
         groups.push(Group {
             first: list[0],

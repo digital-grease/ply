@@ -1124,16 +1124,19 @@ pub fn tablet_instructions(
 // ---------------------------------------------------------------------------
 
 pub use crate::progress_dto::{
-    KnitPlaceDto, KnitWorkDto, KnitWorkModeKind, KnitWorkUnitDto, WeavePlaceDto, WeaveWorkDto,
-    WeaveWorkPickDto, WorkResumeDto, WorkResumeKind,
+    KnitPlaceDto, KnitWorkDto, KnitWorkModeKind, KnitWorkUnitDto, NalbindPlaceDto, NalbindWorkDto,
+    NalbindWorkStepDto, TabletPlaceDto, TabletWorkDto, TabletWorkPickDto, TabletWorkStateDto,
+    TabletWorkWordsDto, WeavePlaceDto, WeaveWorkDto, WeaveWorkPickDto, WorkResumeDto,
+    WorkResumeKind,
 };
 
 /// Picks `first` to `last` (from 1, inclusive) of the `time`-th time through the draft (from 1) as
 /// the weaver works them: what to press or lift, the shafts up, the weft colour, the working notes
-/// (a shuttle's side and a repeated shed follow the time through) and each pick's fingerprint; at
-/// most 500 picks (and fewer for a draft with very many shafts, `first` always included), cut to the
-/// draft's end. `Err` when the draft cannot convert, `first` is not one of its picks or `time` is 0
-/// (a draft with no picks gives an empty window).
+/// (a shuttle's side and a repeated shed follow the time through) and each pick's fingerprint on
+/// that time through (from the second time on the whole draft is before every pick); at most 500
+/// picks (and fewer for a draft with very many shafts, `first` always included), cut to the draft's
+/// end. `Err` when the draft cannot convert, `first` is not one of its picks, `last` is before it
+/// or `time` is 0 (a draft with no picks gives an empty window for a `first` of 1).
 pub fn weave_work_window(
     draft: DraftDto,
     first: u32,
@@ -1143,8 +1146,9 @@ pub fn weave_work_window(
     crate::progress_dto::weave_window(draft, first, last, time)
 }
 
-/// Where a weaver with a saved `place` resumes in `draft` as it is now, and the sentence to show.
-/// Never moves the place: a place past the end is shown at the last pick, for checking. `Err` only
+/// Where a weaver with a saved `place` (a pick of a time through) resumes in `draft` as it is now,
+/// and the sentence to show. Never moves the place: a place past the end is shown at the last pick,
+/// for checking; on a later time through any change to the draft shows it for checking. `Err` only
 /// when the draft cannot convert.
 pub fn weave_resume(draft: DraftDto, place: WeavePlaceDto) -> Result<WorkResumeDto, String> {
     crate::progress_dto::weave_resume(draft, place)
@@ -1157,9 +1161,67 @@ pub fn knit_work(pattern: KnitPatternDto) -> KnitWorkDto {
 }
 
 /// Where a knitter with a saved `place` resumes in `pattern` as it is now (the unit and the row
-/// inside it), and the sentence to show. Never moves the place on its own.
+/// inside it), and the sentence to show; on a later time through a chart any change to the chart
+/// shows it for checking. Never moves the place on its own.
 pub fn knit_resume(pattern: KnitPatternDto, place: KnitPlaceDto) -> WorkResumeDto {
     crate::progress_dto::knit_resume(pattern, place)
+}
+
+/// Picks `first` to `last` (from 1, inclusive) of the `time`-th time through the band (from 1) as
+/// the weaver works them: what to do at each in words (with the full note and the full words for a
+/// `?` turn), every card before the first pick and at each pick (its turn, arrangement, threading,
+/// faces and twist; a later time through starts where the one before ended), and each pick's
+/// fingerprint on that time through. At most 500 picks and 50,000 cells, `first` always included,
+/// cut to the band's end. `from` is a work state an earlier window of this time through returned
+/// (`states`, best the latest before `first`): resumed from when this run sealed it for this band
+/// and time and it lies before `first`, ignored otherwise, with the same result, so a time through
+/// is folded once per tracking session and Next, Previous and a nearby Go to fold a few dozen picks.
+/// States are for memory only: never save or export one. `Err` (a `TabletRunFailure`) when the band
+/// has errors, `first` is not one of
+/// its picks, `last` is before it, or `time` is 0 (a band with no picks gives an empty window for a
+/// `first` of 1).
+pub fn tablet_work_window(
+    doc: TabletDocumentDto,
+    first: u32,
+    last: u32,
+    time: u32,
+    from: Option<Vec<u8>>,
+) -> Result<TabletWorkDto, TabletRunFailure> {
+    crate::progress_dto::tablet_window(doc, first, last, time, from)
+}
+
+/// Where a tablet weaver with a saved `place` (a pick of a time through) resumes in the band as it
+/// is now, and the sentence to show. Never moves the place: a place past the end is shown at the
+/// last pick, for checking; on a later time through any change to the band (picks added at the end
+/// too) shows it for checking. `Err` when the band has errors.
+pub fn tablet_resume(
+    doc: TabletDocumentDto,
+    place: TabletPlaceDto,
+) -> Result<WorkResumeDto, TabletRunFailure> {
+    crate::progress_dto::tablet_resume(doc, place)
+}
+
+/// Every step of a nalbinding recipe in working order with its id and fingerprint (at most 1,000).
+/// `project_notation` and `project_stitch_name` are the project's stitch, which a step without its
+/// own is worked in. What to do at each step is the recipe check's (`check_nalbind_recipe`).
+pub fn nalbind_work(
+    recipe: RecipeDto,
+    project_notation: String,
+    project_stitch_name: String,
+) -> NalbindWorkDto {
+    crate::progress_dto::nalbind_work(recipe, &project_notation, &project_stitch_name)
+}
+
+/// Where a maker with a saved `place` resumes in the recipe as it is now: the step its id names,
+/// wherever it is (or its old number when it is gone, for checking), and the sentence to show.
+/// Never moves the place on its own.
+pub fn nalbind_resume(
+    recipe: RecipeDto,
+    project_notation: String,
+    project_stitch_name: String,
+    place: NalbindPlaceDto,
+) -> WorkResumeDto {
+    crate::progress_dto::nalbind_resume(recipe, &project_notation, &project_stitch_name, place)
 }
 
 #[cfg(test)]

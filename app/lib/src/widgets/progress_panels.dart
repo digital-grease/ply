@@ -1,6 +1,6 @@
-// The parts the weaving and knitting trackers share (ADR 0023): the banner for a place shown for
-// checking, the notes pinned to the place and the notes sheet, the log sheet, and the confirmation
-// before clearing a project's progress.
+// The parts every craft's tracker shares (ADR 0023): the banner for a place shown for checking, the
+// notes pinned to the place and the notes sheet, the log sheet, and the confirmation before clearing
+// a project's progress.
 
 import 'package:flutter/material.dart';
 
@@ -9,6 +9,22 @@ import '../state/progress_controller.dart';
 
 /// Words for a place, in the craft's own terms ("pick 12", "row 3, time 2 through the chart").
 typedef PlaceWords = String Function(WorkPlace place);
+
+/// An error in words, for a sentence: a progress record's own sentence, or the error's text (never
+/// the bare "Instance of ..." a type without words of its own gives).
+String errorWords(Object error) => switch (error) {
+      ProgressFileException(:final message) => message,
+      ProgressLimitException(:final message) => message,
+      _ when '$error'.startsWith('Instance of ') => 'an unexpected problem',
+      _ => '$error',
+    };
+
+/// Why Start again changed nothing, in words: the record's own sentence, or plainly that it could not
+/// be put aside.
+String startAgainFailedText(Object error) => error is ProgressFileException
+    ? error.message
+    : 'Ply could not put your place aside on this device, so nothing was changed '
+        '(${errorWords(error)}).';
 
 /// A banner above the place: the engine's sentence, and the actions that settle it.
 class TrackerBanner extends StatelessWidget {
@@ -276,14 +292,17 @@ Future<void> showProgressNotes(
 }
 
 /// One log entry in words: what was done, between which places.
-String logEntryText(LogEntry e, PlaceWords words, String Function(int count) units) =>
-    switch (e.kind) {
-      LogKind.worked => 'Worked ${units(e.count)}: ${words(e.from)} to ${words(e.to)}',
-      LogKind.back => 'Went back ${units(e.count)}: ${words(e.from)} to ${words(e.to)}',
-      LogKind.jump => 'Went to ${words(e.to)} (from ${words(e.from)})',
-      LogKind.fix =>
-        'Place moved to ${words(e.to)} because the pattern changed (it was ${words(e.from)})',
-    };
+String logEntryText(LogEntry e, PlaceWords words, String Function(int count) units) {
+  final from = words(e.from), to = words(e.to);
+  return switch (e.kind) {
+    LogKind.worked => 'Worked ${units(e.count)}: $from to $to',
+    LogKind.back => 'Went back ${units(e.count)}: $from to $to',
+    LogKind.jump => 'Went to $to (from $from)',
+    // A place that stayed on its step (found by its id) while the step's number changed.
+    LogKind.fix when from == to => 'Place checked at $to after the pattern changed',
+    LogKind.fix => 'Place moved to $to because the pattern changed (it was $from)',
+  };
+}
 
 /// The completion log, newest first.
 Future<void> showProgressLog(
@@ -353,10 +372,14 @@ Future<bool> confirmClearProgress(BuildContext context) async {
 /// What the tracker shows when the record cannot be used: a newer record (nothing to do but update),
 /// or an unreadable one (Start again moves it aside first).
 class TrackerRecordProblem extends StatelessWidget {
-  const TrackerRecordProblem({required this.message, this.onStartAgain, super.key});
+  const TrackerRecordProblem(
+      {required this.message, this.onStartAgain, this.onTryAgain, super.key});
 
   final String message;
   final VoidCallback? onStartAgain;
+
+  /// Read the record again (the device could not read it just now; it is never moved aside then).
+  final VoidCallback? onTryAgain;
 
   @override
   Widget build(BuildContext context) {
@@ -379,6 +402,14 @@ class TrackerRecordProblem extends StatelessWidget {
                 key: const ValueKey('tracker-start-again'),
                 onPressed: onStartAgain,
                 child: const Text('Start again'),
+              ),
+            ],
+            if (onTryAgain != null) ...[
+              const SizedBox(height: 16),
+              FilledButton(
+                key: const ValueKey('tracker-try-again'),
+                onPressed: onTryAgain,
+                child: const Text('Try again'),
               ),
             ],
           ],

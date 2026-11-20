@@ -10,10 +10,13 @@ import 'package:ply/src/rust/nalbind_recipe_dto.dart';
 import 'package:ply/src/screens/nalbind_follow_screen.dart';
 import 'package:ply/src/screens/nalbind_project_screen.dart';
 import 'package:ply/src/screens/nalbind_recipe_screen.dart';
+import 'package:ply/src/data/work_repository.dart';
 import 'package:ply/src/state/nalbind_providers.dart';
+import 'package:ply/src/state/progress_controller.dart';
 import 'package:ply/src/widgets/nalbind_segment_editor.dart';
 
 import 'nalbind_recipe_test_support.dart';
+import 'progress_test_support.dart' show FakeWork, MemoryProgressRepository;
 
 // Host coverage for the nalbinding RECIPE in the app (ADR 0017): a note-only project looks and
 // saves exactly as before; a recipe is built from the kind sheet and the small per-kind forms,
@@ -30,7 +33,13 @@ Future<void> pumpProject(WidgetTester tester, RecipeFakeRepo repo, {String? open
   // A fresh tree each time (a second call in one test starts over, routes and all).
   await tester.pumpWidget(const SizedBox());
   await tester.pump(const Duration(milliseconds: 10));
-  final c = ProviderContainer(overrides: [nalbindRepositoryProvider.overrideWithValue(repo)]);
+  // The follow view keeps a saved project's place (ADR 0023): in memory here, with the engine's
+  // fingerprints stood in.
+  final c = ProviderContainer(overrides: [
+    nalbindRepositoryProvider.overrideWithValue(repo),
+    progressRepositoryProvider.overrideWithValue(MemoryProgressRepository()),
+    workRepositoryProvider.overrideWithValue(FakeWork()),
+  ]);
   addTearDown(c.dispose);
   await tester.pumpWidget(UncontrolledProviderScope(
     container: c,

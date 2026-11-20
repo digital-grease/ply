@@ -11,10 +11,12 @@ import '../state/backup_providers.dart' show rebuildKnitThumbnail;
 import '../state/knit_editor_providers.dart';
 import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
+import '../widgets/library_place.dart';
 import '../widgets/name_input_dialog.dart';
 import '../widgets/project_export.dart';
 import '../widgets/thumb_unavailable.dart';
 import 'knit_editor_screen.dart';
+import 'knit_tracker_screen.dart' show kKnitTrackerTitle;
 import 'new_knit_setup_screen.dart';
 
 /// The on-device knitting-pattern library: a grid of saved `.plyknit` patterns with thumbnails, plus
@@ -32,13 +34,21 @@ class KnitLibraryScreen extends ConsumerStatefulWidget {
   ConsumerState<KnitLibraryScreen> createState() => _KnitLibraryScreenState();
 }
 
-enum _TileAction { open, rename, export, delete }
+enum _TileAction { open, track, rename, export, delete }
 
-class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
+class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen>
+    with LibraryPlaces<KnitLibraryScreen> {
   late Future<List<KnitEntry>> _entriesFuture;
+
+  @override
+  BackupCraft get placesCraft => BackupCraft.knitting;
 
   /// Patterns listed without a thumbnail whose thumbnail has since been rebuilt.
   final Set<String> _rebuiltThumbs = {};
+
+  /// True from a tap that opens a pattern until its editor closes: a second tap opens no second
+  /// editor (nor a second tracker on the same record).
+  bool _opening = false;
 
   @override
   void initState() {
@@ -46,11 +56,12 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
     _entriesFuture = _load();
   }
 
-  /// List the library, then rebuild the missing thumbnails in the background (the list does not
-  /// wait for them).
+  /// List the library, then rebuild the missing thumbnails and read each pattern's saved place in
+  /// the background (the list waits for neither).
   Future<List<KnitEntry>> _load() {
     final future = ref.read(knitRepositoryProvider).listKnits();
     future.then(_rebuildMissingThumbnails, onError: (Object _) {});
+    future.then((entries) => readPlaces([for (final e in entries) e.id]), onError: (Object _) {});
     return future;
   }
 
@@ -114,12 +125,21 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
     await _refresh();
   }
 
-  Future<void> _open(KnitEntry entry) async {
-    final navigator = Navigator.of(context);
-    await navigator.push(
-      MaterialPageRoute<void>(builder: (_) => KnitEditorScreen(openId: entry.id)),
-    );
-    // Opening bumped lastOpened (and the user may have re-saved) → re-sort the grid.
+  /// Open a saved pattern in the editor; with [track], straight on into Knit row by row from there,
+  /// as the editor's menu opens it (back from the tracker is the editor).
+  Future<void> _open(KnitEntry entry, {bool track = false}) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+            builder: (_) => KnitEditorScreen(openId: entry.id, openTracker: track)),
+      );
+    } finally {
+      _opening = false;
+    }
+    // Opening bumped lastOpened (and the user may have re-saved or moved their place) → re-sort the
+    // grid and read the places again.
     await _refresh();
   }
 
@@ -171,6 +191,8 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
     switch (action) {
       case _TileAction.open:
         await _open(entry);
+      case _TileAction.track:
+        await _open(entry, track: true);
       case _TileAction.rename:
         await _rename(entry);
       case _TileAction.export:
@@ -193,6 +215,11 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
               leading: const Icon(Icons.open_in_new),
               title: const Text('Open'),
               onTap: () => Navigator.pop(ctx, _TileAction.open),
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_play),
+              title: const Text(kKnitTrackerTitle),
+              onTap: () => Navigator.pop(ctx, _TileAction.track),
             ),
             ListTile(
               leading: const Icon(Icons.drive_file_rename_outline),
@@ -339,6 +366,8 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
                       padding: EdgeInsets.zero,
                       onSelected: (a) => _handle(a, entry),
                       itemBuilder: (_) => const [
+                        // Straight into the tracker at the saved place (ADR 0023).
+                        PopupMenuItem(value: _TileAction.track, child: Text(kKnitTrackerTitle)),
                         PopupMenuItem(value: _TileAction.rename, child: Text('Rename')),
                         PopupMenuItem(value: _TileAction.export, child: Text('Export')),
                         PopupMenuItem(value: _TileAction.delete, child: Text('Delete')),
@@ -352,6 +381,14 @@ class _KnitLibraryScreenState extends ConsumerState<KnitLibraryScreen> {
                   ],
                 ),
               ),
+              // The saved place (ADR 0023), when the pattern has one: a way straight into the tracker.
+              if (placeOf(entry.id) case final place?)
+                LibraryPlaceLine(
+                  key: ValueKey('library-place-${entry.id}'),
+                  place: place,
+                  trackerTitle: kKnitTrackerTitle,
+                  onOpen: () => _open(entry, track: true),
+                ),
             ],
           ),
         ),

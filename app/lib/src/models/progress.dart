@@ -56,10 +56,18 @@ abstract final class ProgressLimits {
   static const Duration sessionGap = Duration(minutes: 30);
 }
 
-/// The crafts this build tracks, by the `craft` key of the file (the backup's craft names).
+/// The crafts this build tracks, by the `craft` key of the file (the backup's craft names). A new
+/// craft is additive within schema version 1: an older build never opens that craft's tracker, so it
+/// never reads its records.
 enum ProgressCraft {
   weaving('weaving'),
-  knitting('knitting');
+  knitting('knitting'),
+
+  /// A nalbinding recipe, step by step ([NalbindPlace]).
+  nalbinding('nalbinding'),
+
+  /// A tablet weaving band, pick by pick ([PickPlace], the time through the band's turning).
+  tabletWeaving('tablet_weaving');
 
   const ProgressCraft(this.key);
 
@@ -79,6 +87,22 @@ enum ProgressProblem {
 
   /// The project is no longer in the library (it was deleted while the tracker was open).
   projectGone,
+
+  /// The device could not read the file just now (too many files open, no permission, a storage
+  /// error): nothing is known about the record, so it is neither replaced nor moved aside (unless the
+  /// crafter asks, after trying again), and reading it again may work.
+  ioFailed,
+
+  /// A save could not check the record already on the device (the same kind of error, met while
+  /// saving): nothing was written, and the next change tries again.
+  saveCheckFailed,
+
+  /// A tracker that found no record when it opened met one when it saved (the record could not be
+  /// seen then, or another screen wrote it since): it is never written over; the tracker shows it.
+  foundAgain,
+
+  /// Moving a record aside failed on the device: nothing was changed.
+  setAsideFailed,
 }
 
 /// A progress record this build must not read, or must not write.
@@ -98,6 +122,14 @@ class ProgressFileException implements Exception {
         ProgressProblem.tooLarge => 'Your place could not be saved: the record is too large.',
         ProgressProblem.projectGone =>
           'Your place could not be saved: this project is no longer in your library.',
+        ProgressProblem.ioFailed =>
+          'Ply could not read your place from this device just now. Try again.',
+        ProgressProblem.saveCheckFailed => 'Your place could not be saved just now: Ply could not '
+            'check the record already on this device. Your next change tries again.',
+        ProgressProblem.foundAgain => 'Ply found your saved place again, so this screen now shows '
+            'it. Check where you are before you go on.',
+        ProgressProblem.setAsideFailed =>
+          'Ply could not put your place aside on this device, so nothing was changed.',
       };
 
   @override
@@ -138,12 +170,14 @@ sealed class WorkPlace {
   bool samePlace(WorkPlace other) => sameSpot(other);
 
   static WorkPlace fromJson(ProgressCraft craft, Object? json) => switch (craft) {
-        ProgressCraft.weaving => PickPlace.fromJson(json),
+        ProgressCraft.weaving || ProgressCraft.tabletWeaving => PickPlace.fromJson(json),
         ProgressCraft.knitting => KnitPlace.fromJson(json),
+        ProgressCraft.nalbinding => NalbindPlace.fromJson(json),
       };
 }
 
-/// A weaving place: the pick (from 1) and the time through the draft (from 1).
+/// A weaving place: the pick (from 1) and the time through the draft (from 1). A tablet weaving
+/// place is the same: the pick of the expanded band and the time through its turning.
 class PickPlace extends WorkPlace {
   const PickPlace(this.pick, {this.repeat = 1});
 
@@ -255,6 +289,55 @@ class KnitPlace extends WorkPlace {
 
   @override
   String toString() => 'KnitPlace($unit, row $row, repeat $repeat)';
+}
+
+/// A nalbinding place: a recipe step, named by its id (stable, never given twice, so the place stays
+/// with its step when steps move around it), and its number (from 0) when the place was saved, which
+/// a place falls back on when its step is gone or its id is outside the id grammar (not stored).
+class NalbindPlace extends WorkPlace {
+  const NalbindPlace(this.unit, {this.stepId});
+
+  final int unit;
+  final String? stepId;
+
+  factory NalbindPlace.fromJson(Object? json) {
+    final m = _object(json, const {'unit', 'step'});
+    final step = m['step'];
+    if (step != null && (step is! String || !isStorableId(step))) {
+      throw const FormatException('bad step');
+    }
+    return NalbindPlace(_number(m['unit'], min: 0), stepId: step as String?);
+  }
+
+  /// The same place with an id outside the grammar left out.
+  NalbindPlace storable() => NalbindPlace(unit, stepId: isStorableId(stepId) ? stepId : null);
+
+  @override
+  Map<String, Object?> toJson({bool full = true}) => {
+        'unit': unit,
+        if (full && isStorableId(stepId)) 'step': stepId,
+      };
+
+  @override
+  bool sameSpot(WorkPlace other) => other is NalbindPlace && other.unit == unit;
+
+  /// Both name their step: the same step, wherever it is; otherwise the same number.
+  @override
+  bool samePlace(WorkPlace other) {
+    if (other is! NalbindPlace) return false;
+    if (stepId == null || other.stepId == null) return sameSpot(other);
+    return other.stepId == stepId;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is NalbindPlace && other.unit == unit && other.stepId == stepId;
+
+  @override
+  int get hashCode => Object.hash(unit, stepId);
+
+  @override
+  String toString() => 'NalbindPlace($unit, $stepId)';
 }
 
 /// What a place was saved against: the pattern's units then, and the prefix fingerprint at the place
@@ -868,7 +951,11 @@ class Progress {
 
 // --- helpers ---------------------------------------------------------------------------------------
 
-WorkPlace _storablePlace(WorkPlace p) => p is KnitPlace ? p.storable() : p;
+WorkPlace _storablePlace(WorkPlace p) => switch (p) {
+      KnitPlace() => p.storable(),
+      NalbindPlace() => p.storable(),
+      _ => p,
+    };
 
 /// A time as stored: UTC, whole milliseconds.
 DateTime _trim(DateTime t) =>

@@ -18,14 +18,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'package:ply/src/data/library_backup.dart' show BackupCraft;
 import 'package:ply/src/data/nalbind_repository.dart';
+import 'package:ply/src/data/progress_repository.dart';
 import 'package:ply/src/models/nalbind_project.dart';
 import 'package:ply/src/models/nalbind_recipe.dart';
+import 'package:ply/src/models/progress.dart';
 import 'package:ply/src/rust/frb_generated.dart';
 import 'package:ply/src/screens/nalbind_follow_screen.dart';
 import 'package:ply/src/screens/nalbind_project_screen.dart';
 import 'package:ply/src/screens/nalbind_recipe_screen.dart';
 import 'package:ply/src/state/nalbind_providers.dart';
+import 'package:ply/src/state/progress_controller.dart';
 
 Finder _key(String k) => find.byKey(ValueKey(k));
 
@@ -84,12 +88,19 @@ Future<void> _back(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// The progress records of the projects in the test's library folder (the follow view keeps the
+/// maker's place there, ADR 0023).
+late ProgressRepository _progress;
+
 /// The host page that pushes the project screen (so a back has somewhere to go).
 Future<void> _open(WidgetTester tester, NalbindRepository repo, {String? openId}) async {
   await tester.pumpWidget(const SizedBox());
   await tester.pumpAndSettle();
   await tester.pumpWidget(ProviderScope(
-    overrides: [nalbindRepositoryProvider.overrideWithValue(repo)],
+    overrides: [
+      nalbindRepositoryProvider.overrideWithValue(repo),
+      progressRepositoryProvider.overrideWithValue(_progress),
+    ],
     child: MaterialApp(
       home: Builder(
         builder: (context) => Scaffold(
@@ -150,8 +161,11 @@ void main() {
   });
 
   testWidgets('build, reorder, save, reopen, follow and tick a mitten recipe', (tester) async {
-    final dir = await Directory.systemTemp.createTemp('ply_m8_recipe');
-    addTearDown(() => dir.delete(recursive: true));
+    // A library folder like the app's: projects in `nalbinds/`, which the place is kept beside.
+    final root = await Directory.systemTemp.createTemp('ply_m8_recipe');
+    addTearDown(() => root.delete(recursive: true));
+    final dir = Directory('${root.path}/nalbinds')..createSync();
+    _progress = ProgressRepository(docsOverride: root);
     final repo = NalbindRepository()..dirOverride = dir;
 
     // --- Build ------------------------------------------------------------------------------
@@ -260,6 +274,10 @@ void main() {
         reason: 'the tick is on disk at once');
     await _tap(tester, _key('follow-next'));
     expect(find.text('Step 2 of 7, Part 1, Body'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tracker-save-error')), findsNothing);
+    // The place is kept, by the step's id, and the tick is the only change to the project.
+    final kept = await _progress.load(BackupCraft.nalbinding, id);
+    expect(kept.progress!.place, NalbindPlace(1, stepId: ticked.recipe!.segments[1].id));
     await _back(tester); // follow
     await _back(tester); // project: a tick is not an unsaved change
     expect(find.text('Leave without saving?'), findsNothing);
@@ -268,8 +286,9 @@ void main() {
     await _open(tester, NalbindRepository()..dirOverride = dir, openId: id);
     expect(find.text('7 steps, 1 done.'), findsOneWidget);
     await _tap(tester, _key('project-follow'));
-    expect(find.text('Step 2 of 7, Part 1, Body'), findsOneWidget);
+    expect(find.text('Step 2 of 7, Part 1, Body'), findsOneWidget, reason: 'the place kept');
     expect(find.text('Work in a spiral until it reaches the base of the thumb.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tracker-banner')), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });

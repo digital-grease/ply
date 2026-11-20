@@ -10,6 +10,7 @@ import '../print/nalbind_print.dart';
 import '../print/print_export.dart' show PdfExportText;
 import '../state/nalbind_providers.dart';
 import '../widgets/nalbind_diagram_view.dart';
+import '../widgets/name_input_dialog.dart' show projectNameProblem;
 import '../widgets/notation_feedback.dart';
 import '../widgets/project_materials_sheet.dart';
 import '../widgets/project_photos.dart';
@@ -25,10 +26,15 @@ import 'nalbind_recipe_screen.dart';
 /// the field as an error, and a reading that is not exact draws its diagram labelled approximate.
 /// Saving is still allowed with problems (a project is a draft); they stay listed until fixed.
 class NalbindProjectScreen extends ConsumerStatefulWidget {
-  const NalbindProjectScreen({this.openId, super.key});
+  const NalbindProjectScreen({this.openId, this.openTracker = false, super.key});
 
   /// When non-null, open this saved project (by id) instead of a fresh one.
   final String? openId;
+
+  /// Open Nalbind step by step as soon as the saved project [openId] is on screen, as its menu entry
+  /// does (a library tile's way to continue at the saved place, ADR 0023). Back from it is this
+  /// project.
+  final bool openTracker;
 
   @override
   ConsumerState<NalbindProjectScreen> createState() => _NalbindProjectScreenState();
@@ -51,6 +57,10 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
   String? _id;
   bool _loading = true;
   bool _saving = false;
+
+  /// The name the project was opened or last saved with (trimmed), which saves as it is whatever its
+  /// length; null for a new project.
+  String? _savedName;
 
   /// The project as the form held it right after opening (or after the last successful save), in
   /// the same normalized form [_compose] builds. Null until loading finishes.
@@ -85,11 +95,13 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
       _notes.text = project.notes;
       _stitchName = project.stitchName;
       _recipe = project.recipe;
+      _savedName = project.name.trim();
       setState(() {
         _loading = false;
         _baseline = _compose();
       });
       _refreshNotation(project.notation);
+      if (widget.openTracker) _trackSteps();
     } catch (e) {
       if (!mounted) return;
       // The form stays empty; anything typed from here on still counts as unsaved. Forget the id so
@@ -117,6 +129,15 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
         notes: _notes.text,
         recipe: _recipe,
       );
+
+  /// Why the name typed cannot be saved: longer than the limit weaving and knitting names have
+  /// (`DraftMeta.maxNameChars`), unless it is the name the project was opened or last saved with: a
+  /// name saved before the limit still loads and saves as it is (a reader is never stricter than an
+  /// earlier writer), and must be shortened only to be changed. Nothing is cut short.
+  String? _nameProblem() {
+    final name = _name.text.trim();
+    return name == _savedName ? null : projectNameProblem(name);
+  }
 
   /// Dirty-on-exit guard input (see [UnsavedChangesGuard]): the form differs from what it held when
   /// opened or last saved. Value comparison, so typing a change and then undoing it by hand reads
@@ -174,6 +195,13 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
   /// when the project was written.
   @override
   Future<bool> performSave() async {
+    // A name past the limit is never cut: the field says why, and nothing is written until it is
+    // shortened.
+    final nameProblem = _nameProblem();
+    if (nameProblem != null) {
+      _snack(nameProblem);
+      return false;
+    }
     setState(() => _saving = true);
     // Capture the container BEFORE the await: the screen can be left (Discard) while the write is in
     // flight, and `ref` throws once disposed, but the library list must still refresh.
@@ -189,6 +217,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
       setState(() {
         _id = id;
         _baseline = project;
+        _savedName = project.name;
       });
       // A draft may be saved with notation problems; say so, since the list under the field is the
       // only other sign of them.
@@ -273,6 +302,8 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
         },
         onTick: _tick,
         onSave: guardedSave,
+        projectId: () => _id,
+        unsavedEdits: () => hasUnsavedChanges,
       ),
     ));
     // "Add a recipe" and straight back with nothing in it: the project stays note-only.
@@ -296,8 +327,24 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
         projectNotation: _notation.text.trim(),
         projectStitchName: _stitchName,
         onTick: _tick,
+        projectId: _id,
+        unsavedEdits: hasUnsavedChanges,
       ),
     ));
+  }
+
+  /// Nalbind the recipe step by step, keeping your place (ADR 0023): the follow view of a saved
+  /// project. A project without recipe steps has nothing to track, and says so.
+  Future<void> _trackSteps() async {
+    if ((_recipe?.segments ?? const []).isEmpty) {
+      _snack(kNalbindNothingToTrack);
+      return;
+    }
+    if (_id == null) {
+      _snack('Save the project first to keep your place.');
+      return;
+    }
+    await _followRecipe();
   }
 
   /// The Recipe section: optional, so a note-only project shows only how to add one.
@@ -335,7 +382,7 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
               key: const ValueKey('project-follow'),
               onPressed: _followRecipe,
               icon: const Icon(Icons.playlist_play),
-              label: const Text('Follow'),
+              label: const Text(kNalbindTrackerTitle),
             ),
         ],
       ),
@@ -377,6 +424,23 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
             icon: const Icon(Icons.save_outlined),
             onPressed: _saving ? null : guardedSave,
           ),
+          PopupMenuButton<String>(
+            key: const ValueKey('project-more'),
+            tooltip: 'More',
+            enabled: !_loading,
+            onSelected: (_) => _trackSteps(),
+            itemBuilder: (_) => const [
+              // Work the recipe step by step, keeping your place (ADR 0023).
+              PopupMenuItem(
+                value: 'track',
+                child: ListTile(
+                  leading: Icon(Icons.playlist_play),
+                  title: Text('$kNalbindTrackerTitle…'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: _loading
@@ -384,12 +448,18 @@ class _NalbindProjectScreenState extends ConsumerState<NalbindProjectScreen>
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                TextField(
-                  controller: _name,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    labelText: 'Project name',
-                    hintText: 'e.g. Winter socks',
+                // Rebuilt as the name is typed, so its limit is said at once.
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _name,
+                  builder: (context, _, __) => TextField(
+                    controller: _name,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      labelText: 'Project name',
+                      hintText: 'e.g. Winter socks',
+                      errorText: _nameProblem(),
+                      errorMaxLines: 3,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 20),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ply/src/data/nalbind_repository.dart';
+import 'package:ply/src/models/draft_meta.dart';
 import 'package:ply/src/models/nalbind_project.dart';
 import 'package:ply/src/models/native_format.dart';
 import 'package:ply/src/rust/nalbind_dto.dart';
@@ -556,5 +557,64 @@ void main() {
     expect(find.text(_xyzError), findsNothing);
     expect(find.text(_saveHint), findsNothing);
     expect(find.byType(NalbindDiagramView), findsNothing);
+  });
+
+  // The project name has the limit weaving and knitting names have (ADR 0007), said where it is
+  // typed and never cut short.
+  Finder nameSays(String text) => find.descendant(of: _nameField, matching: find.text(text));
+
+  testWidgets('a name past the limit is refused, never cut, until it is shortened', (tester) async {
+    final repo = FakeProjectRepo();
+    await pumpProject(tester, repo);
+    final long = 'N' * (DraftMeta.maxNameChars + 1);
+    await tester.enterText(_nameField, long);
+    await tester.pumpAndSettle();
+    const said = 'Names can be at most 200 characters (this one has 201).';
+    expect(nameSays(said), findsOneWidget, reason: 'said as it is typed');
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 0, reason: 'nothing written while it is too long');
+    expect(find.text(said), findsNWidgets(2), reason: 'under the field, and said on Save');
+    expect(tester.widget<TextField>(_nameField).controller!.text, long, reason: 'never cut');
+
+    await tester.enterText(_nameField, 'N' * DraftMeta.maxNameChars);
+    await tester.pumpAndSettle();
+    expect(nameSays(said), findsNothing);
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 1);
+    expect(repo.saved?.name, 'N' * DraftMeta.maxNameChars);
+  });
+
+  testWidgets('a name saved before the limit opens and saves as it is; a change must shorten it',
+      (tester) async {
+    final long = 'L' * 300;
+    final repo = FakeProjectRepo()
+      ..stored = NalbindProject(name: long, notation: 'UO/UOO F1', stitchName: 'Oslo');
+    await pumpProject(tester, repo, openId: 'p1');
+    expect(tester.widget<TextField>(_nameField).controller!.text, long);
+    expect(find.textContaining('Names can be at most'), findsNothing, reason: 'it opens as it is');
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 1, reason: 'and saves as it always has');
+    expect(repo.saved?.name, long);
+
+    await tester.enterText(_nameField, '${long}s');
+    await tester.pumpAndSettle();
+    const said = 'Names can be at most 200 characters (this one has 301).';
+    expect(nameSays(said), findsOneWidget);
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 1, reason: 'a changed name past the limit is not written');
+
+    // Typing the saved name back is no change.
+    await tester.enterText(_nameField, long);
+    await tester.pumpAndSettle();
+    expect(nameSays(said), findsNothing);
+    await tester.enterText(_nameField, 'Mittens');
+    await tester.tap(find.byTooltip('Save'));
+    await tester.pumpAndSettle();
+    expect(repo.saveCount, 2);
+    expect(repo.saved?.name, 'Mittens');
   });
 }

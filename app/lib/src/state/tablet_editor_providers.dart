@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/tablet_repository.dart';
+import '../models/progress.dart' show PickPlace;
 import '../models/tablet_band.dart';
 import '../rust/tablet_dto.dart';
 import 'tablet_editor_state.dart';
@@ -23,6 +24,7 @@ class TabletEditorNotifier extends Notifier<TabletEditorState> {
     ref.read(tabletPickProvider.notifier).state = 1;
     ref.read(tabletBrushProvider.notifier).state = doc.palette.isEmpty ? null : 0;
     ref.read(tabletFocusProvider.notifier).state = null;
+    ref.read(tabletSavedPlaceProvider.notifier).state = null;
   }
 
   void markSaved(TabletDocumentDto persisted) => state = state.markSaved(persisted);
@@ -69,6 +71,10 @@ final tabletTabProvider = StateProvider<TabletEditorTab>((_) => TabletEditorTab.
 
 /// The stepper's pick (1-based expanded pick), shown on the Band tab.
 final tabletPickProvider = StateProvider<int>((_) => 1);
+
+/// The place saved for the open band by "Weave pick by pick" (ADR 0023): the stepper shows it and
+/// can go to it. `null` when there is none (or the band is not saved, or the record cannot be read).
+final tabletSavedPlaceProvider = StateProvider<PickPlace?>((_) => null);
 
 /// Which face the band chart shows.
 final tabletFaceProvider = StateProvider<TabletFaceKind>((_) => TabletFaceKind.top);

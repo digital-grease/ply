@@ -26,6 +26,8 @@ pub mod diagnostic;
 pub mod document;
 pub mod error;
 pub mod instructions;
+// Working a band pick by pick and resuming a saved place (roadmap M8-05, ADR 0023).
+pub mod progress;
 pub mod render;
 pub mod simulate;
 pub mod validate;

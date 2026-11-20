@@ -13,6 +13,9 @@ pub enum TabletError {
     /// A window that is empty or reaches outside the band (picks are 1-based).
     #[error("picks {first} to {last} are not a window of this {picks}-pick band")]
     InvalidWindow { first: u32, last: u32, picks: u32 },
+    /// A time through the band of 0 (times through are counted from 1).
+    #[error("there is no time 0 through the band: times through are counted from 1")]
+    InvalidTime,
     /// A pick past the end of the band.
     #[error("pick {pick} is past the end of this {picks}-pick band")]
     PickOutOfRange { pick: u32, picks: u32 },

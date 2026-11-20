@@ -12,10 +12,12 @@ import '../rust/tablet_dto.dart' show TabletDocumentDto;
 import '../state/tablet_editor_providers.dart';
 import '../state/thumbnail_providers.dart';
 import '../util/responsive.dart';
+import '../widgets/library_place.dart';
 import '../widgets/name_input_dialog.dart';
 import '../widgets/project_export.dart';
 import '../widgets/thumb_unavailable.dart';
 import 'tablet_editor_screen.dart';
+import 'tablet_tracker_screen.dart' show kTabletTrackerTitle;
 
 /// The Tablet weaving tab of the library (M10-02; "card weaving" is another name for the craft): a
 /// grid of saved `.plytab` bands with thumbnails and a New band button. A tile without a thumbnail
@@ -27,11 +29,19 @@ class TabletLibraryScreen extends ConsumerStatefulWidget {
   ConsumerState<TabletLibraryScreen> createState() => _TabletLibraryScreenState();
 }
 
-enum _TileAction { open, rename, export, delete }
+enum _TileAction { open, track, rename, export, delete }
 
-class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen> {
+class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen>
+    with LibraryPlaces<TabletLibraryScreen> {
   late Future<List<TabletEntry>> _entriesFuture;
   final Set<String> _rebuiltThumbs = {};
+
+  @override
+  BackupCraft get placesCraft => BackupCraft.tabletWeaving;
+
+  /// True from a tap that opens a band until its editor closes: a second tap opens no second editor
+  /// (nor a second tracker on the same record).
+  bool _opening = false;
 
   /// Bands whose thumbnail could not be drawn although they have something to draw: their tile
   /// says so (the shared "no preview" mark, ADR 0021) instead of the plain placeholder.
@@ -43,9 +53,12 @@ class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen> {
     _entriesFuture = _load();
   }
 
+  /// List the bands, then rebuild the missing thumbnails and read each band's saved place in the
+  /// background (the list waits for neither).
   Future<List<TabletEntry>> _load() {
     final future = ref.read(tabletRepositoryProvider).listBands();
     future.then(_rebuildMissingThumbnails, onError: (Object _) {});
+    future.then((entries) => readPlaces([for (final e in entries) e.id]), onError: (Object _) {});
     return future;
   }
 
@@ -98,10 +111,19 @@ class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen> {
     await _refresh();
   }
 
-  Future<void> _open(TabletEntry entry) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => TabletEditorScreen(openId: entry.id)),
-    );
+  /// Open a saved band in the editor; with [track], straight on into Weave pick by pick from there,
+  /// as the editor's menu opens it (back from the tracker is the editor, its stepper at the place).
+  Future<void> _open(TabletEntry entry, {bool track = false}) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+            builder: (_) => TabletEditorScreen(openId: entry.id, openTracker: track)),
+      );
+    } finally {
+      _opening = false;
+    }
     await _refresh();
   }
 
@@ -149,6 +171,8 @@ class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen> {
     switch (action) {
       case _TileAction.open:
         await _open(entry);
+      case _TileAction.track:
+        await _open(entry, track: true);
       case _TileAction.rename:
         await _rename(entry);
       case _TileAction.export:
@@ -169,6 +193,7 @@ class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen> {
           children: [
             for (final (a, icon, label) in [
               (_TileAction.open, Icons.open_in_new, 'Open'),
+              (_TileAction.track, Icons.playlist_play, kTabletTrackerTitle),
               (_TileAction.rename, Icons.drive_file_rename_outline, 'Rename'),
               (_TileAction.export, Icons.save_alt, 'Export'),
               (_TileAction.delete, Icons.delete_outline, 'Delete'),
@@ -312,6 +337,8 @@ class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen> {
                       padding: EdgeInsets.zero,
                       onSelected: (a) => _handle(a, entry),
                       itemBuilder: (_) => const [
+                        // Straight into the tracker at the saved place (ADR 0023).
+                        PopupMenuItem(value: _TileAction.track, child: Text(kTabletTrackerTitle)),
                         PopupMenuItem(value: _TileAction.rename, child: Text('Rename')),
                         PopupMenuItem(value: _TileAction.export, child: Text('Export')),
                         PopupMenuItem(value: _TileAction.delete, child: Text('Delete')),
@@ -325,6 +352,14 @@ class _TabletLibraryScreenState extends ConsumerState<TabletLibraryScreen> {
                   ],
                 ),
               ),
+              // The saved place (ADR 0023), when the band has one: a way straight into the tracker.
+              if (placeOf(entry.id) case final place?)
+                LibraryPlaceLine(
+                  key: ValueKey('library-place-${entry.id}'),
+                  place: place,
+                  trackerTitle: kTabletTrackerTitle,
+                  onOpen: () => _open(entry, track: true),
+                ),
             ],
           ),
         ),

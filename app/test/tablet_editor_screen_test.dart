@@ -5,8 +5,10 @@ import 'package:ply/src/models/native_format.dart';
 import 'package:ply/src/models/tablet_band.dart';
 import 'package:ply/src/rust/tablet_dto.dart';
 import 'package:ply/src/screens/tablet_editor_screen.dart';
+import 'package:ply/src/state/progress_controller.dart' show progressRepositoryProvider;
 import 'package:ply/src/state/tablet_editor_providers.dart';
 
+import 'progress_test_support.dart' show MemoryProgressRepository;
 import 'tablet_test_support.dart';
 
 // Host coverage for the tablet weaving editor (M10-02), with no FFI: a fake repository serves the
@@ -38,7 +40,11 @@ Future<ProviderContainer> pumpEditor(
     tester.platformDispatcher.textScaleFactorTestValue = textScale;
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
   }
-  final c = ProviderContainer(overrides: [tabletRepositoryProvider.overrideWithValue(repo)]);
+  // A saved band's place is read when it opens (ADR 0023): from memory here.
+  final c = ProviderContainer(overrides: [
+    tabletRepositoryProvider.overrideWithValue(repo),
+    progressRepositoryProvider.overrideWithValue(MemoryProgressRepository()),
+  ]);
   addTearDown(c.dispose);
   await tester.pumpWidget(UncontrolledProviderScope(
     container: c,

@@ -149,7 +149,7 @@ impl Checkpoint {
         }
         let mut sims = Vec::with_capacity(cards);
         for _ in 0..cards {
-            sims.push(decode_card(&mut r, pick)?);
+            sims.push(decode_card(&mut r, pick, u64::from(pick))?);
         }
         Ok(Checkpoint {
             fingerprint,
@@ -350,7 +350,13 @@ fn encode_card(c: &CardSim, out: &mut Vec<u8>) {
     }
 }
 
-fn decode_card(r: &mut Reader<'_>, pick: u32) -> Result<CardSim, CheckpointError> {
+/// One card's state as [`encode_card`] wrote it, after `pick` picks of the time through it belongs
+/// to: its twist and woven counts at most `twist_bound` in size, its runs started by `pick`.
+fn decode_card(
+    r: &mut Reader<'_>,
+    pick: u32,
+    twist_bound: u64,
+) -> Result<CardSim, CheckpointError> {
     let err = CheckpointError;
     let all = CardPosition::all();
     let position = match r.u8()? {
@@ -370,9 +376,10 @@ fn decode_card(r: &mut Reader<'_>, pick: u32) -> Result<CardSim, CheckpointError
     }
     let twist = r.i32()?;
     let woven = r.i32()?;
-    // Twist moves one quarter turn a pick, so it can never pass the pick count: this also keeps the
-    // fold's checked arithmetic from ever overflowing.
-    let bounded = |v: i32| v.unsigned_abs() <= pick;
+    // Twist moves one quarter turn a pick, so it can never pass the picks woven (a checkpoint's
+    // pick; for a later time through, the bound the caller gives): this also keeps the fold's
+    // checked arithmetic from ever overflowing.
+    let bounded = |v: i32| u64::from(v.unsigned_abs()) <= twist_bound;
     if !bounded(twist) || !bounded(woven) {
         return Err(err("a card holds more twist than the picks woven"));
     }
@@ -428,6 +435,152 @@ fn decode_card(r: &mut Reader<'_>, pick: u32) -> Result<CardSim, CheckpointError
         last_crossed,
         last_twining,
         runs,
+    })
+}
+
+const STATE_MAGIC: &[u8; 6] = b"PLYTWS";
+/// Magic, format and rules version, fingerprint, time, whether the cards started the time through
+/// other than as set up, then pick, segment, repeat, step and cards.
+const STATE_HEADER_BYTES: usize = 6 + 1 + 1 + 8 + 4 + 1 + 4 * 5;
+
+/// A work state (`ply_tablet::progress`): every card at a place on one time through a band, for the
+/// app to hand back with its next window request, so a time through is folded once per tracking
+/// session, not once per window. Its runs are not kept.
+///
+/// **Sealed, and for this run only.** A state is sealed with a key drawn once per run of the app
+/// ([`seal`]), and every value is checked against the band before it is used: a state that was
+/// edited, or that another run made, is refused (the window is then worked out without it, with the
+/// same result). So a state must never be saved or exported, and nothing writes one: it lives in the
+/// tracker's memory for one session.
+pub(crate) struct WorkState {
+    pub place: Place,
+    pub cards: Vec<CardSim>,
+    /// The cards started this time through other than as they were set up.
+    pub moved: bool,
+}
+
+/// The key states are sealed with, drawn once per run (the standard library's per-process random
+/// hasher keys): only the run that made a state can use it.
+fn state_key() -> &'static std::collections::hash_map::RandomState {
+    static KEY: std::sync::OnceLock<std::collections::hash_map::RandomState> =
+        std::sync::OnceLock::new();
+    KEY.get_or_init(std::collections::hash_map::RandomState::new)
+}
+
+/// The seal of a state's body: a keyed hash, so an edit made without the run's key (a value changed
+/// and a plain checksum recomputed, say) is refused.
+pub(crate) fn seal(body: &[u8]) -> u64 {
+    use std::hash::BuildHasher;
+    state_key().hash_one(body)
+}
+
+pub(crate) fn encode_state(
+    fingerprint: u64,
+    time: u32,
+    moved: bool,
+    place: Place,
+    cards: &[CardSim],
+) -> Vec<u8> {
+    let mut out = Vec::with_capacity(STATE_HEADER_BYTES + cards.len() * CARD_BYTES + 8);
+    out.extend_from_slice(STATE_MAGIC);
+    out.push(FORMAT_VERSION);
+    out.push(RULES_VERSION as u8);
+    out.extend_from_slice(&fingerprint.to_le_bytes());
+    out.extend_from_slice(&time.to_le_bytes());
+    out.push(u8::from(moved));
+    for v in [
+        place.done,
+        u32::try_from(place.segment).unwrap_or(u32::MAX),
+        place.repeat,
+        u32::try_from(place.step).unwrap_or(u32::MAX),
+        u32::try_from(cards.len()).unwrap_or(u32::MAX),
+    ] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    for c in cards {
+        encode_card(
+            &CardSim {
+                runs: [None; 4],
+                ..c.clone()
+            },
+            &mut out,
+        );
+    }
+    let sum = seal(&out);
+    out.extend_from_slice(&sum.to_le_bytes());
+    out
+}
+
+/// Read bytes [`encode_state`] wrote for `band` (its [`band_fingerprint`] is `fingerprint`) on the
+/// `time`-th time through: the checksum, the versions, the fingerprint and time, the card count, the
+/// place (pick 0 before the first pick, else a written pick of the band whose expanded number is the
+/// state's, never past `picks`), and every card's values, its counts at most `twist_bound`.
+pub(crate) fn decode_state(
+    bytes: &[u8],
+    band: &TabletBand,
+    fingerprint: u64,
+    time: u32,
+    picks: u32,
+    twist_bound: u64,
+) -> Result<WorkState, CheckpointError> {
+    let err = CheckpointError;
+    if bytes.len() < STATE_HEADER_BYTES + 8 {
+        return Err(err("too short"));
+    }
+    let (body, sum) = bytes.split_at(bytes.len() - 8);
+    if seal(body).to_le_bytes() != sum {
+        return Err(err("it was not sealed by this run, or it was changed"));
+    }
+    if &body[..STATE_MAGIC.len()] != STATE_MAGIC {
+        return Err(err("it does not start with the work state mark"));
+    }
+    let mut r = Reader {
+        bytes: body,
+        at: STATE_MAGIC.len(),
+    };
+    if r.u8()? != FORMAT_VERSION || u32::from(r.u8()?) != RULES_VERSION {
+        return Err(err("it was written by another version of the engine"));
+    }
+    if r.u64()? != fingerprint {
+        return Err(err("it belongs to another band"));
+    }
+    if r.u32()? != time {
+        return Err(err("it belongs to another time through"));
+    }
+    let moved = match r.u8()? {
+        0 => false,
+        1 => true,
+        _ => return Err(err("its start is not known")),
+    };
+    let done = r.u32()?;
+    let segment = r.u32()? as usize;
+    let repeat = r.u32()?;
+    let step = r.u32()? as usize;
+    let cards = r.u32()? as usize;
+    if cards != band.cards.len() {
+        return Err(err("its card count is not the band's"));
+    }
+    if body.len() != STATE_HEADER_BYTES + cards.saturating_mul(CARD_BYTES) {
+        return Err(err("its length does not match its card count"));
+    }
+    let place = Place {
+        segment,
+        repeat,
+        step,
+        done,
+    };
+    let at_start = done == 0 && place == Place::default();
+    if done > picks || !(at_start || (done > 0 && place_is_pick(band, place))) {
+        return Err(err("its place in the turning is not its pick"));
+    }
+    let mut sims = Vec::with_capacity(cards);
+    for _ in 0..cards {
+        sims.push(decode_card(&mut r, done, twist_bound)?);
+    }
+    Ok(WorkState {
+        place,
+        cards: sims,
+        moved,
     })
 }
 

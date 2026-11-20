@@ -74,6 +74,61 @@ void main() {
       expect(back.chartRow, 2);
     });
 
+    test('a tablet weaving record holds a pick place like weaving\'s, under its own craft', () {
+      final p = weave(const Progress(craft: ProgressCraft.tabletWeaving), 1, 4);
+      final json = jsonDecode(p.encodeFitted().text) as Map<String, dynamic>;
+      expect(json['craft'], 'tablet_weaving');
+      expect(json['place'], {'pick': 4, 'repeat': 1});
+      expect(reread(p).place, const PickPlace(4));
+      expect(() => Progress.decode(p.encodeFitted().text, craft: ProgressCraft.weaving),
+          throwsA(isA<ProgressFileException>()));
+    });
+
+    test('a nalbinding place names its step by id; one outside the id grammar is not stored', () {
+      const place = NalbindPlace(2, stepId: 'segment-3');
+      final p = const Progress(craft: ProgressCraft.nalbinding).moved(
+          from: const NalbindPlace(0, stepId: 'segment-1'),
+          to: place,
+          basis: b(3),
+          kind: LogKind.jump,
+          now: t0);
+      final json = jsonDecode(p.encodeFitted().text) as Map<String, dynamic>;
+      expect(json['craft'], 'nalbinding');
+      expect(json['place'], {'unit': 2, 'step': 'segment-3'});
+      expect(reread(p).place, place);
+      expect(reread(p).log.single.from, const NalbindPlace(0, stepId: 'segment-1'));
+      final odd = const Progress(craft: ProgressCraft.nalbinding).moved(
+          from: const NalbindPlace(0),
+          to: const NalbindPlace(1, stepId: 'has a space'),
+          basis: b(1),
+          kind: LogKind.jump,
+          now: t0);
+      expect(reread(odd).place, const NalbindPlace(1));
+      String withPlace(Object place) => jsonEncode({
+            ...jsonDecode(p.encodeFitted().text) as Map<String, dynamic>,
+            'place': place,
+          });
+      for (final bad in [
+        {'step': 'segment-3'},
+        {'unit': -1, 'step': 'segment-3'},
+        {'unit': 1, 'step': 7},
+        {'unit': 1, 'step': ''},
+        {'unit': 1, 'step': 'segment-3', 'row': 2},
+      ]) {
+        expect(() => Progress.decode(withPlace(bad), craft: ProgressCraft.nalbinding),
+            throwsA(isA<ProgressFileException>()),
+            reason: '$bad');
+      }
+    });
+
+    test('a nalbinding note stays with its step, wherever the step is now', () {
+      final p = const Progress(craft: ProgressCraft.nalbinding)
+          .withNote(const NalbindPlace(2, stepId: 'segment-3'), 'Thumb gap here', now: t0);
+      expect(p.notesAt(const NalbindPlace(4, stepId: 'segment-3')), hasLength(1));
+      expect(p.notesAt(const NalbindPlace(2, stepId: 'segment-5')), isEmpty);
+      expect(p.notesAt(const NalbindPlace(2)), hasLength(1), reason: 'by number without an id');
+    });
+
     test('log entries keep their places whole, ids included', () {
       final p = const Progress(craft: ProgressCraft.knitting).moved(
           from: const KnitPlace(0, sectionId: 'section-1', stepId: 'step-1'),

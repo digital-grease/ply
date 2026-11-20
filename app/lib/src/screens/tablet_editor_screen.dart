@@ -3,14 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/library_backup.dart' show BackupCraft;
+import '../data/progress_repository.dart' show ProgressStatus;
 import '../data/tablet_repository.dart';
 import '../models/draft_meta.dart';
 import '../models/native_format.dart';
+import '../models/progress.dart' show PickPlace;
 import '../models/tablet_band.dart';
 import '../print/print_export.dart' show PdfExportText;
 import '../print/tablet_print.dart';
 import '../rust/tablet_dto.dart';
 import '../state/material_providers.dart' show openProjectProvider;
+import '../state/progress_controller.dart' show progressRepositoryProvider;
 import '../state/tablet_editor_providers.dart';
 import '../widgets/name_input_dialog.dart';
 import '../widgets/project_materials_sheet.dart';
@@ -20,21 +23,27 @@ import '../widgets/tablet_setup_view.dart';
 import '../widgets/tablet_turning_view.dart';
 import '../widgets/tablet_widgets.dart';
 import '../widgets/unsaved_changes_guard.dart';
+import 'tablet_tracker_screen.dart';
 
-enum _Menu { pdf, materials, settings }
+enum _Menu { track, pdf, materials, settings }
 
 /// The tablet weaving band editor (M10-02, ADR 0018): four tabs on one band, Cards (setup),
 /// Turning (the turning chart), Band (the band chart and the pick-by-pick stepper) and Checks (the
 /// engine's diagnostics, each a way to its place). Edits are undoable; Save writes the `.plytab` in
 /// place; leaving with unsaved edits asks first, as the other editors do.
 class TabletEditorScreen extends ConsumerStatefulWidget {
-  const TabletEditorScreen({this.openId, this.initialDoc, super.key});
+  const TabletEditorScreen({this.openId, this.initialDoc, this.openTracker = false, super.key});
 
   /// Open this saved band (by id).
   final String? openId;
 
   /// Or start editing this new band (from the New band dialog).
   final TabletDocumentDto? initialDoc;
+
+  /// Open Weave pick by pick as soon as the saved band [openId] is on screen, as its menu entry does
+  /// (a library tile's way to continue at the saved place, ADR 0023). Back from the tracker is this
+  /// editor, its stepper at the place.
+  final bool openTracker;
 
   @override
   ConsumerState<TabletEditorScreen> createState() => _TabletEditorScreenState();
@@ -92,6 +101,8 @@ class _TabletEditorScreenState extends ConsumerState<TabletEditorScreen>
       ref.read(tabletTabProvider.notifier).state = TabletEditorTab.cards;
       ref.read(openProjectProvider.notifier).state = (craft: BackupCraft.tabletWeaving, id: _id);
       setState(() => _loading = false);
+      _readPlace();
+      if (widget.openTracker && _id != null) _openTracker();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -104,6 +115,50 @@ class _TabletEditorScreenState extends ConsumerState<TabletEditorScreen>
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Read the band's saved place (ADR 0023) for the stepper; nothing is shown when there is none or
+  /// it cannot be read (the tracker says why). Never writes.
+  Future<PickPlace?> _readPlace() async {
+    final id = _id;
+    PickPlace? place;
+    if (id != null) {
+      try {
+        final load = await ref.read(progressRepositoryProvider).load(BackupCraft.tabletWeaving, id);
+        if (load.status == ProgressStatus.ok && load.progress!.place is PickPlace) {
+          place = load.progress!.place as PickPlace;
+        }
+      } catch (_) {
+        // No place to show.
+      }
+    }
+    if (!mounted) return null;
+    ref.read(tabletSavedPlaceProvider.notifier).state = place;
+    return place;
+  }
+
+  /// Weave the band pick by pick (ADR 0023) on the band as it is on screen. The place is kept with
+  /// the saved band, so an unsaved band is asked to be saved first; the tracker never writes the
+  /// band. Back in the editor, the stepper goes to the place.
+  Future<void> _openTracker() async {
+    final id = _id;
+    if (id == null) {
+      _snack('Save the band first to keep your place.');
+      return;
+    }
+    final editor = ref.read(tabletEditorProvider);
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => TabletTrackerScreen(
+        projectId: id,
+        band: editor.doc,
+        name: _name,
+        unsavedEdits: editor.isDirty,
+      ),
+    ));
+    final place = await _readPlace();
+    if (!mounted || place == null) return;
+    final total = expandedPicks(ref.read(tabletDocProvider));
+    if (total > 0) ref.read(tabletPickProvider.notifier).state = place.pick.clamp(1, total);
   }
 
   @override
@@ -209,12 +264,24 @@ class _TabletEditorScreenState extends ConsumerState<TabletEditorScreen>
             PopupMenuButton<_Menu>(
               tooltip: 'More',
               onSelected: (m) => switch (m) {
+                _Menu.track => _openTracker(),
                 _Menu.pdf => printOrShareTabletPdf(context, ref, name: _name),
                 _Menu.materials =>
                   showProjectMaterials(context, craft: BackupCraft.tabletWeaving, id: _id),
                 _Menu.settings => showBandSettings(context, ref),
               },
               itemBuilder: (_) => [
+                // Weave the band pick by pick, keeping your place (ADR 0023): a saved band only,
+                // since the place is kept with the saved band.
+                PopupMenuItem(
+                  value: _Menu.track,
+                  enabled: ready,
+                  child: const ListTile(
+                    leading: Icon(Icons.playlist_play),
+                    title: Text('$kTabletTrackerTitle…'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
                 PopupMenuItem(
                   value: _Menu.pdf,
                   enabled: ready,

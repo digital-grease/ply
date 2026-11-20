@@ -47,7 +47,7 @@ enum _EditorMenu {
 /// live stitch-count validation, and save to the on-device knit library. The knit analog of the
 /// weaving `EditorScreen`; the gauge/yardage panel and cable placement layer on next.
 class KnitEditorScreen extends ConsumerStatefulWidget {
-  const KnitEditorScreen({this.openId, this.initialPattern, super.key});
+  const KnitEditorScreen({this.openId, this.initialPattern, this.openTracker = false, super.key});
 
   /// When non-null, open this SAVED pattern (by id) instead of a fresh blank starter.
   final String? openId;
@@ -55,6 +55,11 @@ class KnitEditorScreen extends ConsumerStatefulWidget {
   /// When non-null (and [openId] is null), start editing this freshly-built pattern (from the New
   /// pattern setup screen) instead of the default blank 8x8.
   final KnitPatternDto? initialPattern;
+
+  /// Open Knit row by row as soon as the saved pattern [openId] is on screen, as its menu entry does
+  /// (a library tile's way to continue at the saved place, ADR 0023). Back from the tracker is this
+  /// editor.
+  final bool openTracker;
 
   @override
   ConsumerState<KnitEditorScreen> createState() => _KnitEditorScreenState();
@@ -112,6 +117,7 @@ class _KnitEditorScreenState extends ConsumerState<KnitEditorScreen>
         ref.read(openProjectProvider.notifier).state = (craft: BackupCraft.knitting, id: null);
       }
       setState(() => _loading = false);
+      if (widget.openTracker && _id != null) _openTracker();
     } catch (e) {
       if (!mounted) return;
       setState(() {
