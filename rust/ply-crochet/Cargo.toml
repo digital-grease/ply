@@ -1,0 +1,18 @@
+[package]
+name = "ply-crochet"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# The leaf words (identities, kinds, parts, terms) carry the spelling of ADR 0022 section 21, so the
+# native document of M11-02 can reuse them; diagnostics serialize for the app.
+serde = { workspace = true }
+ply-common = { workspace = true }
+
+[dev-dependencies]
+# The leaf words' serde forms are checked against ADR 0022 section 21's spelling.
+serde_json = { workspace = true }
+# Property tests: no panic on arbitrary patterns, determinism, counts against validation, label sets
+# that never change an operation, and opaque items that never count what they do not state.
+proptest = "1"

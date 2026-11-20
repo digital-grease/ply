@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["ply-common", "ply-weave", "ply-knit", "ply-nalbind", "ply-tablet", "ply-bridge"]
+members = ["ply-common", "ply-weave", "ply-knit", "ply-nalbind", "ply-tablet", "ply-crochet", "ply-bridge"]
 
 [workspace.package]
 edition = "2021"
