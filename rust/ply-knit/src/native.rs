@@ -26,8 +26,10 @@
 //!
 //! **Decoding.** A current-version file is decoded straight into the pattern's types: every key the
 //! types do not name is skipped unread, so a value costs at most what its typed field costs. An
-//! older file is decoded into a JSON tree for the migrations, and many small values make a tree far
-//! larger than its text.
+//! older file is decoded into a JSON tree for the migrations: a lean one ([`crate::json_tree`]),
+//! which holds, compares and decodes the same values as a `serde_json::Value` (so every older file
+//! migrates to the same pattern, and every refusal is the same error) with far less memory for
+//! small objects and no more for anything else.
 //!
 //! **A guard for untrusted files.** [`within_value_limit`] counts a file's values without decoding
 //! it; the backup restore refuses a pattern past [`MAX_VALUES`] before it reads it. Opening and
@@ -66,6 +68,7 @@ use serde_json::{json, Value};
 use std::fmt;
 
 use crate::error::KnitError;
+use crate::json_tree::{Json, Object};
 use crate::pattern::KnitPattern;
 
 /// The `format` value of a `.plyknit` envelope.
@@ -88,11 +91,13 @@ pub const KNIT_SCHEMA_VERSION: u32 = 6;
 ///   at most about 144 MiB, for millions of empty texts in one list or of the smallest steps (a
 ///   value of any other shape costs less, and one in a key the types do not name costs nothing);
 ///   the largest real pattern takes about 12 MiB.
-/// - An older file is decoded into a `serde_json::Value` for the migrations. At the limit it takes
-///   up to about 900 MiB (objects of one member nested inside each other); the largest real pattern
-///   about 180 MiB. The migrations add a field to every section, short row and close step, so they
-///   first refuse one without the fields every writer gave it: an empty object, a few bytes in its
-///   list, would otherwise grow into a map node of hundreds.
+/// - An older file is decoded into a lean JSON tree for the migrations ([`crate::json_tree`]),
+///   then into the pattern's types. At the limit it takes at most about 212 MiB (millions of empty
+///   texts in one list; objects of one member nested inside each other take about 59 MiB, where a
+///   `serde_json::Value` took 901 MiB); the largest real pattern about 33 MiB. The migrations add a
+///   field to every section, short row and close step, so they first refuse one without the fields
+///   every writer gave it: an empty object, a few bytes in its list, would otherwise grow into an
+///   object of its own.
 ///
 /// A long text is one value and decodes to about its length.
 pub const MAX_VALUES: u64 = 3_000_000;
@@ -142,7 +147,8 @@ pub fn write(pattern: &KnitPattern) -> Result<String, KnitError> {
 /// A file at the current version is decoded straight into the pattern's types, with no generic
 /// tree: every key the types do not name (at the top level or inside the pattern) is skipped
 /// unread, and each value costs what its typed field costs (see [`MAX_VALUES`]). An older file is
-/// decoded into a `serde_json::Value` for the migrations, which work on JSON values by design.
+/// decoded into a lean JSON tree for the migrations, which work on JSON values by design; it holds
+/// and decodes exactly what a `serde_json::Value` would (see [`crate::json_tree`]).
 pub fn read(text: &str) -> Result<LoadedPattern, KnitError> {
     let source_version = schema_version(text)?;
     if source_version == KNIT_SCHEMA_VERSION {
@@ -151,10 +157,10 @@ pub fn read(text: &str) -> Result<LoadedPattern, KnitError> {
             source_version,
         });
     }
-    let document = document_of(serde_json::from_str(text)?)?;
+    let document = document_of(Json::parse(text)?)?;
     let document = migrate(source_version, document)?;
     Ok(LoadedPattern {
-        pattern: serde_json::from_value(document)?,
+        pattern: KnitPattern::deserialize(document)?,
         source_version,
     })
 }
@@ -287,21 +293,21 @@ pub fn within_value_limit(text: &str) -> bool {
 
 /// The pattern in a parsed file whose envelope [`schema_version`] accepted: an envelope's `document`,
 /// or the whole object of a legacy file (one without a `format` key).
-fn document_of(value: Value) -> Result<Value, KnitError> {
-    let Value::Object(mut obj) = value else {
+fn document_of(value: Json) -> Result<Json, KnitError> {
+    let Json::Object(obj) = value else {
         return Err(KnitError::Malformed(
             "a .plyknit file must be a JSON object".into(),
         ));
     };
     if !obj.contains_key(FORMAT_KEY) {
-        return Ok(Value::Object(obj)); // legacy: the bare pattern object
+        return Ok(Json::Object(obj)); // legacy: the bare pattern object
     }
-    obj.remove("document")
+    obj.into_value("document")
         .ok_or_else(|| KnitError::Malformed("the envelope has no document".into()))
 }
 
 /// One migration: a document at version `n` in, the same document at version `n + 1` out.
-type Migration = fn(Value) -> Result<Value, KnitError>;
+type Migration = fn(Json) -> Result<Json, KnitError>;
 
 /// The ordered migration chain: `MIGRATIONS[i]` upgrades a document from version `i + 1` to `i + 2`.
 /// The length is tied to [`KNIT_SCHEMA_VERSION`], so bumping the version without appending its
@@ -310,7 +316,7 @@ const MIGRATIONS: [Migration; KNIT_SCHEMA_VERSION as usize - 1] =
     [v1_to_v2, v2_to_v3, v3_to_v4, v4_to_v5, v5_to_v6];
 
 /// Run every migration from `from` up to the current version, in order.
-fn migrate(from: u32, mut document: Value) -> Result<Value, KnitError> {
+fn migrate(from: u32, mut document: Json) -> Result<Json, KnitError> {
     // `schema_version` guarantees 1 <= from <= KNIT_SCHEMA_VERSION.
     for step in &MIGRATIONS[(from as usize).saturating_sub(1)..] {
         document = step(document)?;
@@ -364,7 +370,7 @@ fn builtins_v2() -> Vec<Value> {
 
 /// Whether a saved legend entry is the given frozen built-in. Compares the six version-1 fields, with
 /// an absent optional field read as `null` (serde accepts that for `Option` fields).
-fn same_def(saved: &Value, builtin: &Value) -> bool {
+fn same_def(saved: &Json, builtin: &Json) -> bool {
     const FIELDS: [&str; 6] = [
         "symbol",
         "consumes",
@@ -378,7 +384,7 @@ fn same_def(saved: &Value, builtin: &Value) -> bool {
     };
     FIELDS
         .iter()
-        .all(|f| saved.get(*f).unwrap_or(&Value::Null) == builtin.get(*f).unwrap_or(&Value::Null))
+        .all(|f| saved.get(f).unwrap_or(&Json::Null) == builtin.get(f).unwrap_or(&Json::Null))
 }
 
 /// Version 1 to 2: put a legacy pattern on the full version-2 built-in vocabulary.
@@ -393,10 +399,16 @@ fn same_def(saved: &Value, builtin: &Value) -> bool {
 ///
 /// A legend that does not start with the 12 original built-ins was not written by any release and is
 /// refused rather than guessed at.
-fn v1_to_v2(mut doc: Value) -> Result<Value, KnitError> {
-    let builtins = builtins_v2();
+fn v1_to_v2(mut doc: Json) -> Result<Json, KnitError> {
+    let builtins: Vec<Json> = builtins_v2().into_iter().map(Json::from).collect();
     let n = builtins.len();
-    let Some(saved) = doc.pointer("/legend/stitches").and_then(Value::as_array) else {
+    // `doc.get("legend")?.get("stitches")` is what the tree's `pointer("/legend/stitches")` was:
+    // neither name is a list index.
+    let Some(saved) = doc
+        .get("legend")
+        .and_then(|l| l.get("stitches"))
+        .and_then(Json::as_array)
+    else {
         return Ok(doc); // not the legacy shape; the typed decode reports what is missing
     };
     let matched = saved
@@ -419,21 +431,22 @@ fn v1_to_v2(mut doc: Value) -> Result<Value, KnitError> {
         return Ok(doc); // saved by v0.1.7: already on the full vocabulary
     }
     let (k, inserted) = (k as u64, (n - k) as u64);
-    let remap = |id: &mut Value| -> Result<(), KnitError> {
+    let remap = |id: &mut Json| -> Result<(), KnitError> {
         if let Some(old) = id.as_u64().filter(|&old| old >= k) {
             let new = old
                 .checked_add(inserted)
                 .ok_or_else(|| KnitError::Malformed(format!("stitch id {old} is out of range")))?;
-            *id = Value::from(new);
+            *id = Json::Number(new.into());
         }
         Ok(())
     };
 
     if let Some(stitches) = doc
-        .pointer_mut("/legend/stitches")
-        .and_then(Value::as_array_mut)
+        .get_mut("legend")
+        .and_then(|l| l.get_mut("stitches"))
+        .and_then(Json::as_array_mut)
     {
-        let mut customs = stitches.split_off(k as usize);
+        let mut customs = std::mem::take(stitches).into_vec().split_off(k as usize);
         for custom in &mut customs {
             if let Some(ws) = custom.get_mut("ws_variant") {
                 remap(ws)?;
@@ -441,12 +454,16 @@ fn v1_to_v2(mut doc: Value) -> Result<Value, KnitError> {
         }
         *stitches = builtins.into_iter().chain(customs).collect();
     }
-    if let Some(rows) = doc.pointer_mut("/chart/rows").and_then(Value::as_array_mut) {
-        for row in rows {
-            let Some(cells) = row.get_mut("cells").and_then(Value::as_array_mut) else {
+    if let Some(rows) = doc
+        .get_mut("chart")
+        .and_then(|c| c.get_mut("rows"))
+        .and_then(Json::as_array_mut)
+    {
+        for row in rows.iter_mut() {
+            let Some(cells) = row.get_mut("cells").and_then(Json::as_array_mut) else {
                 continue;
             };
-            for cell in cells {
+            for cell in cells.iter_mut() {
                 if let Some(stitch) = cell.get_mut("stitch") {
                     remap(stitch)?;
                 }
@@ -463,9 +480,9 @@ fn v1_to_v2(mut doc: Value) -> Result<Value, KnitError> {
 /// first-row to-end repeat into a count Ply guessed). A `cast_on` key already in a version-2 document
 /// was written by no release and meant nothing there, so it is replaced by `null` rather than given a
 /// meaning now. Everything else in the document is untouched.
-fn v2_to_v3(mut doc: Value) -> Result<Value, KnitError> {
+fn v2_to_v3(mut doc: Json) -> Result<Json, KnitError> {
     if let Some(obj) = doc.as_object_mut() {
-        obj.insert("cast_on".into(), Value::Null);
+        obj.insert("cast_on", Json::Null);
     }
     // Not an object: left as is, so the typed decode reports what is wrong.
     Ok(doc)
@@ -477,9 +494,9 @@ fn v2_to_v3(mut doc: Value) -> Result<Value, KnitError> {
 /// behaves exactly as before. A `sections` key already in a version-3 document was written by no
 /// release and meant nothing there, so it is replaced by `[]` rather than read as sections now.
 /// Everything else in the document is untouched.
-fn v3_to_v4(mut doc: Value) -> Result<Value, KnitError> {
+fn v3_to_v4(mut doc: Json) -> Result<Json, KnitError> {
     if let Some(obj) = doc.as_object_mut() {
-        obj.insert("sections".into(), Value::Array(Vec::new()));
+        obj.insert("sections", Json::Array(Box::default()));
     }
     // Not an object: left as is, so the typed decode reports what is wrong.
     Ok(doc)
@@ -495,12 +512,8 @@ const CLOSE_FIELDS: [&str; 1] = ["method"];
 /// `fields` every writer gave it. The typed decode would refuse it anyway; refusing it first keeps a
 /// hostile file of empty objects (`[{}, {}, ...]`) from being grown into a map each: an empty object
 /// costs a few bytes in its list, and one with a field its own map node of hundreds.
-fn require_fields(
-    obj: &serde_json::Map<String, Value>,
-    what: &str,
-    fields: &[&str],
-) -> Result<(), KnitError> {
-    match fields.iter().find(|f| !obj.contains_key(**f)) {
+fn require_fields(obj: &Object, what: &str, fields: &[&str]) -> Result<(), KnitError> {
+    match fields.iter().find(|f| !obj.contains_key(f)) {
         Some(missing) => Err(KnitError::Malformed(format!("{what} has no {missing}"))),
         None => Ok(()),
     }
@@ -532,21 +545,21 @@ const V4_TURNS: [&str; 2] = ["Last", "Count"];
 /// its version-5 meaning: no version-4 writer produced one. So is a section or short row without the
 /// fields every writer gave it (see [`require_fields`]). Anything else malformed is left for the
 /// typed decode to report. Everything else in the document is untouched.
-fn v4_to_v5(mut doc: Value) -> Result<Value, KnitError> {
-    let Some(sections) = doc.get_mut("sections").and_then(Value::as_array_mut) else {
+fn v4_to_v5(mut doc: Json) -> Result<Json, KnitError> {
+    let Some(sections) = doc.get_mut("sections").and_then(Json::as_array_mut) else {
         return Ok(doc);
     };
-    for section in sections {
+    for section in sections.iter_mut() {
         let Some(obj) = section.as_object_mut() else {
             continue;
         };
         require_fields(obj, "a section", &SECTION_FIELDS)?;
-        obj.insert("construction".into(), Value::Null);
-        let Some(steps) = obj.get_mut("steps").and_then(Value::as_array_mut) else {
+        obj.insert("construction", Json::Null);
+        let Some(steps) = obj.get_mut("steps").and_then(Json::as_array_mut) else {
             continue;
         };
-        for step in steps {
-            let Some(action) = step.get_mut("action").and_then(Value::as_object_mut) else {
+        for step in steps.iter_mut() {
+            let Some(action) = step.get_mut("action").and_then(Json::as_object_mut) else {
                 continue;
             };
             if action.len() != 1 {
@@ -555,7 +568,7 @@ fn v4_to_v5(mut doc: Value) -> Result<Value, KnitError> {
             let Some((kind, body)) = action.iter_mut().next() else {
                 continue;
             };
-            if !V4_STEP_KINDS.contains(&kind.as_str()) {
+            if !V4_STEP_KINDS.contains(&kind) {
                 return Err(KnitError::Malformed(format!(
                     "a version-4 file cannot have a section step of kind {kind}, which is newer \
                      than version 4"
@@ -570,15 +583,15 @@ fn v4_to_v5(mut doc: Value) -> Result<Value, KnitError> {
             require_fields(fields, "a short row", &SHORT_ROW_FIELDS)?;
             let turn = fields
                 .get("to")
-                .and_then(Value::as_object)
-                .and_then(|to| to.keys().next().cloned());
+                .and_then(Json::as_object)
+                .and_then(|to| to.keys().next().map(str::to_string));
             if let Some(turn) = turn.filter(|t| !V4_TURNS.contains(&t.as_str())) {
                 return Err(KnitError::Malformed(format!(
                     "a version-4 file cannot have a short row that turns at {turn}, which is newer \
                      than version 4"
                 )));
             }
-            fields.insert("decrease".into(), Value::Null);
+            fields.insert("decrease", Json::Null);
         }
     }
     Ok(doc)
@@ -617,25 +630,25 @@ const V5_STEP_KINDS: [&str; 16] = [
 /// is a section or close step without the fields every writer gave it (see [`require_fields`]).
 /// Anything else malformed is left for the typed decode to report. Everything else in the document
 /// is untouched.
-fn v5_to_v6(mut doc: Value) -> Result<Value, KnitError> {
+fn v5_to_v6(mut doc: Json) -> Result<Json, KnitError> {
     let Some(obj) = doc.as_object_mut() else {
         return Ok(doc);
     };
-    obj.insert("pieces".into(), Value::Array(Vec::new()));
-    let Some(sections) = obj.get_mut("sections").and_then(Value::as_array_mut) else {
+    obj.insert("pieces", Json::Array(Box::default()));
+    let Some(sections) = obj.get_mut("sections").and_then(Json::as_array_mut) else {
         return Ok(doc);
     };
-    for section in sections {
+    for section in sections.iter_mut() {
         let Some(obj) = section.as_object_mut() else {
             continue;
         };
         require_fields(obj, "a section", &SECTION_FIELDS)?;
-        obj.insert("piece".into(), Value::Null);
-        let Some(steps) = obj.get_mut("steps").and_then(Value::as_array_mut) else {
+        obj.insert("piece", Json::Null);
+        let Some(steps) = obj.get_mut("steps").and_then(Json::as_array_mut) else {
             continue;
         };
-        for step in steps {
-            let Some(action) = step.get_mut("action").and_then(Value::as_object_mut) else {
+        for step in steps.iter_mut() {
+            let Some(action) = step.get_mut("action").and_then(Json::as_object_mut) else {
                 continue;
             };
             if action.len() != 1 {
@@ -644,7 +657,7 @@ fn v5_to_v6(mut doc: Value) -> Result<Value, KnitError> {
             let Some((kind, body)) = action.iter_mut().next() else {
                 continue;
             };
-            if !V5_STEP_KINDS.contains(&kind.as_str()) {
+            if !V5_STEP_KINDS.contains(&kind) {
                 return Err(KnitError::Malformed(format!(
                     "a version-5 file cannot have a section step of kind {kind}, which is newer \
                      than version 5"
@@ -654,7 +667,7 @@ fn v5_to_v6(mut doc: Value) -> Result<Value, KnitError> {
             if kind == "Close" {
                 if let Some(fields) = body.as_object_mut() {
                     require_fields(fields, "a close step", &CLOSE_FIELDS)?;
-                    fields.insert("holds".into(), Value::Array(Vec::new()));
+                    fields.insert("holds", Json::Array(Box::default()));
                 }
             }
         }
@@ -670,6 +683,11 @@ mod tests {
         StitchLegend,
     };
     use ply_common::{Color, Unit};
+
+    /// Run one migration on a `serde_json::Value`, through the lean tree.
+    fn on_tree(step: Migration, value: Value) -> Result<Value, KnitError> {
+        step(Json::from(value)).map(Value::from)
+    }
 
     /// The fixture tree shared with the Flutter tests.
     fn fixture(rel: &str) -> String {
@@ -1371,7 +1389,7 @@ mod tests {
         assert_eq!(loaded.source_version, 3);
         assert!(loaded.pattern.sections.is_empty());
         assert_eq!(loaded.pattern, p);
-        assert_eq!(v3_to_v4(json!("x")).unwrap(), json!("x"));
+        assert_eq!(on_tree(v3_to_v4, json!("x")).unwrap(), json!("x"));
     }
 
     /// Sections survive save and load exactly, every step kind included, and the re-save is
@@ -1538,7 +1556,7 @@ mod tests {
                 ]
             }]
         });
-        let out = v4_to_v5(doc).unwrap();
+        let out = on_tree(v4_to_v5, doc).unwrap();
         assert_eq!(out["sections"][0]["construction"], Value::Null);
         assert_eq!(
             out["sections"][0]["steps"][0]["action"]["ShortRow"]["decrease"],
@@ -1548,9 +1566,9 @@ mod tests {
             out["sections"][0]["steps"][1]["action"],
             json!({"CastOn": {"count": 3}})
         );
-        assert_eq!(v4_to_v5(json!("x")).unwrap(), json!("x"));
+        assert_eq!(on_tree(v4_to_v5, json!("x")).unwrap(), json!("x"));
         assert_eq!(
-            v4_to_v5(json!({"sections": 3})).unwrap(),
+            on_tree(v4_to_v5, json!({"sections": 3})).unwrap(),
             json!({"sections": 3})
         );
     }
@@ -1678,16 +1696,16 @@ mod tests {
                 "steps": [{"id": "b", "action": {"CastOn": {"count": 3}}}]
             }]
         });
-        let out = v5_to_v6(doc).unwrap();
+        let out = on_tree(v5_to_v6, doc).unwrap();
         assert_eq!(out["pieces"], json!([]));
         assert_eq!(out["sections"][0]["piece"], Value::Null);
         assert_eq!(
             out["sections"][0]["steps"][0]["action"],
             json!({"CastOn": {"count": 3}})
         );
-        assert_eq!(v5_to_v6(json!("x")).unwrap(), json!("x"));
+        assert_eq!(on_tree(v5_to_v6, json!("x")).unwrap(), json!("x"));
         assert_eq!(
-            v5_to_v6(json!({"sections": 3})).unwrap(),
+            on_tree(v5_to_v6, json!({"sections": 3})).unwrap(),
             json!({"sections": 3, "pieces": []})
         );
     }
@@ -1801,7 +1819,7 @@ mod tests {
         assert_eq!(loaded.pattern.cast_on, None);
         assert_eq!(loaded.pattern, p);
         // The step alone, on a value that is not a document object, leaves it for the typed decode.
-        assert_eq!(v2_to_v3(json!([1, 2])).unwrap(), json!([1, 2]));
+        assert_eq!(on_tree(v2_to_v3, json!([1, 2])).unwrap(), json!([1, 2]));
     }
 
     /// The real bytes each release wrote load, migrate onto the full vocabulary, and every cell still
@@ -2139,7 +2157,7 @@ mod tests {
     /// then the typed decode of its `document`. Kept to show the typed route reads every such file
     /// to the same pattern.
     fn through_a_tree(text: &str) -> Result<KnitPattern, KnitError> {
-        let document = document_of(serde_json::from_str(text)?)?;
+        let document = crate::native_tree_oracle::document_of(serde_json::from_str(text)?)?;
         Ok(serde_json::from_value(document)?)
     }
 

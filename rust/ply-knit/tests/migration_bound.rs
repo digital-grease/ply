@@ -1,7 +1,7 @@
 //! A file the restore's value guard lets through takes no more memory to read than the guard's
 //! documented worst case, even when the migrations would add a field to every object. Empty
-//! sections, short rows and close steps (`{}`) cost a few bytes each in their list, and would cost a
-//! map node of hundreds of bytes each once a migration added a field; the migrations refuse them
+//! sections, short rows and close steps (`{}`) cost nothing but their place in their list, and would
+//! each gain an allocation of their own once a migration added a field; the migrations refuse them
 //! first. A counting allocator measures the peak heap of `native::read` on files at the value limit.
 //!
 //! One test, so nothing else allocates while it is measured.
@@ -39,8 +39,9 @@ static ALLOC: Counting = Counting;
 
 const MIB: usize = 1024 * 1024;
 
-/// The documented worst case of a file at the value limit (`MAX_VALUES`), with a little room.
-const WORST: usize = 950 * MIB;
+/// The documented worst case of an older file at the value limit (`MAX_VALUES`), with a little
+/// room (see `tests/older_decode_bound.rs`).
+const WORST: usize = 240 * MIB;
 
 /// The peak heap `f` adds above what was allocated before it.
 fn peak_added<T>(f: impl FnOnce() -> T) -> (T, usize) {

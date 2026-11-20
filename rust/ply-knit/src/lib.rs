@@ -12,7 +12,12 @@ pub mod calc;
 pub mod error;
 pub mod flow;
 pub mod instruction;
+// The lean JSON tree an older `.plyknit` is migrated on (ADR 0007, amendment of 2026-11-18).
+mod json_tree;
 pub mod native;
+// The route an older `.plyknit` took through a `serde_json::Value`, the oracle of the lean one.
+#[cfg(test)]
+mod native_tree_oracle;
 pub mod pattern;
 pub mod plan;
 // Working a pattern row by row, and resuming a saved place (ADR 0023).

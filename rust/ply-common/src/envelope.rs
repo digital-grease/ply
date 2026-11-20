@@ -20,8 +20,17 @@
 //! it has. `null` is a value: `"format": null` is a foreign format, not a missing key. A skipped
 //! value is checked for its syntax only: one nested deeper than a decoder accepts is refused by the
 //! reader that decodes the file, not here.
+//!
+//! **The top level as a tree holds it.** [`top_level`] is a stricter probe for readers that used to
+//! decode a whole file into a `serde_json::Value` only to look at its top-level keys (`looms.json`,
+//! `materials.json`). It accepts and refuses exactly the texts such a decode does, with the same
+//! error at the same place (every value is walked as the decode walks it, so nesting past
+//! serde_json's depth limit, a lone surrogate escape or a number out of range is refused), and
+//! reports what the tree would hold under the keys asked for, still building nothing in proportion
+//! to the file.
 
 use serde::de::{DeserializeSeed, Deserializer, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::Deserialize as _;
 use std::fmt;
 
 /// The top-level key that names a Ply document's format.
@@ -309,6 +318,243 @@ impl<'de> serde::Deserialize<'de> for Version {
     }
 }
 
+/// A top-level value as a whole decode into a `serde_json::Value` holds it: a scalar as it is, a
+/// list by its length, an object by its kind alone (see [`top_level`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum TopValue {
+    /// `null`, `true` or `false`, a number or a text, exactly as the tree holds it.
+    Scalar(serde_json::Value),
+    /// A list, with how many values it holds.
+    List(usize),
+    /// An object.
+    Object,
+}
+
+/// A key of the top-level object at its last occurrence, the one a decoded tree keeps.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TopEntry {
+    /// Its place among the object's entries, counting from 0 and counting every repeat.
+    pub index: usize,
+    /// Its value.
+    pub value: TopValue,
+}
+
+/// The top level of `text`, read as `serde_json::from_str::<serde_json::Value>` reads it, without
+/// building the tree: `Ok(None)` when the text is JSON but not an object, otherwise what each of
+/// `keys` holds at its last occurrence (`None` when absent), in the order asked. The text is
+/// accepted or refused exactly as that decode accepts or refuses it, with the same error: every
+/// value is walked as the decode walks it, and none is kept but a scalar under one of `keys` (a
+/// text is copied once).
+pub fn top_level(
+    text: &str,
+    keys: &[&str],
+) -> Result<Option<Vec<Option<TopEntry>>>, serde_json::Error> {
+    let mut de = serde_json::Deserializer::from_str(text);
+    let top = (&mut de).deserialize_any(TopLevelVisitor(keys))?;
+    de.end()?;
+    Ok(top)
+}
+
+/// Walks one value as a decode into a tree does (`deserialize_any` at every level, so the depth
+/// limit, string escapes and number ranges are checked alike) and keeps nothing.
+struct Checked;
+
+impl<'de> serde::Deserialize<'de> for Checked {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(CheckedVisitor)
+    }
+}
+
+struct CheckedVisitor;
+
+impl<'de> Visitor<'de> for CheckedVisitor {
+    type Value = Checked;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("any valid JSON value")
+    }
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Checked, E> {
+        Ok(Checked)
+    }
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Checked, E> {
+        Ok(Checked)
+    }
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Checked, E> {
+        Ok(Checked)
+    }
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Checked, E> {
+        Ok(Checked)
+    }
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Checked, E> {
+        Ok(Checked)
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Checked, E> {
+        Ok(Checked)
+    }
+    fn visit_none<E: serde::de::Error>(self) -> Result<Checked, E> {
+        Ok(Checked)
+    }
+    fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Checked, D::Error> {
+        Checked::deserialize(d)
+    }
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Checked, A::Error> {
+        while seq.next_element::<Checked>()?.is_some() {}
+        Ok(Checked)
+    }
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Checked, A::Error> {
+        while map.next_entry::<Checked, Checked>()?.is_some() {}
+        Ok(Checked)
+    }
+}
+
+struct TopLevelVisitor<'k>(&'k [&'k str]);
+
+impl<'de> Visitor<'de> for TopLevelVisitor<'_> {
+    type Value = Option<Vec<Option<TopEntry>>>;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("any valid JSON value")
+    }
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(None)
+    }
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+        CheckedVisitor.visit_seq(seq)?;
+        Ok(None)
+    }
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut found = vec![None; self.0.len()];
+        let mut index = 0;
+        while let Some(key) = map.next_key_seed(WhichKey(self.0))? {
+            match key {
+                // A repeated key overwrites: the last occurrence counts, as in a decoded tree.
+                Some(k) => {
+                    found[k] = Some(TopEntry {
+                        index,
+                        value: map.next_value::<TopValue>()?,
+                    })
+                }
+                None => {
+                    map.next_value::<Checked>()?;
+                }
+            }
+            index += 1;
+        }
+        Ok(Some(found))
+    }
+}
+
+/// Reads an object's key as its place among `keys`, or (`Err`) as another key's name: for a reader
+/// that decodes the keys it knows and refuses any other by name (`looms.json`, `materials.json`).
+/// Only a key it does not know is copied.
+pub struct KeyAmong<'k>(pub &'k [&'k str]);
+
+impl<'de> DeserializeSeed<'de> for KeyAmong<'_> {
+    type Value = Result<usize, String>;
+    fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        d.deserialize_str(self)
+    }
+}
+
+impl<'de> Visitor<'de> for KeyAmong<'_> {
+    type Value = Result<usize, String>;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a string key")
+    }
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+        Ok(self
+            .0
+            .iter()
+            .position(|k| *k == v)
+            .ok_or_else(|| v.to_string()))
+    }
+}
+
+/// Reads a key as its place in the keys asked for (`None`: another key), keeping nothing.
+struct WhichKey<'k>(&'k [&'k str]);
+
+impl<'de> DeserializeSeed<'de> for WhichKey<'_> {
+    type Value = Option<usize>;
+    fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Option<usize>, D::Error> {
+        d.deserialize_str(self)
+    }
+}
+
+impl<'de> Visitor<'de> for WhichKey<'_> {
+    type Value = Option<usize>;
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a string key")
+    }
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Option<usize>, E> {
+        Ok(self.0.iter().position(|k| *k == v))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TopValue {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> Visitor<'de> for V {
+            type Value = TopValue;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("any valid JSON value")
+            }
+            // Scalars are held as `serde_json::Value`'s own visitor holds them.
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<TopValue, E> {
+                Ok(TopValue::Scalar(serde_json::Value::Bool(v)))
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<TopValue, E> {
+                Ok(TopValue::Scalar(serde_json::Value::Number(v.into())))
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<TopValue, E> {
+                Ok(TopValue::Scalar(serde_json::Value::Number(v.into())))
+            }
+            fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<TopValue, E> {
+                Ok(TopValue::Scalar(serde_json::Number::from_f64(v).map_or(
+                    serde_json::Value::Null,
+                    serde_json::Value::Number,
+                )))
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<TopValue, E> {
+                Ok(TopValue::Scalar(serde_json::Value::String(v.to_string())))
+            }
+            fn visit_unit<E: serde::de::Error>(self) -> Result<TopValue, E> {
+                Ok(TopValue::Scalar(serde_json::Value::Null))
+            }
+            fn visit_none<E: serde::de::Error>(self) -> Result<TopValue, E> {
+                Ok(TopValue::Scalar(serde_json::Value::Null))
+            }
+            fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<TopValue, D::Error> {
+                TopValue::deserialize(d)
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<TopValue, A::Error> {
+                let mut n = 0;
+                while seq.next_element::<Checked>()?.is_some() {
+                    n += 1;
+                }
+                Ok(TopValue::List(n))
+            }
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<TopValue, A::Error> {
+                CheckedVisitor.visit_map(map)?;
+                Ok(TopValue::Object)
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,5 +752,100 @@ mod tests {
             "[".repeat(1000)
         );
         assert_eq!(kind(envelope_version(&unclosed, &KNIT)), "json");
+    }
+
+    /// What a decoded tree holds under `keys` in `text`, worked out from the tree itself.
+    fn from_tree(text: &str, keys: &[&str]) -> Result<Option<Vec<Option<TopValue>>>, String> {
+        let v: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let Some(obj) = v.as_object() else {
+            return Ok(None);
+        };
+        Ok(Some(
+            keys.iter()
+                .map(|k| {
+                    obj.get(*k).map(|v| match v {
+                        serde_json::Value::Array(a) => TopValue::List(a.len()),
+                        serde_json::Value::Object(_) => TopValue::Object,
+                        other => TopValue::Scalar(other.clone()),
+                    })
+                })
+                .collect(),
+        ))
+    }
+
+    #[test]
+    fn the_top_level_is_what_a_decoded_tree_holds() {
+        let keys = ["format", "n", "list"];
+        let deep = |n: usize| format!("{}{}", "[".repeat(n), "]".repeat(n));
+        let deep_obj = |n: usize| format!("{}1{}", r#"{"a":"#.repeat(n), "}".repeat(n));
+        let cases: Vec<String> = vec![
+            r#"{"format":"x","n":1,"list":[1,[2],{"a":3}]}"#.into(),
+            r#"{"list":[],"n":-0,"format":null}"#.into(),
+            r#"{"n":1.5,"n":2,"list":{},"list":[1,2]}"#.into(),
+            r#"{"format":"a","format":["b"],"n":true}"#.into(),
+            r#"{"f\u006frmat":"esc\n\u00e9","n":18446744073709551615}"#.into(),
+            r#"{"n":18446744073709551616,"list":-9223372036854775808}"#.into(),
+            r#"{"n":1e308,"list":[1e-400]}"#.into(),
+            r#"{}"#.into(),
+            r#"[1,{"format":"x"}]"#.into(),
+            r#""text""#.into(),
+            "7".into(),
+            "null".into(),
+            "true".into(),
+            // Refused by the decode, so by the probe, with the same error.
+            "".into(),
+            "{".into(),
+            r#"{"format":"x"} {}"#.into(),
+            r#"{"format":"x",}"#.into(),
+            r#"{"n":1e400}"#.into(),
+            r#"{"x":[-1e400]}"#.into(),
+            r#"{"x":"\ud83d"}"#.into(),
+            r#"{"\udc00":1}"#.into(),
+            r#"{"format":"\ud83d\ude00"}"#.into(),
+            "{\"x\":\"a\u{0001}\"}".into(),
+            r#"{"x":tru}"#.into(),
+            format!(r#"{{"x":{}}}"#, deep(126)),
+            format!(r#"{{"x":{}}}"#, deep(127)),
+            format!(r#"{{"x":{}}}"#, deep(128)),
+            format!(r#"{{"list":{}}}"#, deep(127)),
+            format!(r#"{{"list":{}}}"#, deep(128)),
+            format!(r#"{{"x":{}}}"#, deep_obj(127)),
+            format!(r#"{{"x":{}}}"#, deep_obj(128)),
+            format!(r#"[{}]"#, deep(127)),
+            deep(128),
+            deep(129),
+            format!(r#"{{"x":{}}}"#, deep(100_000)),
+        ];
+        for text in &cases {
+            let probed = top_level(text, &keys).map(|top| {
+                top.map(|found| found.into_iter().map(|e| e.map(|e| e.value)).collect())
+            });
+            match (probed, from_tree(text, &keys)) {
+                (Ok(a), Ok(b)) => assert_eq!(a, b, "{text:.120}"),
+                (Err(a), Err(b)) => assert_eq!(a.to_string(), b, "{text:.120}"),
+                (a, b) => panic!("{text:.120}: probe {a:?}, tree {b:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_top_level_entry_is_placed_at_its_last_occurrence() {
+        let found = top_level(r#"{"a":1,"b":[],"a":[1,2],"c":{}}"#, &["a", "c", "d"])
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            found,
+            vec![
+                Some(TopEntry {
+                    index: 2,
+                    value: TopValue::List(2)
+                }),
+                Some(TopEntry {
+                    index: 3,
+                    value: TopValue::Object
+                }),
+                None,
+            ]
+        );
     }
 }
