@@ -37,15 +37,26 @@ Finder _key(String k) => find.byKey(ValueKey(k));
 /// screen: on a phone the project's recipe buttons sit below the loop diagram, the Add a step
 /// button below the steps, and a step's menu can be scrolled far above. So when [f] is not on
 /// screen, [list] (the page's list unless given) is scrolled from its top until it is.
+///
+/// What is above [f] can still change size after the page has settled: an answer from the engine
+/// (the loop diagram of the notation just typed) arrives when it is ready, not with a frame, and on
+/// a freshly booted device the first answers come late. Then [f] can be scrolled out of what the
+/// list builds between bringing it on screen and tapping it, so it is brought on screen again, a
+/// few times at most, until it is still there after a settle.
 Future<void> _tap(WidgetTester tester, Finder f, {Finder? list}) async {
-  if (f.evaluate().isEmpty) {
-    final scrollable = list ?? find.byType(Scrollable).first;
-    (tester.state(scrollable) as ScrollableState).position.jumpTo(0);
+  for (var attempt = 1;; attempt++) {
+    if (f.evaluate().isEmpty) {
+      final scrollable = list ?? find.byType(Scrollable).first;
+      (tester.state(scrollable) as ScrollableState).position.jumpTo(0);
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(f, 200, scrollable: scrollable);
+    }
+    await tester.ensureVisible(f);
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(f, 200, scrollable: scrollable);
+    if (f.evaluate().isNotEmpty || attempt == 3) break;
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
   }
-  await tester.ensureVisible(f);
-  await tester.pumpAndSettle();
   await tester.tap(f);
   await tester.pumpAndSettle();
 }
