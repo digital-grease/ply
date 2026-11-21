@@ -55,14 +55,48 @@ class KnitPlaceWords {
       final r = u.chartRow ?? place.unit + 1;
       return place.repeat > 1 ? '$rowWord $r, time ${place.repeat}' : '$rowWord $r';
     }
-    final parts = <String>[
-      if (u.section != null && u.section! < work.headings.length) work.headings[u.section!],
-      if (u.step != null) 'step ${u.step! + 1}',
-      if (u.chartRow != null) 'chart row ${u.chartRow}',
-      if (u.rows > 1) '${isRound(u) ? 'round' : 'row'} ${place.row}',
-    ];
-    return parts.join(', ');
+    return [if (_heading(u) case final h?) h, ..._inStep(u, place)].join(', ');
   }
+
+  /// The words a library tile shows for [place], kept in its record as the place's label (ADR 0023,
+  /// follow-up 6): with sections, the words above ("Section 1: Cuff, step 2, row 5"), the heading
+  /// shortened when the whole would pass [ProgressLimits.maxLabelChars] (a section's name is the
+  /// knitter's own and may be long), so the step and row are always kept, and left out when nothing
+  /// readable of it would be left; for a chart, the row or round as above with the tile's "of"
+  /// ("Round 5 of 24, time 2": without a label a tile can only say Chart row, since the record does
+  /// not say whether the chart is worked flat or in the round). The "of" is the tile's: [units],
+  /// those of the basis stored with the place, left out without them or for a row past them.
+  /// `null` for a place no longer in the pattern.
+  String? label(KnitPlace place, {int? units}) {
+    final i = unitOf(place);
+    if (i == null) return null;
+    final u = work.units[i];
+    if (chart) {
+      final r = u.chartRow ?? place.unit + 1;
+      return '${rowWord == 'round' ? 'Round' : 'Row'} $r'
+          '${units != null && r <= units ? ' of $units' : ''}'
+          '${place.repeat > 1 ? ', time ${place.repeat}' : ''}';
+    }
+    final rest = _inStep(u, place).join(', ');
+    final heading = _heading(u);
+    if (rest.isEmpty) return heading == null ? null : PlaceLabel.fit(heading);
+    final shown = heading == null
+        ? ''
+        : PlaceLabel.fit(heading, max: ProgressLimits.maxLabelChars - rest.length - 2);
+    return shown.isEmpty ? '${rest[0].toUpperCase()}${rest.substring(1)}' : '$shown, $rest';
+  }
+
+  /// The heading of [u]'s section ("Section 1: Cuff"), when it has one.
+  String? _heading(KnitWorkUnitDto u) =>
+      u.section != null && u.section! < work.headings.length ? work.headings[u.section!] : null;
+
+  /// Where [place] is inside its section: the step, the chart row of a chart-rows step, and the row
+  /// inside a step that works several.
+  List<String> _inStep(KnitWorkUnitDto u, KnitPlace place) => [
+        if (u.step != null) 'step ${u.step! + 1}',
+        if (u.chartRow != null) 'chart row ${u.chartRow}',
+        if (u.rows > 1) '${isRound(u) ? 'round' : 'row'} ${place.row}',
+      ];
 
   /// "3 rows", "1 round", "4 rows and steps".
   String units(int n) {
@@ -157,6 +191,16 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
           units: _units.length, prefix: repeat > 1 ? _units[unit].laterPrefix : _units[unit].prefix)
       : null;
 
+  /// The words written with a stored place as its label, from the pattern's work as the tracker has
+  /// it (the label is the tracker's words, so it follows the pattern on screen, as the place does),
+  /// with [units] of the basis stored with it for a chart's "of".
+  String? _labelOf(WorkPlace place, int? units) {
+    final work = _work;
+    return work != null && place is KnitPlace
+        ? KnitPlaceWords(work).label(place, units: units)
+        : null;
+  }
+
   /// Where the stored place in [progress] is shown in the pattern as it is now (the engine's resume,
   /// as on opening): the place shown, the sentence, whether the knitter must check it, and a step to
   /// offer.
@@ -243,6 +287,7 @@ class _KnitTrackerScreenState extends ConsumerState<KnitTrackerScreen> {
         pendingCheck: needsLook && !empty,
         clock: ref.read(progressClockProvider),
         fromRecord: load.status == ProgressStatus.ok,
+        labelOf: _labelOf,
       );
       c.addListener(_changed);
       if (!mounted) {

@@ -62,7 +62,8 @@ import 'tablet_test_support.dart';
 // without one, and the line for a newer or unreadable record; the place, and the tile's menu, open
 // the project straight into its tracker through its editor, exactly as the editor's menu does, and
 // back from the tracker is the editor; the place is read again after tracking, renaming, deleting
-// and restoring.
+// and restoring. A knitting tile says the place in the tracker's own words when the record keeps
+// them for that place (its label, follow-up 6), and its own words otherwise.
 
 /// The record's last change and the clock the tiles read, in the device's time zone.
 final DateTime _earlier = DateTime(2026, 11, 18, 9);
@@ -72,6 +73,9 @@ const _ok = 'aa000000-1111-4222-8333-944455556601';
 const _none = 'aa000000-1111-4222-8333-944455556602';
 const _newer = 'aa000000-1111-4222-8333-944455556603';
 const _bad = 'aa000000-1111-4222-8333-944455556604';
+const _labelled = 'aa000000-1111-4222-8333-944455556605';
+const _oldLabel = 'aa000000-1111-4222-8333-944455556606';
+const _brokenLabel = 'aa000000-1111-4222-8333-944455556607';
 
 Future<Directory> _library() async {
   final docs = await Directory.systemTemp.createTemp('ply_library_place');
@@ -330,6 +334,62 @@ class _Knits extends KnitRepository {
 
 Progress _knit(int unit) =>
     _at(ProgressCraft.knitting, KnitPlace(unit), units: 3, prefix: fakePrefix(unit + 1));
+
+/// The engine's work for a pattern in sections: a cast-on step, six rows of rib, and a bind-off.
+KnitWorkDto _knitSections() => KnitWorkDto(
+      mode: KnitWorkModeKind.sections,
+      round: false,
+      headings: const ['Section 1: Cuff', 'Section 2: Finish'],
+      sectionNotes: const [null, null],
+      units: [
+        for (final (i, section, step, rows) in [(0, 0, 0, 1), (1, 0, 1, 6), (2, 1, 0, 1)])
+          KnitWorkUnitDto(
+            section: section,
+            step: step,
+            sectionId: 'section-${section + 1}',
+            stepId: 'step-${i + 1}',
+            label: rows > 1 ? 'Next $rows rows (first row RS)' : null,
+            text: 'Step ${i + 1} of the pattern.',
+            count: '20 sts',
+            rows: rows,
+            opaque: false,
+            prefix: fakePrefix(i + 1),
+            laterPrefix: fakePrefix(i + 1),
+          ),
+      ],
+      stopped: false,
+    );
+
+/// A knitting record at [place] (in sections) whose file holds [label] as its label, as given.
+String _knitWithLabel(KnitPlace place, Map<String, Object?>? label,
+        {int units = 120, String pad = ''}) =>
+    jsonEncode({
+      ...jsonDecode(_at(ProgressCraft.knitting, place, units: units, prefix: fakePrefix(1))
+          .encodeFitted()
+          .text) as Map<String, dynamic>,
+      if (label != null) 'label': label,
+      if (pad.isNotEmpty) 'later': pad,
+    });
+
+const _cuffRow3 = KnitPlace(13, row: 3, sectionId: 'section-1', stepId: 'step-4');
+const _cuffWords = 'Section 1: Cuff, step 2, row 3';
+
+/// A label as a file holds it: [text] for [at], stamped with [updated] (the last change of a record
+/// [_at] makes, unless given).
+Map<String, Object?> _label(Object? text, {KnitPlace at = _cuffRow3, String? updated}) =>
+    {'text': text, 'place': at.toJson(), 'updated': updated ?? _earlier.toUtc().toIso8601String()};
+
+/// Labels a tile never shows, as a file may hold them: kept by a build from before the label while
+/// it moved the place (the words of another place), or while it moved away and back or changed a
+/// note (another last change), and one not well formed.
+final Map<String, Map<String, Object?>> _oldLabels = {
+  'another place': _label('Section 1: Cuff, step 1',
+      at: const KnitPlace(12, sectionId: 'section-1', stepId: 'step-3')),
+  'another last change':
+      _label('Section 1: Ribbing, step 2, row 3', updated: '2026-11-18T23:00:00.000Z'),
+  'not well formed': _label(7),
+  'half of a symbol': _label('Section 1: Cuff \ud83e'),
+};
 
 // --- tablet weaving -----------------------------------------------------------------------------
 
@@ -737,6 +797,42 @@ void main() {
           {'small', 'large'});
     });
 
+    test('the tracker\'s words, only when the record keeps them for its place', () async {
+      const craft = BackupCraft.knitting;
+      final pad = 'y' * (kInlinePlaceBytes + 1000);
+      // Each read inline and, past the inline size, on the background isolate.
+      final cases = <String, Map<String, Object?>?>{
+        'labelled': _label(_cuffWords),
+        for (final MapEntry(:key, :value) in _oldLabels.entries) key: value,
+        'no label': null,
+      };
+      final ids = <String>[];
+      cases.forEach((name, label) {
+        final id = name.replaceAll(' ', '-');
+        _writeText(docs, craft, id, _knitWithLabel(_cuffRow3, label));
+        _writeText(docs, craft, '$id-large', _knitWithLabel(_cuffRow3, label, pad: pad));
+        expect(_recordFile(docs, craft, '$id-large').lengthSync(), greaterThan(kInlinePlaceBytes));
+        ids.addAll([id, '$id-large']);
+      });
+      final before = _snapshot(docs);
+      final places = await readLibraryPlaces(repo, craft, ids);
+      final updated = _earlier.toUtc();
+      final words =
+          LibraryPlace.read(place: _cuffRow3, units: 120, updated: updated, label: _cuffWords);
+      expect(places['labelled'], words);
+      expect(places['labelled-large'], words, reason: 'read on the background isolate, words too');
+      for (final id in ids.where((id) => !id.startsWith('labelled'))) {
+        expect(places[id], LibraryPlace.read(place: _cuffRow3, units: 120, updated: updated),
+            reason: id);
+        expect(libraryPlaceText(places[id]!), 'Line 14 of 120, row 3', reason: id);
+      }
+      expect(libraryPlaceText(places['labelled']!), _cuffWords);
+      for (final id in ids) {
+        expect(places[id], LibraryPlace.fromLoad(await repo.load(craft, id)), reason: id);
+      }
+      expect(_snapshot(docs), before, reason: 'nothing written: a bad label is only not shown');
+    });
+
     test('never throws: a repository that cannot find its folder gives no places', () async {
       expect(await readLibraryPlaces(_NoFolder(), BackupCraft.weaving, [_ok]), isEmpty);
       expect(await readLibraryPlaces(repo, BackupCraft.weaving, ['not a project id']), isEmpty);
@@ -764,6 +860,13 @@ void main() {
               const KnitPlace(13, sectionId: 'section-2', stepId: 'step-5', chartRow: 4), 120),
           'Line 14 of 120, chart row 4');
       expect(libraryPlaceWords(const NalbindPlace(2, stepId: 'segment-3'), 12), 'Step 3 of 12');
+      expect(
+          libraryPlaceText(
+              const LibraryPlace.read(place: _cuffRow3, units: 120, label: _cuffWords)),
+          _cuffWords,
+          reason: 'the tracker\'s words, when the record keeps them');
+      expect(libraryPlaceText(const LibraryPlace.read(place: _cuffRow3, units: 120)),
+          'Line 14 of 120, row 3');
       expect(libraryPlaceText(const LibraryPlace.newer()), kLibraryPlaceNewer);
       expect(libraryPlaceText(const LibraryPlace.unreadable()), kLibraryPlaceUnreadable);
 
@@ -969,7 +1072,62 @@ void main() {
       expect(find.byType(KnitTrackerScreen), findsNothing);
       expect(find.byType(KnitEditorScreen), findsOneWidget);
       await _back(tester);
-      expect(_lineText(_ok, 'Chart row 3 of 3'), findsOneWidget);
+      // The tracker wrote its words with the place: a flat chart's row, where a record without
+      // them can only say Chart row.
+      expect(_lineText(_ok, 'Row 3 of 3'), findsOneWidget);
+    });
+
+    testWidgets(
+        'a tile in sections says the place in the tracker\'s words; old or broken words are not '
+        'shown', (tester) async {
+      final semantics = tester.ensureSemantics();
+      _writeText(
+          docs, BackupCraft.knitting, _labelled, _knitWithLabel(_cuffRow3, _label(_cuffWords)));
+      _writeText(docs, BackupCraft.knitting, _oldLabel,
+          _knitWithLabel(_cuffRow3, _oldLabels['another last change']));
+      // Half of a symbol could not be laid out: such a label is never read, so the tile lays out.
+      _writeText(docs, BackupCraft.knitting, _brokenLabel,
+          _knitWithLabel(_cuffRow3, _oldLabels['half of a symbol']));
+      final repo = knits([_labelled, _oldLabel, _brokenLabel]);
+      await _pump(tester, const KnitLibraryScreen(), overrides(repo));
+      expect(_lineText(_labelled, _cuffWords), findsOneWidget);
+      expect(_lineText(_labelled, 'Updated today'), findsOneWidget);
+      // Said as written: the heading keeps its capital.
+      expect(find.bySemanticsLabel('Continue at $_cuffWords. Updated today'), findsOneWidget);
+      expect(_lineText(_oldLabel, 'Line 14 of 120, row 3'), findsOneWidget);
+      expect(find.bySemanticsLabel('Continue at line 14 of 120, row 3. Updated today'),
+          findsNWidgets(2));
+      expect(_lineText(_brokenLabel, 'Line 14 of 120, row 3'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      semantics.dispose();
+    });
+
+    testWidgets('moving the place in sections gives the tile the tracker\'s words', (tester) async {
+      work.knit = _knitSections();
+      // Saved without words, as by a build from before them.
+      _write(
+          docs,
+          BackupCraft.knitting,
+          _ok,
+          _at(ProgressCraft.knitting,
+              const KnitPlace(1, row: 2, sectionId: 'section-1', stepId: 'step-2'),
+              units: 3, prefix: fakePrefix(2)));
+      final repo = knits([_ok]);
+      await _pump(tester, const KnitLibraryScreen(), overrides(repo));
+      expect(_lineText(_ok, 'Line 2 of 3, row 2'), findsOneWidget);
+      await _tap(tester, _line(_ok));
+      expect(_trackerPlace('Row 2 of 6'), findsOneWidget);
+      await _tap(tester, find.byKey(const ValueKey('tracker-next')));
+      await _back(tester);
+      await _back(tester);
+      expect(_lineText(_ok, 'Section 1: Cuff, step 2, row 3'), findsOneWidget);
+      // Go to another step: the words follow the place.
+      await _tap(tester, _line(_ok));
+      await _tap(tester, find.byKey(const ValueKey('tracker-goto')));
+      await _tap(tester, find.byKey(const ValueKey('tracker-goto-unit-2')));
+      await _back(tester);
+      await _back(tester);
+      expect(_lineText(_ok, 'Section 2: Finish, step 1'), findsOneWidget);
     });
 
     testWidgets('the place is read again after a rename and a delete', (tester) async {

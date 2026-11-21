@@ -14,8 +14,9 @@
 // be read, or that a newer Ply wrote, gives a short line instead of a place; a record the device
 // could not read just now, or any other failure no record explains, gives no line at all.
 //
-// Only what the record states is kept: its place, the pattern's units when the place was saved, and
-// when the record last changed. The engine's resume is not run per tile: whether the pattern changed
+// Only what the record states is kept: its place, the pattern's units when the place was saved,
+// when the record last changed, and the tracker's words for the place when the record keeps them
+// for that place (its label). The engine's resume is not run per tile: whether the pattern changed
 // under the place is the tracker's to say, when it opens.
 
 import 'dart:async';
@@ -52,20 +53,22 @@ enum LibraryPlaceKind {
 
 /// A project's saved place as its record states it, for its library tile.
 class LibraryPlace {
-  const LibraryPlace.read({required WorkPlace this.place, this.units, this.updated})
+  const LibraryPlace.read({required WorkPlace this.place, this.units, this.updated, this.label})
       : kind = LibraryPlaceKind.read;
 
   const LibraryPlace.newer()
       : kind = LibraryPlaceKind.newer,
         place = null,
         units = null,
-        updated = null;
+        updated = null,
+        label = null;
 
   const LibraryPlace.unreadable()
       : kind = LibraryPlaceKind.unreadable,
         place = null,
         units = null,
-        updated = null;
+        updated = null,
+        label = null;
 
   final LibraryPlaceKind kind;
 
@@ -77,6 +80,11 @@ class LibraryPlace {
 
   /// When the record last changed (a move, or a note added, changed or deleted), when it says.
   final DateTime? updated;
+
+  /// The tracker's words for [place] (the record's label, ADR 0023 follow-up 6), when the record
+  /// keeps them for that very place and its last change; a tile shows them instead of its own
+  /// words.
+  final String? label;
 
   /// What a tile shows for [load]: nothing for no record, a record with no place yet (the tracker
   /// starts at the first unit), or a record the device could not read just now.
@@ -90,7 +98,13 @@ class LibraryPlace {
   static LibraryPlace? _fromProgress(Progress? p) {
     final place = p?.place;
     if (p == null || place == null) return null;
-    return LibraryPlace.read(place: place, units: p.basis?.units, updated: p.updated);
+    // A label of another place or another last change is old (see `PlaceLabel`): never shown.
+    final label = p.label;
+    return LibraryPlace.read(
+        place: place,
+        units: p.basis?.units,
+        updated: p.updated,
+        label: label != null && label.isFor(place, p.updated) ? label.text : null);
   }
 
   @override
@@ -99,13 +113,14 @@ class LibraryPlace {
       other.kind == kind &&
       other.place == place &&
       other.units == units &&
-      other.updated == updated;
+      other.updated == updated &&
+      other.label == label;
 
   @override
-  int get hashCode => Object.hash(kind, place, units, updated);
+  int get hashCode => Object.hash(kind, place, units, updated, label);
 
   @override
-  String toString() => 'LibraryPlace($kind, $place, of $units, $updated)';
+  String toString() => 'LibraryPlace($kind, $place, of $units, $updated, $label)';
 }
 
 /// What a record file was when it was read: its path, size, last change of content and of the file
@@ -297,7 +312,12 @@ void _readRecords((SendPort, List<String>, ProgressCraft) job) {
           load.status,
           p == null
               ? null
-              : Progress(craft: p.craft, place: p.place, basis: p.basis, updated: p.updated)),
+              : Progress(
+                  craft: p.craft,
+                  place: p.place,
+                  basis: p.basis,
+                  updated: p.updated,
+                  label: p.label)),
     ));
   }
   port.send(null);

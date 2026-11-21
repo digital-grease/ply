@@ -9,8 +9,12 @@
 // and is left as it is; deleting the draft deletes its progress and its tile.
 // Knitting, tablet weaving and nalbinding: a saved pattern, band and recipe are each opened from
 // their tile's menu into Knit row by row, Weave pick by pick and Nalbind step by step, worked one
-// unit, and their tiles then show Chart row 2 of 2, Pick 2 of 3 and Step 2 of 3; the tablet band's
-// stepper is at the place when the tracker closes; each place opens the tracker again.
+// unit, and their tiles then show Row 2 of 2 (the knitting tracker's words for a flat chart, kept
+// with the place), Pick 2 of 3 and Step 2 of 3; the tablet band's stepper is at the place when the
+// tracker closes; each place opens the tracker again.
+// Knitting in sections (follow-up 6): two rows worked in the tracker, the tile says Section 1:
+// Cuff, step 1, row 3 in the tracker's words, also after a restart; a Go to another step and the
+// tile follows it.
 //
 //   flutter test integration_test/m8_library_place_test.dart -d emulator-5554
 
@@ -35,6 +39,7 @@ import 'package:ply/src/models/nalbind_recipe.dart';
 import 'package:ply/src/models/progress.dart';
 import 'package:ply/src/models/tablet_band.dart';
 import 'package:ply/src/rust/frb_generated.dart';
+import 'package:ply/src/rust/knit_dto.dart';
 import 'package:ply/src/rust/tablet_dto.dart';
 import 'package:ply/src/screens/editor_screen.dart';
 import 'package:ply/src/screens/knit_editor_screen.dart';
@@ -273,7 +278,8 @@ void main() {
     await back(tester);
     expect(find.byType(KnitTrackerScreen), findsNothing);
     await back(tester);
-    await pumpUntil(tester, placeSays(id, 'Chart row 2 of 2'));
+    // The tracker's words, kept with the place: a flat chart's row.
+    await pumpUntil(tester, placeSays(id, 'Row 2 of 2'));
     expect(placeSays(id, 'Updated today'), findsOneWidget);
 
     await tapOn(tester, placeLine(id));
@@ -282,6 +288,68 @@ void main() {
         isA<KnitPlace>().having((k) => k.unit, 'unit', 1));
     await back(tester);
     await back(tester);
+  });
+
+  testWidgets('a knitting tile in sections says the place in the tracker\'s words', (tester) async {
+    final knits = KnitRepository();
+    final blank = await knits.blank();
+    final chart = KnitEditorState(pattern: blank).resizeChart(4, 2).pattern;
+    const name = 'library place cuff';
+    final pattern = KnitPatternDto(
+      name: name,
+      construction: blank.construction,
+      firstRowSide: blank.firstRowSide,
+      castOn: 20,
+      gauge: blank.gauge,
+      palette: blank.palette,
+      legend: blank.legend,
+      chart: chart.chart,
+      notes: '',
+      sections: const [
+        KnitSectionDto(
+          id: 'section-1',
+          name: 'Cuff',
+          notes: '',
+          steps: [
+            KnitStepDto(id: 'step-1', action: KnitStepActionDto.rows(count: 6, text: 'k2, p2 rib')),
+            KnitStepDto(id: 'step-2', action: KnitStepActionDto.bindOff(resolveTurns: false)),
+          ],
+        ),
+      ],
+      pieces: const [],
+    );
+    final now = DateTime.now();
+    final id = await knits.saveKnit(
+      pattern: pattern,
+      meta: DraftMeta(name: name, craft: 'Knitting', savedAt: now, lastOpened: now),
+    );
+    addTearDown(() => knits.deleteKnit(id));
+    final overrides = [knitRepositoryProvider.overrideWithValue(knits)];
+
+    // Two rows of the rib, through the real engine's work and ledger.
+    await openFresh(tester, const KnitLibraryScreen(), overrides: overrides);
+    await fromTileMenu(tester, name, 'Pattern actions', kKnitTrackerTitle);
+    await pumpUntil(tester, placeText('Row 1 of 6'));
+    await tapKey(tester, 'tracker-next');
+    await tapKey(tester, 'tracker-next');
+    expect(placeText('Row 3 of 6'), findsOneWidget);
+    await back(tester);
+    await back(tester);
+    await pumpUntil(tester, placeSays(id, 'Section 1: Cuff, step 1, row 3'));
+    final read = await ProgressRepository().load(BackupCraft.knitting, id);
+    expect(read.progress!.label?.text, 'Section 1: Cuff, step 1, row 3');
+    expect(read.progress!.label?.place, read.progress!.place);
+
+    // After a restart the tile reads the words from disk; a Go to another step moves them too.
+    await openFresh(tester, const KnitLibraryScreen(), overrides: overrides);
+    await pumpUntil(tester, placeSays(id, 'Section 1: Cuff, step 1, row 3'));
+    await tapOn(tester, placeLine(id));
+    await pumpUntil(tester, placeText('Row 3 of 6'));
+    await tapKey(tester, 'tracker-goto');
+    await tapKey(tester, 'tracker-goto-unit-1');
+    await back(tester);
+    await back(tester);
+    await pumpUntil(tester, placeSays(id, 'Section 1: Cuff, step 2'));
   });
 
   testWidgets('a tablet weaving tile opens the tracker; back, the stepper is at the place',

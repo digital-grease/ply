@@ -329,8 +329,9 @@ class BackupLimits {
 
   /// The most JSON values a progress record may have on restore, counted before it is decoded. The
   /// largest record Ply writes (every bound at its largest: 400 log entries, 50 undo frames and 100
-  /// notes, places whole with their ids) has 19,991; this is five times that, for keys a
-  /// later build adds within the same version. Past it, the record is left out.
+  /// notes, places whole with their ids, and the place's label) has 20,011; this is about five
+  /// times that, for keys a later build adds within the same version. Past it, the record is left
+  /// out.
   final int maxProgressValues;
 
   /// The deepest nesting of lists and objects a progress record may have on restore (Ply writes

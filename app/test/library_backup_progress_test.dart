@@ -23,7 +23,9 @@ import 'backup_test_support.dart';
 // its own; a newer record is carried as it is; and a record the restore cannot vouch for (unreadable,
 // too large, too many values, too deep, a number too large for a double, another craft's) is left
 // out while its project restores, never refusing the project or the backup. Every craft's records
-// are read this way: weaving, knitting, nalbinding and tablet weaving.
+// are read this way: weaving, knitting, nalbinding and tablet weaving. A record's label (the
+// tracker's words for the place, follow-up 6) travels in it, does not count in the comparison, and
+// never leaves a record out when it is not well formed.
 
 final t0 = DateTime.utc(2026, 11, 18, 10);
 
@@ -44,6 +46,19 @@ List<int> knittingRecord(int unit) => utf8.encode(const Progress(craft: Progress
         now: t0)
     .encodeFitted()
     .text);
+
+/// A knitting record at [unit] whose label is [words] (the knitting tracker's words for the place).
+List<int> labelledKnittingRecord(int unit, String words) =>
+    utf8.encode(const Progress(craft: ProgressCraft.knitting)
+        .moved(
+            from: const KnitPlace(0, sectionId: 'section-1', stepId: 'step-1'),
+            to: KnitPlace(unit, sectionId: 'section-1', stepId: 'step-2'),
+            basis: const PlaceBasis(units: 9, prefix: '0123456789abcdef'),
+            kind: LogKind.worked,
+            now: t0,
+            label: (_, __) => words)
+        .encodeFitted()
+        .text);
 
 List<int> tabletRecord(int pick, {int repeat = 1}) => utf8.encode(Progress(
       craft: ProgressCraft.tabletWeaving,
@@ -422,6 +437,71 @@ void main() {
           .inspectBackup(await craft(draftWith(weavingRecord(5))));
       expect(only(plan2, 'a').progressLeftOut, isTrue);
       expect(only(plan2, 'a').status, RestoreStatus.add);
+    });
+  });
+
+  group('the place\'s label', () {
+    test('travels in its record, byte for byte, into a backup and out of it', () async {
+      await seedLibrary(docs);
+      final record = labelledKnittingRecord(3, 'Section 1: Cuff, step 2');
+      expect(utf8.decode(record), contains('"label"'));
+      await put(docs, 'knits/k1.plyprogress', record);
+      final archive = await backUp(service());
+      final entries = await entriesOf(archive);
+      expect(entries.firstWhere((e) => e.$1 == 'knits/k1.plyprogress').$2, record);
+      final fresh = await Directory.systemTemp.createTemp('backup_fresh');
+      addTearDown(() => fresh.delete(recursive: true));
+      final s = service(into: fresh);
+      final plan = await s.inspectBackup(archive);
+      expect(only(plan, 'k1').carriesProgress, isTrue);
+      await s.restore(plan);
+      expect(inDocs(fresh, 'knits/k1.plyprogress').readAsBytesSync(), record);
+      final read = await ProgressRepository(docsOverride: fresh).load(BackupCraft.knitting, 'k1');
+      expect(read.progress!.label?.text, 'Section 1: Cuff, step 2');
+    });
+
+    test('a project that differs only in its label is already in the library, which keeps its own',
+        () async {
+      await seedLibrary(docs);
+      await put(docs, 'knits/k1.plyprogress', labelledKnittingRecord(3, 'Section 1: Cuff, step 2'));
+      final archive = await backUp(service());
+      // The same place with other words (the section renamed since), or none.
+      for (final mine in [
+        labelledKnittingRecord(3, 'Section 1: Ribbing, step 2'),
+        knittingRecord(3),
+      ]) {
+        await put(docs, 'knits/k1.plyprogress', mine);
+        final before = await snapshot(docs);
+        final plan = await service().inspectBackup(archive);
+        expect(only(plan, 'k1').status, RestoreStatus.alreadyPresent);
+        await service().restore(plan);
+        expect(await snapshot(docs), before);
+        expect(inDocs(docs, 'knits/k1.plyprogress').readAsBytesSync(), mine);
+      }
+    });
+
+    test('a record whose label is not well formed is carried, and reads without it', () async {
+      final valid = jsonDecode(utf8.decode(weavingRecord(5))) as Map<String, dynamic>;
+      for (final label in <Object?>[
+        {'text': 7},
+        {'text': 'x' * (ProgressLimits.maxLabelChars + 1), 'place': valid['place']},
+        {
+          'text': 'Pick 4',
+          'place': {'pick': 4, 'repeat': 1}
+        },
+        'Pick 5',
+      ]) {
+        final record = utf8.encode(jsonEncode({...valid, 'label': label}));
+        final plan = await service().inspectBackup(await craft(draftWith(record)));
+        final a = only(plan, 'a');
+        expect((a.carriesProgress, a.progressLeftOut), (true, false), reason: '$label');
+        await service().restore(plan);
+        expect(inDocs(docs, 'drafts/a.plyprogress').readAsBytesSync(), record, reason: '$label');
+        final read = await ProgressRepository(docsOverride: docs).load(BackupCraft.weaving, 'a');
+        expect((read.status, read.progress!.label), (ProgressStatus.ok, null), reason: '$label');
+        expect(read.progress!.place, const PickPlace(5));
+        await Directory(p.join(docs.path, 'drafts')).delete(recursive: true);
+      }
     });
   });
 

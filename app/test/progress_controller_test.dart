@@ -10,7 +10,8 @@ import 'progress_test_support.dart';
 
 // One tracking session (ADR 0023): a place shown for checking is accepted by Next (the move is
 // logged first as a fix, so the log says why the place changed) or replaced by a jump, Undo is not
-// offered while a place waits to be checked, and every change is written at once.
+// offered while a place waits to be checked, and every change is written at once. Every change of
+// place writes the tracker's words as the record's label, or, for a tracker without words, none.
 
 const id = '5d1f3a2b-1111-4222-8333-944455556666';
 
@@ -102,6 +103,73 @@ void main() {
     );
     await same.accept();
     expect((await r.load(BackupCraft.nalbinding, id)).progress!.log, hasLength(1));
+  });
+
+  test('every change of place writes the tracker\'s words, or leaves no label without them',
+      () async {
+    Future<PlaceLabel?> label() async => (await repo.load(BackupCraft.weaving, id)).progress?.label;
+    Future<String?> text() async => (await label())?.text;
+    String? words(WorkPlace w, int? units) => w is PickPlace ? 'At pick ${w.pick} of $units' : null;
+    // A record holding a label (a later build's): a tracker without words drops it as it moves.
+    final stamp = DateTime.utc(2026, 11, 18, 9);
+    final labelled = Progress(
+        craft: ProgressCraft.weaving,
+        place: const PickPlace(3),
+        basis: basis(3),
+        updated: stamp,
+        label: PlaceLabel(
+            text: 'Pick 3, the blue stripe', place: const PickPlace(3), updated: stamp));
+    await repo.save(BackupCraft.weaving, id, labelled);
+    expect((await label())?.text, 'Pick 3, the blue stripe');
+    final plain = ProgressController(
+        repository: repo,
+        craft: BackupCraft.weaving,
+        id: id,
+        progress: labelled,
+        place: const PickPlace(3),
+        basis: basis(3),
+        clock: clock);
+    await plain.moveTo(const PickPlace(4), basis(4), LogKind.worked);
+    expect(await label(), isNull);
+    // With words: a move, and an undo, write them for the place stored.
+    final worded = ProgressController(
+        repository: repo,
+        craft: BackupCraft.weaving,
+        id: id,
+        progress: (await repo.load(BackupCraft.weaving, id)).progress!,
+        place: const PickPlace(4),
+        basis: basis(4),
+        clock: clock,
+        labelOf: words);
+    await worded.moveTo(const PickPlace(5), basis(5), LogKind.worked);
+    expect(await text(), 'At pick 5 of 6');
+    expect((await label())!.place, const PickPlace(5));
+    await worded.undo(start: const PickPlace(1));
+    expect(await text(), 'At pick 4 of 6');
+    expect((await label())!.place, const PickPlace(4));
+    // A place shown for checking, accepted where it is shown (a fix) or where it was (a rebase).
+    for (final stored in [const PickPlace(10), const PickPlace(6)]) {
+      final checking = ProgressController(
+          repository: repo,
+          craft: BackupCraft.weaving,
+          id: id,
+          progress: Progress(craft: ProgressCraft.weaving, place: stored, basis: basis(9)),
+          place: const PickPlace(6),
+          basis: basis(6),
+          pendingCheck: true,
+          clock: clock,
+          labelOf: words);
+      await checking.accept();
+      expect(await text(), 'At pick 6 of 6', reason: 'stored at $stored');
+      expect((await label())!.place, const PickPlace(6));
+    }
+    // Clear: no record, so no label; the next move writes the words again.
+    await worded.clear(start: const PickPlace(1), basis: basis(1));
+    expect((await repo.load(BackupCraft.weaving, id)).status, ProgressStatus.none);
+    await worded.moveTo(const PickPlace(2), basis(2), LogKind.worked);
+    final after = (await repo.load(BackupCraft.weaving, id)).progress!;
+    expect((after.place, after.label?.text), (const PickPlace(2), 'At pick 2 of 6'));
+    expect(after.label!.isFor(after.place, after.updated), isTrue);
   });
 
   test('a note limit is refused before anything is written', () async {

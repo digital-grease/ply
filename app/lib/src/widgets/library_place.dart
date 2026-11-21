@@ -1,8 +1,9 @@
 // A project's saved place on its library tile (ADR 0023, amendment of 2026-11-19): the place as its
 // progress record states it ("Pick 49 of 96, time 2", "Chart row 5 of 24", "Line 14 of 120, row 3",
-// "Step 3 of 12") and when it last changed, as a button that opens the project straight into its
-// tracker. A record that cannot be read says so in a short line, which opens the tracker too: the
-// tracker explains and offers what to do.
+// "Step 3 of 12"), or in the tracker's own words when the record keeps them for that place
+// ("Section 1: Cuff, step 2, row 5", follow-up 6), and when it last changed, as a button that
+// opens the project straight into its tracker. A record that cannot be read says so in a short
+// line, which opens the tracker too: the tracker explains and offers what to do.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,9 +40,10 @@ String libraryPlaceWords(WorkPlace place, int? units) {
   };
 }
 
-/// The tile's line for [place]: its words, or why there are none.
+/// The tile's line for [place]: the tracker's words when the record keeps them for its place, else
+/// the tile's own words, or why there are none.
 String libraryPlaceText(LibraryPlace place) => switch (place.kind) {
-      LibraryPlaceKind.read => libraryPlaceWords(place.place!, place.units),
+      LibraryPlaceKind.read => place.label ?? libraryPlaceWords(place.place!, place.units),
       LibraryPlaceKind.newer => kLibraryPlaceNewer,
       LibraryPlaceKind.unreadable => kLibraryPlaceUnreadable,
     };
@@ -86,8 +88,11 @@ class LibraryPlaceLine extends ConsumerWidget {
         ? null
         : libraryUpdatedText(
             MaterialLocalizations.of(context), place.updated!, ref.read(progressClockProvider)());
+    // The tracker's words are said as written: they start with a section's heading ("Continue at
+    // Section 1: Cuff, step 2, row 5") or a row's ("Continue at Round 5 of 24"), never lowered into
+    // the knitter's own text. The tile's own words read on from "at" ("Continue at pick 49 of 96").
     final spoken = read
-        ? 'Continue at ${text[0].toLowerCase()}${text.substring(1)}'
+        ? 'Continue at ${place.label ?? '${text[0].toLowerCase()}${text.substring(1)}'}'
             '${updated == null ? '' : '. $updated'}'
         : text;
     // At a large text size a small tile keeps to one line (the day stays in what is spoken), so the

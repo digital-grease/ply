@@ -8,8 +8,9 @@ import 'package:ply/src/models/progress.dart';
 // The progress record (ADR 0023) as pure data: the file round-trips with unknown keys kept, a newer
 // record is refused from its version alone, anything malformed or past a bound is unreadable, the log
 // merges a session into one entry and keeps within its bound, Undo reverses each change exactly (also
-// after the record was written and read back), notes keep to their limits, and the largest record the
-// bounds allow fits the file bound.
+// after the record was written and read back), notes keep to their limits, the place's label is
+// kept only for its own place and dropped (never unreadable) when it is not well formed, and the
+// largest record the bounds allow fits the file bound.
 
 final t0 = DateTime.utc(2026, 11, 18, 10);
 DateTime at(int minutes) => t0.add(Duration(minutes: minutes));
@@ -32,6 +33,22 @@ Progress weave(Progress p, int from, int to, {int minute = 0}) {
 }
 
 Progress reread(Progress p) => Progress.decode(p.encodeFitted().text, craft: p.craft);
+
+/// A stand-in for the knitting tracker's words for a place.
+String? cuffWords(WorkPlace w, int? units) =>
+    w is KnitPlace ? 'Section 1: Cuff, step ${w.unit + 1}, row ${w.row}' : null;
+
+const cuff = KnitPlace(2, row: 5, sectionId: 'section-1', stepId: 'step-3');
+
+/// A knitting record moved to [cuff] with [label] as its words.
+Progress atCuff({PlaceWords? label = cuffWords}) =>
+    const Progress(craft: ProgressCraft.knitting).moved(
+        from: const KnitPlace(0),
+        to: cuff,
+        basis: b(3),
+        kind: LogKind.worked,
+        now: t0,
+        label: label);
 
 void main() {
   group('the file', () {
@@ -423,6 +440,274 @@ void main() {
     });
   });
 
+  group('the label', () {
+    /// The label's words and place, without its stamp.
+    (String, WorkPlace)? said(Progress p) =>
+        p.label == null ? null : (p.label!.text, p.label!.place);
+
+    test('a label is written with its place and read back; a record without one reads as before',
+        () {
+      final p = atCuff();
+      final json = jsonDecode(p.encodeFitted().text) as Map<String, dynamic>;
+      expect(json['label'], {
+        'text': 'Section 1: Cuff, step 3, row 5',
+        'place': {'unit': 2, 'row': 5, 'repeat': 1, 'section': 'section-1', 'step': 'step-3'},
+        'updated': json['updated'],
+      });
+      final back = reread(p);
+      expect(back.label,
+          PlaceLabel(text: 'Section 1: Cuff, step 3, row 5', place: cuff, updated: t0));
+      expect(back.extra, isEmpty, reason: 'a known key, never kept as an unknown one');
+      expect(back.encodeFitted().text, p.encodeFitted().text, reason: 'written back as read');
+      // Without words no key is written, and a record without the key (every earlier build's)
+      // reads as before and is written back exactly.
+      final text = atCuff(label: null).encodeFitted().text;
+      expect((jsonDecode(text) as Map).containsKey('label'), isFalse);
+      final older = Progress.decode(text, craft: ProgressCraft.knitting);
+      expect(older.label, isNull);
+      expect(older.place, cuff);
+      expect(older.encodeFitted().text, text);
+    });
+
+    test('a label not well formed, or not of this place and last change, is dropped as if absent',
+        () {
+      final good = jsonDecode(atCuff().encodeFitted().text) as Map<String, dynamic>;
+      final place = good['place'] as Map<String, dynamic>;
+      final stamp = good['updated'] as String;
+      Map<String, Object?> label(Object? text, {Object? at, Object? updated}) => {
+            'text': text,
+            'place': at ?? place,
+            'updated': updated ?? stamp,
+          };
+      final cases = <String, Object?>{
+        'text alone': 'Section 1: Cuff',
+        'a list': [],
+        'no text': {'place': place, 'updated': stamp},
+        'text that is not a string': label(7),
+        'empty text': label(''),
+        'blank text': label('   '),
+        'text past the cap': label('x' * (ProgressLimits.maxLabelChars + 1)),
+        'half of a symbol at the end': label('Cuff \ud83e'),
+        'half of a symbol before a letter': label('Cuff \ud83ex'),
+        'the other half alone': label('Cuff \udd76'),
+        'no place': {'text': 'Cuff', 'updated': stamp},
+        'no stamp': {'text': 'Cuff', 'place': place},
+        'a stamp that is not a time': label('Cuff', updated: 'yesterday'),
+        'an unknown key': {...label('Cuff'), 'more': 1},
+        'another craft\'s place': label('Pick 3', at: {'pick': 3, 'repeat': 1}),
+        'a place past a bound': label('Cuff', at: {...place, 'row': -1}),
+        'an id outside the grammar': label('Cuff', at: {...place, 'step': 'has a space'}),
+        // A build from before the key keeps it verbatim and writes it back as it moves the place.
+        'the words of another place': label('Section 1: Cuff, step 1',
+            at: {'unit': 0, 'row': 1, 'repeat': 1, 'section': 'section-1', 'step': 'step-1'}),
+        'the same spot without its ids': label('Cuff', at: {'unit': 2, 'row': 5, 'repeat': 1}),
+        // ... and back at the same place (or after a note), with its own last change.
+        'another last change': label('Section 1: Ribbing, step 3, row 5',
+            updated: '2026-11-18T11:00:00.000Z'),
+      };
+      for (final MapEntry(:key, :value) in cases.entries) {
+        final text = jsonEncode({...good, 'label': value});
+        final p = Progress.decode(text, craft: ProgressCraft.knitting);
+        expect(p.label, isNull, reason: key);
+        expect((p.place, p.log.length, p.undo.length), (cuff, 1, 1),
+            reason: '$key: the rest reads');
+        expect(p.extra, isEmpty, reason: key);
+        expect((jsonDecode(p.encodeFitted().text) as Map).containsKey('label'), isFalse,
+            reason: '$key: not written back');
+      }
+      // A whole symbol, and text at the cap, are kept; a record with no place keeps no label.
+      for (final text in ['Cuff \u{1F9F6}', 'x' * ProgressLimits.maxLabelChars]) {
+        expect(
+            Progress.decode(jsonEncode({...good, 'label': label(text)}),
+                    craft: ProgressCraft.knitting)
+                .label
+                ?.text,
+            text);
+      }
+      final noPlace = Map.of(good)
+        ..remove('place')
+        ..remove('basis')
+        ..['label'] = label('Cuff');
+      expect(Progress.decode(jsonEncode(noPlace), craft: ProgressCraft.knitting).label, isNull);
+    });
+
+    test('an earlier build\'s move away and back makes the label old', () {
+      // That build keeps `label` as an unknown key and writes it back unchanged; every move and
+      // note change it makes changes `updated`. Here it moved on and back, after the section was
+      // renamed: the place is the same, the words are not.
+      final json = jsonDecode(atCuff().encodeFitted().text) as Map<String, dynamic>;
+      final earlier = {...json, 'updated': '2026-11-18T12:00:00.000Z'};
+      final p = Progress.decode(jsonEncode(earlier), craft: ProgressCraft.knitting);
+      expect(p.place, cuff);
+      expect(p.label, isNull);
+    });
+
+    test('any craft\'s record may hold one for its place; a move without words drops it', () {
+      final json = jsonDecode(weave(const Progress(craft: ProgressCraft.weaving), 1, 3)
+          .encodeFitted()
+          .text) as Map<String, dynamic>;
+      json['label'] = {
+        'text': 'Pick 3, the blue stripe',
+        'place': {'pick': 3, 'repeat': 1},
+        'updated': json['updated'],
+      };
+      final p = Progress.decode(jsonEncode(json), craft: ProgressCraft.weaving);
+      expect(said(p), ('Pick 3, the blue stripe', const PickPlace(3)));
+      final moved = p.moved(
+          from: const PickPlace(3),
+          to: const PickPlace(4),
+          basis: b(4),
+          kind: LogKind.worked,
+          now: at(3));
+      expect(moved.label, isNull);
+      expect((jsonDecode(moved.encodeFitted().text) as Map).containsKey('label'), isFalse);
+    });
+
+    test('every change of place writes fresh words or none; other changes keep and stamp them',
+        () {
+      var p = atCuff();
+      expect(said(p), ('Section 1: Cuff, step 3, row 5', cuff));
+      // Notes do not move the place: the words stay, stamped with each change.
+      for (final change in <Progress Function(Progress)>[
+        (p) => p.withNote(cuff, 'Second ball', now: at(1)),
+        (p) => p.withNoteText('note-1', 'Third ball', now: at(2)),
+        (p) => p.withoutNote('note-1', now: at(3)),
+      ]) {
+        p = change(p);
+        expect(said(p), ('Section 1: Cuff, step 3, row 5', cuff));
+        expect(p.label!.updated, p.updated);
+        expect(reread(p).label, p.label, reason: 'written with the record\'s new last change');
+      }
+      // A move with words: fresh ones. Without (another craft's tracker): none.
+      const next = KnitPlace(2, row: 6, sectionId: 'section-1', stepId: 'step-3');
+      p = p.moved(
+          from: cuff, to: next, basis: b(3), kind: LogKind.worked, now: at(4), label: cuffWords);
+      expect(p.label,
+          PlaceLabel(text: 'Section 1: Cuff, step 3, row 6', place: next, updated: at(4)));
+      expect(p.moved(from: next, to: cuff, basis: b(3), kind: LogKind.back, now: at(5)).label,
+          isNull);
+      // A place accepted where it is: the pattern changed under it, so its words are given again.
+      final rebased = p.rebased(
+          place: next,
+          basis: b(9),
+          now: at(6),
+          label: (_, __) => 'Section 1: Ribbing, step 3, row 6');
+      expect(said(rebased), ('Section 1: Ribbing, step 3, row 6', next));
+      expect(p.rebased(place: next, basis: b(9), now: at(6)).label, isNull,
+          reason: 'the old words may not hold');
+      // Undo frames hold no words: the words for the place undone to, or none.
+      expect(said(rebased.undone(now: at(7), label: cuffWords)!),
+          ('Section 1: Cuff, step 3, row 6', next));
+      expect(rebased.undone(now: at(7))!.label, isNull);
+      expect(atCuff().undone(now: at(7), label: cuffWords)!.label, isNull, reason: 'no place now');
+      // No words, blank ones or broken ones: no label. Long ones are shortened to fit.
+      Progress movedWith(PlaceWords words) => p.moved(
+          from: next, to: cuff, basis: b(3), kind: LogKind.jump, now: at(8), label: words);
+      expect(movedWith((_, __) => null).label, isNull);
+      expect(movedWith((_, __) => ' \n ').label, isNull);
+      expect(movedWith((_, __) => 'Cuff \ud83e').label, isNull);
+      final long = movedWith((_, __) => 'Section 1: ${'Long name ' * 30}').label!;
+      expect(long.text.length, lessThanOrEqualTo(ProgressLimits.maxLabelChars));
+      expect(long.text, endsWith('…'));
+      expect(reread(movedWith((_, __) => 'Section 1: ${'Long name ' * 30}')).label, long);
+      // The label is for the place as stored: an id outside the grammar is left out of both.
+      final odd = const Progress(craft: ProgressCraft.knitting).moved(
+          from: const KnitPlace(0),
+          to: const KnitPlace(1, sectionId: 'has a space', stepId: 'step-1'),
+          basis: b(1),
+          kind: LogKind.jump,
+          now: t0,
+          label: (_, __) => 'Step 2');
+      expect(odd.label?.place, const KnitPlace(1, stepId: 'step-1'));
+      expect(reread(odd).label?.text, 'Step 2');
+    });
+
+    test('the words are asked with the units of the basis stored with the place, on every path',
+        () {
+      final asked = <(WorkPlace, int?)>[];
+      String? words(WorkPlace w, int? units) {
+        asked.add((w, units));
+        return 'Row ${(w as KnitPlace).unit + 1} of $units';
+      }
+
+      PlaceBasis of(int units) => PlaceBasis(units: units, prefix: 'f' * 16);
+      // Row 5 of a chart of 24; rows were added at the end; Next stores row 6 against 30.
+      var p = const Progress(craft: ProgressCraft.knitting).moved(
+          from: const KnitPlace(0),
+          to: const KnitPlace(4),
+          basis: of(24),
+          kind: LogKind.jump,
+          now: t0,
+          label: words);
+      p = p.moved(
+          from: const KnitPlace(4),
+          to: const KnitPlace(5),
+          basis: of(30),
+          kind: LogKind.worked,
+          now: at(1),
+          label: words);
+      expect(p.label?.text, 'Row 6 of 30');
+      // Undo puts back row 5 with the basis of 24: its words say 24, as the tile counts.
+      final undone = p.undone(now: at(2), label: words)!;
+      expect(undone.basis?.units, 24);
+      expect(undone.label?.text, 'Row 5 of 24');
+      final rebased = p.rebased(place: const KnitPlace(5), basis: of(31), now: at(3), label: words);
+      expect(rebased.label?.text, 'Row 6 of 31');
+      expect(asked.map((a) => a.$2), [24, 30, 24, 31]);
+    });
+
+    test('a note with half of a symbol is refused, and a record holding one is unreadable', () {
+      const p = Progress(craft: ProgressCraft.weaving);
+      expect(
+          () => p.withNote(p1, 'Second ball \ud83e', now: t0),
+          throwsA(isA<ProgressLimitException>()
+              .having((e) => e.message, 'message', contains('broken symbol'))));
+      final kept = p.withNote(p1, 'Second ball \u{1F9F6}', now: t0);
+      expect(
+          () => kept.withNoteText('note-1', '\udd76 Third ball', now: t0),
+          throwsA(isA<ProgressLimitException>()));
+      expect(reread(kept).notes.single.text, 'Second ball \u{1F9F6}');
+      final json = jsonDecode(kept.encodeFitted().text) as Map<String, dynamic>;
+      (json['notes'] as List).first['text'] = 'Second ball \ud83e';
+      expect(
+          () => Progress.decode(jsonEncode(json), craft: ProgressCraft.weaving),
+          throwsA(isA<ProgressFileException>()
+              .having((e) => e.problem, 'problem', ProgressProblem.unreadable)));
+    });
+
+    test('words past the cap are shortened at a word, with an ellipsis, never inside a character',
+        () {
+      expect(PlaceLabel.fit('Section 1: Cuff, step 2'), 'Section 1: Cuff, step 2');
+      expect(PlaceLabel.fit('  Section 1:\n Cuff \t step 2 '), 'Section 1: Cuff step 2');
+      final long = 'Section 1: ${'Long name ' * 40}';
+      final words = PlaceLabel.fit(long);
+      expect(words.length, lessThanOrEqualTo(ProgressLimits.maxLabelChars));
+      expect(words, endsWith('…'));
+      expect(long.startsWith('${words.substring(0, words.length - 1)} '), isTrue,
+          reason: 'cut after a whole word: $words');
+      // One long word: cut between characters.
+      expect(PlaceLabel.fit('a' * 300), '${'a' * 199}…');
+      // At a word boundary already: nothing more is cut.
+      expect(PlaceLabel.fit('${'a' * 199} ${'b' * 10}'), '${'a' * 199}…');
+      // No comma left hanging before the ellipsis.
+      expect(PlaceLabel.fit('Cuff, ribbing and more', max: 12), 'Cuff…');
+      // Never inside a character as a reader sees it: a yarn ball (two UTF-16 units), a flag
+      // (two symbols of two units), a family joined from three people, a letter and its accent.
+      for (final (keep, character) in [
+        (198, '\u{1F9F6}'),
+        (197, '\u{1F1F3}\u{1F1F4}'),
+        (195, '\u{1F468}‍\u{1F469}‍\u{1F467}'),
+        (198, 'é'),
+      ]) {
+        expect(PlaceLabel.fit('${'a' * keep}$character${'b' * 10}'), '${'a' * keep}…',
+            reason: character);
+      }
+      // Nothing readable left once shortened: no words.
+      expect(PlaceLabel.fit('(' * 300), '');
+      expect(PlaceLabel.fit('(((', max: 200), '(((', reason: 'what fits is never changed');
+    });
+  });
+
   group('the bound', () {
     test('the version of a file too large to decode is read from its first bytes', () {
       final text = const Progress(craft: ProgressCraft.weaving).encodeFitted().text;
@@ -436,8 +721,8 @@ void main() {
     });
 
     test('the largest record the bounds allow fits the file bound', () {
-      // Every count at its largest, every id 64 characters, every note character one that JSON
-      // writes as six bytes (a control character).
+      // Every count at its largest, every id 64 characters, every note and label character one that
+      // JSON writes as six bytes (a control character).
       final id = 'a' * 64;
       const max = ProgressLimits.maxNumber;
       KnitPlace big() =>
@@ -477,6 +762,7 @@ void main() {
             UndoFrame(place: big(), basis: basis, change: LogChange.extended, last: entry)),
         started: t0,
         updated: t0,
+        label: PlaceLabel(text: '\u0001' * ProgressLimits.maxLabelChars, place: big(), updated: t0),
       );
       final out = p.encodeFitted();
       final bytes = utf8.encode(out.text).length;
@@ -485,7 +771,9 @@ void main() {
       expect(out.progress.log, hasLength(ProgressLimits.maxLogEntries), reason: 'nothing dropped');
       // ignore: avoid_print
       print('largest progress record: $bytes bytes (${(bytes / 1024).toStringAsFixed(1)} KiB)');
-      expect(Progress.decode(out.text, craft: ProgressCraft.knitting).notes, hasLength(100));
+      final back = Progress.decode(out.text, craft: ProgressCraft.knitting);
+      expect(back.notes, hasLength(100));
+      expect(back.label, p.label, reason: 'a label at its bound is kept');
       // What a backup restore measures before it decodes a record (ADR 0023, section 9).
       final shape = measureJson(utf8.encode(out.text));
       // ignore: avoid_print

@@ -8,6 +8,10 @@
 
 import 'dart:convert';
 
+// For grapheme clusters only (`String.characters`, package:characters, which Flutter exports), so a
+// shortened label never splits a character as a reader sees it.
+import 'package:flutter/widgets.dart' show StringCharacters;
+
 /// The `format` value of a progress file.
 const String kProgressFormat = 'ply.progress';
 
@@ -42,9 +46,13 @@ abstract final class ProgressLimits {
   /// A stored time.
   static const int maxTimeChars = 40;
 
+  /// The text of a place's label ([PlaceLabel]), in UTF-16 units (`String.length`). The tracker's
+  /// words are shortened to fit with an ellipsis; a longer one in a file is dropped as if absent.
+  static const int maxLabelChars = 200;
+
   /// The most JSON values a record may have, counted before it is decoded. The largest record the
-  /// bounds above allow has 19,991; this is five times that, for keys a later build adds within the
-  /// same version.
+  /// bounds above allow has 20,011; this is about five times that, for keys a later build adds
+  /// within the same version.
   static const int maxValues = 100000;
 
   /// The deepest nesting of lists and objects a record may have (Ply writes 5: an undo frame's
@@ -365,6 +373,142 @@ class PlaceBasis {
   int get hashCode => Object.hash(units, prefix);
 }
 
+// --- the label -------------------------------------------------------------------------------------
+
+/// A tracker's words for a place about to be stored, for its label ([PlaceLabel]): null for none.
+/// [units] are the units stored with that place (its basis), for an "of", as a tile counts them.
+typedef PlaceWords = String? Function(WorkPlace place, int? units);
+
+/// The tracker's words for the stored place (ADR 0023, follow-up 6), so a library tile can say
+/// where the crafter is as the tracker says it ("Section 1: Cuff, step 2, row 5"), where the
+/// record's numbers alone would only name a line of the written instructions.
+///
+/// Kept with a copy of the place the words were written for and the record's `updated` when they
+/// were written, which every write this build makes stamps again. A build from before this key
+/// keeps it as an unknown top-level key and writes it back unchanged, while it moves the place and
+/// changes `updated` with every move and note: so a label whose place is not the record's place, or
+/// whose stamp is not the record's `updated`, is old (even back at the same place, after an edit of
+/// the pattern), and is never shown or written again.
+///
+/// A display convenience, never the place: a label that is not well formed is dropped as if absent
+/// (the record still reads), and every change of place this build makes writes fresh words or none,
+/// so a record this build writes never holds a stale label. The words are worked out from the
+/// pattern as the tracker has it when it stores the place, with the "of" of the basis stored with
+/// it: after an edit of the pattern a tile may show the old words until the tracker next stores the
+/// place, as it shows the old "of".
+class PlaceLabel {
+  const PlaceLabel({required this.text, required this.place, required this.updated});
+
+  /// At most [ProgressLimits.maxLabelChars], never blank, well-formed UTF-16 ([isText]).
+  final String text;
+
+  /// The place [text] was written for.
+  final WorkPlace place;
+
+  /// The record's last change when [text] was written for it.
+  final DateTime updated;
+
+  /// Whether this is still the label of a record whose place is [place] and whose last change was
+  /// [updated].
+  bool isFor(WorkPlace? place, DateTime? updated) =>
+      place != null && updated != null && this.place == place && this.updated == updated;
+
+  /// Text a label may hold: not blank, at most [ProgressLimits.maxLabelChars], and no half of a
+  /// symbol written with two UTF-16 units (a library tile cannot lay such text out).
+  static bool isText(String text) =>
+      text.trim().isNotEmpty &&
+      text.length <= ProgressLimits.maxLabelChars &&
+      isWellFormedText(text);
+
+  /// The label [json] holds for a record of [craft] whose place is [place] and last change
+  /// [updated]; null (as if absent) for none, anything not well formed (not an object, an unknown
+  /// key, text that is not [isText], a place that is not [craft]'s, a stamp that is not a time), or
+  /// a label of another place or another last change ([isFor]). Never throws: a label never makes
+  /// a record unreadable.
+  static PlaceLabel? tryFromJson(ProgressCraft craft, Object? json,
+      {required WorkPlace? place, required DateTime? updated}) {
+    if (json == null || place == null || updated == null) return null;
+    try {
+      final m = _object(json, const {'text', 'place', 'updated'});
+      final text = m['text'];
+      if (text is! String || !isText(text)) return null;
+      final label = PlaceLabel(
+          text: text, place: WorkPlace.fromJson(craft, m['place']), updated: _time(m['updated']));
+      return label.isFor(place, updated) ? label : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Map<String, Object?> toJson() =>
+      {'text': text, 'place': place.toJson(), 'updated': _timeText(updated)};
+
+  /// [text] as a label holds it: runs of white space as one space, the ends trimmed, and past [max]
+  /// (UTF-16 units) shortened to fit with an ellipsis, at a word boundary when one is in the second
+  /// half of what is kept, else between two characters as a reader sees them (grapheme clusters: a
+  /// flag, an emoji joined from several, a letter with its accents are never split). Empty for no
+  /// words, and when shortening leaves no letter or digit (a heading of brackets). For the
+  /// tracker's derived words only: what a crafter types is never shortened.
+  static String fit(String text, {int max = ProgressLimits.maxLabelChars}) {
+    final t = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (t.length <= max) return t;
+    if (max < 2) return '';
+    final room = max - 1; // for the ellipsis
+    var end = 0;
+    for (final c in t.characters) {
+      if (end + c.length > room) break;
+      end += c.length;
+    }
+    var cut = t.substring(0, end);
+    if (t.codeUnitAt(end) != 0x20) {
+      final space = cut.lastIndexOf(' ');
+      if (space >= end ~/ 2) cut = cut.substring(0, space);
+    }
+    // No comma, colon or opening bracket left hanging before the ellipsis.
+    cut = cut.replaceFirst(RegExp(r'[\s,;:(]+$'), '');
+    return _readable.hasMatch(cut) ? '$cut\u2026' : '';
+  }
+
+  static final RegExp _readable = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlaceLabel &&
+      other.text == text &&
+      other.place == place &&
+      other.updated == updated;
+
+  @override
+  int get hashCode => Object.hash(text, place, updated);
+
+  @override
+  String toString() => 'PlaceLabel($text, $place, $updated)';
+}
+
+/// [words] for [place] stored with [units], fitted as a label holds them; null for none.
+String? _wordsFor(WorkPlace? place, int? units, PlaceWords? words) {
+  if (place == null || words == null) return null;
+  final said = words(place, units);
+  if (said == null) return null;
+  final text = PlaceLabel.fit(said);
+  return PlaceLabel.isText(text) ? text : null;
+}
+
+/// Whether [text] is well-formed UTF-16: every surrogate one of a pair. Flutter cannot lay out text
+/// holding half a pair, and JSON keeps such a half (`"\ud83e"`), so free text in a record (a note,
+/// a label) must be whole.
+bool isWellFormedText(String text) {
+  for (var i = 0; i < text.length; i++) {
+    final u = text.codeUnitAt(i);
+    if (u < 0xD800 || u > 0xDFFF) continue;
+    if (u > 0xDBFF || i + 1 >= text.length) return false;
+    final next = text.codeUnitAt(i + 1);
+    if (next < 0xDC00 || next > 0xDFFF) return false;
+    i++;
+  }
+  return true;
+}
+
 // --- the log ---------------------------------------------------------------------------------------
 
 /// What a log entry records.
@@ -467,7 +611,10 @@ class ProgressNote {
     final id = m['id'];
     final text = m['text'];
     if (id is! String || !isStorableId(id)) throw const FormatException('bad note id');
-    if (text is! String || text.isEmpty || text.length > ProgressLimits.maxNoteChars) {
+    if (text is! String ||
+        text.isEmpty ||
+        text.length > ProgressLimits.maxNoteChars ||
+        !isWellFormedText(text)) {
       throw const FormatException('bad note text');
     }
     return ProgressNote(
@@ -553,9 +700,9 @@ class UndoFrame {
 // --- the record ------------------------------------------------------------------------------------
 
 /// A project's checkpoint record: the place (the next unit to work), what it was saved against, the
-/// completion log, the notes, undo, and when tracking began and last changed. Unknown top-level keys
-/// from a later build are kept in [extra] and written back. Immutable: every change returns a new
-/// record.
+/// completion log, the notes, undo, when tracking began and last changed, and the tracker's words
+/// for the place when it gave them. Unknown top-level keys from a later build are kept in [extra]
+/// and written back. Immutable: every change returns a new record.
 class Progress {
   const Progress({
     required this.craft,
@@ -568,6 +715,7 @@ class Progress {
     this.undo = const [],
     this.started,
     this.updated,
+    this.label,
     this.extra = const {},
   });
 
@@ -587,6 +735,11 @@ class Progress {
   final List<UndoFrame> undo;
   final DateTime? started;
   final DateTime? updated;
+
+  /// The tracker's words for [place], when it gave them; they are the record's only while
+  /// [PlaceLabel.isFor] its place and [updated] (as a record read or changed here always is). Only
+  /// knitting writes one; a change of place made without fresh words drops it.
+  final PlaceLabel? label;
   final Map<String, Object?> extra;
 
   static const _known = {
@@ -602,6 +755,7 @@ class Progress {
     'notes',
     'lastNoteNumber',
     'undo',
+    'label',
   };
 
   bool get canUndo => undo.isNotEmpty;
@@ -618,20 +772,36 @@ class Progress {
     List<UndoFrame>? undo,
     DateTime? started,
     DateTime? updated,
-  }) =>
-      Progress(
-        craft: craft,
-        place: clearPlace ? null : (place ?? this.place),
-        basis: clearBasis ? null : (basis ?? this.basis),
-        log: List.unmodifiable(log ?? this.log),
-        logDropped: logDropped ?? this.logDropped,
-        notes: List.unmodifiable(notes ?? this.notes),
-        lastNoteNumber: lastNoteNumber ?? this.lastNoteNumber,
-        undo: List.unmodifiable(undo ?? this.undo),
-        started: started ?? this.started,
-        updated: updated ?? this.updated,
-        extra: extra,
-      );
+    String? labelText,
+    bool relabel = false,
+  }) {
+    final at = clearPlace ? null : (place ?? this.place);
+    final when = updated ?? this.updated;
+    // A change of place gives its own words ([relabel], null for none); any other change (a note,
+    // fitting the file) keeps the words the record has for its place. Either way the label is
+    // stamped with the record's new last change, so an earlier build's next write makes it old.
+    final words = relabel
+        ? labelText
+        : (at == this.place && (label?.isFor(this.place, this.updated) ?? false)
+            ? label!.text
+            : null);
+    return Progress(
+      craft: craft,
+      place: at,
+      basis: clearBasis ? null : (basis ?? this.basis),
+      log: List.unmodifiable(log ?? this.log),
+      logDropped: logDropped ?? this.logDropped,
+      notes: List.unmodifiable(notes ?? this.notes),
+      lastNoteNumber: lastNoteNumber ?? this.lastNoteNumber,
+      undo: List.unmodifiable(undo ?? this.undo),
+      started: started ?? this.started,
+      updated: updated ?? this.updated,
+      label: words == null || at == null || when == null
+          ? null
+          : PlaceLabel(text: words, place: at, updated: when),
+      extra: extra,
+    );
+  }
 
   static List<UndoFrame> _pushFrame(List<UndoFrame> frames, UndoFrame f) {
     final out = [...frames, f];
@@ -644,7 +814,8 @@ class Progress {
   /// [kind] ([count] units for worked and back). Consecutive moves of the same kind that follow on
   /// within [ProgressLimits.sessionGap] extend the last entry; otherwise an entry is added, and the
   /// oldest dropped (and counted) past [ProgressLimits.maxLogEntries]. Undo returns to the STORED
-  /// place before the move.
+  /// place before the move. [label] gives the tracker's words for the place stored, with the units
+  /// of [basis]; without them the record keeps no label (an old one would name the place it left).
   Progress moved({
     required WorkPlace from,
     required WorkPlace to,
@@ -652,6 +823,7 @@ class Progress {
     required LogKind kind,
     required DateTime now,
     int count = 1,
+    PlaceWords? label,
   }) {
     final t = _trim(now);
     final last = log.isEmpty ? null : log.last;
@@ -690,8 +862,9 @@ class Progress {
         dropped = (dropped + 1).clamp(0, ProgressLimits.maxNumber);
       }
     }
+    final stored = _storablePlace(to);
     return _copy(
-      place: _storablePlace(to),
+      place: stored,
       basis: basis,
       clearBasis: basis == null,
       log: entries,
@@ -699,26 +872,41 @@ class Progress {
       undo: _pushFrame(undo, frame),
       started: started ?? t,
       updated: t,
+      labelText: _wordsFor(stored, basis?.units, label),
+      relabel: true,
     );
   }
 
   /// Keep the place where it is but save it against [basis] (the crafter checked a place whose
-  /// pattern changed and said it is right). Not logged; Undo restores the old basis.
-  Progress rebased({required WorkPlace place, required PlaceBasis basis, required DateTime now}) {
+  /// pattern changed and said it is right). Not logged; Undo restores the old basis. [label] gives
+  /// the tracker's words for the place, with the units of [basis]: the pattern changed, so the old
+  /// words may not hold.
+  Progress rebased({
+    required WorkPlace place,
+    required PlaceBasis basis,
+    required DateTime now,
+    PlaceWords? label,
+  }) {
     final t = _trim(now);
     final frame = UndoFrame(place: this.place, basis: this.basis, change: LogChange.none);
+    final stored = _storablePlace(place);
     return _copy(
-      place: _storablePlace(place),
+      place: stored,
       basis: basis,
       undo: _pushFrame(undo, frame),
       started: started ?? t,
       updated: t,
+      labelText: _wordsFor(stored, basis.units, label),
+      relabel: true,
     );
   }
 
   /// Reverse the last change of place exactly: the place and basis before it, and the log as it was
   /// (an entry the log's bound dropped meanwhile stays dropped). `null` when there is nothing to undo.
-  Progress? undone({required DateTime now}) {
+  /// Undo frames hold no words, so [label] gives the tracker's words for the place undone to, as
+  /// the pattern is now, with the units of the basis undone to; without them the record keeps no
+  /// label.
+  Progress? undone({required DateTime now, PlaceWords? label}) {
     if (undo.isEmpty) return null;
     final frame = undo.last;
     final entries = [...log];
@@ -742,6 +930,8 @@ class Progress {
       log: entries,
       undo: undo.sublist(0, undo.length - 1),
       updated: _trim(now),
+      labelText: _wordsFor(frame.place, frame.basis?.units, label),
+      relabel: true,
     );
   }
 
@@ -749,6 +939,11 @@ class Progress {
 
   void _checkNote(String text, {int replacing = 0}) {
     if (text.isEmpty) throw const ProgressLimitException('Write something in the note first.');
+    // The reader refuses such a note (the tracker could not lay it out), so it is never written.
+    if (!isWellFormedText(text)) {
+      throw const ProgressLimitException('This note has a broken symbol (half of an emoji, for '
+          'example). Remove it and try again.');
+    }
     if (text.length > ProgressLimits.maxNoteChars) {
       throw ProgressLimitException('A note can be at most ${ProgressLimits.maxNoteChars} '
           'characters, and this one is ${text.length} (some symbols, such as emoji, count as '
@@ -817,6 +1012,7 @@ class Progress {
         'craft': craft.key,
         if (place != null) 'place': place!.toJson(),
         if (basis != null) 'basis': basis!.toJson(),
+        if (label?.isFor(place, updated) ?? false) 'label': label!.toJson(),
         if (started != null) 'started': _timeText(started!),
         if (updated != null) 'updated': _timeText(updated!),
         'log': [for (final e in log) e.toJson()],
@@ -927,9 +1123,11 @@ class Progress {
         final k = int.tryParse(n.id.startsWith('note-') ? n.id.substring(5) : '');
         if (k != null && k > lastNote) throw const FormatException('note past its counter');
       }
+      final place = json['place'] == null ? null : WorkPlace.fromJson(craft, json['place']);
+      final updated = json['updated'] == null ? null : _time(json['updated']);
       return Progress(
         craft: craft,
-        place: json['place'] == null ? null : WorkPlace.fromJson(craft, json['place']),
+        place: place,
         basis: json['basis'] == null ? null : PlaceBasis.fromJson(json['basis']),
         log: List.unmodifiable(log),
         logDropped: _number(json['logDropped'], min: 0),
@@ -937,7 +1135,11 @@ class Progress {
         lastNoteNumber: lastNote,
         undo: List.unmodifiable(undo),
         started: json['started'] == null ? null : _time(json['started']),
-        updated: json['updated'] == null ? null : _time(json['updated']),
+        updated: updated,
+        // Lenient, unlike every other key: a label not well formed, or written for another place or
+        // another last change (kept by a build from before the key as it moved the place or changed
+        // a note), is read as none, and is not written back.
+        label: PlaceLabel.tryFromJson(craft, json['label'], place: place, updated: updated),
         extra: Map.unmodifiable({
           for (final e in json.entries)
             if (!_known.contains(e.key)) e.key: e.value,

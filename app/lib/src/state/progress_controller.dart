@@ -20,6 +20,7 @@ class ProgressController extends ChangeNotifier {
     this.pendingCheck = false,
     DateTime Function()? clock,
     bool fromRecord = true,
+    this.labelOf,
   })  : _progress = progress,
         _place = place,
         _basis = basis,
@@ -30,6 +31,11 @@ class ProgressController extends ChangeNotifier {
   final BackupCraft craft;
   final String id;
   final DateTime Function() _clock;
+
+  /// The tracker's words for a stored place, written with it as the record's label (ADR 0023,
+  /// follow-up 6) on every change of place; without them (every craft but knitting) each change of
+  /// place leaves the record without a label.
+  final PlaceWords? labelOf;
 
   Progress _progress;
   WorkPlace _place;
@@ -107,10 +113,10 @@ class ProgressController extends ChangeNotifier {
     // Not the same place when either its number or the step it names differs (a nalbinding place
     // whose step is gone is shown at the same number on another step): that move is logged.
     if (stored != null && !(stored.sameSpot(_place) && stored.samePlace(_place))) {
-      await _write(
-          _progress.moved(from: stored, to: _place, basis: basis, kind: LogKind.fix, now: now));
+      await _write(_progress.moved(
+          from: stored, to: _place, basis: basis, kind: LogKind.fix, now: now, label: labelOf));
     } else {
-      await _write(_progress.rebased(place: _place, basis: basis, now: now));
+      await _write(_progress.rebased(place: _place, basis: basis, now: now, label: labelOf));
     }
   }
 
@@ -123,8 +129,8 @@ class ProgressController extends ChangeNotifier {
     final from = _place;
     _place = to;
     _basis = basis;
-    await _write(
-        _progress.moved(from: from, to: to, basis: basis, kind: kind, now: _clock(), count: count));
+    await _write(_progress.moved(
+        from: from, to: to, basis: basis, kind: kind, now: _clock(), count: count, label: labelOf));
   }
 
   /// Undo the last change of place. Returns false when there is nothing to undo. The place on screen
@@ -132,7 +138,7 @@ class ProgressController extends ChangeNotifier {
   /// against the pattern again, as on opening, and shows it with [settle].
   Future<bool> undo({required WorkPlace start}) async {
     if (!canUndo) return false;
-    final back = _progress.undone(now: _clock());
+    final back = _progress.undone(now: _clock(), label: labelOf);
     if (back == null) return false;
     _place = back.place ?? start;
     _basis = back.basis;
