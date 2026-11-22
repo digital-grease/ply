@@ -714,10 +714,8 @@ impl<'a> Checker<'a> {
         if let Some(part) = self.part.take() {
             self.close_part(&part);
         }
-        for i in 0..recipe.segments.len() {
-            if matches!(recipe.segments[i].work, Work::Opening { .. })
-                && !self.used.contains_key(&i)
-            {
+        for (i, s) in recipe.segments.iter().enumerate() {
+            if matches!(s.work, Work::Opening { .. }) && !self.used.contains_key(&i) {
                 self.at(
                     i,
                     RecipeCode::OpeningNotUsed,

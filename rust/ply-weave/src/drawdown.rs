@@ -1191,7 +1191,11 @@ mod tests {
         // Off (the default): the whole cell is one flat color — no per-pixel variation.
         let flat = render_rgba_with(&warp_cell(), 8, &RenderOptions::default());
         assert!(
-            flat.pixels.chunks_exact(4).all(|p| p == &flat.pixels[0..4]),
+            flat.pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| p == &flat.pixels[0..4]),
             "texture off => flat solid fill"
         );
     }

@@ -30,7 +30,12 @@ fn px(img: &RgbaImage, x: usize, y: usize) -> [u8; 4] {
 
 /// How many pixels exactly equal `want`.
 fn count(img: &RgbaImage, want: [u8; 4]) -> usize {
-    img.pixels.chunks_exact(4).filter(|c| **c == want).count()
+    img.pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|c| **c == want)
+        .count()
 }
 
 #[test]
