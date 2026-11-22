@@ -3,10 +3,12 @@
 Milestones are roughly ordered. The guiding principle: **make one craft excellent end to
 end (weaving) to harden the shared shell before fanning out.**
 
-## Current state (verified 2026-11-19)
+## Current state (verified 2026-11-21)
 
-M0 to M6 have shipped. Status words: **Verified** (works in the current checkout), **Partial**
-(exists, but important behavior is missing), **Not built**.
+M0 to M6 have shipped. The latest release is v0.2.0 (signed Android APKs on the
+[Releases](https://github.com/digital-grease/ply/releases) page). Status words: **Verified**
+(works in the current checkout), **Partial** (exists, but important behavior is missing),
+**Not built**.
 
 | Area | Status | Known limits |
 |---|---|---|
@@ -30,7 +32,7 @@ M0 to M6 have shipped. Status words: **Verified** (works in the current checkout
 | Native file formats | Verified | `.plyknit`, `.plynal` and `.plytab` carry a schema version: older files migrate on open (a knit file keeps a one-time backup before its first upgrade), files from a newer Ply are refused and never overwritten; the loom profiles and materials files and the progress records follow the same rules. Sidecars keep keys they do not know. Unknown fields inside a document are not kept (newer files are refused instead) |
 | Library backup and restore | Verified | Settings saves every project of every craft (with photos and your place in it, your loom profiles, and your materials and swatches with their photos, and optionally app settings) to one `.plybackup` file wherever you choose; any single project can be exported the same way. Restore checks every file first (a pattern from a newer Ply is refused from its version alone, and a file far more complex or more deeply nested than any Ply makes is refused without being decoded), previews new, identical and differing projects, adds differing ones as copies without replacing anything (a project that differs only in your place counts as already there and keeps your place), and restores settings only if ticked. Long nalbinding notes no longer stop a backup. Weaving notes are limited to 10,000 characters and can be read and changed from a saved draft's menu; when notes saved before that limit stop a backup, the message says how to shorten them, and over-long notes open read-only with the choice to save them as a text file, keep the first 10,000 characters or clear them. Loom profiles, materials and older knitting files are read within a fixed memory budget, libraries read large project details in the background, and names are limited to 200 characters where they are typed (longer names saved earlier still open) |
 | Printable patterns (PDF) | Partial | Weaving drafts (a four-quadrant book draft with the tie-up in any corner, split into numbered parts when large; the colored drawdown; Use tabby when exact; role letters, shot groups, shuttles and pass directions, fold and open edges; written directions), knitting patterns (gauge, cast-on, stitch key, chart with numbers and repeat boxes, written instructions, problems) and nalbinding projects (notation, loop diagram, findings, notes, photos) and tablet bands (setup, turning chart, band, written instructions) print or share as PDF, offline, A4 or US Letter by your units; a pattern with errors prints only as a marked draft copy. Printed weaving drafts still await a weaver's comparison with reference patterns; threading repeats and profile blocks are not printed because drafts do not record them |
-| Engineering gates | Verified | 1101 Rust + 1889 Flutter host tests green; all 88 device integration tests (33 files) passed on the emulator on 2026-11-19; CI also gates on `cargo fmt` and `cargo clippy -D warnings`. The Android build uses Gradle 9 and AGP 9, so it runs on current JDKs |
+| Engineering gates | Verified | 1101 Rust + 1889 Flutter host tests green; all 88 device integration tests (33 files) passed on the emulator on 2026-11-19; CI runs every crate's tests and gates on `cargo fmt` and `cargo clippy -D warnings` with the current stable Rust (clean on 1.100). The Android build uses Gradle 9 and AGP 9, so it runs on current JDKs |
 
 ## M0 — Engine foundation ✅ (done)
 - Cargo workspace; `ply-common` + `ply-weave` + `ply-bridge`.
